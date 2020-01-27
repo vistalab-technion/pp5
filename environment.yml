@@ -1,0 +1,25 @@
+name: proteins
+channels:
+  - defaults
+  - conda-forge
+  - schrodinger # for pymol
+dependencies:
+  - python=3.7.6
+  - ipython>=7.9
+  - jupyter
+  - jupyterlab
+  - nodejs
+  - numpy
+  - scikit-learn
+  - pandas
+  - pytest
+  - tqdm
+  - matplotlib
+  - numba
+  - hdf5
+  - h5py>=2.10
+  - biopython
+  - pymol
+  - pip
+  - pip:
+    - nbmerge
