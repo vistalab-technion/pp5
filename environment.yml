@@ -2,7 +2,7 @@ name: proteins
 channels:
   - defaults
   - conda-forge
-  - schrodinger # for pymol
+  - schrodinger # for pdb
 dependencies:
   - python=3.7.6
   - ipython>=7.9
@@ -19,7 +19,7 @@ dependencies:
   - hdf5
   - h5py>=2.10
   - biopython
-  - pymol
+  - pdb
   - pip
   - pip:
     - nbmerge
