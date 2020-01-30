@@ -6,7 +6,7 @@ import Bio.PDB as pdb
 from Bio.PDB import Model, Chain, Residue, Atom
 from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
-from primaah import PDB_DIR
+from pp5 import PDB_DIR, DATA_DIR
 
 warnings.simplefilter('ignore', PDBConstructionWarning)
 
@@ -110,7 +110,17 @@ def pdb_dihedral(pdb_id: str) -> pd.DataFrame:
 
 
 if __name__ == '__main__':
-    df = pdb_dihedral('6s61')
+    pid = '3ajo'
+    df = pdb_dihedral(pid)
 
-    groups = df.groupby('Chain')
-    print(list(groups)[-1])
+    filename = DATA_DIR.joinpath(f'{pid}.angles.csv')
+    print(f'Writing {filename}...')
+    df.to_csv(filename, index=None)
+
+    for chain, group in df.groupby('Chain'):
+        group: pd.DataFrame
+        group = group.drop(columns='Chain')
+
+        filename = DATA_DIR.joinpath(f'{pid}_{chain}.angles.csv')
+        print(f'Writing {filename}...')
+        group.to_csv(filename, header=False, na_rep='nan')
