@@ -1,4 +1,5 @@
 import os
+import logging.config
 from pathlib import Path
 
 PROJECT_DIR = Path(Path(__file__).resolve().parents[1]) \
@@ -48,3 +49,7 @@ def out_subdir(name):
     """
     return _get_subdir(OUT_DIR, name)
 
+
+# load logger config
+logging.config.fileConfig(PROJECT_DIR.joinpath('logging.ini'),
+                          disable_existing_loggers=False)
