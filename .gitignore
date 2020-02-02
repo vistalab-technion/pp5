@@ -2,6 +2,7 @@
 /.make/
 /data/
 out/
+tests/resources/**/tmp/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
