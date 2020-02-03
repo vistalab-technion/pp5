@@ -55,3 +55,16 @@ class FileServer(socketserver.TCPServer):
 
     def reset_last(self):
         self.last_request = []
+
+
+def has_internet():
+    """
+    :return: True if an internet connection is available.
+    """
+    try:
+        host = socket.gethostbyname("www.google.com")
+        with socket.create_connection((host, 80), 2) as s:
+            return True
+    except:
+        pass
+    return False
