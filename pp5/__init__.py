@@ -2,8 +2,9 @@ import os
 import logging.config
 from pathlib import Path
 
-PROJECT_DIR = Path(Path(__file__).resolve().parents[1]) \
-    .relative_to(os.getcwd())
+PROJECT_DIR = Path(Path(__file__).resolve().parents[1])
+if str(PROJECT_DIR).startswith(os.getcwd()):
+    PROJECT_DIR = PROJECT_DIR.relative_to(os.getcwd())
 
 """
 Specify directory paths used for input and output.
