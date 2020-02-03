@@ -15,7 +15,7 @@ import Bio.PDB.MMCIF2Dict
 import Bio.PDB.Structure
 import Bio.SeqIO as seqio
 import Bio.SwissProt as sprot
-from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 
 from pp5 import PDB_DIR, UNP_DIR, ENA_DIR
 
@@ -117,7 +117,7 @@ def unp_record(unp_id: str, unp_dir=UNP_DIR) -> sprot.Record:
         return sprot.read(local_handle)
 
 
-def ena_seq(ena_id: str, ena_dir=ENA_DIR) -> Seq:
+def ena_seq(ena_id: str, ena_dir=ENA_DIR) -> SeqRecord:
     """
     Given an ENI (European Nucleotide Archive) id, returns the corresponding
     nucleotide sequence.
