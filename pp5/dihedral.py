@@ -1,17 +1,31 @@
 import math
 import warnings
+from typing import NamedTuple, List
 
 import pandas as pd
 import Bio.PDB as pdb
 from Bio.PDB import Model, Chain, Residue, Atom
-from Bio.PDB.PDBExceptions import PDBConstructionWarning
 
+from pp5 import external_dbs
 from pp5 import PDB_DIR, DATA_DIR
 
-warnings.simplefilter('ignore', PDBConstructionWarning)
+
+class Dihedral(NamedTuple):
+    """
+    Holds the three dihedral angles associated with adjacent AAs.
+    """
+    phi: float
+    psi: float
+    omega: float
+    degrees: bool
+
+    def __repr__(self):
+        u = '°' if self.degrees else 'rad'
+        return f'(ɸ={self.phi:.2f}{u}, ψ={self.psi:.2f}{u}, ' \
+               f'ω={self.omega:.2f}{u})'
 
 
-def pp_dihedral_angles(pp: pdb.Polypeptide, degrees=False):
+def pp_dihedral_angles(pp: pdb.Polypeptide, degrees=False) -> List[Dihedral]:
     """
     Return a list of phi/psi/omega dihedral angles from a Polypeptide object.
     :param pp: Polypeptide to calcalate dihedral angles for.
@@ -20,16 +34,20 @@ def pp_dihedral_angles(pp: pdb.Polypeptide, degrees=False):
     :return: A list of tuples (phi, psi, omega), with the same length as the
     polypeptide chain.
     """
+    nan = math.nan
     angles = []
+
+    # Loop over amino acids (AAs) in the polypeptide
     for i in range(len(pp)):
         aa_curr = pp[i]
         try:
+            # Get the locations (x, y, z) of relevant atoms
             n = aa_curr['N'].get_vector()
             ca = aa_curr['CA'].get_vector()
             c = aa_curr['C'].get_vector()
         except KeyError:
             # Phi/Psi cannot be calculated for this AA
-            angles.append((None, None, None))
+            angles.append(Dihedral(nan, nan, nan, degrees))
             continue
 
         # Phi
@@ -39,9 +57,9 @@ def pp_dihedral_angles(pp: pdb.Polypeptide, degrees=False):
                 c_prev = aa_prev['C'].get_vector()
                 phi = pdb.calc_dihedral(c_prev, n, ca, c)
             except KeyError:
-                phi = None
+                phi = nan
         else:  # No phi for first AA
-            phi = None
+            phi = nan
 
         # Psi
         if i < (len(pp) - 1):
@@ -50,9 +68,9 @@ def pp_dihedral_angles(pp: pdb.Polypeptide, degrees=False):
                 n_next = aa_next['N'].get_vector()
                 psi = pdb.calc_dihedral(n, ca, c, n_next)
             except KeyError:
-                psi = None
+                psi = nan
         else:  # No psi for last AA
-            psi = None
+            psi = nan
 
         # Omega
         if i > 0:
@@ -62,16 +80,16 @@ def pp_dihedral_angles(pp: pdb.Polypeptide, degrees=False):
                 ca_prev = aa_prev['CA'].get_vector()
                 omega = pdb.calc_dihedral(ca_prev, c_prev, n, ca)
             except KeyError:
-                omega = None
+                omega = nan
         else:  # No omega for first AA
-            omega = None
+            omega = nan
 
         if degrees:
-            phi = math.degrees(phi) if phi else None
-            psi = math.degrees(psi) if psi else None
-            omega = math.degrees(omega) if omega else None
+            phi = math.degrees(phi) if phi else nan
+            psi = math.degrees(psi) if psi else nan
+            omega = math.degrees(omega) if omega else nan
 
-        angles.append((phi, psi, omega))
+        angles.append(Dihedral(phi, psi, omega, degrees))
 
     return angles
 
@@ -84,20 +102,16 @@ def pdb_dihedral(pdb_id: str) -> pd.DataFrame:
     :return: a dataframe with columns ('Chain', 'AA', 'Phi', 'Psi', 'Omega')
     containing the dihedral angles for all AAs in all chains.
     """
-    pdb_list = pdb.PDBList(verbose=False)
-    pdb_filename = pdb_list.retrieve_pdb_file(
-        pdb_id, file_format='mmCif', pdir=PDB_DIR
-    )
+    struct = external_dbs.pdb_struct(pdb_id)
 
-    parser = pdb.MMCIFParser()
-    struct = parser.get_structure(pdb_id, pdb_filename)
-    chains = list(struct.get_chains())
-
+    # Create polypeptide objects for each chain
     pp_builder = pdb.PPBuilder()
     polypeptide_chains = pp_builder.build_peptides(struct, aa_only=1)
 
     df = pd.DataFrame(columns=('Chain', 'AA', 'Phi', 'Psi', 'Omega'))
 
+    # From each chain, calculate dihedral angles
+    chains = list(struct.get_chains())
     for chain_idx, polypeptide in enumerate(polypeptide_chains):
         chain = chains[chain_idx].id
         seq = polypeptide.get_sequence()
@@ -110,17 +124,9 @@ def pdb_dihedral(pdb_id: str) -> pd.DataFrame:
 
 
 if __name__ == '__main__':
-    pid = '3ajo'
+    pid = '5jkk'
     df = pdb_dihedral(pid)
 
     filename = DATA_DIR.joinpath(f'{pid}.angles.csv')
     print(f'Writing {filename}...')
     df.to_csv(filename, index=None)
-
-    for chain, group in df.groupby('Chain'):
-        group: pd.DataFrame
-        group = group.drop(columns='Chain')
-
-        filename = DATA_DIR.joinpath(f'{pid}_{chain}.angles.csv')
-        print(f'Writing {filename}...')
-        group.to_csv(filename, header=False, na_rep='nan')
