@@ -40,7 +40,6 @@ def remote_dl(url: str, save_path: str, uncompress=False, skip_existing=False):
         return Path(save_path)
 
     with urlopen(url) as remote_handle, open(save_path, 'wb') as out_handle:
-        LOGGER.info(f"Downloading {url}...")
         try:
             if uncompress:
                 in_handle = gzip.GzipFile(fileobj=remote_handle)
@@ -50,28 +49,32 @@ def remote_dl(url: str, save_path: str, uncompress=False, skip_existing=False):
         finally:
             in_handle.close()
 
+    size_bytes = os.path.getsize(save_path)
+    LOGGER.info(f"Downloaded {save_path} ({size_bytes / 1024:.1f}kB)")
     return Path(save_path)
 
 
-def pdb_download(pdb_id: str):
+def pdb_download(pdb_id: str, pdb_dir=PDB_DIR):
     """
-    Downloads a protein structre file from PDB.
+    Downloads a protein structure file from PDB.
     :param pdb_id: The id of the structure to download.
+    :param pdb_dir: Directory to download PDB file to.
     """
     pdb_id = pdb_id.lower()
-    filename = PDB_DIR.joinpath(f'{pdb_id}.cif')
+    filename = pdb_dir.joinpath(f'{pdb_id}.cif')
     url = PDB_URL_TEMPLATE.format(pdb_id)
     return remote_dl(url, filename, uncompress=True, skip_existing=True)
 
 
-def pdb_struct(pdb_id: str) -> pdb.Structure:
+def pdb_struct(pdb_id: str, pdb_dir=PDB_DIR) -> pdb.Structure:
     """
     Given a PDB structure id, returns an object representing the protein
     structure.
     :param pdb_id: The PDB id of the structure.
+    :param pdb_dir: Directory to download PDB file to.
     :return: An biopython Structure object.
     """
-    filename = pdb_download(pdb_id)
+    filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
 
     # Parse the PDB file into a Structure object
     LOGGER.info(f"Loading PDB file {filename}...")
@@ -79,13 +82,14 @@ def pdb_struct(pdb_id: str) -> pdb.Structure:
     return parser.get_structure(pdb_id, filename)
 
 
-def pdbid_to_unpids(pdb_id: str) -> List[str]:
+def pdbid_to_unpids(pdb_id: str, pdb_dir=PDB_DIR) -> List[str]:
     """
     Extracts Uniprot protein ids from a PDB protein structure.
     :param pdb_id: The PDB id of the structure.
+    :param pdb_dir: Directory to download PDB file to.
     :return: A list of Uniprot ids.
     """
-    filename = pdb_download(pdb_id)
+    filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
     pdb_dict = pdb.MMCIF2Dict.MMCIF2Dict(filename)
 
     # Go over referenced DBs and take first accession id belonging to Uniprot
@@ -97,30 +101,32 @@ def pdbid_to_unpids(pdb_id: str) -> List[str]:
     return unp_ids
 
 
-def unp_record(unp_id: str) -> sprot.Record:
+def unp_record(unp_id: str, unp_dir=UNP_DIR) -> sprot.Record:
     """
     Create a Record object holding the information about a protein based on
     its Uniprot id.
     :param unp_id: The Uniprot id.
+    :param unp_dir: Directory to download Uniprot file to.
     :return: A biopython Record object.
     """
     url = UNP_URL_TEMPLATE.format(unp_id)
-    filename = UNP_DIR.joinpath(f'{unp_id}.txt')
+    filename = unp_dir.joinpath(f'{unp_id}.txt')
     remote_dl(url, filename, skip_existing=True)
 
     with open(filename, 'r') as local_handle:
         return sprot.read(local_handle)
 
 
-def ena_seq(ena_id: str) -> Seq:
+def ena_seq(ena_id: str, ena_dir=ENA_DIR) -> Seq:
     """
     Given an ENI (European Nucleotide Archive) id, returns the corresponding
     nucleotide sequence.
     :param ena_id: id of data to fetch.
+    :param ena_dir: Directory to download ENA file to.
     :return: A biopython Sequence object.
     """
     url = ENA_URL_TEMPLATE.format(ena_id)
-    filename = ENA_DIR.joinpath(f'{ena_id}.fa')
+    filename = ena_dir.joinpath(f'{ena_id}.fa')
     remote_dl(url, filename, skip_existing=True)
 
     with open(filename, 'r') as local_handle:
