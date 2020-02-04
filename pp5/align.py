@@ -88,7 +88,7 @@ def multiseq_align(seqs: Iterable[Seq] = None, in_file=None, out_file=None,
     with child_proc.stderr as child_err_handle:
         err = child_err_handle.read()
         if err:
-            print('WARNING: ClustalOmega error: {err}')
+            LOGGER.warning(f'ClustalOmega error: {err}')
 
     return msa_result
 
