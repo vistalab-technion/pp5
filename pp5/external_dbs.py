@@ -10,12 +10,14 @@ from pathlib import Path
 from typing import List
 from urllib.request import urlopen
 
-import Bio.PDB as pdb
+import Bio.PDB as PDB
 import Bio.PDB.MMCIF2Dict
 import Bio.PDB.Structure
-import Bio.SeqIO as seqio
-import Bio.SwissProt as sprot
+import Bio.SeqIO as SeqIO
+import Bio.SwissProt as SwissProt
+import requests
 from Bio.SeqRecord import SeqRecord
+import yattag
 
 from pp5 import PDB_DIR, UNP_DIR, ENA_DIR
 
@@ -66,7 +68,7 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR):
     return remote_dl(url, filename, uncompress=True, skip_existing=True)
 
 
-def pdb_struct(pdb_id: str, pdb_dir=PDB_DIR) -> pdb.Structure:
+def pdb_struct(pdb_id: str, pdb_dir=PDB_DIR) -> PDB.Structure:
     """
     Given a PDB structure id, returns an object representing the protein
     structure.
@@ -78,7 +80,7 @@ def pdb_struct(pdb_id: str, pdb_dir=PDB_DIR) -> pdb.Structure:
 
     # Parse the PDB file into a Structure object
     LOGGER.info(f"Loading PDB file {filename}...")
-    parser = pdb.MMCIFParser(QUIET=True)
+    parser = PDB.MMCIFParser(QUIET=True)
     return parser.get_structure(pdb_id, filename)
 
 
@@ -90,7 +92,7 @@ def pdbid_to_unpids(pdb_id: str, pdb_dir=PDB_DIR) -> List[str]:
     :return: A list of Uniprot ids.
     """
     filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
-    pdb_dict = pdb.MMCIF2Dict.MMCIF2Dict(filename)
+    pdb_dict = PDB.MMCIF2Dict.MMCIF2Dict(filename)
 
     # Go over referenced DBs and take first accession id belonging to Uniprot
     unp_ids = []
@@ -101,7 +103,7 @@ def pdbid_to_unpids(pdb_id: str, pdb_dir=PDB_DIR) -> List[str]:
     return unp_ids
 
 
-def unp_record(unp_id: str, unp_dir=UNP_DIR) -> sprot.Record:
+def unp_record(unp_id: str, unp_dir=UNP_DIR) -> SwissProt.Record:
     """
     Create a Record object holding the information about a protein based on
     its Uniprot id.
@@ -114,7 +116,7 @@ def unp_record(unp_id: str, unp_dir=UNP_DIR) -> sprot.Record:
     remote_dl(url, filename, skip_existing=True)
 
     with open(filename, 'r') as local_handle:
-        return sprot.read(local_handle)
+        return SwissProt.read(local_handle)
 
 
 def ena_seq(ena_id: str, ena_dir=ENA_DIR) -> SeqRecord:
@@ -130,4 +132,139 @@ def ena_seq(ena_id: str, ena_dir=ENA_DIR) -> SeqRecord:
     remote_dl(url, filename, skip_existing=True)
 
     with open(filename, 'r') as local_handle:
-        return seqio.read(local_handle, 'fasta')
+        return SeqIO.read(local_handle, 'fasta')
+
+
+class PDBQuery:
+    """
+    Represents a query that can be sent to the PDB search API to obtain PDB
+    ids matching some criteria.
+    To implement new search criteria, simply derive from this class.
+
+    See documentation here:
+    https://www.rcsb.org/pages/webservices/rest-search#search
+    """
+    TAG_QUERY = 'orgPdbQuery'
+    TAG_QUERY_TYPE = 'queryType'
+    TAG_DESCRIPTION = 'description'
+
+    def to_xml(self):
+        raise NotImplementedError("Override this")
+
+    def to_xml_pretty(self):
+        return yattag.indent(self.to_xml())
+
+    def execute(self):
+        """
+        Executes the query on PDB.
+        :return: A list of PDB IDs for proteins matching the query.
+        """
+        header = {'Content-Type': 'application/x-www-form-urlencoded'}
+        search_url = 'https://www.rcsb.org/pdb/rest/search'
+        query = self.to_xml()
+
+        pdb_ids = []
+        try:
+            response = requests.post(search_url, data=query, headers=header)
+            response.raise_for_status()
+            pdb_ids = response.text.split()
+        except requests.exceptions.RequestException as e:
+            LOGGER.error('Failed to query PDB', exc_info=e)
+
+        return pdb_ids
+
+
+class PDBCompositeQuery(PDBQuery):
+    """
+    A composite query is composed of multiple regular PDBQueries.
+    It creates a query that represents "query1 AND query2 AND ... queryN".
+    """
+    TAG_COMPOSITE = 'orgPdbCompositeQuery'
+    TAG_REFINEMENT = 'queryRefinement'
+    TAG_REFINEMENT_LEVEL = 'queryRefinementLevel'
+    TAG_CONJ_TYPE = 'conjunctionType'
+
+    def __init__(self, *queries: PDBQuery):
+        super().__init__()
+        self.queries = queries
+
+    def to_xml(self):
+        doc, tag, text, line = yattag.Doc().ttl()
+
+        with tag(self.TAG_COMPOSITE, version="1.0"):
+            for i, query in enumerate(self.queries):
+                with tag(self.TAG_REFINEMENT):
+                    line(self.TAG_REFINEMENT_LEVEL, i)
+
+                    if i > 0:
+                        line(self.TAG_CONJ_TYPE, 'and')
+
+                    # Insert XML from regular query as-is
+                    doc.asis(query.to_xml())
+
+        return doc.getvalue()
+
+
+class PDBResolutionQuery(PDBQuery):
+    RES_QUERY_TYPE = 'org.pdb.query.simple.ResolutionQuery'
+    TAG_RES_COMP = 'refine.ls_d_res_high.comparator'
+    TAG_RES_MIN = 'refine.ls_d_res_high.min'
+    TAG_RES_MAX = 'refine.ls_d_res_high.max'
+
+    def __init__(self, min_res=0., max_res=2.):
+        super().__init__()
+        self.min_res = min_res
+        self.max_res = max_res
+        self.description = f'Resolution between {min_res} and {max_res}'
+
+    def to_xml(self):
+        doc, tag, text, line = yattag.Doc().ttl()
+
+        with tag(self.TAG_QUERY):
+            line(self.TAG_QUERY_TYPE, self.RES_QUERY_TYPE)
+            line(self.TAG_DESCRIPTION, self.description)
+            line(self.TAG_RES_COMP, 'between')
+            line(self.TAG_RES_MIN, self.min_res)
+            line(self.TAG_RES_MAX, self.max_res)
+
+        return doc.getvalue()
+
+
+class PDBExpressionSystemQuery(PDBQuery):
+    COMP_TYPES = {'contains', 'equals', 'startswith', 'endswith',
+                  '!contains', '!startswith', '!endswith'}
+
+    EXPR_SYS_QUERY_TYPE = 'org.pdb.query.simple.ExpressionOrganismQuery'
+    TAG_COMP = 'entity_src_gen.pdbx_host_org_scientific_name.comparator'
+    TAG_NAME = 'entity_src_gen.pdbx_host_org_scientific_name.value'
+
+    def __init__(self, expr_sys: str, comp_type: str = 'contains'):
+        super().__init__()
+        self.expr_sys = expr_sys
+        if comp_type not in self.COMP_TYPES:
+            raise ValueError(f"Unknown comparison type {comp_type}, must be "
+                             f"one of {self.COMP_TYPES}.")
+        self.comp_type = comp_type
+        self.description = f'Expression system {self.comp_type}' \
+                           f' {self.expr_sys}'
+
+    def to_xml(self):
+        doc, tag, text, line = yattag.Doc().ttl()
+
+        with tag(self.TAG_QUERY):
+            line(self.TAG_QUERY_TYPE, self.EXPR_SYS_QUERY_TYPE)
+            line(self.TAG_DESCRIPTION, self.description)
+            line(self.TAG_COMP, self.comp_type)
+            line(self.TAG_NAME, self.expr_sys)
+
+        return doc.getvalue()
+
+
+if __name__ == '__main__':
+    query = PDBCompositeQuery(
+        PDBResolutionQuery(max_res=0.7),
+        PDBExpressionSystemQuery(expr_sys='Escherichia Coli',
+                                 comp_type='contains'))
+    pdb_ids = query.execute()
+    print(f'{pdb_ids}')
+    print(f'Got {len(pdb_ids)} ids')
