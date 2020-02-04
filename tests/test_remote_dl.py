@@ -4,19 +4,16 @@ import gzip
 import filecmp
 import tests
 import tests.utils
-from pp5.external_dbs import remote_dl
+from pp5.utils import remote_dl
 
 RESOURCES_PATH = tests.TEST_RESOURCES_PATH.joinpath('remote_dl')
-TEMP_OUT_PATH = tests.TEST_RESOURCES_PATH.joinpath('remote_dl/tmp')
+TEMP_OUT_PATH = tests.utils.get_tmp_path('remote_dl')
 
 
 class TestRemoteDL:
     @classmethod
     def setup_class(cls):
         os.makedirs(RESOURCES_PATH, exist_ok=True)
-        os.makedirs(TEMP_OUT_PATH, exist_ok=True)
-        for f in TEMP_OUT_PATH.glob('*'):
-            os.remove(f)
 
         # Serve files from resources dir
         cls.httpd = tests.utils.FileServer(RESOURCES_PATH)

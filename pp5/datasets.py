@@ -11,6 +11,9 @@ import pp5
 import pp5.align
 import pp5.dihedral
 import pp5.external_dbs
+import pp5.external_dbs.ena
+import pp5.external_dbs.pdb
+import pp5.external_dbs.unp
 
 LOGGER = logging.getLogger(__name__)
 
@@ -36,10 +39,10 @@ class ProteinRecord:
         """
         LOGGER.info(f'{unp_id}: Initializing protein record...')
         self.unp_id = unp_id
-        self.unp_rec = pp5.external_dbs.unp_record(self.unp_id)
+        self.unp_rec = pp5.external_dbs.unp.unp_record(self.unp_id)
         self._dna_seq = self._find_dna_seq()
         self.pdb_id = self._find_pdb_id() if not pdb_id else pdb_id
-        self.pdb_rec = pp5.external_dbs.pdb_struct(self.pdb_id)
+        self.pdb_rec = pp5.external_dbs.pdb.pdb_struct(self.pdb_id)
         self.angles = self._calc_dihedral()
 
     @property
@@ -79,7 +82,7 @@ class ProteinRecord:
             raise RuntimeError(f"Can't find ENA id for UNP id {self.unp_id}")
 
         # Map id to sequence by fetching from ENA API
-        ena_seqs = map(pp5.external_dbs.ena_seq, ena_ids)
+        ena_seqs = map(pp5.external_dbs.ena.ena_seq, ena_ids)
 
         # Take alignment with length roughly matching the protein length *3
         expected_len = 3 * self.unp_rec.sequence_length
@@ -158,7 +161,7 @@ class ProteinRecord:
         :return: A sequence of ProteinRecord (lazily generated).
         """
         # pdb id -> mlutiple uniprot ids -> multiple ProteinRecords
-        unp_ids = pp5.external_dbs.pdbid_to_unpids(pdb_id)
+        unp_ids = pp5.external_dbs.pdb.pdbid_to_unpids(pdb_id)
         if not unp_ids:
             raise ValueError(f"Can't find Uniprot cross-reference for "
                              f"pdb_id={pdb_id}")
@@ -168,5 +171,5 @@ class ProteinRecord:
 
 if __name__ == '__main__':
     # precs = list(ProteinRecord.from_pdb('6NQ3'))
-    # precs = list(ProteinRecord.from_pdb('102L'))
-    ProteinRecord('P02794')
+    precs = list(ProteinRecord.from_pdb('102L'))
+    # ProteinRecord('P02794')

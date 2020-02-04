@@ -6,6 +6,7 @@ import pandas as pd
 import Bio.PDB as pdb
 from Bio.PDB import Model, Chain, Residue, Atom
 
+import pp5.external_dbs.pdb
 from pp5 import external_dbs
 from pp5 import PDB_DIR, DATA_DIR
 
@@ -102,7 +103,7 @@ def pdb_dihedral(pdb_id: str) -> pd.DataFrame:
     :return: a dataframe with columns ('Chain', 'AA', 'Phi', 'Psi', 'Omega')
     containing the dihedral angles for all AAs in all chains.
     """
-    struct = external_dbs.pdb_struct(pdb_id)
+    struct = pp5.external_dbs.pdb.pdb_struct(pdb_id)
 
     # Create polypeptide objects for each chain
     pp_builder = pdb.PPBuilder()
