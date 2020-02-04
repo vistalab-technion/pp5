@@ -19,6 +19,7 @@ dependencies:
   - numba
   - hdf5
   - h5py>=2.10
+  - yattag
   - pymol
   - muscle
   - clustalo
