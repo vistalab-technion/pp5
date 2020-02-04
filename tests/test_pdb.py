@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from Bio.PDB.PDBExceptions import PDBConstructionException
 
 import pp5.external_dbs.pdb as pdb
 import tests
@@ -44,3 +45,44 @@ class TestPDB:
         ids = pdb.pdbid_to_unpids(test_id, self.TEMP_PATH)
         assert len(ids) == 2
         assert ids == ['P69905', 'P68871']
+
+
+@pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
+class TestPDBQueries:
+    @classmethod
+    def setup_class(cls):
+        cls.TEMP_PATH = tests.utils.get_tmp_path('pdb')
+
+    def test_resolution_query(self):
+        min_res = 0.4
+        max_res = 0.5
+        query = pdb.PDBResolutionQuery(min_res, max_res)
+        pdb_ids = query.execute()
+
+        assert len(pdb_ids) >= 2
+
+        for id in pdb_ids:
+            try:
+                pdb_s = pdb.pdb_struct(id)
+                assert min_res <= pdb_s.header['resolution'] <= max_res
+            except PDBConstructionException as e:
+                pass
+
+    def test_expression_system_query(self):
+        expr_sys = 'Escherichia coli BL21(DE3)'
+        comp_type = 'equals'
+
+        query = pdb.PDBExpressionSystemQuery(expr_sys, comp_type)
+        pdb_ids = query.execute()
+
+        assert len(pdb_ids) > 17100
+
+    def test_composite_query(self):
+        query = pdb.PDBCompositeQuery(
+            pdb.PDBExpressionSystemQuery('Escherichia coli BL21(DE3)'),
+            pdb.PDBResolutionQuery(0.5, 0.8)
+        )
+
+        pdb_ids = query.execute()
+
+        assert len(pdb_ids) >= 3

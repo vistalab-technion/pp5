@@ -23,7 +23,7 @@ class ProteinRecord:
     Represents a protein in our dataset. Includes:
     - Uniprot id defining the which protein this is.
     - sequence (amino acids)
-    - genetic seq (nucleutides)
+    - genetic seq (nucleotides)
     - pdb id of one structure for it.
     - Dihedral angles
     """
