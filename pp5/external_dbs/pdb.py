@@ -54,12 +54,12 @@ def pdbid_to_unpids(pdb_id: str, pdb_dir=PDB_DIR) -> List[str]:
     pdb_dict = PDB.MMCIF2Dict.MMCIF2Dict(filename)
 
     # Go over referenced DBs and take first accession id belonging to Uniprot
-    unp_ids = []
+    unp_ids = set()
     for i, db_name in enumerate(pdb_dict['_struct_ref.db_name']):
         if db_name.lower() == 'unp':
-            unp_ids.append(pdb_dict['_struct_ref.pdbx_db_accession'][i])
+            unp_ids.add(pdb_dict['_struct_ref.pdbx_db_accession'][i])
 
-    return unp_ids
+    return list(unp_ids)
 
 
 class PDBQuery(abc.ABC):
