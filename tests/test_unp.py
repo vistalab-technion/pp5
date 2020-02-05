@@ -12,9 +12,24 @@ NO_INTERNET = not tests.utils.has_internet()
 class TestUNP:
     @classmethod
     def setup_class(cls):
-        cls.test_id = 'P00720'
         cls.TEMP_PATH = tests.utils.get_tmp_path('unp')
 
     def test_unp_record(self):
-        unp_rec = unp.unp_record(self.test_id, self.TEMP_PATH)
+        test_id = 'P00720'
+        unp_rec = unp.unp_record(test_id, self.TEMP_PATH)
         assert unp_rec.sequence_length == 164
+
+    def test_unp_download(self):
+        test_id = 'P00720'
+        path = unp.unp_download(test_id, self.TEMP_PATH)
+        assert path == self.TEMP_PATH.joinpath(f'{test_id}.txt')
+
+    def test_unp_download_with_redirect(self):
+        # This UNP id causes a redirect to
+        test_id = 'P31217'
+        replacement_id = unp.replacement_ids(test_id)[0]
+        assert replacement_id != test_id
+
+        path = unp.unp_download(test_id, self.TEMP_PATH)
+
+        assert path == self.TEMP_PATH.joinpath(f'{replacement_id}.txt')
