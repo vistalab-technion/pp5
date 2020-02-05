@@ -4,7 +4,7 @@ import multiprocessing as mp
 import multiprocessing.pool
 import logging
 import time
-from typing import Iterable, List
+from typing import Iterable, List, Tuple
 
 from Bio.PDB import PPBuilder
 from Bio.Seq import Seq
@@ -19,6 +19,10 @@ from pp5.external_dbs import pdb, unp, ena
 LOGGER = logging.getLogger(__name__)
 
 
+class ProteinInitError(ValueError):
+    pass
+
+
 class ProteinRecord:
     __SKIP_SERIALIZE = ['_unp_rec', '_pdb_rec']
 
@@ -31,20 +35,21 @@ class ProteinRecord:
     - Dihedral angles
     """
 
-    def __init__(self, unp_id: str, pdb_id=None):
+    def __init__(self, unp_id: str, proposed_pdb_id=None):
         """
         Initialize a protein record.
         :param unp_id: Uniprot id which uniquely identifies the protein.
-        :param pdb_id: Optional PDB id in case a *specific* structure is
-        desired. If not provided, the PDB id of the matching structure with
-        best X-ray resolution and best-matching sequence length will be
-        selected.
+        :param proposed_pdb_id: Optional PDB id in case a *specific*
+        structure is desired. If not provided, OR if provided but it does
+        not exist as a cross-reference in the Uniprot record, the PDB id of
+        the matching structure with best X-ray resolution and best-matching
+        sequence length will be selected.
         """
         LOGGER.info(f'{unp_id}: Initializing protein record...')
         self.__setstate__({})
 
         self.unp_id = unp_id
-        self.pdb_id = self._find_pdb_id() if not pdb_id else pdb_id
+        self.pdb_id, self.pdb_chain = self._find_pdb_xref(proposed_pdb_id)
 
         dna_seq_record = self._find_dna_seq()
         self.ena_id = dna_seq_record.id
@@ -112,7 +117,7 @@ class ProteinRecord:
                 break
 
         if len(ena_ids) == 0:
-            raise ValueError(f"Can't find ENA id for UNP id {self.unp_id}")
+            raise ProteinInitError(f"Can't find ENA id for {self.unp_id}")
 
         # Take alignment with length roughly matching the protein length *3
         expected_len = 3 * self.unp_rec.sequence_length
@@ -122,9 +127,9 @@ class ProteinRecord:
         LOGGER.info(f'{self.unp_id}: ENA ID = {ena_seqs[0].id}')
         return ena_seqs[0]
 
-
-    def _find_pdb_id(self) -> str:
+    def _find_pdb_xref(self, proposed_pdb_id=None) -> Tuple[str, str]:
         cross_refs = self.unp_rec.cross_references
+        proposed_pdb_id = '' if not proposed_pdb_id else proposed_pdb_id
 
         # PDB cross refs are ('PDB', id, method, resolution, chains)
         # E.g: ('PDB', '5EWX', 'X-ray', '2.60 A', 'A/B=1-35, A/B=38-164')
@@ -145,34 +150,38 @@ class ProteinRecord:
                 seq_len = int(seq_end) - int(seq_start)
                 seq_len_diff += abs(self.unp_rec.sequence_length - seq_len)
 
+            id_cmp = xref[1].lower() != proposed_pdb_id.lower()
+            n_groups = len(chains_groups)
+            n_chains = len(chains)
+
             # The sort key for PDB entries
-            return seq_len_diff, resolution, len(chains_groups), len(chains)
+            # First, if we have a matching id to the proposed PDB id we take
+            # it. Otherwise, we take the best match according to seq len and
+            # resolution.
+            return id_cmp, seq_len_diff, resolution, n_groups, n_chains
 
         pdb_xrefs = sorted(pdb_xrefs, key=sort_key)
+        if not pdb_xrefs:
+            raise ProteinInitError(f"No PDB cross-refs for {self.unp_id}")
 
         # Get best match according to sort key and return its id.
         xref = pdb_xrefs[0]
         LOGGER.info(f'{self.unp_id}: PDB ID = {xref[1]}|{xref[3]}|{xref[4]}')
-        return xref[1]
 
+        # We just need one of the chain IDs in the cross-reference, so we'll
+        # take the first one.
+        pdb_id = xref[1]
+        chains_str = xref[4]
+        chain_id = chains_str[0]
+        if pdb_id != proposed_pdb_id:
+            LOGGER.warning(f"Proposed PDB id {proposed_pdb_id} not found as "
+                           f"cross-reference for protein {self.unp_id}, "
+                           f"using {pdb_id} instead.")
+
+        return pdb_id, chain_id
 
     def _calc_dihedral(self) -> List[pp5.dihedral.Dihedral]:
-        pdb_id = self.pdb_id
-        cross_refs = self.unp_rec.cross_references
-
-        # Find the cross-ref entry for our PDB id
-        pdb_xrefs = (x for x in cross_refs if x[0].lower() == 'pdb')
-        pdb_xrefs = [x for x in pdb_xrefs if x[1].lower() == pdb_id.lower()]
-        if len(pdb_xrefs) == 0:
-            raise ValueError(f"PDB id {pdb_id} not found as cross-reference "
-                             f"for protein {self.unp_id}")
-        # PDB xref format is specified above
-        xref = pdb_xrefs[0]
-        chains_str = xref[4]
-
-        # We just need one of the relevant chain IDs, so we'll take the first
-        chain_id = chains_str[0]
-        chain = self.pdb_rec[0][chain_id]
+        chain = self.pdb_rec[0][self.pdb_chain]
 
         # Build a polypeptide from the chain
         pp_builder = PPBuilder()
@@ -183,10 +192,8 @@ class ProteinRecord:
 
         return angles
 
-
     def __repr__(self):
         return f'(unp_id={self.unp_id}, pdb_id={self.pdb_id})'
-
 
     def __getstate__(self):
         # Prevent serializing Bio objects
@@ -195,12 +202,10 @@ class ProteinRecord:
             del state[attr]
         return state
 
-
     def __setstate__(self, state):
         self.__dict__.update(state)
         for attr in self.__SKIP_SERIALIZE:
             self.__setattr__(attr, None)
-
 
     @classmethod
     def from_pdb(cls, pdb_id: str) -> List[ProteinRecord]:
@@ -214,8 +219,8 @@ class ProteinRecord:
         # pdb id -> mlutiple uniprot ids -> multiple ProteinRecords
         unp_ids = pdb.pdbid_to_unpids(pdb_id)
         if not unp_ids:
-            raise ValueError(f"Can't find Uniprot cross-reference for "
-                             f"pdb_id={pdb_id}")
+            raise ProteinInitError(f"Can't find Uniprot cross-reference for "
+                                   f"pdb_id={pdb_id}")
 
         protein_recs = [ProteinRecord(unp_id, pdb_id) for unp_id in unp_ids]
         return protein_recs
@@ -244,14 +249,18 @@ def collect_data():
                 protein_recs = async_result.get(30)
             except TimeoutError as e:
                 LOGGER.error("Timeout getting async result, skipping")
+            except ProteinInitError as e:
+                LOGGER.error(f"Failed to create protein: {e}")
             except Exception as e:
-                LOGGER.error("Failed to create ProteinRecord", exc_info=e)
+                LOGGER.error("Unexpected error", exc_info=e.__cause__)
 
             counter += len(protein_recs)
             pps = counter / (time.time() - start_time)
             LOGGER.info(f'Collected {protein_recs} ({pps:.1f} proteins/sec)')
 
             # TODO: Write to file
+
+        LOGGER.info(f"Done: {counter} proteins collected.")
 
 
 if __name__ == '__main__':
