@@ -1,24 +1,27 @@
 from __future__ import annotations
 
+import multiprocessing as mp
+import multiprocessing.pool
 import logging
-from typing import Iterable
+import time
+from typing import Iterable, List
 
 from Bio.PDB import PPBuilder
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+from requests import RequestException
 
 import pp5
 import pp5.align
 import pp5.dihedral
-import pp5.external_dbs
-import pp5.external_dbs.ena
-import pp5.external_dbs.pdb
-import pp5.external_dbs.unp
+from pp5.external_dbs import pdb, unp, ena
 
 LOGGER = logging.getLogger(__name__)
 
 
 class ProteinRecord:
+    __SKIP_SERIALIZE = ['_unp_rec', '_pdb_rec']
+
     """
     Represents a protein in our dataset. Includes:
     - Uniprot id defining the which protein this is.
@@ -38,29 +41,46 @@ class ProteinRecord:
         selected.
         """
         LOGGER.info(f'{unp_id}: Initializing protein record...')
+        self.__setstate__({})
+
         self.unp_id = unp_id
-        self.unp_rec = pp5.external_dbs.unp.unp_record(self.unp_id)
-        self._dna_seq = self._find_dna_seq()
         self.pdb_id = self._find_pdb_id() if not pdb_id else pdb_id
-        self.pdb_rec = pp5.external_dbs.pdb.pdb_struct(self.pdb_id)
+
+        dna_seq_record = self._find_dna_seq()
+        self.ena_id = dna_seq_record.id
+        self._dna_seq = str(dna_seq_record.seq)
+        self._protein_seq = self.unp_rec.sequence
+
         self.angles = self._calc_dihedral()
+
+    @property
+    def unp_rec(self):
+        if not self._unp_rec:
+            self._unp_rec = unp.unp_record(self.unp_id)
+        return self._unp_rec
+
+    @property
+    def pdb_rec(self):
+        if not self._pdb_rec:
+            self._pdb_rec = pdb.pdb_struct(self.pdb_id)
+        return self._pdb_rec
 
     @property
     def dna_seq(self) -> Seq:
         """
         :return: DNA nucleotide sequence.
         """
-        return self._dna_seq.seq
+        return Seq(self._dna_seq)
 
     @property
     def protein_seq(self) -> Seq:
         """
         :return: Protein sequence as 1-letter AA names.
         """
-        return Seq(self.unp_rec.sequence)
+        return Seq(self._protein_seq)
 
     @property
-    def protein_seq_dna(self):
+    def protein_seq_dna(self) -> Seq:
         """
         :return: Protein sequence based on translating DNA sequence with
         standard codon table.
@@ -78,11 +98,21 @@ class ProteinRecord:
             if molecule_type in allowed_types and id2 and len(id2) > 3:
                 ena_ids.append(id2)
 
-        if len(ena_ids) == 0:
-            raise RuntimeError(f"Can't find ENA id for UNP id {self.unp_id}")
-
         # Map id to sequence by fetching from ENA API
-        ena_seqs = map(pp5.external_dbs.ena.ena_seq, ena_ids)
+        ena_seqs = []
+        max_enas = 50  # Limit number of ENA records we are willing to check
+        for i, ena_id in enumerate(ena_ids):
+            try:
+                ena_seqs.append(ena.ena_seq(ena_id))
+            except RequestException as e:
+                LOGGER.warning(f"{self.unp_id}: Invalid ENA id {ena_id}")
+            if i > max_enas:
+                LOGGER.warning(f"{self.unp_id}: Over {max_enas} ENA ids, "
+                               f"skipping")
+                break
+
+        if len(ena_ids) == 0:
+            raise ValueError(f"Can't find ENA id for UNP id {self.unp_id}")
 
         # Take alignment with length roughly matching the protein length *3
         expected_len = 3 * self.unp_rec.sequence_length
@@ -91,6 +121,7 @@ class ProteinRecord:
 
         LOGGER.info(f'{self.unp_id}: ENA ID = {ena_seqs[0].id}')
         return ena_seqs[0]
+
 
     def _find_pdb_id(self) -> str:
         cross_refs = self.unp_rec.cross_references
@@ -124,7 +155,8 @@ class ProteinRecord:
         LOGGER.info(f'{self.unp_id}: PDB ID = {xref[1]}|{xref[3]}|{xref[4]}')
         return xref[1]
 
-    def _calc_dihedral(self):
+
+    def _calc_dihedral(self) -> List[pp5.dihedral.Dihedral]:
         pdb_id = self.pdb_id
         cross_refs = self.unp_rec.cross_references
 
@@ -151,8 +183,27 @@ class ProteinRecord:
 
         return angles
 
+
+    def __repr__(self):
+        return f'(unp_id={self.unp_id}, pdb_id={self.pdb_id})'
+
+
+    def __getstate__(self):
+        # Prevent serializing Bio objects
+        state = self.__dict__.copy()
+        for attr in self.__SKIP_SERIALIZE:
+            del state[attr]
+        return state
+
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        for attr in self.__SKIP_SERIALIZE:
+            self.__setattr__(attr, None)
+
+
     @classmethod
-    def from_pdb(cls, pdb_id: str) -> Iterable[ProteinRecord]:
+    def from_pdb(cls, pdb_id: str) -> List[ProteinRecord]:
         """
         Given a PDB id, finds all the proteins it contains (usually one) in
         terms of unique Uniprot ids, and returns a sequence of ProteinRecord
@@ -161,15 +212,47 @@ class ProteinRecord:
         :return: A sequence of ProteinRecord (lazily generated).
         """
         # pdb id -> mlutiple uniprot ids -> multiple ProteinRecords
-        unp_ids = pp5.external_dbs.pdb.pdbid_to_unpids(pdb_id)
+        unp_ids = pdb.pdbid_to_unpids(pdb_id)
         if not unp_ids:
             raise ValueError(f"Can't find Uniprot cross-reference for "
                              f"pdb_id={pdb_id}")
 
-        return map(lambda unp_id: ProteinRecord(unp_id, pdb_id), unp_ids)
+        protein_recs = [ProteinRecord(unp_id, pdb_id) for unp_id in unp_ids]
+        return protein_recs
+
+
+def collect_data():
+    # Query PDB for structures
+    query = pdb.PDBCompositeQuery(
+        pdb.PDBExpressionSystemQuery('Escherichia Coli'),
+        pdb.PDBResolutionQuery(max_res=1.0)
+    )
+
+    pdb_ids = query.execute()
+    LOGGER.info(f"Got {len(pdb_ids)} structures from PDB")
+
+    async_results = []
+    with mp.pool.Pool(processes=8) as pool:
+        for i, pdb_id in enumerate(pdb_ids):
+            async_results.append(
+                pool.apply_async(ProteinRecord.from_pdb, (pdb_id,))
+            )
+
+        start_time, counter = time.time(), 0
+        for async_result in async_results:
+            try:
+                protein_recs = async_result.get(30)
+            except TimeoutError as e:
+                LOGGER.error("Timeout getting async result, skipping")
+            except Exception as e:
+                LOGGER.error("Failed to create ProteinRecord", exc_info=e)
+
+            counter += len(protein_recs)
+            pps = counter / (time.time() - start_time)
+            LOGGER.info(f'Collected {protein_recs} ({pps:.1f} proteins/sec)')
+
+            # TODO: Write to file
 
 
 if __name__ == '__main__':
-    # precs = list(ProteinRecord.from_pdb('6NQ3'))
-    precs = list(ProteinRecord.from_pdb('102L'))
-    # ProteinRecord('P02794')
+    collect_data()
