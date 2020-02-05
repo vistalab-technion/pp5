@@ -2,7 +2,10 @@ import logging
 import gzip
 import os
 from pathlib import Path
-from urllib.request import urlopen
+import requests
+from collections.abc import Mapping, Set, Sequence
+
+from requests import HTTPError
 
 LOGGER = logging.getLogger(__name__)
 
@@ -17,20 +20,53 @@ def remote_dl(url: str, save_path: str, uncompress=False, skip_existing=False):
     the given path already exists.
     :return: A Path object for the downloaded file.
     """
-    if os.path.isfile(save_path) and skip_existing:
-        LOGGER.info(f"Local file {save_path} exists, skipping download...")
+    if skip_existing:
+        if os.path.isfile(save_path) and os.path.getsize(save_path) > 0:
+            LOGGER.debug(f"File {save_path} exists, skipping download...")
+            return Path(save_path)
+
+    with requests.get(url, stream=True) as response:
+        response.raise_for_status()
+        if 300 <= response.status_code < 400:
+            raise HTTPError(f"Redirect {response.status_code} for url{url}",
+                            response=response)
+
+        with open(save_path, 'wb') as out_handle:
+            try:
+                if uncompress:
+                    in_handle = gzip.GzipFile(fileobj=response.raw)
+                else:
+                    in_handle = response.raw
+                out_handle.write(in_handle.read())
+            finally:
+                in_handle.close()
+
+        size_bytes = os.path.getsize(save_path)
+        LOGGER.info(f"Downloaded {save_path} ({size_bytes / 1024:.1f}kB)")
         return Path(save_path)
 
-    with urlopen(url) as remote_handle, open(save_path, 'wb') as out_handle:
-        try:
-            if uncompress:
-                in_handle = gzip.GzipFile(fileobj=remote_handle)
-            else:
-                in_handle = remote_handle
-            out_handle.write(in_handle.read())
-        finally:
-            in_handle.close()
 
-    size_bytes = os.path.getsize(save_path)
-    LOGGER.info(f"Downloaded {save_path} ({size_bytes / 1024:.1f}kB)")
-    return Path(save_path)
+def deep_walk(obj, path=(), memo=None):
+    str_types = (str, bytes)
+    iteritems = lambda mapping: getattr(mapping, 'iteritems', mapping.items)()
+
+    if memo is None:
+        memo = set()
+    iterator = None
+    if isinstance(obj, Mapping):
+        iterator = iteritems
+    elif isinstance(obj, (Sequence, Set)) and not isinstance(obj, str_types):
+        iterator = enumerate
+    elif hasattr(obj, '__dict__'):
+        iterator = lambda x: x.__dict__.items()
+
+    if iterator:
+        if id(obj) not in memo:
+            memo.add(id(obj))
+            for path_component, value in iterator(obj):
+                for result in deep_walk(value, path + (path_component,), memo):
+                    yield result
+            memo.remove(id(obj))
+
+    else:
+        yield path, obj
