@@ -1,3 +1,4 @@
+import abc
 import logging
 from typing import List
 
@@ -61,7 +62,7 @@ def pdbid_to_unpids(pdb_id: str, pdb_dir=PDB_DIR) -> List[str]:
     return unp_ids
 
 
-class PDBQuery:
+class PDBQuery(abc.ABC):
     """
     Represents a query that can be sent to the PDB search API to obtain PDB
     ids matching some criteria.
@@ -74,7 +75,12 @@ class PDBQuery:
     TAG_QUERY_TYPE = 'queryType'
     TAG_DESCRIPTION = 'description'
 
+    @abc.abstractmethod
     def to_xml(self):
+        raise NotImplementedError("Override this")
+
+    @abc.abstractmethod
+    def description(self):
         raise NotImplementedError("Override this")
 
     def to_xml_pretty(self):
@@ -90,6 +96,7 @@ class PDBQuery:
 
         pdb_ids = []
         try:
+            LOGGER.info(f'Executing PDB query: {self.description()}')
             response = requests.post(PDB_SEARCH_URL, query, headers=header)
             response.raise_for_status()
             pdb_ids = response.text.split()
@@ -112,6 +119,10 @@ class PDBCompositeQuery(PDBQuery):
     def __init__(self, *queries: PDBQuery):
         super().__init__()
         self.queries = queries
+
+    def description(self):
+        descriptions = [f'({q.description()})' for q in self.queries]
+        return str.join(' AND ', descriptions)
 
     def to_xml(self):
         doc, tag, text, line = yattag.Doc().ttl()
@@ -140,14 +151,16 @@ class PDBResolutionQuery(PDBQuery):
         super().__init__()
         self.min_res = min_res
         self.max_res = max_res
-        self.description = f'Resolution between {min_res} and {max_res}'
+
+    def description(self):
+        return f'Resolution between {self.min_res} and {self.max_res}'
 
     def to_xml(self):
         doc, tag, text, line = yattag.Doc().ttl()
 
         with tag(self.TAG_QUERY):
             line(self.TAG_QUERY_TYPE, self.RES_QUERY_TYPE)
-            line(self.TAG_DESCRIPTION, self.description)
+            line(self.TAG_DESCRIPTION, self.description())
             line(self.TAG_RES_COMP, 'between')
             line(self.TAG_RES_MIN, self.min_res)
             line(self.TAG_RES_MAX, self.max_res)
@@ -170,15 +183,16 @@ class PDBExpressionSystemQuery(PDBQuery):
             raise ValueError(f"Unknown comparison type {comp_type}, must be "
                              f"one of {self.COMP_TYPES}.")
         self.comp_type = comp_type
-        self.description = f'Expression system {self.comp_type}' \
-                           f' {self.expr_sys}'
+
+    def description(self):
+        return f'Expression system {self.comp_type} {self.expr_sys}'
 
     def to_xml(self):
         doc, tag, text, line = yattag.Doc().ttl()
 
         with tag(self.TAG_QUERY):
             line(self.TAG_QUERY_TYPE, self.EXPR_SYS_QUERY_TYPE)
-            line(self.TAG_DESCRIPTION, self.description)
+            line(self.TAG_DESCRIPTION, self.description())
             line(self.TAG_COMP, self.comp_type)
             line(self.TAG_NAME, self.expr_sys)
 
