@@ -10,7 +10,8 @@ from requests import HTTPError
 LOGGER = logging.getLogger(__name__)
 
 
-def remote_dl(url: str, save_path: str, uncompress=False, skip_existing=False):
+def remote_dl(url: str, save_path: str, uncompress=False,
+              skip_existing=False) -> Path:
     """
     Downloads contents of a remote file and saves it into a local file.
     :param url: The url to download from.
