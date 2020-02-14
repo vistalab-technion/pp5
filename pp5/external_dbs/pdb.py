@@ -43,6 +43,16 @@ def pdb_struct(pdb_id: str, pdb_dir=PDB_DIR) -> PDB.Structure:
     return parser.get_structure(pdb_id, filename)
 
 
+def pdb_dict(pdb_id: str, pdb_dir=PDB_DIR) -> dict:
+    """
+    Returns a dictionary containing all the contents of a PDB mmCIF file.
+    :param pdb_id: The PDB id of the structure.
+    :param pdb_dir: Directory to download PDB file to.
+    """
+    filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
+    return PDB.MMCIF2Dict.MMCIF2Dict(filename)
+
+
 def pdbid_to_unpids(pdb_id: str, pdb_dir=PDB_DIR) -> List[str]:
     """
     Extracts Uniprot protein ids from a PDB protein structure.
@@ -50,14 +60,13 @@ def pdbid_to_unpids(pdb_id: str, pdb_dir=PDB_DIR) -> List[str]:
     :param pdb_dir: Directory to download PDB file to.
     :return: A list of Uniprot ids.
     """
-    filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
-    pdb_dict = PDB.MMCIF2Dict.MMCIF2Dict(filename)
+    pdb_d = pdb_dict(pdb_id, pdb_dir)
 
     # Go over referenced DBs and take first accession id belonging to Uniprot
     unp_ids = set()
-    for i, db_name in enumerate(pdb_dict['_struct_ref.db_name']):
+    for i, db_name in enumerate(pdb_d['_struct_ref.db_name']):
         if db_name.lower() == 'unp':
-            unp_ids.add(pdb_dict['_struct_ref.pdbx_db_accession'][i])
+            unp_ids.add(pdb_d['_struct_ref.pdbx_db_accession'][i])
 
     return list(unp_ids)
 
