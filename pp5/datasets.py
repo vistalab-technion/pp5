@@ -17,6 +17,7 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from requests import RequestException
 
+import pp5
 from pp5.dihedral import Dihedral, pp_mean_bfactor, pp_dihedral_angles
 from pp5.external_dbs import pdb, unp, ena
 from pp5.external_dbs.pdb import PDBRecord
@@ -230,6 +231,14 @@ class ProteinRecord(object):
         """
         # use the iterator of this class to get the residue recs
         return pd.DataFrame(self)
+
+    def to_csv(self, out_dir=pp5.data_subdir('precs')):
+        df = self.to_dataframe()
+        filename = f'{self.pdb_id.upper()}_{self.pdb_chain_id.upper()}'
+        filepath = out_dir.joinpath(f'{filename}.csv')
+        df.to_csv(filepath, na_rep='nan', header=True, index=False,
+                  encoding='utf-8',)
+        return filepath
 
     def __iter__(self) -> Iterator[ResidueRecord]:
         return iter(self._residue_recs)
