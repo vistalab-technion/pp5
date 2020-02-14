@@ -5,7 +5,7 @@ from typing import List
 import requests
 import yattag
 from Bio import PDB as PDB
-from Bio.PDB import Structure, MMCIF2Dict
+from Bio.PDB import Structure as PDBRecord, MMCIF2Dict
 
 from pp5 import PDB_DIR
 from pp5.utils import remote_dl
@@ -27,7 +27,7 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR):
     return remote_dl(url, filename, uncompress=True, skip_existing=True)
 
 
-def pdb_struct(pdb_id: str, pdb_dir=PDB_DIR) -> PDB.Structure:
+def pdb_struct(pdb_id: str, pdb_dir=PDB_DIR) -> PDBRecord:
     """
     Given a PDB structure id, returns an object representing the protein
     structure.
