@@ -1,27 +1,25 @@
 from __future__ import annotations
 
-import warnings
-
+import logging
 import multiprocessing as mp
 import multiprocessing.pool
-import logging
 import time
-import Bio
-from typing import Iterable, List, Tuple, NamedTuple, Dict, Iterator
-from Bio.PDB import PPBuilder
-from Bio.PDB.Polypeptide import Polypeptide, three_to_one
-from Bio.PDB.Residue import Residue
+import warnings
+from typing import List, Tuple, NamedTuple, Dict, Iterator
+
+import pandas as pd
+from Bio.Align import PairwiseAligner
 from Bio.Data import CodonTable
+from Bio.PDB import PPBuilder
+from Bio.PDB.Polypeptide import Polypeptide
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from Bio.Align import PairwiseAligner, PairwiseAlignment
 from requests import RequestException
 
-import pp5
-import pp5.align
-import pp5.dihedral
 from pp5.dihedral import Dihedral, pp_mean_bfactor, pp_dihedral_angles
 from pp5.external_dbs import pdb, unp, ena
+from pp5.external_dbs.pdb import PDBRecord
+from pp5.external_dbs.unp import UNPRecord
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
@@ -126,11 +124,15 @@ class ProteinRecord(object):
 
         # Find the best matching DNA for our AA sequence via pairwise alignment
         # between the PDB AA sequence and translated DNA sequences.
-        dna_seq_record, dna_aa_alignment = self._find_dna_alignment(pdb_aa_seq)
+        ena_ids = unp.find_ena_xrefs(
+            self.unp_rec, molecule_types=('mrna', 'genomic_dna')
+        )
+        dna_seq_record, idx_to_codon = self._find_dna_alignment(
+            ena_ids, pdb_aa_seq
+        )
         dna_seq = str(dna_seq_record.seq)
         self.ena_id = dna_seq_record.id
 
-        idx_to_codon = self._find_codons(dna_seq, dna_aa_alignment, pdb_aa_seq)
         # TODO: idx to secondary structure
 
         residue_recs = []
@@ -148,7 +150,7 @@ class ProteinRecord(object):
         self._residue_recs = residue_recs
 
     @property
-    def unp_rec(self):
+    def unp_rec(self) -> UNPRecord:
         """
         :return: Uniprot record for this protein.
         """
@@ -157,7 +159,7 @@ class ProteinRecord(object):
         return self._unp_rec
 
     @property
-    def pdb_rec(self):
+    def pdb_rec(self) -> PDBRecord:
         """
         :return: PDB record for this protein. Note that this record may
         contain multiple chains and this protein only represents one of them
@@ -215,52 +217,23 @@ class ProteinRecord(object):
             self._pp = pp_chains
         return self._pp
 
+    def to_dataframe(self):
+        """
+        :return: A Pandas dataframe where each row is a ResidueRecord from
+        this ProteinRecord.
+        """
+        # use the iterator of this class to get the residue recs
+        return pd.DataFrame(self)
+
     def __iter__(self) -> Iterator[ResidueRecord]:
         return iter(self._residue_recs)
 
-    def _find_codons(self, dna_seq, dna_aa_alignment, pdb_aa_seq) -> Dict[int,
-                                                                          str]:
-        # Indices in the DNA AA seq which are aligned to the PDB AA seq
-        aligned_idx_pdb_aa, aligned_idx_dna_aa = dna_aa_alignment.aligned
-
-        idx_to_codon = {}
-        for i in range(len(aligned_idx_dna_aa)):
-            # Indices of current matching segment of amino acids from the
-            # PDB record and the translated DNA
-            pdb_aa_start, pdb_aa_stop = aligned_idx_pdb_aa[i]
-            dna_aa_start, dna_aa_stop = aligned_idx_dna_aa[i]
-
-            for pdb_offset, k in enumerate(range(dna_aa_start, dna_aa_stop)):
-                k *= 3
-                codon = dna_seq[k:k + 3]
-                pdb_idx = pdb_offset + pdb_aa_start
-
-                # Skip "unknown" AAs - we put them there to represent
-                # non-standard AAs.
-                if pdb_aa_seq[pdb_idx] == 'X':
-                    continue
-
-                # Make sure it matches
-                assert CODON_TABLE[codon] == pdb_aa_seq[pdb_idx]
-                idx_to_codon[pdb_idx] = codon
-
-        return idx_to_codon
-
-    def _find_dna_alignment(self, pdb_aa_seq) -> Tuple[SeqRecord,
-                                                       PairwiseAlignment]:
-        ena_ids = []
-        cross_refs = self.unp_rec.cross_references
-        allowed_types = {'mrna', 'genomic_dna'}
-
-        embl_refs = (x for x in cross_refs if x[0].lower() == 'embl')
-        for dbname, id1, id2, comment, molecule_type in embl_refs:
-            molecule_type = molecule_type.lower()
-            if molecule_type in allowed_types and id2 and len(id2) > 3:
-                ena_ids.append(id2)
+    def _find_dna_alignment(self, ena_ids, pdb_aa_seq: str) \
+            -> Tuple[SeqRecord, Dict[int, str]]:
 
         # Map id to sequence by fetching from ENA API
         ena_seqs = []
-        max_enas = 50  # Limit number of ENA records we are willing to check
+        max_enas = 50
         for i, ena_id in enumerate(ena_ids):
             try:
                 ena_seqs.append(ena.ena_seq(ena_id))
@@ -283,18 +256,45 @@ class ProteinRecord(object):
             alignments.append(alignment)
 
         # Sort alignments by score
-        best_ena, best_alignment = max(
+        best_ena, best_alignments = max(
             zip(ena_seqs, alignments), key=lambda x: x[1].score
         )
+        best_alignment = best_alignments[0]
 
         LOGGER.info(f'{self}: ENA ID = {best_ena.id}')
         LOGGER.info(f'{self}: Translated DNA to PDB alignment '
                     f'(norm_score='
-                    f'{best_alignment.score / len(pdb_aa_seq):.2f}, '
-                    f'len={len(best_alignment)})\n'
-                    f'{best_alignment[0]}')
+                    f'{best_alignments.score / len(pdb_aa_seq):.2f}, '
+                    f'num={len(best_alignments)})\n'
+                    f'{best_alignment}')
 
-        return best_ena, best_alignment[0]
+        dna_seq = str(best_ena.seq)
+
+        # Indices in the DNA AA seq which are aligned to the PDB AA seq
+        aligned_idx_pdb_aa, aligned_idx_dna_aa = best_alignment.aligned
+
+        idx_to_codon = {}
+        for i in range(len(aligned_idx_dna_aa)):
+            # Indices of current matching segment of amino acids from the
+            # PDB record and the translated DNA
+            pdb_aa_start, pdb_aa_stop = aligned_idx_pdb_aa[i]
+            dna_aa_start, dna_aa_stop = aligned_idx_dna_aa[i]
+
+            for pdb_offset, k in enumerate(range(dna_aa_start, dna_aa_stop)):
+                k *= 3
+                codon = dna_seq[k:k + 3]
+                pdb_idx = pdb_offset + pdb_aa_start
+
+                # Skip "unknown" AAs - we put them there to represent
+                # non-standard AAs.
+                if pdb_aa_seq[pdb_idx] == 'X':
+                    continue
+
+                # Make sure it matches
+                assert CODON_TABLE[codon] == pdb_aa_seq[pdb_idx]
+                idx_to_codon[pdb_idx] = codon
+
+        return best_ena, idx_to_codon
 
     def _find_pdb_xref(self, proposed_pdb_id=None) -> Tuple[str, str]:
         cross_refs = self.unp_rec.cross_references
@@ -425,4 +425,3 @@ if __name__ == '__main__':
     # prec = ProteinRecord('P00720')
     prev = ProteinRecord('B0VB33')
 
-    j = 3
