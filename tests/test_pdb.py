@@ -44,7 +44,7 @@ class TestPDB:
         test_id = '4HHB'
         ids = pdb.pdbid_to_unpids(test_id, self.TEMP_PATH)
         assert len(ids) == 2
-        assert ids == ['P69905', 'P68871']
+        assert set(ids) == {'P69905', 'P68871'}
 
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
