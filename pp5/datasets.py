@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import multiprocessing as mp
 import multiprocessing.pool
 import time
@@ -115,7 +116,7 @@ class ProteinRecord(object):
                 pdb_aa_seq += 'X' * gap_len
                 aa_idxs.extend(range(prev_end_idx + 1, curr_start_idx))
                 angles.extend([Dihedral()] * gap_len)
-                bfactors.extend([None] * gap_len)
+                bfactors.extend([math.nan] * gap_len)
 
             pdb_aa_seq += str(pp.get_sequence())
             aa_idxs.extend(range(curr_start_idx, curr_end_idx + 1))
@@ -147,7 +148,7 @@ class ProteinRecord(object):
 
         self._protein_seq = pdb_aa_seq
         self._dna_seq = dna_seq
-        self._residue_recs = residue_recs
+        self._residue_recs = tuple(residue_recs)
 
     @property
     def unp_rec(self) -> UNPRecord:
@@ -228,6 +229,9 @@ class ProteinRecord(object):
     def __iter__(self) -> Iterator[ResidueRecord]:
         return iter(self._residue_recs)
 
+    def __getitem__(self, item: int):
+        return self._residue_recs[item]
+
     def _find_dna_alignment(self, ena_ids, pdb_aa_seq: str) \
             -> Tuple[SeqRecord, Dict[int, str]]:
 
@@ -290,9 +294,13 @@ class ProteinRecord(object):
                 if pdb_aa_seq[pdb_idx] == 'X':
                     continue
 
-                # Make sure it matches
-                assert CODON_TABLE[codon] == pdb_aa_seq[pdb_idx]
-                idx_to_codon[pdb_idx] = codon
+                # Check if the codon actually matched the AA at the
+                # corresponding location. Sometimes there may be
+                # mismatches ('.') because the DNA alignment isn't perfect.
+                # In such a case we'll set the codon to None to specify we
+                # don't know what codon encoded the AA in the PDB sequence.
+                codon_matches = CODON_TABLE[codon] == pdb_aa_seq[pdb_idx]
+                idx_to_codon[pdb_idx] = codon if codon_matches else None
 
         return best_ena, idx_to_codon
 
