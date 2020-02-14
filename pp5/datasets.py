@@ -96,12 +96,15 @@ class ProteinRecord(object):
         self.unp_id = unp_id
         self.pdb_id, self.pdb_chain_id = self._find_pdb_xref(proposed_pdb_id)
 
+        # Get secondary-structure info using DSSP
+        ss_dict, _ = pdb.pdb_to_secondary_structure(self.pdb_id)
+
         # Extract the PDB AA sequence, dihedral angles and b-factors
         # from the PDB structure.
         # Even though we're working with one PDB chain, the results is a
         # list of multiple Polypeptide objects because we split them at
         # non-standard residues (HETATM atoms in PDB).
-        pdb_aa_seq, aa_idxs, angles, bfactors = '', [], [], []
+        pdb_aa_seq, aa_idxs, angles, bfactors, sstructs = '', [], [], [], []
         for i, pp in enumerate(self.polypeptides):
             curr_start_idx = pp[0].get_id()[1]
             curr_end_idx = pp[-1].get_id()[1]
@@ -117,11 +120,15 @@ class ProteinRecord(object):
                 aa_idxs.extend(range(prev_end_idx + 1, curr_start_idx))
                 angles.extend([Dihedral()] * gap_len)
                 bfactors.extend([math.nan] * gap_len)
+                sstructs.extend(['-'] * gap_len)
 
             pdb_aa_seq += str(pp.get_sequence())
             aa_idxs.extend(range(curr_start_idx, curr_end_idx + 1))
             angles.extend(pp_dihedral_angles(pp))
             bfactors.extend(pp_mean_bfactor(pp, backbone_only=True))
+            res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
+            sss = (ss_dict.get(res_id, '-') for res_id in res_ids)
+            sstructs.extend(sss)
 
         # Find the best matching DNA for our AA sequence via pairwise alignment
         # between the PDB AA sequence and translated DNA sequences.
@@ -134,15 +141,13 @@ class ProteinRecord(object):
         dna_seq = str(dna_seq_record.seq)
         self.ena_id = dna_seq_record.id
 
-        # TODO: idx to secondary structure
-
         residue_recs = []
         for i in range(len(pdb_aa_seq)):
             rr = ResidueRecord(
                 seq_id=aa_idxs[i], name=pdb_aa_seq[i],
                 codon=idx_to_codon.get(i, None),
                 phi=angles[i].phi, psi=angles[i].psi, omega=angles[i].omega,
-                bfactor=bfactors[i], secondary='?'
+                bfactor=bfactors[i], secondary=sstructs[i]
             )
             residue_recs.append(rr)
 
@@ -373,12 +378,13 @@ class ProteinRecord(object):
             self.__setattr__(attr, None)
 
     @classmethod
-    def from_pdb(cls, pdb_id: str) -> List[ProteinRecord]:
+    def from_pdb(cls, pdb_id: str, **kwargs) -> List[ProteinRecord]:
         """
         Given a PDB id, finds all the proteins it contains (usually one) in
         terms of unique Uniprot ids, and returns a sequence of ProteinRecord
         objects for each.
         :param pdb_id: The PDB id to query.
+        :param kwargs: Extra args for the ProteinRecord initializer.
         :return: A sequence of ProteinRecord (lazily generated).
         """
         # pdb id -> mlutiple uniprot ids -> multiple ProteinRecords
@@ -387,7 +393,7 @@ class ProteinRecord(object):
             raise ProteinInitError(f"Can't find Uniprot cross-reference for "
                                    f"pdb_id={pdb_id}")
 
-        protein_recs = [cls(unp_id, pdb_id) for unp_id in unp_ids]
+        protein_recs = [cls(unp_id, pdb_id, **kwargs) for unp_id in unp_ids]
         return protein_recs
 
 
@@ -431,5 +437,6 @@ def collect_data():
 if __name__ == '__main__':
     # collect_data()
     # prec = ProteinRecord('P00720')
-    prev = ProteinRecord('B0VB33')
+    # prec = ProteinRecord('B0VB33')
+    prec = ProteinRecord.from_pdb('2WUR')[0]
 
