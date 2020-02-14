@@ -1,11 +1,13 @@
 import abc
 import logging
+from pathlib import Path
 from typing import List
 
 import requests
 import yattag
 from Bio import PDB as PDB
 from Bio.PDB import Structure as PDBRecord, MMCIF2Dict
+from Bio.PDB.DSSP import dssp_dict_from_pdb_file
 
 from pp5 import PDB_DIR
 from pp5.utils import remote_dl
@@ -15,7 +17,7 @@ PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
 LOGGER = logging.getLogger(__name__)
 
 
-def pdb_download(pdb_id: str, pdb_dir=PDB_DIR):
+def pdb_download(pdb_id: str, pdb_dir=PDB_DIR) -> Path:
     """
     Downloads a protein structure file from PDB.
     :param pdb_id: The id of the structure to download.
@@ -69,6 +71,35 @@ def pdbid_to_unpids(pdb_id: str, pdb_dir=PDB_DIR) -> List[str]:
             unp_ids.add(pdb_d['_struct_ref.pdbx_db_accession'][i])
 
     return list(unp_ids)
+
+
+def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
+    """
+    Uses DSSP to determine secondary structure for a PDB record.
+    The DSSP codes for secondary structure used here are:
+     H        Alpha helix (4-12)
+     B        Isolated beta-bridge residue
+     E        Strand
+     G        3-10 helix
+     I        Pi helix
+     T        Turn
+     S        Bend
+     -       None
+    :param pdb_id: The PDB id of the structure.
+    :param pdb_dir: Directory to download PDB file to.
+    :return: A tuple of
+        ss_dict: maps from a residue id to the 1-char string denoting the
+        type of secondary structure at that residue.
+        keys: The residue ids.
+    """
+    path = pdb_download(pdb_id, pdb_dir)
+    dssp_dict, keys = dssp_dict_from_pdb_file(str(path), DSSP='mkdssp')
+
+    # dssp_dict maps a reisdue id to a tuple containing various things about
+    # that residue. We take only the secondary structure info.
+    ss_dict = {k: v[1] for k, v in dssp_dict.items()}
+
+    return ss_dict, keys
 
 
 class PDBQuery(abc.ABC):

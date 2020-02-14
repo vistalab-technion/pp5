@@ -4,6 +4,7 @@ channels:
   - conda-forge
   - schrodinger # pymol
   - bioconda    # clustal, muscle
+  - salilab     # dssp
 dependencies:
   - python=3.7.6
   - ipython>=7.9
@@ -23,6 +24,7 @@ dependencies:
   - pymol
   - muscle
   - clustalo
+  - dssp
   - pip
   - pip:
     - nbmerge
