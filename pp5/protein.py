@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import logging
 import math
-import multiprocessing as mp
-import multiprocessing.pool
-import time
 import warnings
 from typing import List, Tuple, NamedTuple, Dict, Iterator
 
@@ -28,6 +25,7 @@ with warnings.catch_warnings():
     from Bio.Align import substitution_matrices
 
 BLOSUM62 = substitution_matrices.load("BLOSUM62")
+BLOSUM80 = substitution_matrices.load("BLOSUM80")
 CODON_TABLE = CodonTable.standard_dna_table.forward_table
 
 LOGGER = logging.getLogger(__name__)
@@ -146,8 +144,8 @@ class ProteinRecord(object):
         for i in range(len(pdb_aa_seq)):
             rr = ResidueRecord(
                 seq_id=aa_idxs[i], name=pdb_aa_seq[i],
-                codon=idx_to_codon.get(i, None),
-                phi=angles[i].phi, psi=angles[i].psi, omega=angles[i].omega,
+                codon=idx_to_codon.get(i, None), phi=angles[i].phi_deg,
+                psi=angles[i].psi_deg, omega=angles[i].omega_deg,
                 bfactor=bfactors[i], secondary=sstructs[i]
             )
             residue_recs.append(rr)
@@ -265,7 +263,7 @@ class ProteinRecord(object):
         if len(ena_ids) == 0:
             raise ProteinInitError(f"Can't find ENA id for {self.unp_id}")
 
-        aligner = PairwiseAligner(substitution_matrix=BLOSUM62,
+        aligner = PairwiseAligner(substitution_matrix=BLOSUM80,
                                   open_gap_score=-10, extend_gap_score=-0.5)
         alignments = []
         for seq in ena_seqs:
@@ -406,45 +404,7 @@ class ProteinRecord(object):
         return protein_recs
 
 
-def collect_data():
-    # Query PDB for structures
-    query = pdb.PDBCompositeQuery(
-        pdb.PDBExpressionSystemQuery('Escherichia Coli'),
-        pdb.PDBResolutionQuery(max_res=1.0)
-    )
-
-    pdb_ids = query.execute()
-    LOGGER.info(f"Got {len(pdb_ids)} structures from PDB")
-
-    async_results = []
-    with mp.pool.Pool(processes=8) as pool:
-        for i, pdb_id in enumerate(pdb_ids):
-            async_results.append(
-                pool.apply_async(ProteinRecord.from_pdb, (pdb_id,))
-            )
-
-        start_time, counter = time.time(), 0
-        for async_result in async_results:
-            try:
-                protein_recs = async_result.get(30)
-            except TimeoutError as e:
-                LOGGER.error("Timeout getting async result, skipping")
-            except ProteinInitError as e:
-                LOGGER.error(f"Failed to create protein: {e}")
-            except Exception as e:
-                LOGGER.error("Unexpected error", exc_info=e.__cause__)
-
-            counter += len(protein_recs)
-            pps = counter / (time.time() - start_time)
-            LOGGER.info(f'Collected {protein_recs} ({pps:.1f} proteins/sec)')
-
-            # TODO: Write to file
-
-        LOGGER.info(f"Done: {counter} proteins collected.")
-
-
 if __name__ == '__main__':
-    # collect_data()
     # prec = ProteinRecord('P00720')
     # prec = ProteinRecord('B0VB33')
     prec = ProteinRecord.from_pdb('2WUR')[0]
