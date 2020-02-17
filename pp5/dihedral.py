@@ -1,28 +1,64 @@
 import math
-from typing import NamedTuple, List
+from math import nan
+from typing import List
 
+import Bio.PDB as PDB
 import numpy as np
 import pandas as pd
-import Bio.PDB as PDB
-from Bio.PDB.Residue import Residue
-from Bio.PDB.Polypeptide import Polypeptide
 from Bio.PDB.Atom import Atom
+from Bio.PDB.Polypeptide import Polypeptide
+from Bio.PDB.Residue import Residue
 
 import pp5.external_dbs.pdb
-from pp5 import external_dbs
-from pp5 import PDB_DIR, DATA_DIR
+from pp5 import DATA_DIR
 
 BACKBONE_ATOMS = {'N', 'CA', 'C'}
 
 
-class Dihedral(NamedTuple):
+class Dihedral(object):
     """
     Holds the three dihedral angles associated with adjacent AAs.
     Values are stored in radians.
     """
-    phi: float = math.nan
-    psi: float = math.nan
-    omega: float = math.nan
+    def __init__(self, phi: float = nan, psi: float = nan, omega: float = nan):
+        """
+        All angles should be specified in radians between (-pi, pi].
+        """
+        self._phi = phi
+        self._psi = psi
+        self._omega = omega
+
+    @property
+    def phi(self):
+        return self._phi
+
+    @property
+    def psi(self):
+        return self._psi
+
+    @property
+    def omega(self):
+        return self._omega
+
+    @property
+    def phi_deg(self):
+        return math.degrees(self._phi)
+
+    @property
+    def psi_deg(self):
+        return math.degrees(self._psi)
+
+    @property
+    def omega_deg(self):
+        return math.degrees(self._omega)
+
+    @classmethod
+    def from_deg(cls, phi: float = nan, psi: float = nan, omega: float = nan):
+        return cls(math.radians(phi), math.radians(psi), math.radians(omega))
+
+    @classmethod
+    def from_rad(cls, phi: float = nan, psi: float = nan, omega: float = nan):
+        return cls(phi, psi, omega)
 
     def __repr__(self, degrees=True):
         phi = math.degrees(self.phi) if degrees else self.phi
@@ -91,7 +127,7 @@ def pp_dihedral_angles(pp: Polypeptide) -> List[Dihedral]:
         else:  # No omega for first AA
             omega = nan
 
-        angles.append(Dihedral(phi, psi, omega))
+        angles.append(Dihedral.from_rad(phi, psi, omega))
 
     return angles
 
@@ -117,40 +153,3 @@ def pp_mean_bfactor(pp: PDB.Polypeptide, backbone_only=False) -> List[float]:
 
     return mean_bfactors
 
-
-def pdb_dihedral(pdb_id: str) -> pd.DataFrame:
-    """
-    Calculate dihedral angles for a protein based on its PDB id.
-
-    :param pdb_id: The ID of the protein in PDB.
-    :return: a dataframe with columns ('Chain', 'AA', 'Phi', 'Psi', 'Omega')
-    containing the dihedral angles for all AAs in all chains.
-    """
-    struct = pp5.external_dbs.pdb.pdb_struct(pdb_id)
-
-    # Create polypeptide objects for each chain
-    pp_builder = PDB.PPBuilder()
-    polypeptide_chains = pp_builder.build_peptides(struct, aa_only=1)
-
-    df = pd.DataFrame(columns=('Chain', 'AA', 'Phi', 'Psi', 'Omega'))
-
-    # From each chain, calculate dihedral angles
-    chains = list(struct.get_chains())
-    for chain_idx, polypeptide in enumerate(polypeptide_chains):
-        chain = chains[chain_idx].id
-        seq = polypeptide.get_sequence()
-        angles = pp_dihedral_angles(polypeptide, degrees=True)
-
-        data = [(chain, seq[i], *angles[i]) for i in range(len(seq))]
-        df = df.append(pd.DataFrame(data, columns=df.columns))
-
-    return df
-
-
-if __name__ == '__main__':
-    pid = '5jkk'
-    df = pdb_dihedral(pid)
-
-    filename = DATA_DIR.joinpath(f'{pid}.angles.csv')
-    print(f'Writing {filename}...')
-    df.to_csv(filename, index=None)
