@@ -1,10 +1,13 @@
 import abc
+import math
+from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
 from typing import List
 
 import requests
 import yattag
+import numpy as np
 from Bio import PDB as PDB
 from Bio.PDB import Structure as PDBRecord, MMCIF2Dict
 from Bio.PDB.DSSP import dssp_dict_from_pdb_file
@@ -52,7 +55,7 @@ def pdb_dict(pdb_id: str, pdb_dir=PDB_DIR) -> dict:
     :param pdb_dir: Directory to download PDB file to.
     """
     filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
-    return PDB.MMCIF2Dict.MMCIF2Dict(filename)
+    return MMCIF2Dict.MMCIF2Dict(filename)
 
 
 def pdbid_to_unpids(pdb_id: str, pdb_dir=PDB_DIR) -> List[str]:
@@ -100,6 +103,93 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
     ss_dict = {k: v[1] for k, v in dssp_dict.items()}
 
     return ss_dict, keys
+
+
+def pdb_to_unit_cell(pdb_id: str, pdb_dir=PDB_DIR):
+    """
+    :return: a UnitCell object given a PDB id.
+    """
+    d = pdb_dict(pdb_id, pdb_dir)
+    try:
+        a, b, c = d['_cell.length_a'], d['_cell.length_b'], d['_cell.length_c']
+        alpha, beta = d['_cell.angle_alpha'], d['_cell.angle_beta']
+        gamma = d['_cell.angle_gamma']
+
+        a, b, c = float(a[0]), float(b[0]), float(c[0])
+        alpha, beta, gamma = float(alpha[0]), float(beta[0]), float(gamma[0])
+    except KeyError:
+        raise ValueError(f"Can't create UnitCell for {pdb_id}")
+
+    return PDBUnitCell(a, b, c, alpha, beta, gamma)
+
+
+class PDBUnitCell(object):
+    """
+    Represent a Unit Cell of a specific pdb structure.
+
+    Trueblood, K. N. et al. Atomic displacement parameter nomenclature
+    report of a subcommittee on atomic displacement parameter nomenclature.
+    Acta Crystallogr. Sect. A Found. Crystallogr. 52, 770–781 (1996).
+
+    Grosse-Kunstleve, R. W. & Adams, P. D. On the handling of atomic
+    anisotropic displacement parameters. J. Appl. Crystallogr. 35, 477–480
+    (2002).
+
+    """
+
+    def __init__(self, a, b, c, alpha, beta, gamma):
+        """
+        a, b, c: Unit cell lengths in Angstoms
+        alpha, beta, gamma: Unit-cell angles in degrees
+        """
+        self.a, self.b, self.c = a, b, c
+        self.alpha, self.beta, self.gamma = alpha, beta, gamma
+
+        cos_alpha, sin_alpha = cos(rad(self.alpha)), sin(rad(self.alpha))
+        cos_beta, sin_beta = cos(rad(self.beta)), sin(rad(self.beta))
+        cos_gamma, sin_gamma = cos(rad(self.gamma)), sin(rad(self.gamma))
+
+        # Volume
+        factor = math.sqrt(1 - cos_alpha ** 2 - cos_beta ** 2 - cos_gamma ** 2
+                           + 2 * cos_alpha * cos_beta * cos_gamma)
+        self.vol = self.a * self.b * self.c * factor
+
+        # Reciprocal lengths
+        self.a_r = self.b * self.c * sin_alpha / self.vol
+        self.b_r = self.c * self.a * sin_beta / self.vol
+        self.c_r = self.a * self.b * sin_gamma / self.vol
+
+        # Reciprocal angles
+        cos_alpha_r = (cos_beta * cos_gamma - cos_alpha) / (sin_beta *
+                                                            sin_gamma)
+        cos_beta_r = (cos_gamma * cos_alpha - cos_beta) / (sin_gamma *
+                                                           sin_alpha)
+        cos_gamma_r = (cos_alpha * cos_beta - cos_gamma) / (sin_alpha *
+                                                            sin_beta)
+        self.alpha_r = deg(math.acos(cos_alpha_r))
+        self.beta_r = deg(math.acos(cos_beta_r))
+        self.gamma_r = deg(math.acos(cos_gamma_r))
+
+        # Types of coordinate systems:
+        # Fractional: no units
+        # Cartesian: length
+        # Reciprocal: 1/length
+
+        # A: Transformation from fractional to Cartesian coordinates
+        self.A = np.array([[self.a, self.b * cos_gamma, self.c * cos_beta],
+                           [0, self.b * sin_gamma,
+                            -self.c * sin_beta * cos_alpha_r],
+                           [0, 0, 1 / self.c_r]], dtype=np.float32)
+
+        # A^-1: Transformation from Cartesian to fractional coordiantes
+        self.Ainv = np.linalg.inv(self.A)
+
+        # B: Transformation matrix from reciprocal coordinates to cartesian
+        self.N = np.diag([self.a_r, self.b_r, self.c_r]).astype(np.float32)
+        self.B = np.dot(self.A, self.N)
+
+        # B^-1: Transformation matrix from Cartesian to reciprocal coordiantes
+        self.Binv = np.linalg.inv(self.B)
 
 
 class PDBQuery(abc.ABC):
@@ -240,10 +330,5 @@ class PDBExpressionSystemQuery(PDBQuery):
 
 
 if __name__ == '__main__':
-    query = PDBCompositeQuery(
-        PDBResolutionQuery(max_res=0.7),
-        PDBExpressionSystemQuery(expr_sys='Escherichia Coli',
-                                 comp_type='contains'))
-    pdb_ids = query.execute()
-    print(f'{pdb_ids}')
-    print(f'Got {len(pdb_ids)} ids')
+    uc = pdb_to_unit_cell('1b0y')
+    j = 3
