@@ -18,6 +18,12 @@ RESOURCES_PATH = tests.TEST_RESOURCES_PATH.joinpath('dihedral')
 
 
 class TestRawDihedralAngleCalculation(object):
+
+    def random_coords(self):
+        mu = np.random.normal(0, 10, size=(3,))
+        sigma = np.random.normal(0, 1, size=(3, 3))
+        return [np.random.multivariate_normal(mu, sigma) for _ in range(4)]
+
     @staticmethod
     @numba.jit(nopython=True)
     def calc_dihedral_naive(v1: ndarray, v2: ndarray,
@@ -76,13 +82,17 @@ class TestRawDihedralAngleCalculation(object):
             expected = self.calc_dihedral_naive(*vs)
             assert calc_dihedral2(*vs) == approx(expected)
 
-    def test_benchmark_naive(self, benchmark):
-        vs = [np.random.standard_normal((3,)) * 10. for _ in range(4)]
-        benchmark(self.calc_dihedral_naive, *vs)
+    def test_benchmark_naive_numba(self, benchmark):
+        benchmark(self.calc_dihedral_naive, *self.random_coords())
 
-    def test_benchmark_calc_dihedral_fast(self, benchmark):
-        vs = [np.random.standard_normal((3,)) * 10. for _ in range(4)]
-        benchmark(calc_dihedral2, *vs)
+    def test_benchmark_naive_python(self, benchmark):
+        benchmark(self.calc_dihedral_naive.py_func, *self.random_coords())
+
+    def test_benchmark_calc_dihedral_fast_numba(self, benchmark):
+        benchmark(calc_dihedral2, *self.random_coords())
+
+    def test_benchmark_calc_dihedral_fast_python(self, benchmark):
+        benchmark(calc_dihedral2.py_func, *self.random_coords())
 
 
 class TestDihedralAnglesEstimator(object):
@@ -123,4 +133,3 @@ class TestDihedralAnglesEstimator(object):
     def test_uncertainty_estimator(self, pdb_id):
         estimator = dihedral.DihedralAnglesUncertaintyEstimator()
         self.compare_with_estimator(pdb_id, estimator)
-
