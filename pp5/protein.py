@@ -89,6 +89,7 @@ class ProteinRecord(object):
         """
         LOGGER.info(f'{unp_id}: Initializing protein record...')
         self.__setstate__({})
+        dihedral_estimator = pp5.dihedral.DihedralAnglesEstimator()
 
         # First we must find a matching PDB structure and chain for the
         # Uniprot id. If a proposed_pdb_id is given we'll try to use that.
@@ -117,13 +118,13 @@ class ProteinRecord(object):
                 # fill in the gaps
                 pdb_aa_seq += 'X' * gap_len
                 aa_idxs.extend(range(prev_end_idx + 1, curr_start_idx))
-                angles.extend([Dihedral()] * gap_len)
+                angles.extend([Dihedral.empty()] * gap_len)
                 bfactors.extend([math.nan] * gap_len)
                 sstructs.extend(['-'] * gap_len)
 
             pdb_aa_seq += str(pp.get_sequence())
             aa_idxs.extend(range(curr_start_idx, curr_end_idx + 1))
-            angles.extend(pp_dihedral_angles(pp))
+            angles.extend(dihedral_estimator.estimate(pp))
             bfactors.extend(pp_mean_bfactor(pp, backbone_only=True))
             res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
             sss = (ss_dict.get(res_id, '-') for res_id in res_ids)
