@@ -139,7 +139,7 @@ class PDBUnitCell(object):
 
     def __init__(self, a, b, c, alpha, beta, gamma):
         """
-        a, b, c: Unit cell lengths in Angstoms
+        a, b, c: Unit cell lengths in Angstroms
         alpha, beta, gamma: Unit-cell angles in degrees
         """
         self.a, self.b, self.c = a, b, c
@@ -173,7 +173,8 @@ class PDBUnitCell(object):
         # Types of coordinate systems:
         # Fractional: no units
         # Cartesian: length
-        # Reciprocal: 1/length
+        # Direct lattice: length
+        # Reciprocal lattice: 1/length
 
         # A: Transformation from fractional to Cartesian coordinates
         self.A = np.array([[self.a, self.b * cos_gamma, self.c * cos_beta],
@@ -181,15 +182,26 @@ class PDBUnitCell(object):
                             -self.c * sin_beta * cos_alpha_r],
                            [0, 0, 1 / self.c_r]], dtype=np.float32)
 
-        # A^-1: Transformation from Cartesian to fractional coordiantes
+        # A^-1: Transformation from Cartesian to fractional coordinates
         self.Ainv = np.linalg.inv(self.A)
 
-        # B: Transformation matrix from reciprocal coordinates to cartesian
+        # B: Transformation matrix from direct lattice coordinates to cartesian
         self.N = np.diag([self.a_r, self.b_r, self.c_r]).astype(np.float32)
         self.B = np.dot(self.A, self.N)
 
-        # B^-1: Transformation matrix from Cartesian to reciprocal coordiantes
+        # B^-1: Transformation matrix from Cartesian to direct lattice
         self.Binv = np.linalg.inv(self.B)
+
+        # Fix precision issues
+        [np.round(a, decimals=15, out=a) for a in (self.A, self.Ainv,
+                                                   self.B, self.Binv)]
+
+    def direct_lattice_to_cartesian(self, x: np.ndarray):
+        assert 0 < x.ndim < 3
+        if x.ndim == 1:
+            return np.dot(self.B, x)
+        elif x.ndim == 2:
+            return np.dot(self.B, np.dot(x, self.B.T))
 
 
 class PDBQuery(abc.ABC):
