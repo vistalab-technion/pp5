@@ -23,6 +23,8 @@ dependencies:
   - hdf5
   - h5py>=2.10
   - yattag
+  - pint
+  - uncertainties
   - pymol
   - muscle
   - clustalo
