@@ -73,15 +73,60 @@ class Dihedral(object):
         return f'(ɸ={phi:3.2f}{u}, ψ={psi:3.2f}{u}, ω={omega:3.2f}{u})'
 
 
-@numba.jit(nopython=True)
-def angle_between(v1: ndarray, v2: ndarray):
+class DihedralAnglesEstimator(object):
     """
-    :return: Angle between two vectors.
+    Calculates dihedral angles for a polypeptide chain of a Protein.
     """
-    v1_n = v1 / np.linalg.norm(v1)
-    v2_n = v2 / np.linalg.norm(v2)
-    cos = np.maximum(np.minimum(np.dot(v1_n, v2_n), 1.), -1.)
-    return np.arccos(cos)
+
+    def __init__(self, ):
+        pass
+
+    @staticmethod
+    def _calc_fn(a1: Atom, a2: Atom, a3: Atom, a4: Atom):
+        return calc_dihedral2(
+            a1.get_vector().get_array(), a2.get_vector().get_array(),
+            a3.get_vector().get_array(), a4.get_vector().get_array()
+        )
+
+    def estimate(self, pp: Polypeptide):
+        angles = []
+
+        # Loop over amino acids (AAs) in the polypeptide
+        for i in range(len(pp)):
+            phi, psi, omega = nan, nan, nan
+
+            aa_curr: Residue = pp[i]
+            aa_prev = pp[i - 1] if i > 0 else {}
+            aa_next = pp[i + 1] if i < len(pp) - 1 else {}
+
+            try:
+                # Get the locations (x, y, z) of backbone atoms
+                n = aa_curr['N']
+                ca = aa_curr['CA']  # Alpha-carbon
+                c = aa_curr['C']
+            except KeyError:
+                # Phi/Psi cannot be calculated for this AA
+                angles.append(Dihedral())
+                continue
+
+            # Phi
+            if 'C' in aa_prev:
+                c_prev = aa_prev['C']
+                phi = self._calc_fn(c_prev, n, ca, c)
+
+            # Psi
+            if 'N' in aa_next:
+                n_next = aa_next['N']
+                psi = self._calc_fn(n, ca, c, n_next)
+
+            # Omega
+            if 'C' in aa_prev and 'CA' in aa_prev:
+                c_prev, ca_prev = aa_prev['C'], aa_prev['CA']
+                omega = self._calc_fn(ca_prev, c_prev, n, ca)
+
+            angles.append(Dihedral.from_rad(phi, psi, omega))
+
+        return angles
 
 
 @numba.jit(nopython=True)
@@ -114,33 +159,6 @@ def calc_dihedral2(v1: ndarray, v2: ndarray, v3: ndarray, v4: ndarray):
     x = np.dot(v, w)
     y = np.dot(np.cross(b1, v), w)
     return np.arctan2(y, x)
-
-
-@numba.jit(nopython=True)
-def calc_dihedral(v1: ndarray, v2: ndarray, v3: ndarray, v4: ndarray):
-    """
-    Calculates the dihedral angle defined by four 3d points.
-    This is the angle between the plane defined by the first three
-    points and the plane defined by the last three points.
-
-    Uses naive approach, should be slow.
-    """
-
-    ab = v1 - v2
-    cb = v3 - v2
-    db = v4 - v3
-
-    u = np.cross(ab, cb)
-    v = np.cross(db, cb)
-    w = np.cross(u, v)
-
-    angle = angle_between(u, v)
-    try:
-        if angle_between(cb, w) > 0.001:
-            angle = -angle
-    except Exception:  # zero division
-        pass
-    return angle
 
 
 def calc_dihedral_montecarlo(mu_sigma, n_samples):
