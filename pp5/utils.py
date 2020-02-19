@@ -26,11 +26,15 @@ def remote_dl(url: str, save_path: str, uncompress=False,
             LOGGER.debug(f"File {save_path} exists, skipping download...")
             return Path(save_path)
 
-    with requests.get(url, stream=True) as response:
+    req_headers = {'Accept-Encoding': 'gzip, identity'}
+    with requests.get(url, stream=True, headers=req_headers) as response:
         response.raise_for_status()
         if 300 <= response.status_code < 400:
             raise HTTPError(f"Redirect {response.status_code} for url{url}",
                             response=response)
+
+        if 'gzip' in response.headers.get('Content-Encoding', ''):
+            uncompress = True
 
         with open(save_path, 'wb') as out_handle:
             try:
