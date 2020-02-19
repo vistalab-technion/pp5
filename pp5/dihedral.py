@@ -42,7 +42,7 @@ class Dihedral(object):
             if isinstance(a, float):
                 val, std = a, None
             elif hasattr(a, '__len__') and len(a) == 2:
-                val, std = a
+                val, std = float(a[0]), float(a[1])
             else:
                 raise ValueError('Input angles must be either a float or a '
                                  'tuple (value, std)')
@@ -80,8 +80,8 @@ class Dihedral(object):
             std_attr = f'{name}_std_deg' if deg else f'{name}_std'
             val = getattr(self, val_attr)
             std = getattr(self, std_attr)
-            std_str = f'{self.SYMBOLS["pm"]}{std:.2f}' if std else ''
-            reprs.append(f'{self.SYMBOLS[name]}={val:.2f}{std_str}{unit_sym}')
+            std_str = f'{self.SYMBOLS["pm"]}{std:.1f}' if std else ''
+            reprs.append(f'{self.SYMBOLS[name]}={val:.1f}{std_str}{unit_sym}')
         return f'({str.join(",", reprs)})'
 
 
@@ -93,8 +93,7 @@ class DihedralAnglesEstimator(object):
     def __init__(self, ):
         pass
 
-    @staticmethod
-    def _calc_fn(a1: Atom, a2: Atom, a3: Atom, a4: Atom):
+    def _calc_fn(self, a1: Atom, a2: Atom, a3: Atom, a4: Atom):
         return calc_dihedral2(
             a1.get_vector().get_array(), a2.get_vector().get_array(),
             a3.get_vector().get_array(), a4.get_vector().get_array()
@@ -150,8 +149,7 @@ class DihedralAnglesUncertaintyEstimator(DihedralAnglesEstimator):
     def __init__(self):
         super().__init__()
 
-    @staticmethod
-    def _calc_fn(*atoms: Atom):
+    def _calc_fn(self, *atoms: Atom):
         assert len(atoms) == 4
 
         # Create vectors with uncertainty based on b-factor
@@ -169,6 +167,63 @@ class DihedralAnglesUncertaintyEstimator(DihedralAnglesEstimator):
         y = np.dot(np.cross(b1, v), w)
         ang = umath.atan2(y, x)
         return ang.nominal_value, ang.std_dev
+
+
+class DihedralAnglesMonteCarloEstimator(DihedralAnglesEstimator):
+    """
+    Calculates dihedral angles with uncertainty estimation based on
+    monte-carlo sampling of atom locations with anisotropic temperature
+    factors.
+    """
+
+    def __init__(self, unit_cell: PDBUnitCell, isotropic=False,
+                 n_samples=100, skip_omega=False):
+        """
+        :param unit_cell: Unit-cell of the PDB structure.
+        :param isotropic: Whether to use isotropic b-factor or anisotropic
+        temperature factors.
+        :param n_samples: How many monte carlo samples per angle.
+        """
+        super().__init__()
+        self.unit_cell = unit_cell
+        self.isotropic = isotropic
+        self.n_samples = n_samples
+        self.skip_omega = skip_omega
+
+    def mvn_mu_sigma(self, a: Atom):
+        u = a.get_anisou()
+        if u is None or self.isotropic:
+            u = np.zeros((6,))
+            u[0:3] = a.get_bfactor() / (8 * math.pi * math.pi)
+
+        U = np.zeros((3, 3))
+        U[[0, 1, 2], [0, 1, 2]] = u[0:3]
+        U[[0, 0, 1], [1, 2, 2]] = u[3:6]
+        U[[1, 2, 2], [0, 0, 1]] = u[3:6]
+
+        S = self.unit_cell.direct_lattice_to_cartesian(U)
+        mu = a.get_vector().get_array()
+        return mu, S
+
+    def _calc_fn(self, *atoms: Atom):
+        assert len(atoms) == 4
+
+        # For Omega, don't do mc sampling.
+        if self.skip_omega and atoms[0].get_name() == 'CA':
+            return super()._calc_fn(*atoms)
+
+        mu_sigma = [self.mvn_mu_sigma(a) for a in atoms]
+
+        angles = np.empty(self.n_samples)
+        samples = [np.random.multivariate_normal(mu, S, size=self.n_samples)
+                   for mu, S in mu_sigma]
+
+        for i in range(self.n_samples):
+            # Sample atom coordinates from multivariate Gaussian
+            xs = [sample[i] for sample in samples]
+            angles[i] = calc_dihedral2(*xs)
+
+        return np.mean(angles), np.std(angles)
 
 
 @numba.jit(nopython=True)
@@ -201,123 +256,6 @@ def calc_dihedral2(v1: ndarray, v2: ndarray, v3: ndarray, v4: ndarray):
     x = np.dot(v, w)
     y = np.dot(np.cross(b1, v), w)
     return np.arctan2(y, x)
-
-
-def calc_dihedral_montecarlo(mu_sigma, n_samples):
-    assert len(mu_sigma) == 4
-
-    angles = np.empty(n_samples)
-    samples = [np.random.multivariate_normal(mu, S, size=n_samples)
-               for mu, S in mu_sigma]
-    for i in range(n_samples):
-        # Sample atom coordinates from multivariate Gaussian
-        xs = [sample[i] for sample in samples]
-        angles[i] = calc_dihedral2(*xs)
-
-    return np.mean(angles), np.std(angles)
-
-
-def atoms_dihedral(a1: Atom, a2: Atom, a3: Atom, a4: Atom):
-    return calc_dihedral2(
-        a1.get_vector().get_array(), a2.get_vector().get_array(),
-        a3.get_vector().get_array(), a4.get_vector().get_array()
-    )
-
-
-def atoms_dihedral_montecarlo(a1: Atom, a2: Atom, a3: Atom, a4: Atom,
-                              unit_cell: PDBUnitCell, isotonic=False,
-                              n_samples=100):
-    """
-    Dihedral angle calculation based on monte carlo sampling of atom locations.
-    :param n_samples: Number of sample to draw.
-    :return: Tuple of average dihedral angle and standard deviation.
-    """
-
-    def mvn_mu_sigma(a: Atom):
-        u = a.get_anisou()
-        b = a.get_bfactor()
-        if u is None or isotonic:
-            u = np.zeros((6,))
-            u[0:3] = a.get_bfactor() / (8 * math.pi * math.pi)
-
-        U = np.zeros((3, 3))
-        U[[0, 1, 2], [0, 1, 2]] = u[0:3]
-        U[[0, 0, 1], [1, 2, 2]] = u[3:6]
-        U[[1, 2, 2], [0, 0, 1]] = u[3:6]
-
-        B = unit_cell.B
-        S = np.dot(B, np.dot(U, B.T))
-        mu = a.get_vector().get_array()
-        return mu, S
-
-    mu_sigma = [mvn_mu_sigma(a) for a in [a1, a2, a3, a4]]
-    return calc_dihedral_montecarlo(mu_sigma, n_samples)
-
-
-def pp_dihedral_angles(pp: Polypeptide, mc_n_samples: int = 0,
-                       mc_unit_cell=None, mc_isotonic=False) -> List[Dihedral]:
-    """
-    Return a list of phi/psi/omega dihedral angles from a Polypeptide object.
-    http://proteopedia.org/wiki/index.php/Phi_and_Psi_Angles
-    :param pp: Polypeptide to calcalate dihedral angles for.
-    :return: A list of tuples (phi, psi, omega), with the same length as the
-    polypeptide chain. Calculated as radians in range (-pi, pi].
-    """
-
-    if mc_n_samples:
-        assert mc_unit_cell is not None
-
-    def calc_fn(*atoms):
-        std = nan
-        if not mc_n_samples:
-            d = atoms_dihedral(*atoms)
-        else:
-            d, std = atoms_dihedral_montecarlo(*atoms, unit_cell=mc_unit_cell,
-                                               isotonic=mc_isotonic,
-                                               n_samples=mc_n_samples)
-            std = math.degrees(std)
-        return d, std
-
-    angles = []
-
-    # Loop over amino acids (AAs) in the polypeptide
-    for i in range(len(pp)):
-        phi, phi_std = nan, nan
-        psi, psi_std = nan, nan
-        omega, omega_std = nan, nan
-
-        aa_curr: Residue = pp[i]
-        aa_prev = pp[i - 1] if i > 0 else {}
-        aa_next = pp[i + 1] if i < len(pp) - 1 else {}
-
-        try:
-            # Get the locations (x, y, z) of backbone atoms
-            n = aa_curr['N']
-            ca = aa_curr['CA']  # Alpha-carbon
-            c = aa_curr['C']
-        except KeyError:
-            # Phi/Psi cannot be calculated for this AA
-            angles.append(Dihedral())
-            continue
-
-        # Phi
-        if 'C' in aa_prev:
-            c_prev = aa_prev['C']
-            phi, phi_std = calc_fn(c_prev, n, ca, c)
-
-        # Psi
-        if 'N' in aa_next:
-            n_next = aa_next['N']
-            psi, psi_std = calc_fn(n, ca, c, n_next)
-
-        # Omega
-        if 'C' in aa_prev and 'CA' in aa_prev:
-            c_prev, ca_prev = aa_prev['C'], aa_prev['CA']
-            omega, omega_std = calc_fn(ca_prev, c_prev, n, ca)
-
-        angles.append(Dihedral.from_rad(phi, psi, omega))
-
-    return angles
 
 
 def pp_mean_bfactor(pp: PDB.Polypeptide, backbone_only=False) -> List[float]:

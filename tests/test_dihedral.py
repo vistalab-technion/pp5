@@ -102,7 +102,7 @@ class TestDihedralAnglesEstimator(object):
     def setup_class(cls):
         pass
 
-    def compare_with_estimator(self, pdb_id, estimator):
+    def compare_with_estimator(self, pdb_id, estimator, **kw):
         pdb_rec = pdb.pdb_struct(pdb_id, pdb_dir=RESOURCES_PATH)
         pp_chains = PPBuilder().build_peptides(pdb_rec, aa_only=True)
 
@@ -117,12 +117,12 @@ class TestDihedralAnglesEstimator(object):
                 bio_psi = biopython_angles[i][1]
 
                 if not (math.isnan(ang.phi) and bio_phi is None):
-                    assert ang.phi == approx(bio_phi)
-                    assert ang.phi_deg == approx(math.degrees(bio_phi))
+                    assert ang.phi == approx(bio_phi, **kw)
+                    assert ang.phi_deg == approx(math.degrees(bio_phi), **kw)
 
                 if not (math.isnan(ang.psi) and bio_psi is None):
-                    assert ang.psi == approx(bio_psi)
-                    assert ang.psi_deg == approx(math.degrees(bio_psi))
+                    assert ang.psi == approx(bio_psi, **kw)
+                    assert ang.psi_deg == approx(math.degrees(bio_psi), **kw)
 
     @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
     def test_basic_estimator(self, pdb_id):
@@ -133,3 +133,10 @@ class TestDihedralAnglesEstimator(object):
     def test_uncertainty_estimator(self, pdb_id):
         estimator = dihedral.DihedralAnglesUncertaintyEstimator()
         self.compare_with_estimator(pdb_id, estimator)
+
+    @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
+    def test_montecarlo_estimator(self, pdb_id):
+        unit_cell = pdb.pdb_to_unit_cell(pdb_id, pdb_dir=RESOURCES_PATH)
+        estimator = dihedral.DihedralAnglesMonteCarloEstimator(unit_cell)
+        # Not sure how to test, for now set infinite abs error
+        self.compare_with_estimator(pdb_id, estimator, abs=math.inf)
