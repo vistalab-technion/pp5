@@ -5,16 +5,15 @@ from typing import List
 import Bio.PDB as PDB
 import numba
 import numpy as np
-from numpy import ndarray
-import pandas as pd
 from Bio.PDB.Atom import Atom
 from Bio.PDB.Polypeptide import Polypeptide
 from Bio.PDB.Residue import Residue
+from numpy import ndarray
+from uncertainties import unumpy, umath
 
-import pp5.external_dbs.pdb
-from pp5 import DATA_DIR
 from pp5.external_dbs.pdb import PDBUnitCell
 
+CONST_8PI2 = math.pi * math.pi * 8
 BACKBONE_ATOMS = {'N', 'CA', 'C'}
 
 
@@ -24,53 +23,66 @@ class Dihedral(object):
     Values are stored in radians.
     """
 
-    def __init__(self, phi: float = nan, psi: float = nan, omega: float = nan):
+    NAMES = ('phi', 'psi', 'omega')
+    SYMBOLS = dict(phi='ɸ', psi='ψ', omega='ω', deg='°', rad='ʳ', pm='±')
+
+    def __init__(self, phi, psi, omega):
         """
         All angles should be specified in radians between (-pi, pi].
+        They ir type can be either a float, or an tuple (val,
+        std) containing a nominal value and standard deviation.
         """
-        self._phi = phi
-        self._psi = psi
-        self._omega = omega
 
-    @property
-    def phi(self):
-        return self._phi
+        cls = self.__class__
+        loc = locals()
+        for name in self.NAMES:
+            a = loc[name]
+            name_std = f'{name}_std'
 
-    @property
-    def psi(self):
-        return self._psi
+            if isinstance(a, float):
+                val, std = a, None
+            elif hasattr(a, '__len__') and len(a) == 2:
+                val, std = a
+            else:
+                raise ValueError('Input angles must be either a float or a '
+                                 'tuple (value, std)')
 
-    @property
-    def omega(self):
-        return self._omega
+            setattr(self, name, val)
+            setattr(self, name_std, std)
+            val_deg = math.degrees(val)
+            std_deg = math.degrees(std) if std else None
+            setattr(cls, f'{name}_deg',
+                    property(lambda s=self, n=name: s._deg(n)))
+            setattr(cls, f'{name_std}_deg',
+                    property(lambda s=self, n=name_std: s._deg(n)))
 
-    @property
-    def phi_deg(self):
-        return math.degrees(self._phi)
-
-    @property
-    def psi_deg(self):
-        return math.degrees(self._psi)
-
-    @property
-    def omega_deg(self):
-        return math.degrees(self._omega)
-
-    @classmethod
-    def from_deg(cls, phi: float = nan, psi: float = nan, omega: float = nan):
-        return cls(math.radians(phi), math.radians(psi), math.radians(omega))
+    def _deg(self, name):
+        r = getattr(self, name)
+        return math.degrees(r) if r else None
 
     @classmethod
-    def from_rad(cls, phi: float = nan, psi: float = nan, omega: float = nan):
+    def from_deg(cls, phi, psi, omega):
+        return cls(np.deg2rad(phi), np.deg2rad(psi), np.deg2rad(omega))
+
+    @classmethod
+    def from_rad(cls, phi, psi, omega):
         return cls(phi, psi, omega)
 
-    def __repr__(self, degrees=True):
-        phi = math.degrees(self.phi) if degrees else self.phi
-        psi = math.degrees(self.psi) if degrees else self.psi
-        omega = math.degrees(self.omega) if degrees else self.omega
+    @classmethod
+    def empty(cls):
+        return cls(nan, nan, nan)
 
-        u = '°' if degrees else 'rad'
-        return f'(ɸ={phi:3.2f}{u}, ψ={psi:3.2f}{u}, ω={omega:3.2f}{u})'
+    def __repr__(self, deg=True):
+        reprs = []
+        unit_sym = self.SYMBOLS["deg" if deg else "rad"]
+        for name in self.NAMES:
+            val_attr = f'{name}_deg' if deg else name
+            std_attr = f'{name}_std_deg' if deg else f'{name}_std'
+            val = getattr(self, val_attr)
+            std = getattr(self, std_attr)
+            std_str = f'{self.SYMBOLS["pm"]}{std:.2f}' if std else ''
+            reprs.append(f'{self.SYMBOLS[name]}={val:.2f}{std_str}{unit_sym}')
+        return f'({str.join(",", reprs)})'
 
 
 class DihedralAnglesEstimator(object):
@@ -88,7 +100,7 @@ class DihedralAnglesEstimator(object):
             a3.get_vector().get_array(), a4.get_vector().get_array()
         )
 
-    def estimate(self, pp: Polypeptide):
+    def estimate(self, pp: Polypeptide) -> List[Dihedral]:
         angles = []
 
         # Loop over amino acids (AAs) in the polypeptide
@@ -106,7 +118,7 @@ class DihedralAnglesEstimator(object):
                 c = aa_curr['C']
             except KeyError:
                 # Phi/Psi cannot be calculated for this AA
-                angles.append(Dihedral())
+                angles.append(Dihedral.empty())
                 continue
 
             # Phi
@@ -127,6 +139,36 @@ class DihedralAnglesEstimator(object):
             angles.append(Dihedral.from_rad(phi, psi, omega))
 
         return angles
+
+
+class DihedralAnglesUncertaintyEstimator(DihedralAnglesEstimator):
+    """
+    Calculates dihedral angles with uncertainty estimation based on
+    b-factors and error propagation.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    @staticmethod
+    def _calc_fn(*atoms: Atom):
+        assert len(atoms) == 4
+
+        # Create vectors with uncertainty based on b-factor
+        vs = [a.get_vector().get_array() for a in atoms]
+        es = [[math.sqrt(a.get_bfactor() / CONST_8PI2)] * 3 for a in atoms]
+        uvs = [unumpy.uarray(vs[i], es[i]) for i in range(4)]
+        v1, v2, v3, v4 = uvs
+        b0 = v1 - v2
+        b1 = v3 - v2
+        b2 = v4 - v3
+        b1 /= umath.sqrt(np.sum(b1 ** 2))
+        v = b0 - np.dot(b0, b1) * b1
+        w = b2 - np.dot(b2, b1) * b1
+        x = np.dot(v, w)
+        y = np.dot(np.cross(b1, v), w)
+        ang = umath.atan2(y, x)
+        return ang.nominal_value, ang.std_dev
 
 
 @numba.jit(nopython=True)

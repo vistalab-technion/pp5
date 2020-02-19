@@ -92,30 +92,35 @@ class TestDihedralAnglesEstimator(object):
     def setup_class(cls):
         pass
 
-    @staticmethod
-    def compare_to_biopython(angles, biopython_angles, **kw):
-        assert len(angles) == len(biopython_angles)
-        for i in range(len(angles)):
-            phi = angles[i].phi
-            bio_phi = biopython_angles[i][0]
-            psi = angles[i].psi
-            bio_psi = biopython_angles[i][1]
-
-            if not (math.isnan(phi) and bio_phi is None):
-                assert phi == approx(bio_phi, **kw)
-
-            if not (math.isnan(psi) and bio_psi is None):
-                assert psi == approx(bio_psi, **kw)
-
-    @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
-    def test_compare_to_biopython(self, pdb_id):
+    def compare_with_estimator(self, pdb_id, estimator):
         pdb_rec = pdb.pdb_struct(pdb_id, pdb_dir=RESOURCES_PATH)
         pp_chains = PPBuilder().build_peptides(pdb_rec, aa_only=True)
-
-        estimator = dihedral.DihedralAnglesEstimator()
 
         for pp in pp_chains:
             biopython_angles = pp.get_phi_psi_list()
             angles = estimator.estimate(pp)
-            self.compare_to_biopython(angles, biopython_angles)
+
+            assert len(angles) == len(biopython_angles)
+            for i in range(len(angles)):
+                ang = angles[i]
+                bio_phi = biopython_angles[i][0]
+                bio_psi = biopython_angles[i][1]
+
+                if not (math.isnan(ang.phi) and bio_phi is None):
+                    assert ang.phi == approx(bio_phi)
+                    assert ang.phi_deg == approx(math.degrees(bio_phi))
+
+                if not (math.isnan(ang.psi) and bio_psi is None):
+                    assert ang.psi == approx(bio_psi)
+                    assert ang.psi_deg == approx(math.degrees(bio_psi))
+
+    @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
+    def test_basic_estimator(self, pdb_id):
+        estimator = dihedral.DihedralAnglesEstimator()
+        self.compare_with_estimator(pdb_id, estimator)
+
+    @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
+    def test_uncertainty_estimator(self, pdb_id):
+        estimator = dihedral.DihedralAnglesUncertaintyEstimator()
+        self.compare_with_estimator(pdb_id, estimator)
 
