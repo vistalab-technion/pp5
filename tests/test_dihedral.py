@@ -1,5 +1,5 @@
 import math
-from math import radians
+from math import radians, degrees
 
 import numba
 import numpy as np
@@ -96,7 +96,7 @@ class TestRawDihedralAngleCalculation(object):
 
 
 class TestDihedralAnglesEstimator(object):
-    TEST_PDB_IDS = ['3ajo', '1b0y', '2wur']
+    TEST_PDB_IDS = ['5jdt', '3ajo', '1b0y', '2wur']
 
     @classmethod
     def setup_class(cls):
@@ -108,6 +108,10 @@ class TestDihedralAnglesEstimator(object):
 
         for pp in pp_chains:
             biopython_angles = pp.get_phi_psi_list()
+            biopython_angles_deg = [
+                (degrees(phi) if phi else None, degrees(psi) if psi else None)
+                for phi, psi in biopython_angles
+            ]
             angles = estimator.estimate(pp)
 
             assert len(angles) == len(biopython_angles)
@@ -115,14 +119,16 @@ class TestDihedralAnglesEstimator(object):
                 ang = angles[i]
                 bio_phi = biopython_angles[i][0]
                 bio_psi = biopython_angles[i][1]
+                bio_phi_deg = biopython_angles_deg[i][0]
+                bio_psi_deg = biopython_angles_deg[i][1]
 
                 if not (math.isnan(ang.phi) and bio_phi is None):
                     assert ang.phi == approx(bio_phi, **kw)
-                    assert ang.phi_deg == approx(math.degrees(bio_phi), **kw)
+                    assert ang.phi_deg == approx(bio_phi_deg, **kw)
 
                 if not (math.isnan(ang.psi) and bio_psi is None):
                     assert ang.psi == approx(bio_psi, **kw)
-                    assert ang.psi_deg == approx(math.degrees(bio_psi), **kw)
+                    assert ang.psi_deg == approx(bio_psi_deg, **kw)
 
     @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
     def test_basic_estimator(self, pdb_id):
