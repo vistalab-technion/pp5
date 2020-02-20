@@ -15,7 +15,7 @@ from Bio.SeqRecord import SeqRecord
 from requests import RequestException
 
 import pp5
-from pp5.dihedral import Dihedral, pp_mean_bfactor, pp_dihedral_angles
+from pp5.dihedral import Dihedral, pp_mean_bfactor
 from pp5.external_dbs import pdb, unp, ena
 from pp5.external_dbs.pdb import PDBRecord
 from pp5.external_dbs.unp import UNPRecord
@@ -35,29 +35,36 @@ class ProteinInitError(ValueError):
     pass
 
 
-class ResidueRecord(NamedTuple):
+class ResidueRecord(object):
     """
     Represents a singe residue in a protein record.
     - Sequence id: (number of this residue in the sequence)
     - Name: (single letter AA code or X for unknown)
     - Codon: three-letter nucleotide sequence
-    - phi/psi/omega: dihedral angles
+    - phi/psi/omega: dihedral angles in degrees
     - bfactor: average b-factor along of the residue's backbone atoms
     - secondary: single-letter secondary structure code
     """
-    seq_id: int
-    name: str
-    codon: str
-    phi: float
-    psi: float
-    omega: float
-    bfactor: float
-    secondary: str
+
+    def __init__(self, seq_id: int, name: str, codon: str,
+                 angles: Dihedral, bfactor: float, secondary: str):
+        self.seq_id, self.name, self.codon = seq_id, name, codon
+        self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
+
+    def __getstate__(self):
+        d = self.__dict__.copy()
+        d['angles'] = self.angles.__dict__
+        return d
+
+    def __setstate__(self, state):
+        angles = Dihedral.empty()
+        angles.__dict__.update(state['angles'])
+        state['angles'] = angles
+        self.__init__(**state)
 
     def __repr__(self):
-        d = Dihedral(self.phi, self.psi, self.omega)
-        return f'#{self.seq_id:03d}: {self.name} [{self.codon}] {d} ' \
-               f'({self.bfactor:.2f}, {self.secondary})'
+        return f'#{self.seq_id:03d}: {self.name} [{self.codon}] ' \
+               f'{self.angles} b={self.bfactor:.2f}, {self.secondary}'
 
 
 class ProteinRecord(object):
@@ -77,7 +84,8 @@ class ProteinRecord(object):
     """
     _SKIP_SERIALIZE = ['_unp_rec', '_pdb_rec', '_pp']
 
-    def __init__(self, unp_id: str, proposed_pdb_id=None):
+    def __init__(self, unp_id: str, proposed_pdb_id=None,
+                 dihedral_est_name=None):
         """
         Initialize a protein record.
         :param unp_id: Uniprot id which uniquely identifies the protein.
@@ -86,10 +94,12 @@ class ProteinRecord(object):
         not exist as a cross-reference in the Uniprot record, the PDB id of
         the matching structure with best X-ray resolution and best-matching
         sequence length will be selected.
+        :param dihedral_est_name: Method of dihedral angle estimation. None
+        or empty to calculate angles without error estimation; 'erp' for
+        standard error propagation; 'mc' for montecarlo error estimation.
         """
         LOGGER.info(f'{unp_id}: Initializing protein record...')
         self.__setstate__({})
-        dihedral_estimator = pp5.dihedral.DihedralAnglesEstimator()
 
         # First we must find a matching PDB structure and chain for the
         # Uniprot id. If a proposed_pdb_id is given we'll try to use that.
@@ -98,6 +108,9 @@ class ProteinRecord(object):
 
         # Get secondary-structure info using DSSP
         ss_dict, _ = pdb.pdb_to_secondary_structure(self.pdb_id)
+
+        # Get estimator of dihedral angles
+        dihedral_estimator = self._get_dihedral_estimator(dihedral_est_name)
 
         # Extract the PDB AA sequence, dihedral angles and b-factors
         # from the PDB structure.
@@ -145,9 +158,9 @@ class ProteinRecord(object):
         for i in range(len(pdb_aa_seq)):
             rr = ResidueRecord(
                 seq_id=aa_idxs[i], name=pdb_aa_seq[i],
-                codon=idx_to_codon.get(i, None), phi=angles[i].phi_deg,
-                psi=angles[i].psi_deg, omega=angles[i].omega_deg,
-                bfactor=bfactors[i], secondary=sstructs[i]
+                codon=idx_to_codon.get(i, None),
+                angles=angles[i],
+                bfactor=bfactors[i], secondary=sstructs[i],
             )
             residue_recs.append(rr)
 
@@ -200,11 +213,11 @@ class ProteinRecord(object):
         :return: Protein sequence based on translating DNA sequence with
         standard codon table.
         """
-        return [x.codon for x in self._residue_recs]
+        return [x.codon for x in self]
 
     @property
     def dihedral_angles(self) -> List[Dihedral]:
-        return [Dihedral(x.phi, x.psi, x.omega) for x in self._residue_recs]
+        return [x.angles for x in self]
 
     @property
     def polypeptides(self) -> List[Polypeptide]:
@@ -229,14 +242,27 @@ class ProteinRecord(object):
         this ProteinRecord.
         """
         # use the iterator of this class to get the residue recs
-        return pd.DataFrame(self)
+        data = []
+        for rec in self:
+            rec_dict = rec.__getstate__()
+            del rec_dict['angles']
+            angles_dict = dict(phi=rec.angles.phi_deg,
+                               psi=rec.angles.psi_deg,
+                               omega=rec.angles.omega_deg,
+                               phi_std=rec.angles.phi_std_deg,
+                               psi_std=rec.angles.psi_std_deg,
+                               omega_std=rec.angles.omega_std_deg, )
+            rec_dict.update(angles_dict)
+            data.append(rec_dict)
+        return pd.DataFrame(data)
 
-    def to_csv(self, out_dir=pp5.data_subdir('precs')):
+    def to_csv(self, out_dir=pp5.data_subdir('precs'), tag=None):
         df = self.to_dataframe()
-        filename = f'{self.pdb_id.upper()}_{self.pdb_chain_id.upper()}'
+        tag = f'_{tag}' if tag else ''
+        filename = f'{self.pdb_id.upper()}_{self.pdb_chain_id.upper()}{tag}'
         filepath = out_dir.joinpath(f'{filename}.csv')
         df.to_csv(filepath, na_rep='nan', header=True, index=False,
-                  encoding='utf-8',)
+                  encoding='utf-8', )
         return filepath
 
     def __iter__(self) -> Iterator[ResidueRecord]:
@@ -369,6 +395,26 @@ class ProteinRecord(object):
                            f"using {pdb_id} instead.")
 
         return pdb_id, chain_id
+
+    def _get_dihedral_estimator(self, est_name, **est_args):
+        est_name = est_name.lower()
+        if not est_name in {None, '', 'erp', 'mc'}:
+            raise ProteinInitError(
+                f'Unknown dihedral estimation method {est_name}')
+
+        if est_name == 'mc':
+            unit_cell = pdb.pdb_to_unit_cell(self.pdb_id)
+            args = dict(isotropic=False, n_samples=100, skip_omega=True)
+            args.update(est_args)
+            est = pp5.dihedral.DihedralAnglesMonteCarloEstimator(
+                unit_cell, **args
+            )
+        elif est_name == 'erp':
+            est = pp5.dihedral.DihedralAnglesUncertaintyEstimator(**est_args)
+        else:
+            est = pp5.dihedral.DihedralAnglesEstimator(**est_args)
+
+        return est
 
     def __repr__(self):
         return f'({self.unp_id}, {self.pdb_id}:{self.pdb_chain_id})'
