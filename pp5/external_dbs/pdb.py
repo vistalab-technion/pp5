@@ -120,7 +120,7 @@ def pdb_to_unit_cell(pdb_id: str, pdb_dir=PDB_DIR):
     except KeyError:
         raise ValueError(f"Can't create UnitCell for {pdb_id}")
 
-    return PDBUnitCell(a, b, c, alpha, beta, gamma)
+    return PDBUnitCell(pdb_id, a, b, c, alpha, beta, gamma)
 
 
 class PDBUnitCell(object):
@@ -137,11 +137,12 @@ class PDBUnitCell(object):
 
     """
 
-    def __init__(self, a, b, c, alpha, beta, gamma):
+    def __init__(self, pdb_id, a, b, c, alpha, beta, gamma):
         """
         a, b, c: Unit cell lengths in Angstroms
         alpha, beta, gamma: Unit-cell angles in degrees
         """
+        self.pdb_id = pdb_id
         self.a, self.b, self.c = a, b, c
         self.alpha, self.beta, self.gamma = alpha, beta, gamma
 
@@ -202,6 +203,11 @@ class PDBUnitCell(object):
             return np.dot(self.B, x)
         elif x.ndim == 2:
             return np.dot(self.B, np.dot(x, self.B.T))
+
+    def __repr__(self):
+        abc = f'(a={self.a:.1f},b={self.b:.1f},c={self.c:.1f})'
+        ang = f'(α={self.alpha:.1f},β={self.beta:.1f},γ={self.gamma:.1f})'
+        return f'[{self.pdb_id}]{abc}{ang}'
 
 
 class PDBQuery(abc.ABC):
