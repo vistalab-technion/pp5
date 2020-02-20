@@ -1,4 +1,5 @@
 import math
+import warnings
 from math import nan
 from typing import List
 
@@ -90,7 +91,7 @@ class DihedralAnglesEstimator(object):
     Calculates dihedral angles for a polypeptide chain of a Protein.
     """
 
-    def __init__(self, ):
+    def __init__(self, **kw):
         pass
 
     def _calc_fn(self, a1: Atom, a2: Atom, a3: Atom, a4: Atom):
@@ -146,8 +147,8 @@ class DihedralAnglesUncertaintyEstimator(DihedralAnglesEstimator):
     b-factors and error propagation.
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kw):
+        super().__init__(**kw)
 
     def _calc_fn(self, *atoms: Atom):
         assert len(atoms) == 4
@@ -192,16 +193,21 @@ class DihedralAnglesMonteCarloEstimator(DihedralAnglesEstimator):
 
     def mvn_mu_sigma(self, a: Atom):
         u = a.get_anisou()
-        if u is None or self.isotropic:
-            u = np.zeros((6,))
-            u[0:3] = a.get_bfactor() / (8 * math.pi * math.pi)
+        if self.isotropic or u is None:
+            u = a.get_bfactor() / CONST_8PI2
+            U = np.diag([u, u, u]).astype(np.float32)
+            # No need for coordinate transform in this case
+            S = U
+        else:
+            # NOTE: The order in u is U11, U12, U13, U22, U23, U33
+            # This is different from the order in the mmCIF file
+            U = np.zeros((3, 3), dtype=np.float32)
+            i, j = np.triu_indices(3, 0)
+            U[i, j] = U[j, i] = u
+            # Change from direct lattice to cartesian coordinates
+            S = self.unit_cell.direct_lattice_to_cartesian(U)
+            S[j, i] = S[i, j]  # fix slight asymmetry due to rounding
 
-        U = np.zeros((3, 3))
-        U[[0, 1, 2], [0, 1, 2]] = u[0:3]
-        U[[0, 0, 1], [1, 2, 2]] = u[3:6]
-        U[[1, 2, 2], [0, 0, 1]] = u[3:6]
-
-        S = self.unit_cell.direct_lattice_to_cartesian(U)
         mu = a.get_vector().get_array()
         return mu, S
 
@@ -214,12 +220,13 @@ class DihedralAnglesMonteCarloEstimator(DihedralAnglesEstimator):
 
         mu_sigma = [self.mvn_mu_sigma(a) for a in atoms]
 
-        angles = np.empty(self.n_samples)
+        # Sample atom coordinates from multivariate Gaussian
         samples = [np.random.multivariate_normal(mu, S, size=self.n_samples)
                    for mu, S in mu_sigma]
 
+        angles = np.empty(self.n_samples)
         for i in range(self.n_samples):
-            # Sample atom coordinates from multivariate Gaussian
+            # Take one sample of each atom
             xs = [sample[i] for sample in samples]
             angles[i] = calc_dihedral2(*xs)
 
