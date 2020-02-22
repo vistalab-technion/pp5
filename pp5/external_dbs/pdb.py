@@ -12,7 +12,7 @@ from Bio import PDB as PDB
 from Bio.PDB import Structure as PDBRecord, MMCIF2Dict
 from Bio.PDB.DSSP import dssp_dict_from_pdb_file
 
-from pp5 import PDB_DIR
+from pp5 import PDB_DIR, get_resource_path
 from pp5.utils import remote_dl
 
 PDB_SEARCH_URL = 'https://www.rcsb.org/pdb/rest/search'
@@ -27,7 +27,7 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR) -> Path:
     :param pdb_dir: Directory to download PDB file to.
     """
     pdb_id = pdb_id.lower()
-    filename = pdb_dir.joinpath(f'{pdb_id}.cif')
+    filename = get_resource_path(pdb_dir, f'{pdb_id}.cif')
     url = PDB_DOWNLOAD_URL_TEMPLATE.format(pdb_id)
     return remote_dl(url, filename, uncompress=True, skip_existing=True)
 

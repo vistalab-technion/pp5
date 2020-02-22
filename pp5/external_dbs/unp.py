@@ -7,7 +7,7 @@ import Bio.SwissProt
 from Bio.SwissProt import Record as UNPRecord
 from requests import HTTPError
 
-from pp5 import UNP_DIR
+from pp5 import UNP_DIR, get_resource_path
 from pp5.utils import remote_dl
 
 import logging
@@ -36,7 +36,7 @@ def replacement_ids(unp_id: str):
 
 def unp_download(unp_id: str, unp_dir=UNP_DIR) -> Path:
     url = UNP_URL_TEMPLATE.format(unp_id)
-    filename = unp_dir.joinpath(f'{unp_id}.txt')
+    filename = get_resource_path(unp_dir, f'{unp_id}.txt')
 
     try:
         return remote_dl(url, filename, skip_existing=True)
@@ -57,8 +57,12 @@ def unp_record(unp_id: str, unp_dir=UNP_DIR) -> UNPRecord:
     """
     filename = unp_download(unp_id, unp_dir)
 
-    with open(filename, 'r') as local_handle:
-        return Bio.SwissProt.read(local_handle)
+    try:
+        with open(str(filename), 'r') as local_handle:
+            return Bio.SwissProt.read(local_handle)
+    except ValueError as e:
+        raise ValueError(f'Failed to read Uniprot record {unp_id} from file '
+                         f'{filename}')
 
 
 def find_ena_xrefs(unp_rec: UNPRecord, molecule_types: Iterable[str]) \
