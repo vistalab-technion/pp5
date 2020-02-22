@@ -36,6 +36,9 @@ def remote_dl(url: str, save_path: str, uncompress=False,
         if 'gzip' in response.headers.get('Content-Encoding', ''):
             uncompress = True
 
+        save_dir = Path().joinpath(*Path(save_path).parts[:-1])
+        os.makedirs(save_dir, exist_ok=True)
+
         with open(save_path, 'wb') as out_handle:
             try:
                 if uncompress:
