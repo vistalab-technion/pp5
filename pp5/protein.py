@@ -85,7 +85,7 @@ class ProteinRecord(object):
     _SKIP_SERIALIZE = ['_unp_rec', '_pdb_rec', '_pp']
 
     def __init__(self, unp_id: str, proposed_pdb_id=None,
-                 dihedral_est_name=None):
+                 dihedral_est_name=None, dihedral_est_args={}):
         """
         Initialize a protein record.
         :param unp_id: Uniprot id which uniquely identifies the protein.
@@ -97,6 +97,7 @@ class ProteinRecord(object):
         :param dihedral_est_name: Method of dihedral angle estimation. None
         or empty to calculate angles without error estimation; 'erp' for
         standard error propagation; 'mc' for montecarlo error estimation.
+        :param dihedral_est_args: Extra arguments for dihedral estimator.
         """
         LOGGER.info(f'{unp_id}: Initializing protein record...')
         self.__setstate__({})
@@ -110,7 +111,8 @@ class ProteinRecord(object):
         ss_dict, _ = pdb.pdb_to_secondary_structure(self.pdb_id)
 
         # Get estimator of dihedral angles
-        dihedral_estimator = self._get_dihedral_estimator(dihedral_est_name)
+        dihedral_estimator = self._get_dihedral_estimator(dihedral_est_name,
+                                                          **dihedral_est_args)
 
         # Extract the PDB AA sequence, dihedral angles and b-factors
         # from the PDB structure.
@@ -338,8 +340,8 @@ class ProteinRecord(object):
                 # mismatches ('.') because the DNA alignment isn't perfect.
                 # In such a case we'll set the codon to None to specify we
                 # don't know what codon encoded the AA in the PDB sequence.
-                codon_matches = CODON_TABLE[codon] == pdb_aa_seq[pdb_idx]
-                idx_to_codon[pdb_idx] = codon if codon_matches else None
+                matches = CODON_TABLE.get(codon, None) == pdb_aa_seq[pdb_idx]
+                idx_to_codon[pdb_idx] = codon if matches else None
 
         return best_ena, idx_to_codon
 
@@ -397,7 +399,7 @@ class ProteinRecord(object):
         return pdb_id, chain_id
 
     def _get_dihedral_estimator(self, est_name, **est_args):
-        est_name = est_name.lower()
+        est_name = est_name.lower() if est_name else est_name
         if not est_name in {None, '', 'erp', 'mc'}:
             raise ProteinInitError(
                 f'Unknown dihedral estimation method {est_name}')
@@ -452,7 +454,4 @@ class ProteinRecord(object):
 
 
 if __name__ == '__main__':
-    # prec = ProteinRecord('P00720')
-    # prec = ProteinRecord('B0VB33')
-    prec = ProteinRecord.from_pdb('2WUR')[0]
-
+    pass
