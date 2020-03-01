@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import math
 import warnings
-from typing import List, Tuple, NamedTuple, Dict, Iterator
+from typing import List, Tuple, Dict, Iterator
+from collections import OrderedDict
 
 import pandas as pd
 from Bio.Align import PairwiseAligner
@@ -29,6 +30,8 @@ with warnings.catch_warnings():
 BLOSUM62 = substitution_matrices.load("BLOSUM62")
 BLOSUM80 = substitution_matrices.load("BLOSUM80")
 CODON_TABLE = CodonTable.standard_dna_table.forward_table
+UNKNOWN_AA = 'X'
+UNKNOWN_CODON = '---'
 
 LOGGER = logging.getLogger(__name__)
 
@@ -43,15 +46,27 @@ class ResidueRecord(object):
     - Sequence id: (number of this residue in the sequence)
     - Name: (single letter AA code or X for unknown)
     - Codon: three-letter nucleotide sequence
+    - Codon score: Confidence measure for the codon match
+    - Codon opts: All possible codons found in DNA sequences of the protein
     - phi/psi/omega: dihedral angles in degrees
     - bfactor: average b-factor along of the residue's backbone atoms
     - secondary: single-letter secondary structure code
     """
 
-    def __init__(self, seq_id: int, name: str, codon: str,
+    def __init__(self, seq_id: int, name: str, codon_counts: dict,
                  angles: Dihedral, bfactor: float, secondary: str):
-        self.seq_id, self.name, self.codon = seq_id, name, codon
+        self.seq_id, self.name = seq_id, name
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
+
+        codon_counts = {} if not codon_counts else codon_counts
+        best_codon, max_count, total_count = UNKNOWN_CODON, 0, 0
+        for codon, count in codon_counts.items():
+            total_count += count
+            if count > max_count and codon != UNKNOWN_CODON:
+                best_codon, max_count = codon, count
+        self.codon = best_codon
+        self.codon_score = max_count / total_count if total_count else 0
+        self.codon_opts = '/'.join(codon_counts.keys())
 
     def __getstate__(self):
         d = self.__dict__.copy()
@@ -134,7 +149,7 @@ class ProteinRecord(object):
                 gap_len = curr_start_idx - prev_end_idx - 1
 
                 # fill in the gaps
-                pdb_aa_seq += 'X' * gap_len
+                pdb_aa_seq += UNKNOWN_AA * gap_len
                 aa_idxs.extend(range(prev_end_idx + 1, curr_start_idx))
                 angles.extend([Dihedral.empty()] * gap_len)
                 bfactors.extend([math.nan] * gap_len)
@@ -153,7 +168,7 @@ class ProteinRecord(object):
         ena_ids = unp.find_ena_xrefs(
             self.unp_rec, molecule_types=('mrna', 'genomic_dna')
         )
-        dna_seq_record, idx_to_codon = self._find_dna_alignment(
+        dna_seq_record, idx_to_codons = self._find_dna_alignment(
             ena_ids, pdb_aa_seq
         )
         dna_seq = str(dna_seq_record.seq)
@@ -163,7 +178,7 @@ class ProteinRecord(object):
         for i in range(len(pdb_aa_seq)):
             rr = ResidueRecord(
                 seq_id=aa_idxs[i], name=pdb_aa_seq[i],
-                codon=idx_to_codon.get(i, None),
+                codon_counts=idx_to_codons.get(i, {}),
                 angles=angles[i],
                 bfactor=bfactors[i], secondary=sstructs[i],
             )
@@ -267,7 +282,7 @@ class ProteinRecord(object):
         filename = f'{self.pdb_id.upper()}_{self.pdb_chain_id.upper()}{tag}'
         filepath = out_dir.joinpath(f'{filename}.csv')
         df.to_csv(filepath, na_rep='nan', header=True, index=False,
-                  encoding='utf-8', )
+                  encoding='utf-8', float_format='%.3f')
         return filepath
 
     def __iter__(self) -> Iterator[ResidueRecord]:
@@ -304,15 +319,13 @@ class ProteinRecord(object):
             alignments.append(alignment)
 
         # Sort alignments by score
-        # best_ena, best_alignments = max(
-        #     zip(ena_seqs, alignments), key=lambda x: x[1].score
-        # )
-        alignments = sorted(
+        sorted_alignments = sorted(
             zip(ena_seqs, alignments), key=lambda x: x[1].score
         )
-        best_ena, best_alignments = alignments[0]
-        best_alignment = best_alignments[0]
 
+        # Print best-matching alignment
+        best_ena, best_alignments = sorted_alignments[0]
+        best_alignment = best_alignments[0]
         LOGGER.info(f'{self}: ENA ID = {best_ena.id}')
         LOGGER.info(f'{self}: Translated DNA to PDB alignment '
                     f'(norm_score='
@@ -320,38 +333,47 @@ class ProteinRecord(object):
                     f'num={len(best_alignments)})\n'
                     f'{best_alignment}')
 
-        # idx_to_codon = self._match_codons()
+        # Map each AA to a dict of (codon->count)
+        idx_to_codons = {}
+        for ena_seq, multi_alignment in sorted_alignments:
+            alignment = multi_alignment[0]  # multiple equivalent alignments
+            # Indices in the DNA AA seq which are aligned to the PDB AA seq
+            aligned_idx_pdb_aa, aligned_idx_dna_aa = alignment.aligned
+            dna_seq = str(ena_seq.seq)
 
-        # Indices in the DNA AA seq which are aligned to the PDB AA seq
-        aligned_idx_pdb_aa, aligned_idx_dna_aa = best_alignment.aligned
-        dna_seq = str(best_ena.seq)
+            for i in range(len(aligned_idx_dna_aa)):
+                # Indices of current matching segment of amino acids from the
+                # PDB record and the translated DNA
+                pdb_aa_start, pdb_aa_stop = aligned_idx_pdb_aa[i]
+                dna_aa_start, dna_aa_stop = aligned_idx_dna_aa[i]
 
-        idx_to_codon = {}
-        for i in range(len(aligned_idx_dna_aa)):
-            # Indices of current matching segment of amino acids from the
-            # PDB record and the translated DNA
-            pdb_aa_start, pdb_aa_stop = aligned_idx_pdb_aa[i]
-            dna_aa_start, dna_aa_stop = aligned_idx_dna_aa[i]
+                for offset, k in enumerate(range(dna_aa_start, dna_aa_stop)):
+                    k *= 3
+                    codon = dna_seq[k:k + 3]
+                    pdb_idx = offset + pdb_aa_start
 
-            for pdb_offset, k in enumerate(range(dna_aa_start, dna_aa_stop)):
-                k *= 3
-                codon = dna_seq[k:k + 3]
-                pdb_idx = pdb_offset + pdb_aa_start
+                    # Skip "unknown" AAs - we put them there to represent
+                    # non-standard AAs.
+                    if pdb_aa_seq[pdb_idx] == UNKNOWN_AA:
+                        continue
 
-                # Skip "unknown" AAs - we put them there to represent
-                # non-standard AAs.
-                if pdb_aa_seq[pdb_idx] == 'X':
-                    continue
+                    # List of codons at current index
+                    codon_dict = idx_to_codons.get(pdb_idx, OrderedDict())
 
-                # Check if the codon actually matched the AA at the
-                # corresponding location. Sometimes there may be
-                # mismatches ('.') because the DNA alignment isn't perfect.
-                # In such a case we'll set the codon to None to specify we
-                # don't know what codon encoded the AA in the PDB sequence.
-                matches = CODON_TABLE.get(codon, None) == pdb_aa_seq[pdb_idx]
-                idx_to_codon[pdb_idx] = codon if matches else None
+                    # Check if the codon actually matched the AA at the
+                    # corresponding location. Sometimes there may be
+                    # mismatches ('.') because the DNA alignment isn't perfect.
+                    # In such a case we'll set the codon to None to specify we
+                    # don't know what codon encoded the AA in the PDB sequence.
+                    aa_name = CODON_TABLE.get(codon, None)
+                    matches = aa_name == pdb_aa_seq[pdb_idx]
+                    codon = codon if matches else UNKNOWN_CODON
 
-        return best_ena, idx_to_codon
+                    # Map each codon to number of times seen
+                    codon_dict[codon] = codon_dict.get(codon, 0) + 1
+                    idx_to_codons[pdb_idx] = codon_dict
+
+        return best_ena, idx_to_codons
 
     def _find_pdb_xref(self, proposed_pdb_id=None) -> Tuple[str, str]:
         cross_refs = self.unp_rec.cross_references
@@ -464,5 +486,5 @@ class ProteinRecord(object):
 
 if __name__ == '__main__':
     pass
-    prec = ProteinRecord.from_pdb('2WUR')[0]
+    prec = ProteinRecord.from_pdb('2WUR', dihedral_est_name='erp')[0]
     prec.to_csv()
