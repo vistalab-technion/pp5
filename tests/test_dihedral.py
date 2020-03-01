@@ -10,10 +10,11 @@ from Bio.PDB import PPBuilder
 import tests
 from pp5.external_dbs import pdb
 from pp5 import dihedral
-from pp5.dihedral import calc_dihedral2
+from pp5.dihedral import DihedralAnglesEstimator
 
 from pytest import approx
 
+calc_dihedral2 = DihedralAnglesEstimator.calc_dihedral2
 RESOURCES_PATH = tests.TEST_RESOURCES_PATH.joinpath('dihedral')
 
 
