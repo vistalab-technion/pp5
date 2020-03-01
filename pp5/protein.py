@@ -15,7 +15,9 @@ from Bio.SeqRecord import SeqRecord
 from requests import RequestException
 
 import pp5
-from pp5.dihedral import Dihedral, pp_mean_bfactor
+from pp5.dihedral import Dihedral, DihedralAnglesEstimator, \
+    DihedralAnglesUncertaintyEstimator, DihedralAnglesMonteCarloEstimator, \
+    BFactorEstimator
 from pp5.external_dbs import pdb, unp, ena
 from pp5.external_dbs.pdb import PDBRecord
 from pp5.external_dbs.unp import UNPRecord
@@ -110,9 +112,10 @@ class ProteinRecord(object):
         # Get secondary-structure info using DSSP
         ss_dict, _ = pdb.pdb_to_secondary_structure(self.pdb_id)
 
-        # Get estimator of dihedral angles
-        dihedral_estimator = self._get_dihedral_estimator(dihedral_est_name,
-                                                          **dihedral_est_args)
+        # Get estimators of dihedral angles and b-factor
+        dihedral_est, bfactor_est = self._get_dihedral_estimators(
+            dihedral_est_name, **dihedral_est_args
+        )
 
         # Extract the PDB AA sequence, dihedral angles and b-factors
         # from the PDB structure.
@@ -139,8 +142,8 @@ class ProteinRecord(object):
 
             pdb_aa_seq += str(pp.get_sequence())
             aa_idxs.extend(range(curr_start_idx, curr_end_idx + 1))
-            angles.extend(dihedral_estimator.estimate(pp))
-            bfactors.extend(pp_mean_bfactor(pp, backbone_only=True))
+            angles.extend(dihedral_est.estimate(pp))
+            bfactors.extend(bfactor_est.average_bfactors(pp))
             res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
             sss = (ss_dict.get(res_id, '-') for res_id in res_ids)
             sstructs.extend(sss)
@@ -301,9 +304,13 @@ class ProteinRecord(object):
             alignments.append(alignment)
 
         # Sort alignments by score
-        best_ena, best_alignments = max(
+        # best_ena, best_alignments = max(
+        #     zip(ena_seqs, alignments), key=lambda x: x[1].score
+        # )
+        alignments = sorted(
             zip(ena_seqs, alignments), key=lambda x: x[1].score
         )
+        best_ena, best_alignments = alignments[0]
         best_alignment = best_alignments[0]
 
         LOGGER.info(f'{self}: ENA ID = {best_ena.id}')
@@ -313,10 +320,11 @@ class ProteinRecord(object):
                     f'num={len(best_alignments)})\n'
                     f'{best_alignment}')
 
-        dna_seq = str(best_ena.seq)
+        # idx_to_codon = self._match_codons()
 
         # Indices in the DNA AA seq which are aligned to the PDB AA seq
         aligned_idx_pdb_aa, aligned_idx_dna_aa = best_alignment.aligned
+        dna_seq = str(best_ena.seq)
 
         idx_to_codon = {}
         for i in range(len(aligned_idx_dna_aa)):
@@ -398,25 +406,26 @@ class ProteinRecord(object):
 
         return pdb_id, chain_id
 
-    def _get_dihedral_estimator(self, est_name, **est_args):
+    def _get_dihedral_estimators(self, est_name, **est_args):
         est_name = est_name.lower() if est_name else est_name
         if not est_name in {None, '', 'erp', 'mc'}:
             raise ProteinInitError(
                 f'Unknown dihedral estimation method {est_name}')
 
-        if est_name == 'mc':
-            unit_cell = pdb.pdb_to_unit_cell(self.pdb_id)
-            args = dict(isotropic=False, n_samples=100, skip_omega=True)
-            args.update(est_args)
-            est = pp5.dihedral.DihedralAnglesMonteCarloEstimator(
-                unit_cell, **args
-            )
-        elif est_name == 'erp':
-            est = pp5.dihedral.DihedralAnglesUncertaintyEstimator(**est_args)
-        else:
-            est = pp5.dihedral.DihedralAnglesEstimator(**est_args)
+        unit_cell = pdb.pdb_to_unit_cell(self.pdb_id)
+        args = dict(isotropic=False, n_samples=100, skip_omega=True)
+        args.update(est_args)
 
-        return est
+        if est_name == 'mc':
+            d_est = DihedralAnglesMonteCarloEstimator(unit_cell, **args)
+        elif est_name == 'erp':
+            d_est = DihedralAnglesUncertaintyEstimator(unit_cell, **est_args)
+        else:
+            d_est = DihedralAnglesEstimator(**est_args)
+
+        b_est = BFactorEstimator(backbone_only=True, unit_cell=None,
+                                 isotropic=True)
+        return d_est, b_est
 
     def __repr__(self):
         return f'({self.unp_id}, {self.pdb_id}:{self.pdb_chain_id})'
@@ -455,3 +464,5 @@ class ProteinRecord(object):
 
 if __name__ == '__main__':
     pass
+    prec = ProteinRecord.from_pdb('2WUR')[0]
+    prec.to_csv()
