@@ -57,9 +57,9 @@ def collect_data(query: PDBQuery):
                       initializer=worker_process_init,
                       initargs=(base_workers_dl_dir,)) as pool:
         for i, pdb_id in enumerate(pdb_ids):
-            async_results.append(
-                pool.apply_async(ProteinRecord.from_pdb, (pdb_id,))
-            )
+            r = pool.apply_async(ProteinRecord.from_pdb, args=(pdb_id,),
+                                 kwds=dict(dihedral_est_name='erp'))
+            async_results.append(r)
 
         start_time, counter = time.time(), 0
         for async_result in async_results:
@@ -78,7 +78,8 @@ def collect_data(query: PDBQuery):
 
             # Write to file
             for prec in protein_recs:
-                prec.to_csv(pp5.data_subdir('proteins'))
+                csv_path = prec.to_csv(pp5.data_subdir('proteins'))
+                LOGGER.info(f'Wrote output CSV {csv_path}')
 
         clean_worker_downloads(base_workers_dl_dir)
         LOGGER.info(f"Done: {counter} proteins collected.")
