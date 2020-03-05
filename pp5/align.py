@@ -2,11 +2,19 @@ import io
 import logging
 import os
 import subprocess
+import tempfile
+import contextlib
+from pathlib import Path
 from typing import Iterable
+
+import pymol.cmd as pymol
 
 from Bio import AlignIO, SeqIO
 from Bio.Align.Applications import ClustalOmegaCommandline
 from Bio.Seq import Seq
+
+import pp5
+from pp5.external_dbs import pdb
 
 LOGGER = logging.getLogger(__name__)
 
@@ -92,3 +100,51 @@ def multiseq_align(seqs: Iterable[Seq] = None, in_file=None, out_file=None,
 
     return msa_result
 
+
+def structural_align(pdb_id1, pdb_id2):
+    """
+    Aligns two structures using PyMOL, both in terms of pairwise sequence
+    alignment and in terms of structural superposition.
+    :param pdb_id1:
+    :param pdb_id2:
+    :return:
+    """
+    align_obj = None
+    align_ids = []
+    tmp_outfile = None
+    try:
+        for pdb_id in [pdb_id1, pdb_id2]:
+            base_id, chain_id = pdb.split_id(pdb_id)
+            path = pdb.pdb_download(base_id)
+            pymol.load(str(path), object=base_id)
+
+            if chain_id:
+                pymol.split_chains(base_id)
+                align_ids.append(f'{base_id}_{chain_id}')
+            else:
+                align_ids.append(f'{base_id}')
+
+        src, tgt = align_ids
+        align_obj = f'align_{src}_{tgt}'
+        scores = pymol.align(src, tgt, object=align_obj)
+        rmsd, n_aligned_atoms, n_cycles, rmsd_pre, n_aligned_atoms_pre, \
+        alignment_score, n_aligned_residues = scores
+
+        tmp_outfile = Path(tempfile.gettempdir()).joinpath(f'{align_obj}.aln')
+        pymol.save(tmp_outfile, align_obj)
+        aligned_seq = AlignIO.read(tmp_outfile, 'clustal')
+
+        return rmsd, aligned_seq
+    finally:
+        # Remove pymol loaded structures and their chains
+        for pdb_id in [pdb_id1, pdb_id2]:
+            base_id, chain_id = pdb.split_id(pdb_id)
+            pymol.delete(f'{base_id}*')
+
+        # Remove alignment object in pymol
+        if align_obj:
+            pymol.delete(align_obj)
+
+        # Remove temporary file
+        if tmp_outfile:
+            os.remove(str(tmp_outfile))
