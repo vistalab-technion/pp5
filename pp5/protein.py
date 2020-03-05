@@ -441,9 +441,9 @@ class ProteinRecord(object):
         if est_name == 'mc':
             d_est = DihedralAnglesMonteCarloEstimator(unit_cell, **args)
         elif est_name == 'erp':
-            d_est = DihedralAnglesUncertaintyEstimator(unit_cell, **est_args)
+            d_est = DihedralAnglesUncertaintyEstimator(unit_cell, **args)
         else:
-            d_est = DihedralAnglesEstimator(**est_args)
+            d_est = DihedralAnglesEstimator(**args)
 
         b_est = BFactorEstimator(backbone_only=True, unit_cell=None,
                                  isotropic=True)
