@@ -1,4 +1,6 @@
 import os
+import random
+import string
 
 import pytest
 from Bio.PDB.PDBExceptions import PDBConstructionException
@@ -8,6 +10,49 @@ import tests
 import tests.utils
 
 NO_INTERNET = not tests.utils.has_internet()
+
+
+class TestSplitID:
+    @staticmethod
+    def _random_pdb_id(with_chain=False):
+        base_id = str.join('',
+                           [str(random.randrange(10))] +
+                           random.choices(string.ascii_letters, k=3))
+        if not with_chain:
+            return base_id
+
+        return base_id + f':{random.choice(string.ascii_letters)}'
+
+    def test_split_no_chain(self):
+        for _ in range(100):
+            expected_id = self._random_pdb_id()
+            id, chain = pdb.split_id(expected_id)
+            assert id == expected_id, expected_id
+            assert chain is None, expected_id
+
+    def test_split_with_chain(self):
+        for _ in range(100):
+            full_id = self._random_pdb_id(with_chain=True)
+            expected_id, expected_chain = full_id.split(":")
+            id, chain = pdb.split_id(full_id)
+            assert id == expected_id, full_id
+            assert chain == expected_chain, full_id
+
+    def test_doesnt_start_with_digit(self):
+        for _ in range(100):
+            full_id = self._random_pdb_id(with_chain=bool(random.randrange(2)))
+            invalid_id = f'{random.choice(string.ascii_letters)}{full_id[1:]}'
+
+            with pytest.raises(ValueError) as exc_info:
+                pdb.split_id(invalid_id)
+
+    def test_too_long(self):
+        for _ in range(100):
+            full_id = self._random_pdb_id(with_chain=bool(random.randrange(2)))
+            invalid_id = f'{str(random.randrange(10))}{full_id}'
+
+            with pytest.raises(ValueError) as exc_info:
+                pdb.split_id(invalid_id)
 
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')

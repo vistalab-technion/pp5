@@ -1,3 +1,4 @@
+import re
 import abc
 import math
 from math import cos, sin, radians as rad, degrees as deg
@@ -15,9 +16,28 @@ from Bio.PDB.DSSP import dssp_dict_from_pdb_file
 from pp5 import PDB_DIR, get_resource_path
 from pp5.utils import remote_dl
 
+PDB_ID_PATTERN = re.compile(r'^(?P<id>[0-9][\w]{3})(?::(?P<chain>[a-z]))?$',
+                            re.IGNORECASE | re.ASCII)
+
 PDB_SEARCH_URL = 'https://www.rcsb.org/pdb/rest/search'
 PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
 LOGGER = logging.getLogger(__name__)
+
+
+def split_id(pdb_id):
+    """
+    Splits and validates a full PDB id consisting of a base id and
+    optionally also a chain, into a tuple with the base id and chain.
+    Will raise an exception if the given id is not a valid PDB id.
+    :param pdb_id: PDB id, either without a chain, e.g. '5JDT' or with a
+    chain, e.g. '5JDT:A'.
+    :return: A tuple (id, chain) where id is the base id and chain can be None.
+    """
+    match = PDB_ID_PATTERN.match(pdb_id)
+    if not match:
+        raise ValueError(f"Invalid PDB id format: {pdb_id}")
+
+    return match.group('id'), match.group('chain')
 
 
 def pdb_download(pdb_id: str, pdb_dir=PDB_DIR) -> Path:
