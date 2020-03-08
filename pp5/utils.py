@@ -1,10 +1,12 @@
-import logging
 import gzip
+import logging
 import os
-from pathlib import Path
-import requests
+import sys
 from collections.abc import Mapping, Set, Sequence
+from contextlib import contextmanager
+from pathlib import Path
 
+import requests
 from requests import HTTPError
 
 LOGGER = logging.getLogger(__name__)
@@ -78,3 +80,49 @@ def deep_walk(obj, path=(), memo=None):
 
     else:
         yield path, obj
+
+
+@contextmanager
+def out_redirected(stdout_stderr='stdout', to=os.devnull):
+    '''
+    Redirects stdout/stderr in a way that also affects C libraries called
+    from python code.
+
+    based on: https://stackoverflow.com/a/17954769/1230403
+    but modified to support also stderr and to update loggers.
+    '''
+    assert stdout_stderr in {'stdout', 'stderr'}
+
+    fd = getattr(sys, stdout_stderr).fileno()
+    assert (stdout_stderr == 'stdout' and fd == 1) or \
+           (stdout_stderr == 'stderr' and fd == 2)
+
+    # Loggers which log to the stream being redirected must be modified
+    logging_handlers = [h for h in logging.root.handlers
+                        if isinstance(h, logging.StreamHandler)
+                        and h.stream.fileno() == fd]
+
+    def _redirect(to_stream):
+        old_stream = getattr(sys, stdout_stderr)
+        old_stream.flush()
+        old_stream.close()
+
+        os.dup2(to_stream.fileno(), fd)  # fd writes to 'to' file
+        new_stream = os.fdopen(fd, 'w')
+        setattr(sys, stdout_stderr, new_stream)  # Python writes to fd
+
+        for lh in logging_handlers:
+            try:
+                lh.acquire()
+                lh.stream = new_stream
+            finally:
+                lh.release()
+
+    with os.fdopen(os.dup(fd), 'w') as old_stdout:
+        with open(to, 'w') as file:
+            _redirect(to_stream=file)
+        try:
+            yield  # allow code to be run with the redirected stdout
+        finally:
+            _redirect(to_stream=old_stdout)  # restore stdout.
+            # buffering and flags such as CLOEXEC may be different
