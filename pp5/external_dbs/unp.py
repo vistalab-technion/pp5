@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Set, List, Iterable
+from typing import Set, List, Iterable, NamedTuple
 from urllib.parse import urlsplit
 
 import requests
@@ -87,3 +87,57 @@ def find_ena_xrefs(unp_rec: UNPRecord, molecule_types: Iterable[str]) \
             ena_ids.append(id2)
 
     return ena_ids
+
+
+class UNPPDBXRef(NamedTuple):
+    """
+    Represents a PDB cross-ref within a Uniprot record
+    """
+    pdb_id: str
+    chain_id: str
+    seq_len: int
+    method: str
+    resolution: float
+
+    def __repr__(self):
+        return f'{self.pdb_id}:{self.chain_id} (res={self.resolution:.2f}Å, ' \
+               f'len={self.seq_len})'
+
+
+def find_pdb_xrefs(unp_rec: UNPRecord, method='x-ray') -> List[UNPPDBXRef]:
+    """
+    Find PDB cross-references with a specific methods type in a Uniprot
+    record.
+    :param unp_rec: The Uniprot record.
+    :param method: Currently only 'x-ray' is supported.
+    :return:
+    """
+    cross_refs = unp_rec.cross_references
+
+    # PDB cross refs are ('PDB', id, method, resolution, chains)
+    # E.g: ('PDB', '5EWX', 'X-ray', '2.60 A', 'A/B=1-35, A/B=38-164')
+    pdb_xrefs = (x for x in cross_refs if x[0].lower() == 'pdb')
+    pdb_xrefs = (x for x in pdb_xrefs if x[2].lower() == 'x-ray')
+
+    def split_xref_chains(xref_chains: str):
+        # Example xref_chains format
+        # A/B/C=1-100,A/B/C=110-121,X/Y/Z=122-200
+        # Returns a dict from chain name to it's length in residues
+        res = {}
+        for chain_str in xref_chains.split(','):
+            chain_names, chain_seqs = chain_str.split('=')
+            seq_start, seq_end = chain_seqs.split('-')
+            for chain_name in chain_names.split('/'):
+                res.setdefault(chain_name, 0)
+                res[chain_name] += int(seq_end) - int(seq_start)
+        return res
+
+    res = []
+    for _, pdb_id, method, resolution, chains_str in pdb_xrefs:
+        resolution = float(resolution.split()[0])
+        chains = split_xref_chains(chains_str)
+        for chain, seq_len in chains.items():
+            xref = UNPPDBXRef(pdb_id, chain, seq_len, method, resolution)
+            res.append(xref)
+
+    return res
