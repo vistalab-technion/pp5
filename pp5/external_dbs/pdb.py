@@ -46,6 +46,9 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR) -> Path:
     :param pdb_id: The id of the structure to download.
     :param pdb_dir: Directory to download PDB file to.
     """
+    # Separate id and chain if chain was specified
+    pdb_id, chain_id = split_id(pdb_id)
+
     pdb_id = pdb_id.lower()
     filename = get_resource_path(pdb_dir, f'{pdb_id}.cif')
     url = PDB_DOWNLOAD_URL_TEMPLATE.format(pdb_id)
