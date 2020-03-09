@@ -376,55 +376,40 @@ class ProteinRecord(object):
         return best_ena, idx_to_codons
 
     def _find_pdb_xref(self, proposed_pdb_id=None) -> Tuple[str, str]:
-        cross_refs = self.unp_rec.cross_references
         proposed_pdb_id = '' if not proposed_pdb_id else proposed_pdb_id
+        proposed_pdb_id, proposed_chain_id = pdb.split_id(proposed_pdb_id)
+        proposed_full_id = f'{proposed_pdb_id}:{proposed_chain_id}'
 
-        # PDB cross refs are ('PDB', id, method, resolution, chains)
-        # E.g: ('PDB', '5EWX', 'X-ray', '2.60 A', 'A/B=1-35, A/B=38-164')
-        pdb_xrefs = (x for x in cross_refs if x[0].lower() == 'pdb')
-        pdb_xrefs = (x for x in pdb_xrefs if x[2].lower() == 'x-ray')
+        xrefs = unp.find_pdb_xrefs(self.unp_rec, method='x-ray')
 
         # We'll sort the PDB entries according to multiple criteria based on
         # the resolution, number of chains and sequence length.
-        def sort_key(xref):
-            resolution = float(xref[3].split()[0])
-            chains_groups = xref[4].split(',')
-            chains = set()
-            seq_len_diff = 0
-            for chain_str in chains_groups:
-                chain_names, chain_seqs = chain_str.split('=')
-                chains.update(chain_names.split('/'))
-                seq_start, seq_end = chain_seqs.split('-')
-                seq_len = int(seq_end) - int(seq_start)
-                seq_len_diff += abs(self.unp_rec.sequence_length - seq_len)
-
-            id_cmp = xref[1].lower() != proposed_pdb_id.lower()
-            n_groups = len(chains_groups)
-            n_chains = len(chains)
+        def sort_key(xref: unp.UNPPDBXRef):
+            chain_cmp = xref.chain_id.lower() != proposed_chain_id.lower()
+            id_cmp = xref.pdb_id.lower() != proposed_pdb_id.lower()
+            seq_len_diff = abs(xref.seq_len - self.unp_rec.sequence_length)
 
             # The sort key for PDB entries
             # First, if we have a matching id to the proposed PDB id we take
             # it. Otherwise, we take the best match according to seq len and
             # resolution.
-            return id_cmp, seq_len_diff, resolution, n_groups, n_chains
+            return id_cmp, chain_cmp, seq_len_diff, xref.resolution
 
-        pdb_xrefs = sorted(pdb_xrefs, key=sort_key)
-        if not pdb_xrefs:
+        xrefs = sorted(xrefs, key=sort_key)
+        if not xrefs:
             raise ProteinInitError(f"No PDB cross-refs for {self.unp_id}")
 
         # Get best match according to sort key and return its id.
-        xref = pdb_xrefs[0]
-        LOGGER.info(f'{self.unp_id}: PDB ID = {xref[1]}|{xref[3]}|{xref[4]}')
+        xref = xrefs[0]
+        LOGGER.info(f'{self.unp_id}: PDB XREF = {xref}')
 
-        # We just need one of the chain IDs in the cross-reference, so we'll
-        # take the first one.
-        pdb_id = xref[1]
-        chains_str = xref[4]
-        chain_id = chains_str[0]
-        if proposed_pdb_id and pdb_id != proposed_pdb_id:
-            LOGGER.warning(f"Proposed PDB id {proposed_pdb_id} not found as "
-                           f"cross-reference for protein {self.unp_id}, "
-                           f"using {pdb_id} instead.")
+        pdb_id = xref.pdb_id
+        chain_id = xref.chain_id
+
+        if f'{pdb_id}:{chain_id}'.lower() != proposed_full_id.lower():
+            LOGGER.warning(f"Proposed PDB ID {proposed_full_id} not found as "
+                           f"cross-reference for protein {self.unp_id}. "
+                           f"Using {pdb_id}:{chain_id} instead.")
 
         return pdb_id, chain_id
 
