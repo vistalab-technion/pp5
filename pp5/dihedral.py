@@ -6,11 +6,13 @@ from typing import List
 import Bio.PDB as PDB
 import numba
 import numpy as np
+import uncertainties
+import uncertainties.unumpy as unumpy
+import uncertainties.umath as umath
 from Bio.PDB.Atom import Atom
 from Bio.PDB.Polypeptide import Polypeptide
 from Bio.PDB.Residue import Residue
 from numpy import ndarray
-from uncertainties import unumpy, umath
 
 from pp5.external_dbs.pdb import PDBUnitCell
 
@@ -184,14 +186,14 @@ class DihedralAnglesUncertaintyEstimator(DihedralAnglesEstimator):
     b-factors and error propagation.
     """
 
-    def __init__(self, unit_cell: PDBUnitCell = None, isotropic=True):
+    def __init__(self, unit_cell: PDBUnitCell = None, isotropic=True, **kw):
         """
         :param unit_cell: Unit-cell of the PDB structure. Optional,
         but must be provided if isotropic=False.
         :param isotropic: Whether to use isotropic b-factor or anisotropic
         temperature factors.
         """
-        super().__init__()
+        super().__init__(**kw)
         self.bfactor_est = BFactorEstimator(True, unit_cell, isotropic)
 
     def _calc_fn(self, *atoms: Atom):
@@ -222,7 +224,7 @@ class DihedralAnglesMonteCarloEstimator(DihedralAnglesUncertaintyEstimator):
     """
 
     def __init__(self, unit_cell: PDBUnitCell = None, isotropic=True,
-                 n_samples=100, skip_omega=False):
+                 n_samples=100, skip_omega=False, **kw):
         """
         :param unit_cell: Unit-cell of the PDB structure. Optional,
         but must be provided if isotropic=False.
@@ -230,7 +232,7 @@ class DihedralAnglesMonteCarloEstimator(DihedralAnglesUncertaintyEstimator):
         temperature factors.
         :param n_samples: How many monte carlo samples per angle.
         """
-        super().__init__(unit_cell, isotropic)
+        super().__init__(unit_cell, isotropic, **kw)
         self.n_samples = n_samples
         self.skip_omega = skip_omega
 
@@ -259,7 +261,7 @@ class DihedralAnglesMonteCarloEstimator(DihedralAnglesUncertaintyEstimator):
 
 class BFactorEstimator(object):
     def __init__(self, backbone_only=True, unit_cell: PDBUnitCell = None,
-                 isotropic=True):
+                 isotropic=True, sigma_factor=1.):
         """
         :param backbone_only: Whether to only average over backbone atoms,
         i.e. N CA C (where CA means alpha-carbon).
@@ -268,6 +270,8 @@ class BFactorEstimator(object):
         but must be provided if isotropic=False.
         :param isotropic: Whether to use isotropic b-factor or anisotropic
         temperature factors.
+        :param sigma_factor: Constant factor to apply to covariance. For
+        debugging.
         """
         super().__init__()
         if unit_cell is None and isotropic is False:
@@ -275,6 +279,7 @@ class BFactorEstimator(object):
         self.bb_only = backbone_only
         self.unit_cell = unit_cell
         self.isotropic = isotropic
+        self.sigma_factor = sigma_factor
 
     def average_bfactors(self, pp: PDB.Polypeptide) -> List[float]:
         """
@@ -334,7 +339,7 @@ class BFactorEstimator(object):
             # Change from direct lattice to cartesian coordinates
             S = self.unit_cell.direct_lattice_to_cartesian(U)
             S[j, i] = S[i, j]  # fix slight asymmetry due to rounding
-        return S
+        return S * self.sigma_factor
 
     def atom_avg(self, a: Atom) -> float:
         """
