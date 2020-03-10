@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import math
 import warnings
-from typing import List, Tuple, Dict, Iterator, Callable, Any
+from typing import List, Tuple, Dict, Iterator, Callable, Any, Union
 from collections import OrderedDict
 
 import pandas as pd
@@ -42,7 +42,9 @@ class ProteinInitError(ValueError):
 class ResidueRecord(object):
     """
     Represents a singe residue in a protein record.
-    - Sequence id: (number of this residue in the sequence)
+    - Sequence id: (identifier of this residue in the sequence, usually an
+    integer + insertion code if present, which indicates some alteration
+    compared to the wild-type)
     - Name: (single letter AA code or X for unknown)
     - Codon: three-letter nucleotide sequence
     - Codon score: Confidence measure for the codon match
@@ -52,9 +54,9 @@ class ResidueRecord(object):
     - secondary: single-letter secondary structure code
     """
 
-    def __init__(self, seq_id: int, name: str, codon_counts: dict,
+    def __init__(self, res_id: Union[str, int], name: str, codon_counts: dict,
                  angles: Dihedral, bfactor: float, secondary: str):
-        self.seq_id, self.name = seq_id, name
+        self.res_id, self.name = str(res_id), name
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
 
         codon_counts = {} if not codon_counts else codon_counts
@@ -79,7 +81,7 @@ class ResidueRecord(object):
         self.__init__(**state)
 
     def __repr__(self):
-        return f'#{self.seq_id:03d}: {self.name} [{self.codon}] ' \
+        return f'#{self.res_id:03d}: {self.name} [{self.codon}] ' \
                f'{self.angles} b={self.bfactor:.2f}, {self.secondary}'
 
 
@@ -182,7 +184,7 @@ class ProteinRecord(object):
         # Even though we're working with one PDB chain, the results is a
         # list of multiple Polypeptide objects because we split them at
         # non-standard residues (HETATM atoms in PDB).
-        pdb_aa_seq, aa_idxs, angles, bfactors, sstructs = '', [], [], [], []
+        pdb_aa_seq, aa_ids, angles, bfactors, sstructs = '', [], [], [], []
         for i, pp in enumerate(self.polypeptides):
             curr_start_idx = pp[0].get_id()[1]
             curr_end_idx = pp[-1].get_id()[1]
@@ -195,13 +197,13 @@ class ProteinRecord(object):
 
                 # fill in the gaps
                 pdb_aa_seq += UNKNOWN_AA * gap_len
-                aa_idxs.extend(range(prev_end_idx + 1, curr_start_idx))
+                aa_ids.extend(range(prev_end_idx + 1, curr_start_idx))
                 angles.extend([Dihedral.empty()] * gap_len)
                 bfactors.extend([math.nan] * gap_len)
                 sstructs.extend(['-'] * gap_len)
 
             pdb_aa_seq += str(pp.get_sequence())
-            aa_idxs.extend(range(curr_start_idx, curr_end_idx + 1))
+            aa_ids.extend([str.join("", map(str, res.get_id())) for res in pp])
             angles.extend(dihedral_est.estimate(pp))
             bfactors.extend(bfactor_est.average_bfactors(pp))
             res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
@@ -222,7 +224,7 @@ class ProteinRecord(object):
         residue_recs = []
         for i in range(len(pdb_aa_seq)):
             rr = ResidueRecord(
-                seq_id=aa_idxs[i], name=pdb_aa_seq[i],
+                res_id=aa_ids[i], name=pdb_aa_seq[i],
                 codon_counts=idx_to_codons.get(i, {}),
                 angles=angles[i],
                 bfactor=bfactors[i], secondary=sstructs[i],
