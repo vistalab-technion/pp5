@@ -152,9 +152,11 @@ class ProteinRecord(object):
         class methods provided for this purpose.
 
         :param unp_id: Uniprot id which uniquely identifies the protein.
-        :param pdb_id: PDB id of the specific structure desired. Note that
-        this structure must match, i.e. exist in the cross-refs of the given
-        Uniprot id. Otherwise an error will be raised.
+        :param pdb_id: PDB id with or without chain (e.g. '1ABC' or '1ABC:D')
+        of the specific structure desired. Note that this structure must match
+        the unp_id, i.e. it must exist in the cross-refs of the given unp_id.
+        Otherwise an error will be raised. If no chain is specified, a chain
+        matching the unp_id will be used, if it exists.
         :param dihedral_est_name: Method of dihedral angle estimation. None
         or empty to calculate angles without error estimation; 'erp' for
         standard error propagation; 'mc' for montecarlo error estimation.
@@ -427,17 +429,17 @@ class ProteinRecord(object):
         if not ref_chain_id:
             ref_chain_id = ''
 
-        ref_full_id = f'{ref_pdb_id}:{ref_chain_id}'
+        ref_pdb_id, ref_chain_id = ref_pdb_id.lower(), ref_chain_id.lower()
+        ref_full_id = f'{ref_pdb_id}{":" if ref_chain_id else ""}{ref_chain_id}'
 
         xrefs = unp.find_pdb_xrefs(self.unp_rec, method='x-ray')
 
         # We'll sort the PDB entries according to multiple criteria based on
         # the resolution, number of chains and sequence length.
         def sort_key(xref: unp.UNPPDBXRef):
-            chain_cmp = xref.chain_id.lower() != ref_chain_id.lower()
-            id_cmp = xref.pdb_id.lower() != ref_pdb_id.lower()
+            id_cmp = xref.pdb_id.lower() != ref_pdb_id
+            chain_cmp = xref.chain_id.lower() != ref_chain_id
             seq_len_diff = abs(xref.seq_len - self.unp_rec.sequence_length)
-
             # The sort key for PDB entries
             # First, if we have a matching id to the reference PDB id we take
             # it. Otherwise, we take the best match according to seq len and
@@ -452,15 +454,22 @@ class ProteinRecord(object):
         xref = xrefs[0]
         LOGGER.info(f'{self.unp_id}: PDB XREF = {xref}')
 
-        pdb_id = xref.pdb_id
-        chain_id = xref.chain_id
+        pdb_id = xref.pdb_id.lower()
+        chain_id = xref.chain_id.lower()
 
-        if f'{pdb_id}:{chain_id}'.lower() != ref_full_id.lower():
+        # Make sure we have a match with the Uniprot id. Id chain wasn't
+        # specified, match only PDB ID, otherwise, both must match.
+        if pdb_id != ref_pdb_id:
             raise ProteinInitError(
-                f"Reference PDB ID {ref_full_id} not found as "
+                f"Reference PDB ID {ref_pdb_id} not found as "
                 f"cross-reference for protein {self.unp_id}")
+        if ref_chain_id and chain_id != ref_chain_id:
+            raise ProteinInitError(
+                f"Reference chain {ref_chain_id} of PDB ID {ref_pdb_id} not"
+                f"found as cross-reference for protein {self.unp_id}."
+                f"Did you mean chain {chain_id}?")
 
-        return pdb_id, chain_id
+        return pdb_id.upper(), chain_id.upper()
 
     def _get_dihedral_estimators(self, est_name, **est_args):
         est_name = est_name.lower() if est_name else est_name
