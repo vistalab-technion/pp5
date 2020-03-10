@@ -145,7 +145,7 @@ class ProteinRecord(object):
                                    f"unp_id={unp_id}") from e
 
     def __init__(self, unp_id: str, pdb_id,
-                 dihedral_est_name=None, dihedral_est_args={}):
+                 dihedral_est_name='erp', dihedral_est_args={}):
         """
         Initialize a protein record from both Uniprot and PDB ids.
         To initialize a protein from Uniprot id or PDB id only, use the
@@ -172,6 +172,11 @@ class ProteinRecord(object):
         # Uniprot id. If a proposed_pdb_id is given we'll try to use that.
         self.unp_id = unp_id
         self.pdb_id, self.pdb_chain_id = self._find_pdb_xref(pdb_id)
+
+        # Make sure the structure is sane. See e.g. 1FFK.
+        if not self.polypeptides:
+            raise ProteinInitError(f"No parsable residues in {self.pdb_id}:"
+                                   f"{self.pdb_chain_id}")
 
         # Get secondary-structure info using DSSP
         ss_dict, _ = pdb.pdb_to_secondary_structure(self.pdb_id)
