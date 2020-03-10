@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import math
 import warnings
-from typing import List, Tuple, Dict, Iterator
+from typing import List, Tuple, Dict, Iterator, Callable, Any
 from collections import OrderedDict
 
 import pandas as pd
@@ -100,28 +100,74 @@ class ProteinRecord(object):
     """
     _SKIP_SERIALIZE = ['_unp_rec', '_pdb_rec', '_pp']
 
-    def __init__(self, unp_id: str, proposed_pdb_id=None,
+    @classmethod
+    def from_pdb(cls, pdb_id: str, **kwargs) -> ProteinRecord:
+        """
+        Given a PDB id (and optionally a chain), finds the
+        corresponding Uniprot id, and returns a ProteinRecord object for
+        that protein.
+        :param pdb_id: The PDB id to query, with optional chain, e.g. '0ABC:D'.
+        :param kwargs: Extra args for the ProteinRecord initializer.
+        :return: A ProteinRecord.
+        """
+        try:
+            unp_id = pdb.pdbid_to_unpid(pdb_id)
+            return cls(unp_id, pdb_id, **kwargs)
+        except Exception as e:
+            raise ProteinInitError(f"Failed to created protein record for "
+                                   f"pdb_id={pdb_id}") from e
+
+    @classmethod
+    def from_unp(cls, unp_id: str,
+                 xref_selector: Callable[[unp.UNPPDBXRef], Any] = None,
+                 **kwargs) -> ProteinRecord:
+        """
+        Creates a ProteinRecord from a Uniprot ID.
+        The PDB structure with best resolution will be used.
+        :param unp_id: The Uniprot id to query.
+        :param xref_selector: Sort key for PDB cross refs. If None,
+        resolution will be used.
+        :param kwargs: Extra args for the ProteinRecord initializer.
+        :return: A ProteinRecord.
+        """
+        if not xref_selector:
+            xref_selector = lambda xr: xr.resolution
+
+        try:
+            xrefs = unp.find_pdb_xrefs(unp_id)
+            xrefs = sorted(xrefs, key=xref_selector)
+            pdb_id = f'{xrefs[0].pdb_id}:{xrefs[0].chain_id}'
+            return cls(unp_id, pdb_id, **kwargs)
+        except Exception as e:
+            raise ProteinInitError(f"Failed to created protein record for "
+                                   f"unp_id={unp_id}") from e
+
+    def __init__(self, unp_id: str, pdb_id,
                  dihedral_est_name=None, dihedral_est_args={}):
         """
-        Initialize a protein record.
+        Initialize a protein record from both Uniprot and PDB ids.
+        To initialize a protein from Uniprot id or PDB id only, use the
+        class methods provided for this purpose.
+
         :param unp_id: Uniprot id which uniquely identifies the protein.
-        :param proposed_pdb_id: Optional PDB id in case a *specific*
-        structure is desired. If not provided, OR if provided but it does
-        not exist as a cross-reference in the Uniprot record, the PDB id of
-        the matching structure with best X-ray resolution and best-matching
-        sequence length will be selected.
+        :param pdb_id: PDB id of the specific structure desired. Note that
+        this structure must match, i.e. exist in the cross-refs of the given
+        Uniprot id. Otherwise an error will be raised.
         :param dihedral_est_name: Method of dihedral angle estimation. None
         or empty to calculate angles without error estimation; 'erp' for
         standard error propagation; 'mc' for montecarlo error estimation.
         :param dihedral_est_args: Extra arguments for dihedral estimator.
         """
+        if not (unp_id and pdb_id):
+            raise ValueError("Must provide both Uniprot and PDB IDs")
+
         LOGGER.info(f'{unp_id}: Initializing protein record...')
         self.__setstate__({})
 
         # First we must find a matching PDB structure and chain for the
         # Uniprot id. If a proposed_pdb_id is given we'll try to use that.
         self.unp_id = unp_id
-        self.pdb_id, self.pdb_chain_id = self._find_pdb_xref(proposed_pdb_id)
+        self.pdb_id, self.pdb_chain_id = self._find_pdb_xref(pdb_id)
 
         # Get secondary-structure info using DSSP
         ss_dict, _ = pdb.pdb_to_secondary_structure(self.pdb_id)
@@ -374,27 +420,24 @@ class ProteinRecord(object):
 
         return best_ena, idx_to_codons
 
-    def _find_pdb_xref(self, proposed_pdb_id=None) -> Tuple[str, str]:
-        if not proposed_pdb_id:
-            proposed_pdb_id, proposed_chain_id = '', ''
-        else:
-            proposed_pdb_id, proposed_chain_id = pdb.split_id(proposed_pdb_id)
-            if not proposed_chain_id:
-                proposed_chain_id = ''
+    def _find_pdb_xref(self, ref_pdb_id) -> Tuple[str, str]:
+        ref_pdb_id, ref_chain_id = pdb.split_id(ref_pdb_id)
+        if not ref_chain_id:
+            ref_chain_id = ''
 
-        proposed_full_id = f'{proposed_pdb_id}:{proposed_chain_id}'
+        ref_full_id = f'{ref_pdb_id}:{ref_chain_id}'
 
         xrefs = unp.find_pdb_xrefs(self.unp_rec, method='x-ray')
 
         # We'll sort the PDB entries according to multiple criteria based on
         # the resolution, number of chains and sequence length.
         def sort_key(xref: unp.UNPPDBXRef):
-            chain_cmp = xref.chain_id.lower() != proposed_chain_id.lower()
-            id_cmp = xref.pdb_id.lower() != proposed_pdb_id.lower()
+            chain_cmp = xref.chain_id.lower() != ref_chain_id.lower()
+            id_cmp = xref.pdb_id.lower() != ref_pdb_id.lower()
             seq_len_diff = abs(xref.seq_len - self.unp_rec.sequence_length)
 
             # The sort key for PDB entries
-            # First, if we have a matching id to the proposed PDB id we take
+            # First, if we have a matching id to the reference PDB id we take
             # it. Otherwise, we take the best match according to seq len and
             # resolution.
             return id_cmp, chain_cmp, seq_len_diff, xref.resolution
@@ -410,10 +453,10 @@ class ProteinRecord(object):
         pdb_id = xref.pdb_id
         chain_id = xref.chain_id
 
-        if f'{pdb_id}:{chain_id}'.lower() != proposed_full_id.lower():
-            LOGGER.warning(f"Proposed PDB ID {proposed_full_id} not found as "
-                           f"cross-reference for protein {self.unp_id}. "
-                           f"Using {pdb_id}:{chain_id} instead.")
+        if f'{pdb_id}:{chain_id}'.lower() != ref_full_id.lower():
+            raise ProteinInitError(
+                f"Reference PDB ID {ref_full_id} not found as "
+                f"cross-reference for protein {self.unp_id}")
 
         return pdb_id, chain_id
 
@@ -453,26 +496,24 @@ class ProteinRecord(object):
         for attr in self._SKIP_SERIALIZE:
             self.__setattr__(attr, None)
 
-    @classmethod
-    def from_pdb(cls, pdb_id: str, **kwargs) -> ProteinRecord:
-        """
-        Given a PDB id, finds all the proteins it contains (usually one) in
-        terms of unique Uniprot ids, and returns a sequence of ProteinRecord
-        objects for each.
-        :param pdb_id: The PDB id to query, with optional chain, e.g. '0ABC:D'.
-        :param kwargs: Extra args for the ProteinRecord initializer.
-        :return: A ProteinRecord.
-        """
-        try:
-            unp_id = pdb.pdbid_to_unpid(pdb_id)
-            return cls(unp_id, pdb_id, **kwargs)
-        except Exception as e:
-            raise ProteinInitError(f"Failed to created protein record for "
-                                   f"{pdb_id}") from e
-
-
 
 if __name__ == '__main__':
-    pass
-    prec = ProteinRecord.from_pdb('2WUR', dihedral_est_name='erp')[0]
-    prec.to_csv()
+    # prec = ProteinRecord.from_pdb('5jdt:B', dihedral_est_name='erp')
+    prec = ProteinRecord.from_pdb('2WUR:A', dihedral_est_name='erp')
+    prec = ProteinRecord.from_pdb('4GY3:B', dihedral_est_name='erp')
+    prec = ProteinRecord.from_unp('P00720')
+    # prec = ProteinRecord.from_unp('P00720', xref_selector=lambda xr:xr.pdb_id)
+    # prec = ProteinRecord.from_pdb('102L:A', dihedral_est_name='erp')
+    # prec.to_csv()
+
+    # import itertools as it
+    #
+    # pdb_ids = {'2wur', '5jdt'}
+    # methods = {'mc', 'erp'}
+    # factors = {1e-1, 1e-2, 1e-3, 1e-4, 1e-5}
+    #
+    # for pdb_id, method, factor in it.product(pdb_ids, methods, factors):
+    #     args = dict(dihedral_est_name=method,
+    #                 dihedral_est_args={'sigma_factor': factor})
+    #     prec = ProteinRecord.from_pdb(pdb_id, **args)[0]
+    #     prec.to_csv(tag=f'{method}_{factor:.0e}')
