@@ -13,7 +13,6 @@ from Bio.PDB import PPBuilder
 from Bio.PDB.Polypeptide import Polypeptide
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
-from requests import RequestException
 
 import pp5
 from pp5.dihedral import Dihedral, DihedralAnglesEstimator, \
@@ -300,7 +299,7 @@ class ProteinRecord(object):
         for i, ena_id in enumerate(ena_ids):
             try:
                 ena_seqs.append(ena.ena_seq(ena_id))
-            except RequestException as e:
+            except IOError as e:
                 LOGGER.warning(f"{self}: Invalid ENA id {ena_id}")
             if i > max_enas:
                 LOGGER.warning(f"{self}: Over {max_enas} ENA ids, "
@@ -376,8 +375,13 @@ class ProteinRecord(object):
         return best_ena, idx_to_codons
 
     def _find_pdb_xref(self, proposed_pdb_id=None) -> Tuple[str, str]:
-        proposed_pdb_id = '' if not proposed_pdb_id else proposed_pdb_id
-        proposed_pdb_id, proposed_chain_id = pdb.split_id(proposed_pdb_id)
+        if not proposed_pdb_id:
+            proposed_pdb_id, proposed_chain_id = '', ''
+        else:
+            proposed_pdb_id, proposed_chain_id = pdb.split_id(proposed_pdb_id)
+            if not proposed_chain_id:
+                proposed_chain_id = ''
+
         proposed_full_id = f'{proposed_pdb_id}:{proposed_chain_id}'
 
         xrefs = unp.find_pdb_xrefs(self.unp_rec, method='x-ray')
@@ -450,23 +454,22 @@ class ProteinRecord(object):
             self.__setattr__(attr, None)
 
     @classmethod
-    def from_pdb(cls, pdb_id: str, **kwargs) -> List[ProteinRecord]:
+    def from_pdb(cls, pdb_id: str, **kwargs) -> ProteinRecord:
         """
         Given a PDB id, finds all the proteins it contains (usually one) in
         terms of unique Uniprot ids, and returns a sequence of ProteinRecord
         objects for each.
-        :param pdb_id: The PDB id to query.
+        :param pdb_id: The PDB id to query, with optional chain, e.g. '0ABC:D'.
         :param kwargs: Extra args for the ProteinRecord initializer.
-        :return: A sequence of ProteinRecord (lazily generated).
+        :return: A ProteinRecord.
         """
-        # pdb id -> mlutiple uniprot ids -> multiple ProteinRecords
-        unp_ids = pdb.pdbid_to_unpids(pdb_id)
-        if not unp_ids:
-            raise ProteinInitError(f"Can't find Uniprot cross-reference for "
-                                   f"pdb_id={pdb_id}")
+        try:
+            unp_id = pdb.pdbid_to_unpid(pdb_id)
+            return cls(unp_id, pdb_id, **kwargs)
+        except Exception as e:
+            raise ProteinInitError(f"Failed to created protein record for "
+                                   f"{pdb_id}") from e
 
-        protein_recs = [cls(unp_id, pdb_id, **kwargs) for unp_id in unp_ids]
-        return protein_recs
 
 
 if __name__ == '__main__':
