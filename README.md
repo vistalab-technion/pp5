@@ -26,9 +26,7 @@ of proteins structure.
 |- out/             # Folder for generated output files
 ```
 
-## Working with the code
-
-### Environment set-up
+## Initial set-up
 
 1. Install the python3 version of [miniconda](https://conda.io/miniconda.html).
    Follow the [installation instructions](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)
@@ -54,6 +52,10 @@ of proteins structure.
    ```shell
    conda env list
    ```
+4. To make sure everything is working, simply run all the tests by typing
+    ```shell
+    pytest
+    ```
    
 ## Examples
 
