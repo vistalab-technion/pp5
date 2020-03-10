@@ -60,7 +60,7 @@ class TestPDB:
     @classmethod
     def setup_class(cls):
         cls.test_id = '102L'
-        cls.TEMP_PATH = tests.utils.get_tmp_path('pdb')
+        cls.TEMP_PATH = tests.get_tmp_path('pdb')
 
     @classmethod
     def teardown_class(cls):
@@ -85,7 +85,7 @@ class TestPDB:
 class TestPDBToUNP:
     @classmethod
     def setup_class(cls):
-        cls.TEMP_PATH = tests.utils.get_tmp_path('pdb')
+        cls.TEMP_PATH = tests.get_tmp_path('pdb')
 
     def _check(self, pdb_id, expected_unp_id):
         actual_unp_id = pdb.pdbid_to_unpid(pdb_id, self.TEMP_PATH)
@@ -120,7 +120,7 @@ class TestPDBToUNP:
 class TestPDBQueries:
     @classmethod
     def setup_class(cls):
-        cls.TEMP_PATH = tests.utils.get_tmp_path('pdb')
+        cls.TEMP_PATH = tests.get_tmp_path('pdb')
 
     def test_resolution_query(self):
         min_res = 0.4

@@ -7,7 +7,7 @@ import tests.utils
 from pp5.utils import remote_dl
 
 RESOURCES_PATH = tests.TEST_RESOURCES_PATH.joinpath('remote_dl')
-TEMP_OUT_PATH = tests.utils.get_tmp_path('remote_dl')
+TEMP_OUT_PATH = tests.get_tmp_path('remote_dl')
 
 
 class TestRemoteDL:

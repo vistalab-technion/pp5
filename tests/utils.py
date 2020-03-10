@@ -1,10 +1,7 @@
-import os
 import socket
 import socketserver
 from http.server import SimpleHTTPRequestHandler
 from threading import Thread
-
-import tests
 
 
 class FileServer(socketserver.TCPServer):
@@ -73,12 +70,3 @@ def has_internet():
     return False
 
 
-def get_tmp_path(name: str, clear=True):
-    path = tests.TEST_RESOURCES_PATH.joinpath(name, 'tmp')
-    os.makedirs(path, exist_ok=True)
-
-    if clear:
-        for f in path.glob('*'):
-            os.remove(f)
-
-    return path
