@@ -42,9 +42,15 @@ def unp_download(unp_id: str, unp_dir=UNP_DIR) -> Path:
         return remote_dl(url, filename, skip_existing=True)
     except HTTPError as e:
         if e.response.status_code == 300:
+            # We got a kind of redirect to a different Uniprot id.
+            # We need to query Uniprot for replacement a replacement ID and
+            # download that instead.
             new_unp_id = replacement_ids(unp_id)[0]
             LOGGER.warning(f"UNP id {unp_id} replaced by {new_unp_id}")
             return unp_download(new_unp_id, unp_dir)
+        else:
+            # Other download error, we can't handle this here
+            raise e from None
 
 
 def unp_record(unp_id: str, unp_dir=UNP_DIR) -> UNPRecord:
