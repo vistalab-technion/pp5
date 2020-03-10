@@ -56,7 +56,7 @@ class ResidueRecord(object):
 
     def __init__(self, res_id: Union[str, int], name: str, codon_counts: dict,
                  angles: Dihedral, bfactor: float, secondary: str):
-        self.res_id, self.name = str(res_id), name
+        self.res_id, self.name = str(res_id).strip(), name
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
 
         codon_counts = {} if not codon_counts else codon_counts
@@ -81,8 +81,8 @@ class ResidueRecord(object):
         self.__init__(**state)
 
     def __repr__(self):
-        return f'#{self.res_id:03d}: {self.name} [{self.codon}] ' \
-               f'{self.angles} b={self.bfactor:.2f}, {self.secondary}'
+        return f'{self.name}{self.res_id:<4s} [{self.codon}]' \
+               f'[{self.secondary}] {self.angles} b={self.bfactor:.2f}'
 
 
 class ProteinRecord(object):
@@ -163,7 +163,7 @@ class ProteinRecord(object):
         :param dihedral_est_args: Extra arguments for dihedral estimator.
         """
         if not (unp_id and pdb_id):
-            raise ValueError("Must provide both Uniprot and PDB IDs")
+            raise ProteinInitError("Must provide both Uniprot and PDB IDs")
 
         LOGGER.info(f'{unp_id}: Initializing protein record...')
         self.__setstate__({})
@@ -171,12 +171,12 @@ class ProteinRecord(object):
         # First we must find a matching PDB structure and chain for the
         # Uniprot id. If a proposed_pdb_id is given we'll try to use that.
         self.unp_id = unp_id
-        self.pdb_id, self.pdb_chain_id = self._find_pdb_xref(pdb_id)
+        self.pdb_base_id, self.pdb_chain_id = self._find_pdb_xref(pdb_id)
+        self.pdb_id = f'{self.pdb_base_id}:{self.pdb_chain_id}'
 
         # Make sure the structure is sane. See e.g. 1FFK.
         if not self.polypeptides:
-            raise ProteinInitError(f"No parsable residues in {self.pdb_id}:"
-                                   f"{self.pdb_chain_id}")
+            raise ProteinInitError(f"No parsable residues in {self.pdb_id}")
 
         # Get secondary-structure info using DSSP
         ss_dict, _ = pdb.pdb_to_secondary_structure(self.pdb_id)
@@ -333,7 +333,7 @@ class ProteinRecord(object):
     def to_csv(self, out_dir=pp5.data_subdir('precs'), tag=None):
         df = self.to_dataframe()
         tag = f'_{tag}' if tag else ''
-        filename = f'{self.pdb_id.upper()}_{self.pdb_chain_id.upper()}{tag}'
+        filename = f'{self.pdb_base_id}_{self.pdb_chain_id}{tag}'
         filepath = out_dir.joinpath(f'{filename}.csv')
         df.to_csv(filepath, na_rep='nan', header=True, index=False,
                   encoding='utf-8', float_format='%.3f')
@@ -511,25 +511,3 @@ class ProteinRecord(object):
         self.__dict__.update(state)
         for attr in self._SKIP_SERIALIZE:
             self.__setattr__(attr, None)
-
-
-if __name__ == '__main__':
-    # prec = ProteinRecord.from_pdb('5jdt:B', dihedral_est_name='erp')
-    prec = ProteinRecord.from_pdb('2WUR:A', dihedral_est_name='erp')
-    prec = ProteinRecord.from_pdb('4GY3:B', dihedral_est_name='erp')
-    prec = ProteinRecord.from_unp('P00720')
-    # prec = ProteinRecord.from_unp('P00720', xref_selector=lambda xr:xr.pdb_id)
-    # prec = ProteinRecord.from_pdb('102L:A', dihedral_est_name='erp')
-    # prec.to_csv()
-
-    # import itertools as it
-    #
-    # pdb_ids = {'2wur', '5jdt'}
-    # methods = {'mc', 'erp'}
-    # factors = {1e-1, 1e-2, 1e-3, 1e-4, 1e-5}
-    #
-    # for pdb_id, method, factor in it.product(pdb_ids, methods, factors):
-    #     args = dict(dihedral_est_name=method,
-    #                 dihedral_est_args={'sigma_factor': factor})
-    #     prec = ProteinRecord.from_pdb(pdb_id, **args)[0]
-    #     prec.to_csv(tag=f'{method}_{factor:.0e}')
