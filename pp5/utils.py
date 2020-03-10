@@ -84,13 +84,15 @@ def deep_walk(obj, path=(), memo=None):
 
 @contextmanager
 def out_redirected(stdout_stderr='stdout', to=os.devnull):
-    '''
+    """
     Redirects stdout/stderr in a way that also affects C libraries called
     from python code.
 
-    based on: https://stackoverflow.com/a/17954769/1230403
+    Based on: https://stackoverflow.com/a/17954769/1230403
     but modified to support also stderr and to update loggers.
-    '''
+    See also:
+    https://eli.thegreenplace.net/2015/redirecting-all-kinds-of-stdout-in-python/
+    """
     assert stdout_stderr in {'stdout', 'stderr'}
 
     fd = getattr(sys, stdout_stderr).fileno()
