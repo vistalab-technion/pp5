@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Set, List, Iterable, NamedTuple
+from typing import Set, List, Iterable, NamedTuple, Union
 from urllib.parse import urlsplit
 
 import requests
@@ -71,19 +71,35 @@ def unp_record(unp_id: str, unp_dir=UNP_DIR) -> UNPRecord:
                          f'{filename}')
 
 
-def find_ena_xrefs(unp_rec: UNPRecord, molecule_types: Iterable[str]) \
+def as_record(unp_id_or_rec: Union[UNPRecord, str]):
+    """
+    Convert either id or record to a record.
+    :param unp_id_or_rec: ID as string or a record object.
+    :return: Corresponding record.
+    """
+    if isinstance(unp_id_or_rec, UNPRecord):
+        return unp_id_or_rec
+    else:
+        return unp_record(unp_id_or_rec)
+
+
+def find_ena_xrefs(unp: Union[UNPRecord, str], molecule_types: Iterable[str]) \
         -> List[str]:
     """
     Find EMBL ENA cross-references to specific molecule types in a Uniprot
     record.
-    :param unp_rec: The Uniprot record.
+    :param unp: A Uniprot record or id.
     :param molecule_types: Which types of molecules are allowed for the
     returned references. For example, 'mrna' or 'genomic_dna'.
     :return: A list of ENA ids which can be used to retrieve ENA records.
     """
 
+    unp_rec = as_record(unp)
     ena_ids = []
     cross_refs = unp_rec.cross_references
+
+    if isinstance(molecule_types, str):
+        molecule_types = (molecule_types,)
     molecule_types = {t.lower() for t in molecule_types}
 
     embl_refs = (x for x in cross_refs if x[0].lower() == 'embl')
@@ -110,14 +126,16 @@ class UNPPDBXRef(NamedTuple):
                f'len={self.seq_len})'
 
 
-def find_pdb_xrefs(unp_rec: UNPRecord, method='x-ray') -> List[UNPPDBXRef]:
+def find_pdb_xrefs(unp: Union[UNPRecord, str], method='x-ray') \
+        -> List[UNPPDBXRef]:
     """
     Find PDB cross-references with a specific methods type in a Uniprot
     record.
-    :param unp_rec: The Uniprot record.
+    :param unp: A Uniprot record or id.
     :param method: Currently only 'x-ray' is supported.
     :return:
     """
+    unp_rec = as_record(unp)
     cross_refs = unp_rec.cross_references
 
     # PDB cross refs are ('PDB', id, method, resolution, chains)
