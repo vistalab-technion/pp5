@@ -84,6 +84,8 @@ def pdbid_to_unpid(pdb_id: str, pdb_dir=PDB_DIR) -> str:
     """
     Extracts a Uniprot protein id from a PDB protein structure.
     :param pdb_id: The PDB id of the structure, optionally including chain.
+    If no chain is provided, and there are multiple chains with different
+    Uniprot IDs, the first Uniprot ID will be returned.
     :param pdb_dir: Directory to download PDB file to.
     :return: A Uniprot id.
     """
@@ -139,7 +141,11 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
         keys: The residue ids.
     """
     path = pdb_download(pdb_id, pdb_dir)
-    dssp_dict, keys = dssp_dict_from_pdb_file(str(path), DSSP='mkdssp')
+
+    try:
+        dssp_dict, keys = dssp_dict_from_pdb_file(str(path), DSSP='mkdssp')
+    except Exception as e:
+        raise RuntimeError(f"Failed to get secondary structure for {pdb_id}")
 
     # dssp_dict maps a reisdue id to a tuple containing various things about
     # that residue. We take only the secondary structure info.
