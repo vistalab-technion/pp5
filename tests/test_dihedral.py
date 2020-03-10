@@ -1,3 +1,4 @@
+import contextlib
 import math
 from math import radians, degrees
 
@@ -12,6 +13,7 @@ from pp5.external_dbs import pdb
 from pp5 import dihedral
 from pp5.dihedral import DihedralAnglesEstimator
 
+import pymol.cmd as pymol
 from pytest import approx
 
 calc_dihedral2 = DihedralAnglesEstimator.calc_dihedral2
@@ -96,14 +98,67 @@ class TestRawDihedralAngleCalculation(object):
         benchmark(calc_dihedral2.py_func, *self.random_coords())
 
 
-class TestDihedralAnglesEstimator(object):
+class TestDihedralAnglesVsPyMOL(object):
+    TEST_PDB_IDS = ['4GXE', '1KTP', '4GY3', ]  # 3O18
+
+    @contextlib.contextmanager
+    def pymol_structure_chains(self, pdb_id):
+        try:
+            pdb_filename = str(pdb.pdb_download(pdb_id))
+            pymol.load(pdb_filename, pdb_id)
+            pymol.split_chains()
+            yield pdb_id
+        finally:
+            # * is widcard
+            pymol.delete(f'{pdb_id}*')
+
+    @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
+    def test_basic_estimator(self, pdb_id):
+        estimator = dihedral.DihedralAnglesEstimator()
+        self._compare_to_pymol(pdb_id, estimator)
+
+    def _compare_to_pymol(self, pdb_id, estimator):
+        pdb_id, pdb_chain = pdb.split_id(pdb_id)
+        pdb_rec = pdb.pdb_struct(pdb_id, pdb_dir=RESOURCES_PATH)
+
+        with self.pymol_structure_chains(pdb_id):
+            for chain in pdb_rec.get_chains():
+                curr_chain = chain.get_id()
+                if pdb_chain and pdb_chain != curr_chain:
+                    continue
+
+                pymol_obj_id = f'{pdb_id}_{curr_chain}'
+                pymol_angles_dict = pymol.phi_psi(pymol_obj_id)
+                pymol_angles = list(pymol_angles_dict.values())
+
+                # pymol does not ignore non-standard AAs, so also include here
+                pp_list = PPBuilder().build_peptides(chain, aa_only=False)
+                pp5_angles = []
+                for pp in pp_list:
+                    pp5_angles.extend(estimator.estimate(pp))
+
+                # discard first and last angle pairs as PyMOL doesn't compute
+                pp5_angles = pp5_angles[1:-1]
+                assert len(pp5_angles) == len(pymol_angles), pymol_obj_id
+                for i, phi_psi in enumerate(pymol_angles):
+                    msg = f'{pdb_id}:{curr_chain} @ {i}'
+                    pp5_phi_psi = pp5_angles[i].phi_deg, pp5_angles[i].psi_deg
+
+                    # If pymol was not able to calculate it sets to zero...
+                    if phi_psi[0] == 0 or phi_psi[1] == 0:
+                        continue
+
+                    assert pp5_phi_psi == approx(phi_psi, abs=1e-3), msg
+
+
+class TestDihedralAnglesEstimators(object):
     TEST_PDB_IDS = ['5jdt', '3ajo', '1b0y', '2wur']
 
     @classmethod
     def setup_class(cls):
         pass
 
-    def compare_with_estimator(self, pdb_id, estimator, **kw):
+    def _compare_with_estimator(self, pdb_id, estimator, **kw):
         pdb_rec = pdb.pdb_struct(pdb_id, pdb_dir=RESOURCES_PATH)
         pp_chains = PPBuilder().build_peptides(pdb_rec, aa_only=True)
 
@@ -134,16 +189,16 @@ class TestDihedralAnglesEstimator(object):
     @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
     def test_basic_estimator(self, pdb_id):
         estimator = dihedral.DihedralAnglesEstimator()
-        self.compare_with_estimator(pdb_id, estimator)
+        self._compare_with_estimator(pdb_id, estimator)
 
     @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
     def test_uncertainty_estimator(self, pdb_id):
         estimator = dihedral.DihedralAnglesUncertaintyEstimator()
-        self.compare_with_estimator(pdb_id, estimator)
+        self._compare_with_estimator(pdb_id, estimator)
 
     @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
     def test_montecarlo_estimator(self, pdb_id):
         unit_cell = pdb.pdb_to_unit_cell(pdb_id, pdb_dir=RESOURCES_PATH)
         estimator = dihedral.DihedralAnglesMonteCarloEstimator(unit_cell)
         # Not sure how to test, for now set infinite abs error
-        self.compare_with_estimator(pdb_id, estimator, abs=math.inf)
+        self._compare_with_estimator(pdb_id, estimator, abs=math.inf)
