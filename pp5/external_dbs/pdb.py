@@ -4,7 +4,6 @@ import math
 from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
-from typing import List
 
 import requests
 import yattag
@@ -81,22 +80,43 @@ def pdb_dict(pdb_id: str, pdb_dir=PDB_DIR) -> dict:
     return MMCIF2Dict.MMCIF2Dict(filename)
 
 
-def pdbid_to_unpids(pdb_id: str, pdb_dir=PDB_DIR) -> List[str]:
+def pdbid_to_unpid(pdb_id: str, pdb_dir=PDB_DIR) -> str:
     """
-    Extracts Uniprot protein ids from a PDB protein structure.
-    :param pdb_id: The PDB id of the structure.
+    Extracts a Uniprot protein id from a PDB protein structure.
+    :param pdb_id: The PDB id of the structure, optionally including chain.
     :param pdb_dir: Directory to download PDB file to.
-    :return: A list of Uniprot ids.
+    :return: A Uniprot id.
     """
+    pdb_id, chain_id = split_id(pdb_id)
     pdb_d = pdb_dict(pdb_id, pdb_dir)
 
-    # Go over referenced DBs and take first accession id belonging to Uniprot
+    # Go over referenced DBs and take all uniprot IDs
     unp_ids = set()
     for i, db_name in enumerate(pdb_d['_struct_ref.db_name']):
         if db_name.lower() == 'unp':
             unp_ids.add(pdb_d['_struct_ref.pdbx_db_accession'][i])
 
-    return list(unp_ids)
+    if not unp_ids:
+        raise ValueError(f'No Uniprot cross-references found in {pdb_id}')
+
+    if not chain_id:
+        if len(unp_ids) > 1:
+            LOGGER.warning(f"Multiple Uniprot IDs exists for {pdb_id}, and no "
+                           f"chain specified. Returning first Uniprot ID.")
+        return next(iter(unp_ids))
+
+    # Loop over extra information about each cross-reference.
+    # The chains are contained here. Find the Uniprot ID for the requested
+    # chain.
+    for i, curr_id in enumerate(pdb_d['_struct_ref_seq.pdbx_db_accession']):
+        if curr_id not in unp_ids:
+            continue
+
+        curr_chain = pdb_d['_struct_ref_seq.pdbx_strand_id'][i]
+        if curr_chain.lower() == chain_id.lower():
+            return curr_id
+
+    raise ValueError(f"Can't find Uniprot ID for chain {chain_id} of {pdb_id}")
 
 
 def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):

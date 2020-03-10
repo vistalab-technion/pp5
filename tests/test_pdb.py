@@ -80,16 +80,40 @@ class TestPDB:
         chains = list(struct.get_chains())
         assert len(chains) == 1
 
-    def test_pdbid_to_unpids(self):
-        ids = pdb.pdbid_to_unpids(self.test_id, self.TEMP_PATH)
-        assert len(ids) == 1
-        assert ids[0] == 'P00720'
 
-    def test_pdbid_to_unpids2(self):
+@pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
+class TestPDBToUNP:
+    @classmethod
+    def setup_class(cls):
+        cls.TEMP_PATH = tests.utils.get_tmp_path('pdb')
+
+    def _check(self, pdb_id, expected_unp_id):
+        actual_unp_id = pdb.pdbid_to_unpid(pdb_id, self.TEMP_PATH)
+        assert actual_unp_id == expected_unp_id
+
+    def test_no_chain_single_unp(self):
+        self._check('102L', 'P00720')
+
+    def test_with_chain_single_unp(self):
+        self._check('102L:A', 'P00720')
+
+    def test_no_chain_multi_unp(self):
         test_id = '4HHB'
-        ids = pdb.pdbid_to_unpids(test_id, self.TEMP_PATH)
-        assert len(ids) == 2
-        assert set(ids) == {'P69905', 'P68871'}
+        expected_unp_ids = {'P69905', 'P68871'}
+
+        id = pdb.pdbid_to_unpid(test_id, self.TEMP_PATH)
+        assert id in expected_unp_ids
+
+    def test_with_chain_multi_unp(self):
+        for test_id in {'4HHB:A', '4HHB:C'}:
+            self._check(test_id, 'P69905')
+
+        for test_id in {'4HHB:B', '4HHB:D'}:
+            self._check(test_id, 'P68871')
+
+    def test_with_invalid_chain(self):
+        with pytest.raises(ValueError, match='chain Z'):
+            pdb.pdbid_to_unpid('4HHB:Z')
 
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
