@@ -27,7 +27,7 @@ class TestSplitID:
         for _ in range(100):
             expected_id = self._random_pdb_id()
             id, chain = pdb.split_id(expected_id)
-            assert id == expected_id, expected_id
+            assert id == expected_id.upper(), expected_id
             assert chain is None, expected_id
 
     def test_split_with_chain(self):
@@ -35,8 +35,8 @@ class TestSplitID:
             full_id = self._random_pdb_id(with_chain=True)
             expected_id, expected_chain = full_id.split(":")
             id, chain = pdb.split_id(full_id)
-            assert id == expected_id, full_id
-            assert chain == expected_chain, full_id
+            assert id == expected_id.upper(), full_id
+            assert chain == expected_chain.upper(), full_id
 
     def test_doesnt_start_with_digit(self):
         for _ in range(100):

@@ -1,6 +1,7 @@
 import re
 import abc
 import math
+import warnings
 from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
@@ -11,6 +12,8 @@ import numpy as np
 from Bio import PDB as PDB
 from Bio.PDB import Structure as PDBRecord, MMCIF2Dict
 from Bio.PDB.DSSP import dssp_dict_from_pdb_file
+from Bio.PDB.PDBExceptions import PDBConstructionWarning, \
+    PDBConstructionException
 
 from pp5 import PDB_DIR, get_resource_path
 from pp5.utils import remote_dl
@@ -30,8 +33,10 @@ def split_id(pdb_id):
     Will raise an exception if the given id is not a valid PDB id.
     :param pdb_id: PDB id, either without a chain, e.g. '5JDT' or with a
     chain, e.g. '5JDT:A'.
-    :return: A tuple (id, chain) where id is the base id and chain can be None.
+    :return: A tuple (id, chain) where id is the base id and chain can be
+    None. The returned strings will be upper-cased.
     """
+    pdb_id = pdb_id.upper()
     match = PDB_ID_PATTERN.match(pdb_id)
     if not match:
         raise ValueError(f"Invalid PDB id format: {pdb_id}")
@@ -54,49 +59,61 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR) -> Path:
     return remote_dl(url, filename, uncompress=True, skip_existing=True)
 
 
-def pdb_struct(pdb_id: str, pdb_dir=PDB_DIR) -> PDBRecord:
+def pdb_struct(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> PDBRecord:
     """
     Given a PDB structure id, returns an object representing the protein
     structure.
     :param pdb_id: The PDB id of the structure.
     :param pdb_dir: Directory to download PDB file to.
-    :return: An biopython Structure object.
+    :param struct_d: Optional dict containing the parsed structure as a
+    dict. If provided, the file wont have to be re-parsed.
+    :return: An biopython PDB Structure object.
     """
+    pdb_id, chain_id = split_id(pdb_id)
     filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
 
     # Parse the PDB file into a Structure object
     LOGGER.info(f"Loading PDB file {filename}...")
-    parser = PDB.MMCIFParser(QUIET=True)
-    return parser.get_structure(pdb_id, filename)
+    parser = CustomMMCIFParser()
+    return parser.get_structure(pdb_id, filename, mmcif_dict=struct_d)
 
 
-def pdb_dict(pdb_id: str, pdb_dir=PDB_DIR) -> dict:
+def pdb_dict(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> dict:
     """
     Returns a dictionary containing all the contents of a PDB mmCIF file.
     :param pdb_id: The PDB id of the structure.
     :param pdb_dir: Directory to download PDB file to.
+    :param struct_d: Optional dict of the structure if it was already loaded.
+    This parameter exists to streamline other functions that use this one in
+    case the file was already parsed.
     """
+    pdb_id, chain_id = split_id(pdb_id)
+    # No need to re-parse the file if we have a matching struct dict
+    if struct_d and struct_d['_entry.id'][0].upper() == pdb_id:
+        return struct_d
+
     filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
     return MMCIF2Dict.MMCIF2Dict(filename)
 
 
-def pdbid_to_unpid(pdb_id: str, pdb_dir=PDB_DIR) -> str:
+def pdbid_to_unpid(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> str:
     """
     Extracts a Uniprot protein id from a PDB protein structure.
     :param pdb_id: The PDB id of the structure, optionally including chain.
     If no chain is provided, and there are multiple chains with different
     Uniprot IDs, the first Uniprot ID will be returned.
     :param pdb_dir: Directory to download PDB file to.
+    :param struct_d: Optional dict containing the parsed structure.
     :return: A Uniprot id.
     """
     pdb_id, chain_id = split_id(pdb_id)
-    pdb_d = pdb_dict(pdb_id, pdb_dir)
+    struct_d = pdb_dict(pdb_id, pdb_dir, struct_d=struct_d)
 
     # Go over referenced DBs and take all uniprot IDs
     unp_ids = set()
-    for i, db_name in enumerate(pdb_d['_struct_ref.db_name']):
+    for i, db_name in enumerate(struct_d['_struct_ref.db_name']):
         if db_name.lower() == 'unp':
-            unp_ids.add(pdb_d['_struct_ref.pdbx_db_accession'][i])
+            unp_ids.add(struct_d['_struct_ref.pdbx_db_accession'][i])
 
     if not unp_ids:
         raise ValueError(f'No Uniprot cross-references found in {pdb_id}')
@@ -110,11 +127,11 @@ def pdbid_to_unpid(pdb_id: str, pdb_dir=PDB_DIR) -> str:
     # Loop over extra information about each cross-reference.
     # The chains are contained here. Find the Uniprot ID for the requested
     # chain.
-    for i, curr_id in enumerate(pdb_d['_struct_ref_seq.pdbx_db_accession']):
+    for i, curr_id in enumerate(struct_d['_struct_ref_seq.pdbx_db_accession']):
         if curr_id not in unp_ids:
             continue
 
-        curr_chain = pdb_d['_struct_ref_seq.pdbx_strand_id'][i]
+        curr_chain = struct_d['_struct_ref_seq.pdbx_strand_id'][i]
         if curr_chain.lower() == chain_id.lower():
             return curr_id
 
@@ -154,11 +171,11 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
     return ss_dict, keys
 
 
-def pdb_to_unit_cell(pdb_id: str, pdb_dir=PDB_DIR):
+def pdb_to_unit_cell(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None):
     """
     :return: a UnitCell object given a PDB id.
     """
-    d = pdb_dict(pdb_id, pdb_dir)
+    d = pdb_dict(pdb_id, pdb_dir, struct_d=struct_d)
     try:
         a, b, c = d['_cell.length_a'], d['_cell.length_b'], d['_cell.length_c']
         alpha, beta = d['_cell.angle_alpha'], d['_cell.angle_beta']
@@ -394,6 +411,41 @@ class PDBExpressionSystemQuery(PDBQuery):
             line(self.TAG_NAME, self.expr_sys)
 
         return doc.getvalue()
+
+
+class CustomMMCIFParser(PDB.MMCIFParser):
+    """
+    Override biopython's parser so that it accepts a structure dict,
+    to prevent re-parsing in case it was already parsed.
+    """
+    def __init__(self, **kw):
+        super().__init__(**kw)
+
+    def get_structure(self, structure_id, filename, mmcif_dict=None):
+        """Return the structure.
+
+        Arguments:
+         - structure_id - string, the id that will be used for the structure
+         - filename - name of mmCIF file, OR an open text mode file handle
+
+        """
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=PDBConstructionWarning)
+
+            if not mmcif_dict:
+                self._mmcif_dict = MMCIF2Dict.MMCIF2Dict(filename)
+            else:
+                self._mmcif_dict = mmcif_dict
+                id_from_struct_d = self._mmcif_dict['_entry.id'][0]
+                if not id_from_struct_d.lower() == structure_id.lower():
+                    raise PDBConstructionException(
+                        "PDB ID mismatch between provided struct dict and "
+                        "desired structure id")
+
+            self._build_structure(structure_id)
+            self._structure_builder.set_header(self._get_header())
+
+        return self._structure_builder.get_structure()
 
 
 if __name__ == '__main__':
