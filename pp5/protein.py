@@ -100,7 +100,7 @@ class ProteinRecord(object):
     PDB structures with the same Uniprot id and possible slightly
     different AAs.
     """
-    _SKIP_SERIALIZE = ['_unp_rec', '_pdb_rec', '_pp']
+    _SKIP_SERIALIZE = ['_unp_rec', '_pdb_rec', '_pdb_dict', '_pp']
 
     @classmethod
     def from_pdb(cls, pdb_id: str, **kwargs) -> ProteinRecord:
@@ -113,8 +113,9 @@ class ProteinRecord(object):
         :return: A ProteinRecord.
         """
         try:
-            unp_id = pdb.pdbid_to_unpid(pdb_id)
-            return cls(unp_id, pdb_id, **kwargs)
+            pdb_dict = pdb.pdb_dict(pdb_id)
+            unp_id = pdb.pdbid_to_unpid(pdb_id, struct_d=pdb_dict)
+            return cls(unp_id, pdb_id, pdb_dict=pdb_dict, **kwargs)
         except Exception as e:
             raise ProteinInitError(f"Failed to created protein record for "
                                    f"pdb_id={pdb_id}") from e
@@ -144,7 +145,7 @@ class ProteinRecord(object):
             raise ProteinInitError(f"Failed to created protein record for "
                                    f"unp_id={unp_id}") from e
 
-    def __init__(self, unp_id: str, pdb_id,
+    def __init__(self, unp_id: str, pdb_id, pdb_dict: dict = None,
                  dihedral_est_name='erp', dihedral_est_args={}):
         """
         Initialize a protein record from both Uniprot and PDB ids.
@@ -173,6 +174,8 @@ class ProteinRecord(object):
         self.unp_id = unp_id
         self.pdb_base_id, self.pdb_chain_id = self._find_pdb_xref(pdb_id)
         self.pdb_id = f'{self.pdb_base_id}:{self.pdb_chain_id}'
+        if pdb_dict:
+            self._pdb_dict = pdb_dict
 
         # Make sure the structure is sane. See e.g. 1FFK.
         if not self.polypeptides:
@@ -252,6 +255,16 @@ class ProteinRecord(object):
         return self._unp_rec
 
     @property
+    def pdb_dict(self) -> dict:
+        """
+        :return: The PDB record for this protein as a raw dict parsed from
+        an mmCIF file.
+        """
+        if not self._pdb_dict:
+            self._pdb_dict = pdb.pdb_dict(self.pdb_id)
+        return self._pdb_dict
+
+    @property
     def pdb_rec(self) -> PDBRecord:
         """
         :return: PDB record for this protein. Note that this record may
@@ -259,7 +272,7 @@ class ProteinRecord(object):
         (self.pdb_chain_id).
         """
         if not self._pdb_rec:
-            self._pdb_rec = pdb.pdb_struct(self.pdb_id)
+            self._pdb_rec = pdb.pdb_struct(self.pdb_id, struct_d=self.pdb_dict)
         return self._pdb_rec
 
     @property
@@ -435,7 +448,6 @@ class ProteinRecord(object):
             ref_chain_id = ''
 
         ref_pdb_id, ref_chain_id = ref_pdb_id.lower(), ref_chain_id.lower()
-        ref_full_id = f'{ref_pdb_id}{":" if ref_chain_id else ""}{ref_chain_id}'
 
         xrefs = unp.find_pdb_xrefs(self.unp_rec, method='x-ray')
 
@@ -482,7 +494,7 @@ class ProteinRecord(object):
             raise ProteinInitError(
                 f'Unknown dihedral estimation method {est_name}')
 
-        unit_cell = pdb.pdb_to_unit_cell(self.pdb_id)
+        unit_cell = pdb.pdb_to_unit_cell(self.pdb_id, struct_d=self.pdb_dict)
         args = dict(isotropic=False, n_samples=100, skip_omega=True)
         args.update(est_args)
 
