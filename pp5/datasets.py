@@ -64,7 +64,8 @@ def collect_data(query: PDBQuery):
         start_time, counter = time.time(), 0
         for async_result in async_results:
             try:
-                protein_recs = async_result.get(30)
+                prec = async_result.get(30)
+                counter += 1
             except TimeoutError as e:
                 LOGGER.error("Timeout getting async result, skipping")
             except ProteinInitError as e:
@@ -72,14 +73,11 @@ def collect_data(query: PDBQuery):
             except Exception as e:
                 LOGGER.error("Unexpected error", exc_info=e.__cause__)
 
-            counter += len(protein_recs)
-            pps = counter / (time.time() - start_time)
-            LOGGER.info(f'Collected {protein_recs} ({pps:.1f} proteins/sec)')
-
             # Write to file
-            for prec in protein_recs:
-                csv_path = prec.to_csv(pp5.data_subdir('proteins'))
-                LOGGER.info(f'Wrote output CSV {csv_path}')
+            prec.to_csv(pp5.data_subdir('proteins'))
+            if counter % 10 == 0:
+                pps = counter / (time.time() - start_time)
+                LOGGER.info(f'Total collected: {counter} ({pps:.1f} p/sec)')
 
         clean_worker_downloads(base_workers_dl_dir)
         LOGGER.info(f"Done: {counter} proteins collected.")
