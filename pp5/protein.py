@@ -146,7 +146,7 @@ class ProteinRecord(object):
                                    f"unp_id={unp_id}") from e
 
     def __init__(self, unp_id: str, pdb_id, pdb_dict: dict = None,
-                 dihedral_est_name='erp', dihedral_est_args={}):
+                 dihedral_est_name='erp', dihedral_est_args={}, **kw):
         """
         Initialize a protein record from both Uniprot and PDB ids.
         To initialize a protein from Uniprot id or PDB id only, use the
@@ -344,13 +344,14 @@ class ProteinRecord(object):
             data.append(rec_dict)
         return pd.DataFrame(data)
 
-    def to_csv(self, out_dir=pp5.data_subdir('precs'), tag=None):
+    def to_csv(self, out_dir=pp5.out_subdir('precs'), tag=None):
         df = self.to_dataframe()
         tag = f'_{tag}' if tag else ''
         filename = f'{self.pdb_base_id}_{self.pdb_chain_id}{tag}'
         filepath = out_dir.joinpath(f'{filename}.csv')
         df.to_csv(filepath, na_rep='nan', header=True, index=False,
                   encoding='utf-8', float_format='%.3f')
+        LOGGER.info(f'Wrote {self} to {filepath}')
         return filepath
 
     def __iter__(self) -> Iterator[ResidueRecord]:
