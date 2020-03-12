@@ -29,6 +29,8 @@ with warnings.catch_warnings():
 BLOSUM62 = substitution_matrices.load("BLOSUM62")
 BLOSUM80 = substitution_matrices.load("BLOSUM80")
 CODON_TABLE = CodonTable.standard_dna_table.forward_table
+START_CODONS = CodonTable.standard_dna_table.start_codons
+STOP_CODONS = CodonTable.standard_dna_table.stop_codons
 UNKNOWN_AA = 'X'
 UNKNOWN_CODON = '---'
 
@@ -118,7 +120,7 @@ class ProteinRecord(object):
             return cls(unp_id, pdb_id, pdb_dict=pdb_dict, **kwargs)
         except Exception as e:
             raise ProteinInitError(f"Failed to created protein record for "
-                                   f"pdb_id={pdb_id}") from e
+                                   f"pdb_id={pdb_id}: {e}") from e
 
     @classmethod
     def from_unp(cls, unp_id: str,
@@ -178,6 +180,11 @@ class ProteinRecord(object):
             self._pdb_dict = pdb_dict
         self.pdb_meta = pdb.pdb_metadata(self.pdb_id, struct_d=self.pdb_dict)
 
+        LOGGER.info(f'{self}: '
+                    f'res={self.pdb_meta.resolution:.2f}Å, '
+                    f'org={self.pdb_meta.src_org} ({self.pdb_meta.src_org_id}) '
+                    f'expr={self.pdb_meta.host_org} ({self.pdb_meta.host_org_id})')
+
         # Make sure the structure is sane. See e.g. 1FFK.
         if not self.polypeptides:
             raise ProteinInitError(f"No parsable residues in {self.pdb_id}")
@@ -223,12 +230,7 @@ class ProteinRecord(object):
 
         # Find the best matching DNA for our AA sequence via pairwise alignment
         # between the PDB AA sequence and translated DNA sequences.
-        ena_ids = unp.find_ena_xrefs(
-            self.unp_rec, molecule_types=('mrna', 'genomic_dna')
-        )
-        dna_seq_record, idx_to_codons = self._find_dna_alignment(
-            ena_ids, pdb_aa_seq
-        )
+        dna_seq_record, idx_to_codons = self._find_dna_alignment(pdb_aa_seq)
         dna_seq = str(dna_seq_record.seq)
         self.ena_id = dna_seq_record.id
 
@@ -360,8 +362,14 @@ class ProteinRecord(object):
     def __getitem__(self, item: int):
         return self._residue_recs[item]
 
-    def _find_dna_alignment(self, ena_ids, pdb_aa_seq: str) \
+    def _find_dna_alignment(self, pdb_aa_seq: str) \
             -> Tuple[SeqRecord, Dict[int, str]]:
+
+        # Find cross-refs in ENA
+        ena_molecule_types = ('mrna', 'genomic_dna')
+        ena_ids = unp.find_ena_xrefs(self.unp_rec, ena_molecule_types)
+        if len(ena_ids) == 0:
+            raise ProteinInitError(f"Can't find ENA id for {self.unp_id}")
 
         # Map id to sequence by fetching from ENA API
         ena_seqs = []
@@ -376,21 +384,24 @@ class ProteinRecord(object):
                                f"skipping")
                 break
 
-        if len(ena_ids) == 0:
-            raise ProteinInitError(f"Can't find ENA id for {self.unp_id}")
-
         aligner = PairwiseAligner(substitution_matrix=BLOSUM80,
                                   open_gap_score=-10, extend_gap_score=-0.5)
         alignments = []
         for seq in ena_seqs:
+            # Handle case of DNA sequence with incomplete codons
+            if len(seq) % 3 != 0:
+                if seq[-3:].seq in STOP_CODONS:
+                    seq = seq[-3 * (len(seq) // 3):]
+                else:
+                    seq = seq[:3 * (len(seq) // 3)]
+
+            # Translate to AA sequence and align to the PDB sequence
             translated = seq.translate(stop_symbol='')
             alignment = aligner.align(pdb_aa_seq, translated.seq)
-            alignments.append(alignment)
+            alignments.append((seq, alignment))
 
-        # Sort alignments by score
-        sorted_alignments = sorted(
-            zip(ena_seqs, alignments), key=lambda x: x[1].score
-        )
+        # Sort alignments by negative score (we want the highest first)
+        sorted_alignments = sorted(alignments, key=lambda x: -x[1].score)
 
         # Print best-matching alignment
         best_ena, best_alignments = sorted_alignments[0]
