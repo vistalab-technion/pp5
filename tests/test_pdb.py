@@ -1,7 +1,9 @@
 import os
 import random
 import string
+from urllib.request import urlopen
 
+import pandas as pd
 import pytest
 from Bio.PDB.PDBExceptions import PDBConstructionException
 
@@ -79,6 +81,30 @@ class TestPDB:
         struct = pdb.pdb_struct(self.test_id, self.TEMP_PATH)
         chains = list(struct.get_chains())
         assert len(chains) == 1
+
+    def test_pdb_metadata(self):
+        pdb_ids = ['1MWC', '1b0y']
+
+        # See all fields at: https://www.rcsb.org/pdb/results/reportField.do
+        url = f'http://www.rcsb.org/pdb/rest/customReport.xml?' \
+              f'pdbids={",".join(pdb_ids)}' \
+              f'&customReportColumns=taxonomyId,expressionHost,source,' \
+              f'resolution,structureTitle&service=wsfile&format=csv'
+
+        with urlopen(url) as f:
+            df = pd.read_csv(f)
+            df_groups = df.groupby('structureId')
+
+        for pdb_id in pdb_ids:
+            meta = pdb.pdb_metadata(pdb_id)
+            expected = df_groups.get_group(pdb_id.upper()).iloc[0]
+
+            assert meta.pdb_id == pdb_id.upper()
+            assert meta.title == expected['structureTitle']
+            assert meta.src_org == expected['source']
+            assert meta.src_org_id == expected['taxonomyId']
+            assert meta.host_org == expected['expressionHost']
+            assert meta.resolution == expected['resolution']
 
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')

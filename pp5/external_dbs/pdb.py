@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 import abc
 import math
@@ -5,6 +7,7 @@ import warnings
 from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
+from typing import NamedTuple, Type
 
 import requests
 import yattag
@@ -171,7 +174,8 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
     return ss_dict, keys
 
 
-def pdb_to_unit_cell(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None):
+def pdb_to_unit_cell(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) \
+        -> PDBUnitCell:
     """
     :return: a UnitCell object given a PDB id.
     """
@@ -187,6 +191,62 @@ def pdb_to_unit_cell(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None):
         raise ValueError(f"Can't create UnitCell for {pdb_id}")
 
     return PDBUnitCell(pdb_id, a, b, c, alpha, beta, gamma)
+
+
+def pdb_metadata(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> PDBMetadata:
+    """
+    Extracts metadata from a PDB structure.
+    Helpful metadata fields:
+    https://www.rcsb.org/pdb/results/reportField.do
+
+    :param pdb_id: The PDB ID of the structure.
+    :param pdb_dir: Where to store PDB files.
+    :param struct_d: Optional dict which will be used if given, instead of
+    parsing the PDB file.
+    :return: A PDBMetadata object.
+    """
+    pdb_id, chain_id = split_id(pdb_id)
+    struct_d = pdb_dict(pdb_id, pdb_dir, struct_d)
+
+    def meta(key: str, convert_to: Type = str):
+        val = struct_d.get(key, None)
+        if not val:
+            return None
+        if isinstance(val, list):
+            val = val[0]
+        if not val or val == '?':
+            return None
+        return convert_to(val)
+
+    title = meta('_struct.title')
+
+    src_org = meta('_entity_src_nat.pdbx_organism_scientific')
+    if not src_org:
+        src_org = meta('_entity_src_gen.pdbx_gene_src_scientific_name')
+
+    src_org_id = meta('_entity_src_nat.pdbx_ncbi_taxonomy_id', int)
+    if not src_org_id:
+        src_org_id = meta('_entity_src_gen.pdbx_gene_src_ncbi_taxonomy_id',
+                          int)
+
+    host_org = meta('_entity_src_gen.pdbx_host_org_scientific_name')
+    host_org_id = meta('_entity_src_gen.pdbx_host_org_ncbi_taxonomy_id', int)
+    resolution = meta('_refine.ls_d_res_high', float)
+    resolution_low = meta('_refine.ls_d_res_low', float)
+
+    return PDBMetadata(pdb_id, title, src_org, src_org_id,
+                       host_org, host_org_id, resolution, resolution_low)
+
+
+class PDBMetadata(NamedTuple):
+    pdb_id: str
+    title: str
+    src_org: str
+    src_org_id: int
+    host_org: str
+    host_org_id: int
+    resolution: float
+    resolution_low: float
 
 
 class PDBUnitCell(object):
@@ -418,6 +478,7 @@ class CustomMMCIFParser(PDB.MMCIFParser):
     Override biopython's parser so that it accepts a structure dict,
     to prevent re-parsing in case it was already parsed.
     """
+
     def __init__(self, **kw):
         super().__init__(**kw)
 
