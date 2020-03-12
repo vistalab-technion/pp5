@@ -78,7 +78,7 @@ class ResidueRecord(object):
         angles = Dihedral.empty()
         angles.__dict__.update(state['angles'])
         state['angles'] = angles
-        self.__init__(**state)
+        self.__dict__.update(state)
 
     def __repr__(self):
         return f'{self.name}{self.res_id:<4s} [{self.codon}]' \
