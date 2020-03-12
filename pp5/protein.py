@@ -176,6 +176,7 @@ class ProteinRecord(object):
         self.pdb_id = f'{self.pdb_base_id}:{self.pdb_chain_id}'
         if pdb_dict:
             self._pdb_dict = pdb_dict
+        self.pdb_meta = pdb.pdb_metadata(self.pdb_id, struct_d=self.pdb_dict)
 
         # Make sure the structure is sane. See e.g. 1FFK.
         if not self.polypeptides:
@@ -510,7 +511,7 @@ class ProteinRecord(object):
         return d_est, b_est
 
     def __repr__(self):
-        return f'({self.unp_id}, {self.pdb_id}:{self.pdb_chain_id})'
+        return f'({self.unp_id}, {self.pdb_id})'
 
     def __getstate__(self):
         # Prevent serializing Bio objects
