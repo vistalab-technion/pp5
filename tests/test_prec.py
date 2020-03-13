@@ -37,6 +37,15 @@ class TestCreation:
         with pytest.raises(ProteinInitError):
             ProteinRecord.from_pdb('102L:Z')
 
+    def test_from_pdb_entity(self):
+        pdb_id = '4HHB'
+        prec = ProteinRecord.from_pdb_entity(pdb_id, 2)
+        assert prec.pdb_chain_id == 'B'
+
+    def test_from_pdb_entity_with_invalid_entity(self):
+        with pytest.raises(ProteinInitError):
+            ProteinRecord.from_pdb_entity('4HHB', 3)
+
     def test_from_pdb_invalid_pdbid(self):
         with pytest.raises(ProteinInitError):
             ProteinRecord.from_pdb('0AAA')

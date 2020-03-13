@@ -105,22 +105,53 @@ class ProteinRecord(object):
     _SKIP_SERIALIZE = ['_unp_rec', '_pdb_rec', '_pdb_dict', '_pp']
 
     @classmethod
-    def from_pdb(cls, pdb_id: str, **kwargs) -> ProteinRecord:
+    def from_pdb(cls, pdb_id: str, pdb_dict=None, **kwargs) -> ProteinRecord:
         """
         Given a PDB id (and optionally a chain), finds the
         corresponding Uniprot id, and returns a ProteinRecord object for
         that protein.
         :param pdb_id: The PDB id to query, with optional chain, e.g. '0ABC:D'.
+        :param pdb_dict: Optional structure dict for the PDB record, in case it
+        was already parsed.
         :param kwargs: Extra args for the ProteinRecord initializer.
         :return: A ProteinRecord.
         """
         try:
-            pdb_dict = pdb.pdb_dict(pdb_id)
+            pdb_dict = pdb.pdb_dict(pdb_id, struct_d=pdb_dict)
             unp_id = pdb.pdbid_to_unpid(pdb_id, struct_d=pdb_dict)
             return cls(unp_id, pdb_id, pdb_dict=pdb_dict, **kwargs)
         except Exception as e:
             raise ProteinInitError(f"Failed to created protein record for "
                                    f"pdb_id={pdb_id}: {e}") from e
+
+    @classmethod
+    def from_pdb_entity(cls, pdb_id: str, entity_id: int, **kw) \
+            -> ProteinRecord:
+        """
+        Creates a ProteinRecord based on a PDB ID and an entity ID (not
+        chain) within that structure.
+        Entities are the distinct chemical components of structures in the
+        PDB. Unlike chains, entities do not include duplicate copies. In
+        other words, each entity in a structure is different from every
+        other entity in the structure.
+        One of the chains belonging to the desired entity will be selected.
+        :param pdb_id: PDB ID, should not contain chain.
+        :param entity_id: ID of the desired entity.
+        :return: A ProteinRecord.
+        """
+
+        # Make sure PDB ID has correct format and ignore chain if provided
+        pdb_id, _ = pdb.split_id(pdb_id)
+
+        # Discover which chains belong to this entity
+        struct_d = pdb.pdb_dict(pdb_id)
+        meta = pdb.pdb_metadata(pdb_id, struct_d=struct_d)
+        chains = [c for c, e in meta.chain_entities.items() if e == entity_id]
+        if not chains:
+            raise ProteinInitError(f'No matching chain found for entity '
+                                   f'{entity_id} in PDB structure {pdb_id}')
+
+        return cls.from_pdb(f'{pdb_id}:{chains[0]}', pdb_dict=struct_d, **kw)
 
     @classmethod
     def from_unp(cls, unp_id: str,
@@ -178,12 +209,14 @@ class ProteinRecord(object):
         self.pdb_id = f'{self.pdb_base_id}:{self.pdb_chain_id}'
         if pdb_dict:
             self._pdb_dict = pdb_dict
-        self.pdb_meta = pdb.pdb_metadata(self.pdb_id, struct_d=self.pdb_dict)
 
-        LOGGER.info(f'{self}: '
-                    f'res={self.pdb_meta.resolution:.2f}Å, '
-                    f'org={self.pdb_meta.src_org} ({self.pdb_meta.src_org_id}) '
-                    f'expr={self.pdb_meta.host_org} ({self.pdb_meta.host_org_id})')
+        self.pdb_meta = pdb.pdb_metadata(self.pdb_id, struct_d=self.pdb_dict)
+        LOGGER.info(
+            f'{self}: '
+            f'entity_id={self.pdb_meta.chain_entities[self.pdb_chain_id]}, '
+            f'res={self.pdb_meta.resolution:.2f}Å, '
+            f'org={self.pdb_meta.src_org} ({self.pdb_meta.src_org_id}) '
+            f'expr={self.pdb_meta.host_org} ({self.pdb_meta.host_org_id}) ')
 
         # Make sure the structure is sane. See e.g. 1FFK.
         if not self.polypeptides:
