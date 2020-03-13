@@ -89,7 +89,8 @@ class TestPDB:
         url = f'http://www.rcsb.org/pdb/rest/customReport.xml?' \
               f'pdbids={",".join(pdb_ids)}' \
               f'&customReportColumns=taxonomyId,expressionHost,source,' \
-              f'resolution,structureTitle&service=wsfile&format=csv'
+              f'resolution,structureTitle,entityId' \
+              f'&service=wsfile&format=csv'
 
         with urlopen(url) as f:
             df = pd.read_csv(f)
@@ -98,6 +99,7 @@ class TestPDB:
         for pdb_id in pdb_ids:
             meta = pdb.pdb_metadata(pdb_id)
             expected = df_groups.get_group(pdb_id.upper()).iloc[0]
+            chain = expected['chainId']
 
             assert meta.pdb_id == pdb_id.upper()
             assert meta.title == expected['structureTitle']
@@ -105,6 +107,7 @@ class TestPDB:
             assert meta.src_org_id == expected['taxonomyId']
             assert meta.host_org == expected['expressionHost']
             assert meta.resolution == expected['resolution']
+            assert meta.chain_entities[chain] == expected['entityId']
 
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')

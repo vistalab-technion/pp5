@@ -234,8 +234,17 @@ def pdb_metadata(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> PDBMetadata:
     resolution = meta('_refine.ls_d_res_high', float)
     resolution_low = meta('_refine.ls_d_res_low', float)
 
-    return PDBMetadata(pdb_id, title, src_org, src_org_id,
-                       host_org, host_org_id, resolution, resolution_low)
+    # Map each chain to it's entity id.
+    chain_entities = {}
+    for i, entity_id in enumerate(struct_d['_entity_poly.entity_id']):
+        if not struct_d['_entity_poly.type'][i].startswith('polypeptide'):
+            continue
+        chains_str = struct_d['_entity_poly.pdbx_strand_id'][i]
+        for chain in chains_str.split(','):
+            chain_entities[chain] = int(entity_id)
+
+    return PDBMetadata(pdb_id, title, src_org, src_org_id, host_org,
+                       host_org_id, resolution, resolution_low, chain_entities)
 
 
 class PDBMetadata(NamedTuple):
@@ -247,6 +256,7 @@ class PDBMetadata(NamedTuple):
     host_org_id: int
     resolution: float
     resolution_low: float
+    chain_entities: dict
 
 
 class PDBUnitCell(object):
