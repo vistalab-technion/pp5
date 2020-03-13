@@ -379,6 +379,9 @@ class PDBQuery(abc.ABC):
 
         return pdb_ids
 
+    def __repr__(self):
+        return self.description()
+
 
 class PDBCompositeQuery(PDBQuery):
     """
@@ -416,6 +419,9 @@ class PDBCompositeQuery(PDBQuery):
 
 
 class PDBResolutionQuery(PDBQuery):
+    """
+    Query PDB for structures within a range of X-ray resolutions.
+    """
     RES_QUERY_TYPE = 'org.pdb.query.simple.ResolutionQuery'
     TAG_RES_COMP = 'refine.ls_d_res_high.comparator'
     TAG_RES_MIN = 'refine.ls_d_res_high.min'
@@ -443,6 +449,9 @@ class PDBResolutionQuery(PDBQuery):
 
 
 class PDBExpressionSystemQuery(PDBQuery):
+    """
+    Query PDB for structures with a specified expression system.
+    """
     COMP_TYPES = {'contains', 'equals', 'startswith', 'endswith',
                   '!contains', '!startswith', '!endswith'}
 
@@ -469,6 +478,73 @@ class PDBExpressionSystemQuery(PDBQuery):
             line(self.TAG_DESCRIPTION, self.description())
             line(self.TAG_COMP, self.comp_type)
             line(self.TAG_NAME, self.expr_sys)
+
+        return doc.getvalue()
+
+
+class PDBSequenceQuery(PDBQuery):
+    """
+    Query PDB for structures
+    """
+    TOOL_TYPES = {'blast', 'psiblast'}
+
+    SEQUENCE_QUERY_TYPE = 'org.pdb.query.simple.SequenceQuery'
+    TAG_STRUCTURE_ID = 'structureId'
+    TAG_CHAIN_ID = 'chainId'
+    TAG_SEQUENCE = 'sequence'
+    TAG_ECUTOFF = 'eValueCutoff'
+    TAG_MASK_LOW_COMP = 'maskLowComplexity'
+    TAG_IDENTITY_CUTOFF = 'sequenceIdentityCutoff'
+
+    def __init__(self, pdb_id: str = None, sequence: str = None,
+                 search_tool: str = 'blast', e_cutoff=10.0,
+                 mask_low_complexity=True, identity_cutoff=0.):
+        both = pdb_id and sequence
+        neither = not pdb_id and not sequence
+        if both or neither:
+            raise ValueError('Must provide either pdb_id sequence')
+
+        self.pdb_id = pdb_id
+        self.sequence = sequence
+        self.search_tool = search_tool
+        self.e_cutoff = e_cutoff
+        self.mask_low_complexity = 'yes' if mask_low_complexity else 'no'
+        self.identity_cutoff = identity_cutoff
+
+        if pdb_id:
+            self.pdb_id, self.chain_id = split_id(pdb_id)
+            if not self.chain_id:
+                raise ValueError('Must provide chain info for query')
+
+    def description(self):
+        if self.pdb_id:
+            seq_str = f'Structure:Chain = {self.pdb_id}:{self.chain_id}'
+        else:
+            n = 10
+            groups = [self.sequence[i:i + n]
+                      for i in range(0, len(self.sequence), n)]
+            seq_str = str.join(" ", groups)
+
+        return f'Sequence Search ({seq_str}, ' \
+               f'Expectation Value = {self.e_cutoff:.1f}, ' \
+               f'Sequence Identity = {self.identity_cutoff * 100:.0f}, ' \
+               f'Search Tool = {self.search_tool}, ' \
+               f'Mask Low Complexity={self.mask_low_complexity})'
+
+    def to_xml(self):
+        doc, tag, text, line = yattag.Doc().ttl()
+
+        with tag(self.TAG_QUERY):
+            line(self.TAG_QUERY_TYPE, self.SEQUENCE_QUERY_TYPE)
+            line(self.TAG_DESCRIPTION, self.description())
+            line(self.TAG_ECUTOFF, self.e_cutoff)
+            line(self.TAG_MASK_LOW_COMP, self.mask_low_complexity)
+            line(self.TAG_IDENTITY_CUTOFF, self.identity_cutoff)
+            if self.pdb_id:
+                line(self.TAG_STRUCTURE_ID, self.pdb_id)
+                line(self.TAG_CHAIN_ID, self.chain_id)
+            else:
+                line(self.TAG_SEQUENCE, self.sequence)
 
         return doc.getvalue()
 
