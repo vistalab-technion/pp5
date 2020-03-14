@@ -7,7 +7,7 @@ import warnings
 from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
-from typing import NamedTuple, Type
+from typing import NamedTuple, Type, Dict
 
 import requests
 import yattag
@@ -21,7 +21,9 @@ from Bio.PDB.PDBExceptions import PDBConstructionWarning, \
 from pp5 import PDB_DIR, get_resource_path
 from pp5.utils import remote_dl
 
-PDB_ID_PATTERN = re.compile(r'^(?P<id>[0-9][\w]{3})(?::(?P<chain>[a-z]))?$',
+PDB_ID_PATTERN = re.compile(r'^(?P<id>[0-9][\w]{3})(?::(?:'
+                            r'(?P<chain>[a-z])|(?P<entity>[0-9])'
+                            r'))?$',
                             re.IGNORECASE | re.ASCII)
 
 PDB_SEARCH_URL = 'https://www.rcsb.org/pdb/rest/search'
@@ -39,12 +41,27 @@ def split_id(pdb_id):
     :return: A tuple (id, chain) where id is the base id and chain can be
     None. The returned strings will be upper-cased.
     """
+    return split_id_with_entity(pdb_id)[0:2]
+
+
+def split_id_with_entity(pdb_id):
+    """
+    Splits and validates a full PDB id consisting of a base id and
+    optionally also a chain OR entity id, into a tuple with the base id,
+    chain and entity.
+    Will raise an exception if the given id is not a valid PDB id.
+    :param pdb_id: PDB id, either without a chain, e.g. '5JDT', with a
+    chain, e.g. '5JDT:A' or with an entity id, e.g. '5JDT:1'.
+    :return: A tuple (id, chain, entity) where id is the base id and chain
+    or entity can be None (only one of them will not be None). The returned
+    strings will be upper-cased.
+    """
     pdb_id = pdb_id.upper()
     match = PDB_ID_PATTERN.match(pdb_id)
     if not match:
         raise ValueError(f"Invalid PDB id format: {pdb_id}")
 
-    return match.group('id'), match.group('chain')
+    return match.group('id'), match.group('chain'), match.group('entity')
 
 
 def pdb_download(pdb_id: str, pdb_dir=PDB_DIR) -> Path:
@@ -259,7 +276,13 @@ class PDBMetadata(NamedTuple):
     host_org_id: int
     resolution: float
     resolution_low: float
-    chain_entities: dict
+    chain_entities: Dict[str, int]  # mapping from chain_id to entity_id
+
+    def get_chain(self, entity_id: int):
+        chains = [c for c, e in self.chain_entities.items() if e == entity_id]
+        if not chains:
+            return None
+        return chains[0]
 
 
 class PDBUnitCell(object):
