@@ -11,6 +11,9 @@ import pp5
 from pp5.external_dbs import pdb
 from pp5.external_dbs.pdb import PDBQuery
 from pp5.protein import ProteinRecord, ProteinInitError
+from pp5.align import structural_align
+
+import pandas as pd
 
 LOGGER = logging.getLogger(__name__)
 
@@ -44,9 +47,8 @@ def clean_worker_downloads(base_workers_dl_dir):
     LOGGER.info(f'Deleted temp folder {base_workers_dl_dir}')
 
 
-def collect_data(query: PDBQuery):
+def collect_precs(query: PDBQuery):
     pdb_ids = query.execute()
-
     LOGGER.info(f"Got {len(pdb_ids)} structures from PDB")
 
     base_workers_dl_dir = Path(tempfile.gettempdir()).joinpath('pp5_data')
@@ -66,6 +68,7 @@ def collect_data(query: PDBQuery):
             try:
                 prec = async_result.get(30)
                 counter += 1
+                pps = counter / (time.time() - start_time)
             except TimeoutError as e:
                 LOGGER.error("Timeout getting async result, skipping")
             except ProteinInitError as e:
@@ -76,18 +79,79 @@ def collect_data(query: PDBQuery):
             # Write to file
             prec.to_csv(pp5.data_subdir('proteins'))
             if counter % 10 == 0:
-                pps = counter / (time.time() - start_time)
                 LOGGER.info(f'Total collected: {counter} ({pps:.1f} p/sec)')
 
         clean_worker_downloads(base_workers_dl_dir)
-        LOGGER.info(f"Done: {counter} proteins collected.")
+        LOGGER.info(f"Done: {counter} proteins collected ({pps:.1f} p/sec).")
+
+
+def collect_protein_groups(ref_pdb_id: str):
+    """
+
+    :param ref_pdb_id: Reference PDB ID with chain.
+    :return:
+    """
+    ref_prec = ProteinRecord.from_pdb(ref_pdb_id)
+
+    blast_query = pdb.PDBCompositeQuery(
+        pdb.PDBExpressionSystemQuery('Escherichia Coli'),
+        pdb.PDBResolutionQuery(max_res=1.8),
+        pdb.PDBSequenceQuery(pdb_id=ref_pdb_id, e_cutoff=1.)
+    )
+
+    # BLAST queries return entity ids
+    pdb_entities = blast_query.execute()
+    LOGGER.info(f'Got {len(pdb_entities)} entities from PDB')
+
+    def add_prec(d: dict, prec: ProteinRecord, struct_rmse: float,
+                 ref_group: bool):
+        d.setdefault('unp_id', []).append(prec.unp_id)
+        d.setdefault('pdb_id', []).append(prec.pdb_id)
+        d.setdefault('struct_rmse', []).append(struct_rmse)
+        d.setdefault('description', []).append(prec.pdb_meta.description)
+        d.setdefault('src_org', []).append(prec.pdb_meta.src_org)
+        d.setdefault('src_org_id', []).append(prec.pdb_meta.src_org_id)
+        d.setdefault('host_org', []).append(prec.pdb_meta.host_org)
+        d.setdefault('host_org_id', []).append(prec.pdb_meta.host_org_id)
+        d.setdefault('ref_group', []).append(ref_group)
+
+    groups_data = {}
+    add_prec(groups_data, ref_prec, 0.0, True)
+
+    for pdb_entity in pdb_entities:
+        pdb_id, entity_id = pdb_entity.split(':')
+        entity_id = int(entity_id)
+        try:
+            prec = ProteinRecord.from_pdb_entity(pdb_id, entity_id)
+        except ProteinInitError as e:
+            LOGGER.error(f"Failed to create protein: {e}")
+
+        # Run structural alignment between the ref and current structure
+        rmse, _ = structural_align(ref_pdb_id, prec.pdb_id,
+                                   rmse_cutoff=2., min_stars=50)
+        if not rmse or rmse > 2:
+            LOGGER.info(f'Rejecting {pdb_id} due to insufficient structural '
+                        f'similarity, RMSE={rmse}')
+            continue
+
+        add_prec(groups_data, prec, rmse, prec.unp_id == ref_prec.unp_id)
+
+    df = pd.DataFrame(groups_data)
+    df.sort_values(by=['ref_group', 'unp_id'], ascending=False, inplace=True)
+    out_file = pp5.out_subdir('protein_groups')\
+        .joinpath(f'{ref_pdb_id.replace(":", "_")}.csv')
+    df.to_csv(out_file)
+    return df
 
 
 if __name__ == '__main__':
     # Query PDB for structures
-    query = pdb.PDBCompositeQuery(
-        pdb.PDBExpressionSystemQuery('Escherichia Coli'),
-        pdb.PDBResolutionQuery(max_res=1.0)
-    )
+    # query = pdb.PDBCompositeQuery(
+    #     pdb.PDBExpressionSystemQuery('Escherichia Coli'),
+    #     pdb.PDBResolutionQuery(max_res=1.0)
+    # )
+    #
+    # collect_precs(query)
 
-    collect_data(query)
+    df = collect_protein_groups('1MWC:A')
+    print(df)

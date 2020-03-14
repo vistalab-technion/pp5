@@ -119,8 +119,11 @@ def structural_align(pdb_id1: str, pdb_id2: str,
     :param pdb_id1: First structure id, which can include the chain id (e.g.
     '1ABC:A').
     :param pdb_id2: Second structure id, can include the chain id.
-    :param rmse_cutoff:
-    :param min_stars:
+    :param rmse_cutoff: Outlier rejection cutoff in RMS, determines which
+    residues are considered a structural match (star).
+    :param min_stars: Minimum number of structurally-matching residues.
+    (stars in the clustal output) for a match to be considered valid.
+    If there less, this function will return (None, None)
     :return: Tuple of (rmse, mseq), where rmse is in Angstroms and
     represents the average structural alignment error and mseq is a
     multiple-sequence alignment object with the alignment info of the two
