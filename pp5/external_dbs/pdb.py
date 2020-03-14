@@ -497,7 +497,10 @@ class PDBExpressionSystemQuery(PDBQuery):
 
 class PDBSequenceQuery(PDBQuery):
     """
-    Query PDB for structures
+    Query PDB for structures by their sequence to a reference.
+
+    See documentation here:
+    https://www.rcsb.org/pages/help/advancedsearch/sequence
     """
     TOOL_TYPES = {'blast', 'psiblast'}
 
@@ -527,7 +530,11 @@ class PDBSequenceQuery(PDBQuery):
         if pdb_id:
             self.pdb_id, self.chain_id = split_id(pdb_id)
             if not self.chain_id:
-                raise ValueError('Must provide chain info for query')
+                raise ValueError('Must provide chain info for BLAST query')
+        else:
+            if len(self.sequence) < 12:
+                raise ValueError('Sequence length for BLAST query must be'
+                                 'at least 12 residues')
 
     def description(self):
         if self.pdb_id:
@@ -540,7 +547,7 @@ class PDBSequenceQuery(PDBQuery):
 
         return f'Sequence Search ({seq_str}, ' \
                f'Expectation Value = {self.e_cutoff:.1f}, ' \
-               f'Sequence Identity = {self.identity_cutoff * 100:.0f}, ' \
+               f'Sequence Identity = {self.identity_cutoff:.0f}, ' \
                f'Search Tool = {self.search_tool}, ' \
                f'Mask Low Complexity={self.mask_low_complexity})'
 
