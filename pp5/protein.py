@@ -212,11 +212,12 @@ class ProteinRecord(object):
 
         self.pdb_meta = pdb.pdb_metadata(self.pdb_id, struct_d=self.pdb_dict)
         LOGGER.info(
-            f'{self}: '
-            f'entity_id={self.pdb_meta.chain_entities[self.pdb_chain_id]}, '
+            f'{self}: {self.pdb_meta.description}, '
+            f'org={self.pdb_meta.src_org} ({self.pdb_meta.src_org_id}), '
+            f'expr={self.pdb_meta.host_org} ({self.pdb_meta.host_org_id}), '
             f'res={self.pdb_meta.resolution:.2f}Å, '
-            f'org={self.pdb_meta.src_org} ({self.pdb_meta.src_org_id}) '
-            f'expr={self.pdb_meta.host_org} ({self.pdb_meta.host_org_id}) ')
+            f'entity_id={self.pdb_meta.chain_entities[self.pdb_chain_id]}, '
+        )
 
         # Make sure the structure is sane. See e.g. 1FFK.
         if not self.polypeptides:
@@ -529,7 +530,7 @@ class ProteinRecord(object):
         if ref_chain_id and chain_id != ref_chain_id:
             raise ProteinInitError(
                 f"Reference chain {ref_chain_id} of PDB ID {ref_pdb_id} not"
-                f"found as cross-reference for protein {self.unp_id}."
+                f"found as cross-reference for protein {self.unp_id}. "
                 f"Did you mean chain {chain_id}?")
 
         return pdb_id.upper(), chain_id.upper()
