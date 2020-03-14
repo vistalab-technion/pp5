@@ -111,42 +111,44 @@ def multiseq_align(seqs: Iterable[Seq] = None, in_file=None, out_file=None,
 
 
 def structural_align(pdb_id1: str, pdb_id2: str,
-                     rmse_cutoff: float = 2., min_stars: int = None) \
-        -> Tuple[Optional[float], Optional[MultipleSeqAlignment]]:
+                     outlier_rejection_cutoff: float = 2.) \
+        -> Tuple[Optional[float], Optional[int],
+                 Optional[MultipleSeqAlignment]]:
     """
     Aligns two structures using PyMOL, both in terms of pairwise sequence
     alignment and in terms of structural superposition.
     :param pdb_id1: First structure id, which can include the chain id (e.g.
     '1ABC:A').
     :param pdb_id2: Second structure id, can include the chain id.
-    :param rmse_cutoff: Outlier rejection cutoff in RMS, determines which
-    residues are considered a structural match (star).
-    :param min_stars: Minimum number of structurally-matching residues.
-    (stars in the clustal output) for a match to be considered valid.
-    If there less, this function will return (None, None)
-    :return: Tuple of (rmse, mseq), where rmse is in Angstroms and
-    represents the average structural alignment error and mseq is a
-    multiple-sequence alignment object with the alignment info of the two
-    sequences. Note that mseq.column_annotations['clustal_consensus']
-    contains the clustal "stars" output.
+    :param outlier_rejection_cutoff: Outlier rejection cutoff in RMS,
+    determines which residues are considered a structural match (star).
+    :return: Tuple of (rmse, n_stars, mseq), where rmse is in Angstroms and
+    represents the average structural alignment error; n_stars is the number of
+    residues aligned within the cutoff (non outliers, marked with a star in
+    the clustal output); mseq is a multiple-sequence alignment object with the
+    actual alignment info of the two sequences.
+    Note that mseq.column_annotations['clustal_consensus'] contains the clustal
+    "stars" output.
     """
     align_obj_name = None
     align_ids = []
     tmp_outfile = None
     try:
-        for pdb_id in [pdb_id1, pdb_id2]:
+        for i, pdb_id in enumerate([pdb_id1, pdb_id2]):
             base_id, chain_id = pdb.split_id(pdb_id)
             path = pdb.pdb_download(base_id)
+
+            object_id = f'{base_id}-{i}'  # in case both ids are equal
             with out_redirected('stdout'):  # suppress pymol printouts
-                pymol.load(str(path), object=base_id, quiet=1)
+                pymol.load(str(path), object=object_id, quiet=1)
 
             # If a chain was specified we need to tell PyMOL to create an
             # object for each chain.
             if chain_id:
-                pymol.split_chains(base_id)
-                align_ids.append(f'{base_id}_{chain_id}')
+                pymol.split_chains(object_id)
+                align_ids.append(f'{object_id}_{chain_id}')
             else:
-                align_ids.append(f'{base_id}')
+                align_ids.append(object_id)
 
         # Compute the structural alignment
         src, tgt = align_ids
@@ -154,7 +156,8 @@ def structural_align(pdb_id1: str, pdb_id2: str,
 
         rmse, n_aligned_atoms, n_cycles, rmse_pre, \
         n_aligned_atoms_pre, alignment_score, n_aligned_residues = \
-            pymol.align(src, tgt, object=align_obj_name, cutoff=rmse_cutoff)
+            pymol.align(src, tgt, object=align_obj_name,
+                        cutoff=outlier_rejection_cutoff)
 
         # Save the sequence alignment to a file and load it to get the match
         # symbols for each AA (i.e., "take me to the stars"...)
@@ -166,19 +169,17 @@ def structural_align(pdb_id1: str, pdb_id2: str,
         # Check if we have enough matches above the cutoff
         stars_seq = mseq.column_annotations['clustal_consensus']
         n_stars = len([m for m in re.finditer(r'\*', stars_seq)])
-        if min_stars and n_stars < min_stars:
-            return None, None
 
         LOGGER.info(f'Structural alignment {pdb_id1} to {pdb_id2}, '
                     f'RMSE={rmse:.2f}\n'
                     f'{str(mseq[0].seq)}\n'
                     f'{stars_seq}\n'
                     f'{str(mseq[1].seq)}\n')
-        return rmse, mseq
+        return rmse, n_stars, mseq
     except pymol.QuietException as e:
         LOGGER.error(f'Failed to structurally-align {pdb_id1} to {pdb_id2} '
-                     f'with cutoff {rmse_cutoff}')
-        return None, None
+                     f'with cutoff {outlier_rejection_cutoff}')
+        return None, None, None
     finally:
         # Need to clean up the objects we created inside PyMOL
         # Remove PyMOL loaded structures and their chains ('*' is a wildcard)
