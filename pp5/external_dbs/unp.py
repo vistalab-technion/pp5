@@ -152,6 +152,7 @@ def find_pdb_xrefs(unp: Union[UNPRecord, str], method='x-ray') \
             chain_names, chain_seqs = chain_str.split('=')
             seq_start, seq_end = chain_seqs.split('-')
             for chain_name in chain_names.split('/'):
+                chain_name = chain_name.strip()
                 res.setdefault(chain_name, 0)
                 res[chain_name] += int(seq_end) - int(seq_start)
         return res
