@@ -219,6 +219,7 @@ def pdb_metadata(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> PDBMetadata:
         return convert_to(val)
 
     title = meta('_struct.title')
+    description = meta('_entity.pdbx_description')
 
     src_org = meta('_entity_src_nat.pdbx_organism_scientific')
     if not src_org:
@@ -243,13 +244,15 @@ def pdb_metadata(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> PDBMetadata:
         for chain in chains_str.split(','):
             chain_entities[chain] = int(entity_id)
 
-    return PDBMetadata(pdb_id, title, src_org, src_org_id, host_org,
-                       host_org_id, resolution, resolution_low, chain_entities)
+    return PDBMetadata(pdb_id, title, description, src_org, src_org_id,
+                       host_org, host_org_id, resolution, resolution_low,
+                       chain_entities)
 
 
 class PDBMetadata(NamedTuple):
     pdb_id: str
     title: str
+    description: str
     src_org: str
     src_org_id: int
     host_org: str
