@@ -125,7 +125,7 @@ class ProteinRecord(object):
                                    f"pdb_id={pdb_id}: {e}") from e
 
     @classmethod
-    def from_pdb_entity(cls, pdb_id: str, entity_id: int, **kw) \
+    def from_pdb_entity(cls, pdb_id: str, entity_id: Union[int, str], **kw) \
             -> ProteinRecord:
         """
         Creates a ProteinRecord based on a PDB ID and an entity ID (not
@@ -136,22 +136,23 @@ class ProteinRecord(object):
         other entity in the structure.
         One of the chains belonging to the desired entity will be selected.
         :param pdb_id: PDB ID, should not contain chain.
-        :param entity_id: ID of the desired entity.
+        :param entity_id: ID of the desired entity (a number).
         :return: A ProteinRecord.
         """
 
         # Make sure PDB ID has correct format and ignore chain if provided
         pdb_id, _ = pdb.split_id(pdb_id)
+        entity_id = int(entity_id)
 
         # Discover which chains belong to this entity
         struct_d = pdb.pdb_dict(pdb_id)
         meta = pdb.pdb_metadata(pdb_id, struct_d=struct_d)
-        chains = [c for c, e in meta.chain_entities.items() if e == entity_id]
-        if not chains:
+        chain = meta.get_chain(entity_id)
+        if not chain:
             raise ProteinInitError(f'No matching chain found for entity '
                                    f'{entity_id} in PDB structure {pdb_id}')
 
-        return cls.from_pdb(f'{pdb_id}:{chains[0]}', pdb_dict=struct_d, **kw)
+        return cls.from_pdb(f'{pdb_id}:{chain}', pdb_dict=struct_d, **kw)
 
     @classmethod
     def from_unp(cls, unp_id: str,
@@ -216,7 +217,7 @@ class ProteinRecord(object):
             f'org={self.pdb_meta.src_org} ({self.pdb_meta.src_org_id}), '
             f'expr={self.pdb_meta.host_org} ({self.pdb_meta.host_org_id}), '
             f'res={self.pdb_meta.resolution:.2f}Å, '
-            f'entity_id={self.pdb_meta.chain_entities[self.pdb_chain_id]}, '
+            f'entity_id={self.pdb_meta.chain_entities[self.pdb_chain_id]}'
         )
 
         # Make sure the structure is sane. See e.g. 1FFK.
