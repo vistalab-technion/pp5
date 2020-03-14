@@ -154,7 +154,7 @@ class ProteinGroupsCollector(ParallelDataCollector):
                  structural_outlier_cutoff: float = 2.,
                  structural_max_all_atom_rmsd: float = 2.,
                  min_aligned_residues: int = 50,
-                 out_dir: Path = pp5.out_subdir('protein_groups'), **kw):
+                 out_dir: Path = pp5.out_subdir('pgroups'), **kw):
         """
         :param ref_pdb_id: PDB ID of reference structure. Should include chain.
         :param expr_sys_query: Expression system query object or a a string

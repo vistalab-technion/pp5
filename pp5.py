@@ -4,6 +4,7 @@ import logging.config
 
 import pp5
 import pp5.protein
+import pp5.datasets
 from pathlib import Path
 
 PROJECT_DIR = pp5.PROJECT_DIR
@@ -48,6 +49,18 @@ def parse_cli():
     sp_prec.add_argument('--tag', '-t', required=False, default=None,
                          help='Textual tag to add to output file')
 
+    # pgroup
+    sp_pgroup = sp.add_parser('pgroup', help='Generate a protein group file '
+                                             'for a reference protein'
+                                             'structure.',
+                              formatter_class=help_formatter)
+    sp_pgroup.set_defaults(handler=handle_pgroup)
+    sp_pgroup.add_argument('--pdb-id', '-p', required=True,
+                           help='PDB ID of the reference structure.')
+    sp_pgroup.add_argument('--out-dir', '-o', required=False,
+                           default=pp5.out_subdir('pgroups'),
+                           help='Output directory')
+
     parsed = p.parse_args()
     if not parsed.action:
         p.error("Please specify an action")
@@ -58,6 +71,13 @@ def parse_cli():
 def handle_prec(pdb_id, out_dir, tag, **kw):
     prec = pp5.protein.ProteinRecord.from_pdb(pdb_id, **kw)
     prec.to_csv(out_dir, tag)
+
+
+def handle_pgroup(pdb_id, out_dir, **kw):
+    collector = pp5.datasets.ProteinGroupsCollector(
+        pdb_id, out_dir=out_dir,
+    )
+    collector.collect()
 
 
 if __name__ == '__main__':
