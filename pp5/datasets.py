@@ -219,7 +219,7 @@ class ProteinGroupsCollector(ParallelDataCollector):
             async_results.append(r)
 
         group_entries = []
-        start_time, counter, pps= time.time(), 0, 0
+        start_time, counter, pps = time.time(), 0, 0
         for async_result in async_results:
             try:
                 group_entry = async_result.get(self.async_res_timeout_sec)
@@ -269,6 +269,9 @@ class ProteinGroupsCollector(ParallelDataCollector):
 
             pdb_id = f'{pdb_base_id}:{chain_id}'
             unp_id = pdb.pdbid_to_unpid(pdb_id, struct_d=struct_d)
+            seq_len = len(
+                metadata.entity_sequence[metadata.chain_entities[chain_id]]
+            )
 
             # Run structural alignment between the ref and current structure
             rmse, n_stars, _ = structural_align(
@@ -289,15 +292,15 @@ class ProteinGroupsCollector(ParallelDataCollector):
             return None
 
         return {
-            'unp_id': unp_id,
-            'pdb_id': pdb_id,
-            'struct_rmse': rmse,
-            'n_stars': n_stars,
+            'unp_id': unp_id, 'pdb_id': pdb_id,
+            'resolution': metadata.resolution, 'struct_rmse': rmse,
+            'n_stars': n_stars, 'seq_len': seq_len,
             'description': metadata.description,
-            'src_org': metadata.src_org,
-            'src_org_id': metadata.src_org_id,
-            'host_org': metadata.host_org,
-            'host_org_id': metadata.host_org_id,
+            'src_org': metadata.src_org, 'src_org_id': metadata.src_org_id,
+            'host_org': metadata.host_org, 'host_org_id': metadata.host_org_id,
+            'ligands': metadata.ligands, 'space_group': metadata.space_group,
+            'r_free': metadata.r_free, 'r_work': metadata.r_work,
+            'cg_ph': metadata.cg_ph, 'cg_temp': metadata.cg_temp,
         }
 
 
