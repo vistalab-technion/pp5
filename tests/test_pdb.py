@@ -2,10 +2,12 @@ import os
 import random
 import string
 from urllib.request import urlopen
+import math
 
 import pandas as pd
 import pytest
 from Bio.PDB.PDBExceptions import PDBConstructionException
+from pytest import approx
 
 import pp5.external_dbs.pdb as pdb
 import tests
@@ -143,10 +145,11 @@ class TestPDB:
         pdb_ids = ['1MWC', '1b0y']
 
         # See all fields at: https://www.rcsb.org/pdb/results/reportField.do
-        url = f'http://www.rcsb.org/pdb/rest/customReport.xml?' \
+        url = f'http://www.rcsb.org/pdb/rest/customReport?' \
               f'pdbids={",".join(pdb_ids)}' \
               f'&customReportColumns=taxonomyId,expressionHost,source,' \
-              f'resolution,structureTitle,entityId' \
+              f'resolution,structureTitle,entityId,rFree,rWork,spaceGroup,' \
+              f'ligandId,sequence,crystallizationTempK,phValue' \
               f'&service=wsfile&format=csv'
 
         with urlopen(url) as f:
@@ -155,7 +158,8 @@ class TestPDB:
 
         for pdb_id in pdb_ids:
             meta = pdb.pdb_metadata(pdb_id)
-            expected = df_groups.get_group(pdb_id.upper()).iloc[0]
+            pdb_id_group: pd.DataFrame = df_groups.get_group(pdb_id.upper())
+            expected = pdb_id_group.iloc[0]
             chain = expected['chainId']
 
             assert meta.pdb_id == pdb_id.upper()
@@ -165,6 +169,34 @@ class TestPDB:
             assert meta.host_org == expected['expressionHost']
             assert meta.resolution == expected['resolution']
             assert meta.chain_entities[chain] == expected['entityId']
+            if not meta.r_free:
+                assert math.isnan(expected['rFree'])
+            else:
+                assert meta.r_free == approx(expected['rFree'], abs=1e-3)
+            if not meta.r_work:
+                assert math.isnan(expected['rWork'])
+            else:
+                assert meta.r_work == approx(expected['rWork'], abs=1e-3)
+            if not meta.cg_ph:
+                assert math.isnan(expected['phValue'])
+            else:
+                assert meta.cg_ph == approx(expected['phValue'], abs=1e-3)
+            if not meta.cg_temp:
+                assert math.isnan(expected['crystallizationTempK'])
+            else:
+                assert meta.cg_temp == approx(expected['crystallizationTempK'],
+                                              abs=1e-3)
+
+            assert meta.space_group == expected['spaceGroup']
+
+            expected_ligands = pdb_id_group['ligandId']
+            assert meta.ligands.split(',') == list(set(expected_ligands))
+
+            chain_groups = pdb_id_group.groupby('chainId')
+            for chain, group in chain_groups:
+                seq = meta.entity_sequence[meta.chain_entities[chain]]
+                expected_seq = group.iloc[0]['sequence']
+                assert seq == expected_seq
 
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')

@@ -17,6 +17,7 @@ from Bio.PDB import Structure as PDBRecord, MMCIF2Dict
 from Bio.PDB.DSSP import dssp_dict_from_pdb_file
 from Bio.PDB.PDBExceptions import PDBConstructionWarning, \
     PDBConstructionException
+from Bio.PDB.Polypeptide import standard_aa_names
 
 from pp5 import PDB_DIR, get_resource_path
 from pp5.utils import remote_dl
@@ -25,6 +26,8 @@ PDB_ID_PATTERN = re.compile(r'^(?P<id>[0-9][\w]{3})(?::(?:'
                             r'(?P<chain>[a-z])|(?P<entity>[0-9])'
                             r'))?$',
                             re.IGNORECASE | re.ASCII)
+
+STANDARD_ACID_NAMES = set(standard_aa_names)
 
 PDB_SEARCH_URL = 'https://www.rcsb.org/pdb/rest/search'
 PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
@@ -251,19 +254,42 @@ def pdb_metadata(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> PDBMetadata:
     host_org_id = meta('_entity_src_gen.pdbx_host_org_ncbi_taxonomy_id', int)
     resolution = meta('_refine.ls_d_res_high', float)
     resolution_low = meta('_refine.ls_d_res_low', float)
+    r_free = meta('_refine.ls_R_factor_R_free', float)
+    r_work = meta('_refine.ls_R_factor_R_work', float)
+    space_group = meta('_symmetry.space_group_name_H-M')
 
-    # Map each chain to it's entity id.
-    chain_entities = {}
+    # Find ligands
+    ligands = set()
+    for i, chemical_type in enumerate(struct_d['_chem_comp.id']):
+        if chemical_type.lower() == 'hoh':
+            continue
+        if chemical_type not in STANDARD_ACID_NAMES:
+            ligands.add(chemical_type)
+    ligands = str.join(',', ligands)
+
+    # Crystal growth details
+    cg_ph = meta('_exptl_crystal_grow.pH', float)
+    cg_temp = meta('_exptl_crystal_grow.temp', float)
+
+    # Map each chain to it's entity id, and entity to its 1-letter sequence.
+    chain_entities, entity_seq = {}, {}
     for i, entity_id in enumerate(struct_d['_entity_poly.entity_id']):
         if not struct_d['_entity_poly.type'][i].startswith('polypeptide'):
             continue
+
+        entity_id = int(entity_id)
         chains_str = struct_d['_entity_poly.pdbx_strand_id'][i]
         for chain in chains_str.split(','):
-            chain_entities[chain] = int(entity_id)
+            chain_entities[chain] = entity_id
+
+        seq_str: str = struct_d['_entity_poly.pdbx_seq_one_letter_code_can'][i]
+        seq_str = seq_str.replace('\n', '')
+        entity_seq[entity_id] = seq_str
 
     return PDBMetadata(pdb_id, title, description, src_org, src_org_id,
                        host_org, host_org_id, resolution, resolution_low,
-                       chain_entities)
+                       r_free, r_work, space_group, ligands,
+                       cg_ph, cg_temp, chain_entities, entity_seq)
 
 
 class PDBMetadata(NamedTuple):
@@ -276,7 +302,14 @@ class PDBMetadata(NamedTuple):
     host_org_id: int
     resolution: float
     resolution_low: float
+    r_free: float
+    r_work: float
+    space_group: str
+    ligands: str
+    cg_ph: float  # crystal growth pH
+    cg_temp: float  # crystal growth temperature
     chain_entities: Dict[str, int]  # mapping from chain_id to entity_id
+    entity_sequence: Dict[int, str]  # mapping from entity_id to sequence
 
     def get_chain(self, entity_id: int):
         chains = [c for c, e in self.chain_entities.items() if e == entity_id]
