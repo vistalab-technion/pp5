@@ -8,7 +8,9 @@ from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
 from typing import NamedTuple, Type, Dict
+from urllib.request import urlopen
 
+import pandas as pd
 import requests
 import yattag
 import numpy as np
@@ -31,6 +33,9 @@ STANDARD_ACID_NAMES = set(standard_aa_names)
 
 PDB_SEARCH_URL = 'https://www.rcsb.org/pdb/rest/search'
 PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
+PDB_TO_UNP_URL_TEMPLATE = r"https://www.rcsb.org/pdb/rest/customReport" \
+                          r"?pdbids={}&customReportColumns=uniprotAcc" \
+                          r"&service=wsfile&format=csv"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -134,18 +139,36 @@ def pdbid_to_unpid(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> str:
 
     # Go over referenced DBs and take all uniprot IDs
     unp_ids = set()
-    for i, db_name in enumerate(struct_d['_struct_ref.db_name']):
-        if db_name.lower() == 'unp':
-            unp_ids.add(struct_d['_struct_ref.pdbx_db_accession'][i])
 
-    if not unp_ids:
-        raise ValueError(f'No Uniprot cross-references found in {pdb_id}')
-
-    if not chain_id:
-        if len(unp_ids) > 1:
+    def warn_if_multiple():
+        if not chain_id and len(unp_ids) > 1:
             LOGGER.warning(f"Multiple Uniprot IDs exists for {pdb_id}, and no "
                            f"chain specified. Returning first Uniprot ID.")
-        return next(iter(unp_ids))
+
+    if '_struct_ref.db_name' in struct_d:
+        for i, db_name in enumerate(struct_d['_struct_ref.db_name']):
+            if db_name.lower() == 'unp':
+                unp_ids.add(struct_d['_struct_ref.pdbx_db_accession'][i])
+
+    if not unp_ids:
+        LOGGER.warning(f'No Uniprot cross-references found in {pdb_id}. '
+                       f'Attempting to query PDB API.')
+
+        url_pdb_id = f'{pdb_id}{f".{chain_id}" if chain_id else ""}'
+        url = PDB_TO_UNP_URL_TEMPLATE.format(url_pdb_id)
+        with urlopen(url) as f:
+            df = pd.read_csv(f, header=0, na_filter=False)
+
+        unp_ids = list(filter(lambda x: x, df['uniprotAcc']))
+        if not unp_ids:
+            raise ValueError(f'No Uniprot cross-reference found for {pdb_id}')
+
+        warn_if_multiple()
+        return unp_ids[0].upper()
+
+    if not chain_id:
+        warn_if_multiple()
+        return next(iter(unp_ids)).upper()
 
     # Loop over extra information about each cross-reference.
     # The chains are contained here. Find the Uniprot ID for the requested
@@ -156,7 +179,7 @@ def pdbid_to_unpid(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> str:
 
         curr_chain = struct_d['_struct_ref_seq.pdbx_strand_id'][i]
         if curr_chain.lower() == chain_id.lower():
-            return curr_id
+            return curr_id.upper()
 
     raise ValueError(f"Can't find Uniprot ID for chain {chain_id} of {pdb_id}")
 

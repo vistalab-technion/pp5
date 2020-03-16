@@ -233,6 +233,19 @@ class TestPDBToUNP:
         with pytest.raises(ValueError, match='chain Z'):
             pdb.pdbid_to_unpid('4HHB:Z')
 
+    def test_with_no_xref_in_file(self):
+        for test_id in {'5LTR', '5LTR:A'}:
+            self._check(test_id, 'B1PNC0')
+
+    def test_with_no_xref_in_file_and_pdb(self):
+        for pdb_id in {'5EJU', '4DXP'}:
+            with pytest.raises(ValueError):
+                pdb.pdbid_to_unpid(pdb_id)
+
+    def test_with_no_struct_ref_entry(self):
+        for test_id in {'3G53', '3G53:A'}:
+            self._check(test_id, 'P02213')
+
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
 class TestPDBQueries:
