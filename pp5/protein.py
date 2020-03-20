@@ -3,11 +3,13 @@ from __future__ import annotations
 import logging
 import math
 import warnings
-from typing import List, Tuple, Dict, Iterator, Callable, Any, Union
+import enum
+from typing import List, Tuple, Dict, Iterator, Callable, Any, Union, Iterable, \
+    Generator
 from collections import OrderedDict
 
 import pandas as pd
-from Bio.Align import PairwiseAligner
+from Bio.Align import PairwiseAligner, MultipleSeqAlignment
 from Bio.Data import CodonTable
 from Bio.PDB import PPBuilder
 from Bio.PDB.Polypeptide import Polypeptide
@@ -21,6 +23,7 @@ from pp5.dihedral import Dihedral, DihedralAnglesEstimator, \
 from pp5.external_dbs import pdb, unp, ena
 from pp5.external_dbs.pdb import PDBRecord
 from pp5.external_dbs.unp import UNPRecord
+from pp5.align import structural_align
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
@@ -83,6 +86,35 @@ class ResidueRecord(object):
     def __repr__(self):
         return f'{self.name}{self.res_id:<4s} [{self.codon}]' \
                f'[{self.secondary}] {self.angles} b={self.bfactor:.2f}'
+
+
+class ResidueMatch(ResidueRecord):
+    """
+    Represents a residue match between a reference structure and a query
+    structure.
+    """
+
+    class Type(enum.IntEnum):
+        REFERENCE = enum.auto()
+        VARIANT = enum.auto()
+        SAME = enum.auto()
+        SILENT = enum.auto()
+        MUTATION = enum.auto()
+        ALTERATION = enum.auto()
+
+    @classmethod
+    def from_residue(cls, res: ResidueRecord,
+                     match_type: ResidueMatch.Type, diff_deg: float):
+        return cls(match_type, diff_deg, **res.__dict__)
+
+    def __init__(self, match_type: ResidueMatch.Type, diff_deg: float,
+                 **res_rec_args):
+        super().__init__(**res_rec_args)
+        self.type = match_type
+        self.diff_deg = diff_deg
+
+    def __repr__(self):
+        return f'{self.type.name}, diff={self.diff_deg:.2f}'
 
 
 class ProteinRecord(object):
@@ -404,7 +436,7 @@ class ProteinRecord(object):
     def __iter__(self) -> Iterator[ResidueRecord]:
         return iter(self._residue_recs)
 
-    def __getitem__(self, item: int):
+    def __getitem__(self, item: int) -> ResidueRecord:
         return self._residue_recs[item]
 
     def _find_dna_alignment(self, pdb_aa_seq: str) \
@@ -581,3 +613,234 @@ class ProteinRecord(object):
         self.__dict__.update(state)
         for attr in self._SKIP_SERIALIZE:
             self.__setattr__(attr, None)
+
+
+class ProteinGroup(object):
+    """
+    A ProteinGroup represents a group of protein structures which are
+    similar in terms of sequence and structure.
+
+    A group is defined by a reference structure.
+    All proteins in the group are aligned to the reference and different
+    residue pairs are created. The pairs have different types based on the
+    properties of the alignment (variant/same/silent/mutation/alteration).
+
+    TODO
+    """
+
+    @classmethod
+    def from_ref(cls, pdb_id: str):
+        # Use collector?
+        pass
+
+    @classmethod
+    def from_pdb(cls, ref_pdb_id: str, query_pdb_ids: Iterable[str], **kw):
+        return cls(ref_pdb_id, query_pdb_ids, **kw)
+
+    @classmethod
+    def from_csv(cls, ref_pdb_id: str, filepath: str, **kw):
+        # From a collector csv
+        # This class will generate a different CSV which specifies how
+        # everything is aligned to the reference.
+        df = pd.read_csv(filepath, header=0, index_col=0)
+        pdb_ids = list(df['pdb_id'])
+        if pdb_ids[0].lower() == ref_pdb_id.lower():
+            query_pdb_ids = pdb_ids[1:]
+        else:
+            query_pdb_ids = pdb_ids
+
+        return cls.from_pdb(ref_pdb_id, query_pdb_ids, **kw)
+
+    def __init__(self, ref_pdb_id: str, query_pdb_ids: Iterable[str],
+                 context_len: int = 1, max_all_atom_rmsd: float = 2.,
+                 min_aligned_residues: int = 50, **kw):
+
+        self.ref_pdb_id = ref_pdb_id
+        self.ref_pdb_base_id, self.ref_pdb_chain = pdb.split_id(ref_pdb_id)
+        if not self.ref_pdb_chain:
+            raise ProteinInitError('ProteinGroup reference structure must '
+                                   'specify the chain id.')
+
+        # Make sure that the query IDs are valid
+        if not query_pdb_ids:
+            raise ProteinInitError('No query PDB IDs provided')
+        try:
+            split_ids = [pdb.split_id(query_id) for query_id in query_pdb_ids]
+            if not all(map(lambda x: x[1], split_ids)):
+                raise ValueError('Must specify chain for all structures')
+        except ValueError as e:
+            # can also be raised by split, if format invalid
+            raise ProteinInitError(str(e)) from None
+
+        if context_len < 1:
+            raise ProteinInitError("Context size must be > 1")
+
+        self.context_size = context_len
+        self.max_all_atom_rmsd = max_all_atom_rmsd
+        self.min_aligned_residues = min_aligned_residues
+
+        self.ref_prec = ProteinRecord.from_pdb(self.ref_pdb_id)
+
+        # Find residues matches with the reference
+        self.ref_matches = {}
+        for q_pdb_id, alignment in self._struct_align_filter(query_pdb_ids):
+            try:
+                q_prec = ProteinRecord.from_pdb(q_pdb_id)
+            except ProteinInitError as e:
+                LOGGER.error(f'Failed to create prec for query structure: {e}')
+                continue
+
+            # go over aligned AAs, use pair if neighborhood matches
+            for r_idx, q_idx in self._match_to_ref(q_prec, alignment):
+                # ref idx -> query pdb_id -> query residue
+                ref_idx_matches = self.ref_matches.setdefault(r_idx, {})
+
+                # Reference and query matching residues
+                r_res, q_res = self.ref_prec[r_idx], q_prec[q_idx]
+
+                # Calculate match type and angle diff
+                match = self._make_match(q_prec, r_idx, q_idx)
+                ref_idx_matches[q_pdb_id] = match
+
+        # Find match types (variant/same/silent/mutation/alteration)?
+
+    def _struct_align_filter(self, query_pdb_ids: Iterable[str]) \
+            -> Generator[str, MultipleSeqAlignment]:
+        """
+        Performs structural alignment between the queries and the reference
+        structure. Rejects query structures which do not conform to the
+        requires structural alignment parameters.
+        :param query_pdb_ids:
+        :return: The filters query IDs and a list of alignment objects.
+        """
+
+        for pdb_id in query_pdb_ids:
+            rmse, n_stars, msa = structural_align(self.ref_pdb_id, pdb_id)
+
+            if rmse is None or rmse > self.max_all_atom_rmsd:
+                LOGGER.info(
+                    f'Rejecting {pdb_id} due to insufficient structural '
+                    f'similarity, RMSE={rmse}')
+                continue
+
+            if n_stars < self.min_aligned_residues:
+                LOGGER.info(f'Rejecting {pdb_id} due to insufficient aligned '
+                            f'residues, n_stars={n_stars}')
+                continue
+
+            yield pdb_id, msa
+
+    def _match_to_ref(self, query_prec: ProteinRecord,
+                      struct_alignment: MultipleSeqAlignment) \
+            -> Generator[int, int]:
+        """
+        Matches residues of the query to the reference structure.
+        :param query_prec: ProteinRecord of the query structure.
+        :return:
+        """
+
+        stars = struct_alignment.column_annotations['clustal_consensus']
+        n = struct_alignment.get_alignment_length()
+        assert n == len(stars)
+
+        # Map from index in the structural alignment to the index within each
+        # sequence we got from pymol
+        r_idx, q_idx = -1, -1
+        stars_to_pymol_idx = {}
+        for i in range(n):
+            if struct_alignment[0].seq[i] is not '-':
+                r_idx += 1
+            if struct_alignment[1].seq[i] is not '-':
+                q_idx += 1
+            stars_to_pymol_idx[i] = (r_idx, q_idx)
+
+        # Map from pymol sequence index to the index in the precs
+        # Need to do another pairwise alignment for this
+        # Align the ref and query seqs from our prec and pymol
+        r_pymol_to_prec = \
+            self._align_pymol_to_prec(self.ref_prec, struct_alignment[0].seq)
+        q_pymol_to_prec = \
+            self._align_pymol_to_prec(query_prec, struct_alignment[1].seq)
+
+        # Context size is the number of stars required on EACH SIDE of a match
+        ctx = self.context_size
+        stars_ctx = '*' * self.context_size
+        for i in range(ctx, n - ctx):
+            # Check that context around i has only stars
+            pre, point, post = stars[i - ctx], stars[i], stars[i + ctx]
+            if pre != stars_ctx or post != stars_ctx:
+                continue
+
+            # Now we need to convert i into the index in the prec of each
+            # structure
+            r_idx_pymol, q_idx_pymol = stars_to_pymol_idx[i]
+            r_idx_prec = r_pymol_to_prec[r_idx_pymol]
+            q_idx_prec = q_pymol_to_prec[q_idx_pymol]
+            yield r_idx_prec, q_idx_prec
+
+    @staticmethod
+    def _align_pymol_to_prec(prec: ProteinRecord, pymol_seq: Seq) \
+            -> Dict[int, int]:
+
+        # Align the ref seq from our prec and pymol
+        aligner = PairwiseAligner(substitution_matrix=BLOSUM80,
+                                  open_gap_score=-10, extend_gap_score=-0.5)
+        sa_r_seq = str(pymol_seq).replace('-', '').replace('?', '')
+        rr_alignment = aligner.align(prec.protein_seq, sa_r_seq)[0]
+        rr_idx_prec, rr_idx_pymol = rr_alignment.aligned
+        assert len(rr_idx_prec) == len(rr_idx_pymol)
+
+        # Map pymol index to prec index
+        pymol_to_prec = {}
+        for j in range(len(rr_idx_prec)):
+            prec_start, prec_end = rr_idx_prec[j]
+            pymol_start, pymol_end = rr_idx_pymol[j]
+            pymol_to_prec.update(zip(
+                range(pymol_start, pymol_end), range(prec_start, prec_end)
+            ))
+
+        return pymol_to_prec
+
+    def _make_match(self, q_prec: ProteinRecord, r_idx: int, q_idx: int) \
+            -> ResidueMatch:
+
+        # Get the matching residues
+        r_res, q_res = self.ref_prec[r_idx], q_prec[q_idx]
+
+        # Calculate angle distance
+        diff_ang_deg = self._angle_distance(r_res, q_res)
+
+        # Determine match type
+        pdb_match = self.ref_prec.pdb_id == q_prec.pdb_id
+        unp_match = self.ref_prec.unp_id == q_prec.unp_id
+        aa_match = r_res.name == q_res.name
+        codon_match = r_res.codon == q_res.codon
+
+        if pdb_match:
+            match_type = ResidueMatch.Type.REFERENCE
+        elif unp_match:
+            if aa_match:
+                if codon_match:
+                    match_type = ResidueMatch.Type.VARIANT
+                else:
+                    # TODO: Verify with Alex
+                    match_type = ResidueMatch.Type.SILENT
+            else:
+                match_type = ResidueMatch.Type.ALTERATION
+        else:
+            if aa_match:
+                if codon_match:
+                    match_type = ResidueMatch.Type.SAME
+                else:
+                    match_type = ResidueMatch.Type.SILENT
+            else:
+                match_type = ResidueMatch.Type.MUTATION
+
+        return ResidueMatch.from_residue(q_res, match_type, diff_ang_deg)
+
+    @staticmethod
+    def _angle_distance(r_res: ResidueRecord, q_res: ResidueRecord) -> float:
+        dphi = Dihedral.wraparound_diff(r_res.angles.phi, q_res.angles.phi)
+        dpsi = Dihedral.wraparound_diff(r_res.angles.psi, q_res.angles.psi)
+        dist = math.sqrt(dphi ** 2 + dpsi ** 2)
+        return math.degrees(dist)
