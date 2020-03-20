@@ -65,6 +65,28 @@ class Dihedral(object):
         r = getattr(self, name)
         return math.degrees(r) if r is not None else None
 
+    def as_dict(self, degrees=False, skip_omega=False, with_std=False):
+        """
+        Convert this instance into a dict.
+        :param degrees: Whether to output as degrees.
+        :param skip_omega: Whether to discard omega from output.
+        :return: A dict with keys phi, psi and possibly omega.
+        """
+        names = Dihedral.NAMES
+        if skip_omega:
+            names = names[0:2]
+
+        if with_std:
+            names += tuple(map(lambda n: f'{n}_std', names))
+
+        if degrees:
+            attrs = map(lambda n: f'{n}_deg', names)
+        else:
+            attrs = names
+
+        return {name: getattr(self, attr)
+                for name, attr in zip(names, attrs)}
+
     @classmethod
     def from_deg(cls, phi, psi, omega):
         return cls(np.deg2rad(phi), np.deg2rad(psi), np.deg2rad(omega))
