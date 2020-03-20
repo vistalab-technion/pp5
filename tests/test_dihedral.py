@@ -20,48 +20,43 @@ calc_dihedral2 = DihedralAnglesEstimator.calc_dihedral2
 RESOURCES_PATH = tests.TEST_RESOURCES_PATH.joinpath('dihedral')
 
 
+@numba.jit(nopython=True)
+def calc_dihedral_naive(v1: ndarray, v2: ndarray,
+                        v3: ndarray, v4: ndarray):
+    """
+    Calculates the dihedral angle defined by four 3d points.
+    Uses naive approach, should be slow.
+    """
+
+    def angle_between(v1, v2):
+        """
+        :return: Angle between two vectors.
+        """
+        v1_n = v1 / np.linalg.norm(v1)
+        v2_n = v2 / np.linalg.norm(v2)
+        cos = np.maximum(np.minimum(np.dot(v1_n, v2_n), 1.), -1.)
+        return np.arccos(cos)
+
+    ab = v1 - v2
+    cb = v3 - v2
+    db = v4 - v3
+
+    u = np.cross(ab, cb)
+    v = np.cross(db, cb)
+    w = np.cross(u, v)
+
+    angle = angle_between(u, v)
+    try:
+        if angle_between(cb, w) > 0.001:
+            angle = -angle
+    except Exception:  # zero division
+        pass
+    return angle
+
+
 class TestRawDihedralAngleCalculation(object):
 
-    def random_coords(self):
-        mu = np.random.normal(0, 10, size=(3,))
-        sigma = np.random.normal(0, 1, size=(3, 3))
-        return [np.random.multivariate_normal(mu, sigma) for _ in range(4)]
-
-    @staticmethod
-    @numba.jit(nopython=True)
-    def calc_dihedral_naive(v1: ndarray, v2: ndarray,
-                            v3: ndarray, v4: ndarray):
-        """
-        Calculates the dihedral angle defined by four 3d points.
-        Uses naive approach, should be slow.
-        """
-
-        def angle_between(v1, v2):
-            """
-            :return: Angle between two vectors.
-            """
-            v1_n = v1 / np.linalg.norm(v1)
-            v2_n = v2 / np.linalg.norm(v2)
-            cos = np.maximum(np.minimum(np.dot(v1_n, v2_n), 1.), -1.)
-            return np.arccos(cos)
-
-        ab = v1 - v2
-        cb = v3 - v2
-        db = v4 - v3
-
-        u = np.cross(ab, cb)
-        v = np.cross(db, cb)
-        w = np.cross(u, v)
-
-        angle = angle_between(u, v)
-        try:
-            if angle_between(cb, w) > 0.001:
-                angle = -angle
-        except Exception:  # zero division
-            pass
-        return angle
-
-    def test_1(self):
+    def test_manual(self):
         # This test case is based on
         # https://stackoverflow.com/a/34245697/1230403
 
@@ -82,14 +77,39 @@ class TestRawDihedralAngleCalculation(object):
     def test_compare_to_naive(self):
         for i in range(1000):
             vs = [np.random.standard_normal((3,)) * 10. for _ in range(4)]
-            expected = self.calc_dihedral_naive(*vs)
+            expected = calc_dihedral_naive(*vs)
             assert calc_dihedral2(*vs) == approx(expected)
 
+
+class TestWraparoundDiff(object):
+    TEST_CASES = [
+        ((170, -170), 20), ((180, -180), 0), ((-20, 30), 50), ((30, 30), 0),
+    ]
+
+    @pytest.mark.parametrize(('angles', 'expected'), TEST_CASES)
+    def test_wraparound_diff(self, angles, expected):
+        a1, a2 = angles
+        a1, a2 = math.radians(a1), math.radians(a2)
+
+        actual = dihedral.Dihedral.wraparound_diff(a1, a2)
+        assert actual == approx(math.radians(expected))
+
+        actual2 = dihedral.Dihedral.wraparound_diff(a2, a1)
+        assert actual2 == approx(math.radians(expected))
+
+
+class TestPerformance(object):
+    @staticmethod
+    def random_coords():
+        mu = np.random.normal(0, 10, size=(3,))
+        sigma = np.random.normal(0, 1, size=(3, 3))
+        return [np.random.multivariate_normal(mu, sigma) for _ in range(4)]
+
     def test_benchmark_naive_numba(self, benchmark):
-        benchmark(self.calc_dihedral_naive, *self.random_coords())
+        benchmark(calc_dihedral_naive, *self.random_coords())
 
     def test_benchmark_naive_python(self, benchmark):
-        benchmark(self.calc_dihedral_naive.py_func, *self.random_coords())
+        benchmark(calc_dihedral_naive.py_func, *self.random_coords())
 
     def test_benchmark_calc_dihedral_fast_numba(self, benchmark):
         benchmark(calc_dihedral2, *self.random_coords())

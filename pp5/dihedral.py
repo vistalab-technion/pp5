@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 import warnings
 from math import nan
@@ -61,7 +63,7 @@ class Dihedral(object):
 
     def _deg(self, name):
         r = getattr(self, name)
-        return math.degrees(r) if r else None
+        return math.degrees(r) if r is not None else None
 
     @classmethod
     def from_deg(cls, phi, psi, omega):
@@ -74,6 +76,12 @@ class Dihedral(object):
     @classmethod
     def empty(cls):
         return cls(nan, nan, nan)
+
+    @staticmethod
+    @numba.jit(nopython=True)
+    def wraparound_diff(a1: float, a2: float):
+        d = math.fabs(a1-a2)
+        return min(d, 2*math.pi - d)
 
     def __repr__(self, deg=True):
         reprs = []
