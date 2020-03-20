@@ -111,10 +111,10 @@ class ResidueMatch(ResidueRecord):
                  **res_rec_args):
         super().__init__(**res_rec_args)
         self.type = match_type
-        self.diff_deg = diff_deg
+        self.ang_dist = diff_deg
 
     def __repr__(self):
-        return f'{self.type.name}, diff={self.diff_deg:.2f}'
+        return f'{self.type.name}, diff={self.ang_dist:.2f}'
 
 
 class ProteinRecord(object):
@@ -411,19 +411,14 @@ class ProteinRecord(object):
         # use the iterator of this class to get the residue recs
         data = []
         for rec in self:
-            rec_dict = rec.__getstate__()
+            rec_dict = rec.__dict__.copy()
             del rec_dict['angles']
-            angles_dict = dict(phi=rec.angles.phi_deg,
-                               psi=rec.angles.psi_deg,
-                               omega=rec.angles.omega_deg,
-                               phi_std=rec.angles.phi_std_deg,
-                               psi_std=rec.angles.psi_std_deg,
-                               omega_std=rec.angles.omega_std_deg, )
+            angles_dict = rec.angles.as_dict(degrees=True, with_std=True)
             rec_dict.update(angles_dict)
             data.append(rec_dict)
         return pd.DataFrame(data)
 
-    def to_csv(self, out_dir=pp5.out_subdir('precs'), tag=None):
+    def to_csv(self, out_dir=pp5.out_subdir('prec'), tag=None):
         df = self.to_dataframe()
         tag = f'_{tag}' if tag else ''
         filename = f'{self.pdb_base_id}_{self.pdb_chain_id}{tag}'
@@ -638,24 +633,19 @@ class ProteinGroup(object):
         return cls(ref_pdb_id, query_pdb_ids, **kw)
 
     @classmethod
-    def from_csv(cls, ref_pdb_id: str, filepath: str, **kw):
+    def from_collector_csv(cls, ref_pdb_id: str, filepath: str, **kw):
         # From a collector csv
         # This class will generate a different CSV which specifies how
         # everything is aligned to the reference.
         df = pd.read_csv(filepath, header=0, index_col=0)
-        pdb_ids = list(df['pdb_id'])
-        if pdb_ids[0].lower() == ref_pdb_id.lower():
-            query_pdb_ids = pdb_ids[1:]
-        else:
-            query_pdb_ids = pdb_ids
-
+        query_pdb_ids = list(df['pdb_id'])
         return cls.from_pdb(ref_pdb_id, query_pdb_ids, **kw)
 
     def __init__(self, ref_pdb_id: str, query_pdb_ids: Iterable[str],
                  context_len: int = 1, max_all_atom_rmsd: float = 2.,
                  min_aligned_residues: int = 50, **kw):
 
-        self.ref_pdb_id = ref_pdb_id
+        self.ref_pdb_id = ref_pdb_id.upper()
         self.ref_pdb_base_id, self.ref_pdb_chain = pdb.split_id(ref_pdb_id)
         if not self.ref_pdb_chain:
             raise ProteinInitError('ProteinGroup reference structure must '
@@ -682,8 +672,10 @@ class ProteinGroup(object):
         self.ref_prec = ProteinRecord.from_pdb(self.ref_pdb_id)
 
         # Find residues matches with the reference
-        self.ref_matches = {}
+        self.ref_matches: Dict[int, Dict[str, ResidueMatch]] = {}
+        self.query_pdb_to_unp_ids = {}
         for q_pdb_id, alignment in self._struct_align_filter(query_pdb_ids):
+            q_pdb_id = q_pdb_id.upper()
             try:
                 q_prec = ProteinRecord.from_pdb(q_pdb_id)
             except ProteinInitError as e:
@@ -702,7 +694,42 @@ class ProteinGroup(object):
                 match = self._make_match(q_prec, r_idx, q_idx)
                 ref_idx_matches[q_pdb_id] = match
 
-        # Find match types (variant/same/silent/mutation/alteration)?
+            self.query_pdb_to_unp_ids[q_pdb_id] = q_prec.unp_id
+
+    def to_dataframe(self):
+        df_index = []
+        df_data = []
+
+        for ref_idx, matches in self.ref_matches.items():
+            for query_pdb_id, match in matches.items():
+                data = OrderedDict(match.__dict__.copy())
+
+                del data['angles']
+                data.update(match.angles.as_dict(
+                    degrees=True, skip_omega=True, with_std=True))
+
+                data['type'] = match.type.name
+                data.move_to_end('type', last=False)
+                data['unp_id'] = self.query_pdb_to_unp_ids[query_pdb_id]
+                data.move_to_end('unp_id', last=False)
+
+                df_data.append(data)
+                df_index.append((ref_idx, query_pdb_id))
+
+        df_index = pd.MultiIndex.from_tuples(df_index,
+                                             names=['ref_idx', 'query_pdb_id'])
+        df = pd.DataFrame(data=df_data, index=df_index)
+        return df
+
+    def to_csv(self, out_dir=pp5.out_subdir('pgroup'), tag=None):
+        df = self.to_dataframe()
+        tag = f'_{tag}' if tag else ''
+        filename = f'{self.ref_pdb_base_id}_{self.ref_pdb_chain}{tag}'
+        filepath = out_dir.joinpath(f'{filename}.csv')
+        df.to_csv(filepath, na_rep='nan', header=True, index=True,
+                  encoding='utf-8', float_format='%.3f')
+        LOGGER.info(f'Wrote {self} to {filepath}')
+        return filepath
 
     def _struct_align_filter(self, query_pdb_ids: Iterable[str]) \
             -> Generator[str, MultipleSeqAlignment]:
@@ -844,3 +871,6 @@ class ProteinGroup(object):
         dpsi = Dihedral.wraparound_diff(r_res.angles.psi, q_res.angles.psi)
         dist = math.sqrt(dphi ** 2 + dpsi ** 2)
         return math.degrees(dist)
+
+    def __repr__(self):
+        return f'{self.ref_pdb_id}, size={len(self.query_pdb_to_unp_ids)}'
