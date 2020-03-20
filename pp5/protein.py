@@ -56,20 +56,18 @@ class ResidueRecord(object):
     - secondary: single-letter secondary structure code
     """
 
-    def __init__(self, res_id: Union[str, int], name: str, codon_counts: dict,
+    def __init__(self, res_id: Union[str, int], name: str,
+                 codon: str, codon_score: float,
+                 codon_opts: Union[Iterable[str], str],
                  angles: Dihedral, bfactor: float, secondary: str):
-        self.res_id, self.name = str(res_id).strip(), name
-        self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
 
-        codon_counts = {} if not codon_counts else codon_counts
-        best_codon, max_count, total_count = UNKNOWN_CODON, 0, 0
-        for codon, count in codon_counts.items():
-            total_count += count
-            if count > max_count and codon != UNKNOWN_CODON:
-                best_codon, max_count = codon, count
-        self.codon = best_codon
-        self.codon_score = max_count / total_count if total_count else 0
-        self.codon_opts = '/'.join(codon_counts.keys())
+        self.res_id, self.name = str(res_id).strip(), name
+        self.codon, self.codon_score = codon, codon_score
+        if isinstance(codon_opts, str):
+            self.codon_opts = codon_opts
+        else:
+            self.codon_opts = str.join('/', codon_opts)
+        self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
 
     def __getstate__(self):
         d = self.__dict__.copy()
@@ -269,12 +267,24 @@ class ProteinRecord(object):
         dna_seq = str(dna_seq_record.seq)
         self.ena_id = dna_seq_record.id
 
+        # Create a ResidueRecord holding all data we need per residue
         residue_recs = []
         for i in range(len(pdb_aa_seq)):
+            # Get best codon and calculate it's 'score' based on how many
+            # other options there are
+            codon_counts = idx_to_codons.get(i, {})
+            best_codon, max_count, total_count = UNKNOWN_CODON, 0, 0
+            for codon, count in codon_counts.items():
+                total_count += count
+                if count > max_count and codon != UNKNOWN_CODON:
+                    best_codon, max_count = codon, count
+            codon_score = max_count / total_count if total_count else 0
+            codon_opts = codon_counts.keys()
+
             rr = ResidueRecord(
                 res_id=aa_ids[i], name=pdb_aa_seq[i],
-                codon_counts=idx_to_codons.get(i, {}),
-                angles=angles[i],
+                codon=best_codon, codon_score=codon_score,
+                codon_opts=codon_opts, angles=angles[i],
                 bfactor=bfactors[i], secondary=sstructs[i],
             )
             residue_recs.append(rr)
