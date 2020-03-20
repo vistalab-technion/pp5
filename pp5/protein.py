@@ -456,7 +456,7 @@ class ProteinRecord(object):
                     f'(norm_score='
                     f'{best_alignments.score / len(pdb_aa_seq):.2f}, '
                     f'num={len(best_alignments)})\n'
-                    f'{best_alignment}')
+                    f'{str(best_alignment).strip()}')
 
         # Map each AA to a dict of (codon->count)
         idx_to_codons = {}

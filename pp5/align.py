@@ -174,7 +174,7 @@ def structural_align(pdb_id1: str, pdb_id2: str,
                     f'RMSE={rmse:.2f}\n'
                     f'{str(mseq[0].seq)}\n'
                     f'{stars_seq}\n'
-                    f'{str(mseq[1].seq)}\n')
+                    f'{str(mseq[1].seq)}')
         return rmse, n_stars, mseq
     except pymol.QuietException as e:
         LOGGER.error(f'Failed to structurally-align {pdb_id1} to {pdb_id2} '
