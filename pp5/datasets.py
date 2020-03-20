@@ -79,7 +79,7 @@ class ProteinRecordCollector(ParallelDataCollector):
     DEFAULT_PREC_INIT_ARGS = dict(dihedral_est_name='erp')
 
     def __init__(self, query: PDBQuery, prec_init_args=None,
-                 out_dir: Path = pp5.data_subdir('precs'),
+                 out_dir: Path = pp5.data_subdir('prec'),
                  prec_callback: Callable[
                      [ProteinRecord, Path], Any] = ProteinRecord.to_csv, **kw):
         """
@@ -154,7 +154,7 @@ class ProteinGroupsCollector(ParallelDataCollector):
                  structural_outlier_cutoff: float = 2.,
                  structural_max_all_atom_rmsd: float = 2.,
                  min_aligned_residues: int = 50,
-                 out_dir: Path = pp5.out_subdir('pgroups'), **kw):
+                 out_dir: Path = pp5.out_subdir('pgroup_collected'), **kw):
         """
         :param ref_pdb_id: PDB ID of reference structure. Should include chain.
         :param expr_sys_query: Expression system query object or a a string
@@ -313,9 +313,9 @@ if __name__ == '__main__':
 
     # collector = ProteinRecordCollector(
     #     query, prec_init_args={'dihedral_est_name': ''},
-    #     out_dir=pp5.out_subdir('precs')
+    #     out_dir=pp5.out_subdir('prec')
     # )
 
-    for pdb_id in ['1mwc:a', '2wur:a', '5jdt:a']:
-        collector = ProteinGroupsCollector(pdb_id)
+    for pdb_id in ['5nl4:a', ]:  # '1mwc:a', '2wur:a', '5jdt:a']:
+        collector = ProteinGroupsCollector(pdb_id, blast_identity_cutoff=0)
         collector.collect()

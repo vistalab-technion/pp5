@@ -44,7 +44,7 @@ def parse_cli():
     sp_prec.add_argument('--pdb-id', '-p', required=True,
                          help='PDB ID of the desired structure.')
     sp_prec.add_argument('--out-dir', '-o', required=False,
-                         default=pp5.out_subdir('precs'),
+                         default=pp5.out_subdir('prec'),
                          help='Output directory')
     sp_prec.add_argument('--tag', '-t', required=False, default=None,
                          help='Textual tag to add to output file')
@@ -58,7 +58,7 @@ def parse_cli():
     sp_pgroup.add_argument('--pdb-id', '-p', required=True,
                            help='PDB ID of the reference structure.')
     sp_pgroup.add_argument('--out-dir', '-o', required=False,
-                           default=pp5.out_subdir('pgroups'),
+                           default=pp5.out_subdir('pgroup_collected'),
                            help='Output directory')
 
     parsed = p.parse_args()
