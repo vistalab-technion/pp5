@@ -1,9 +1,10 @@
 import gzip
+import importlib
 import logging
 import os
 import sys
 from collections.abc import Mapping, Set, Sequence
-from contextlib import contextmanager
+import contextlib
 from pathlib import Path
 
 import requests
@@ -82,8 +83,17 @@ def deep_walk(obj, path=(), memo=None):
         yield path, obj
 
 
-@contextmanager
-def out_redirected(stdout_stderr='stdout', to=os.devnull):
+def is_interactive():
+    """
+    :return: Whether python is running as an interactive shell.
+    """
+    main = importlib.import_module('__main__')
+    return not hasattr(main, '__file__')
+
+
+@contextlib.contextmanager
+def out_redirected(stdout_stderr='stdout', to=os.devnull,
+                   standard_fds_only=True, no_interactive=True):
     """
     Redirects stdout/stderr in a way that also affects C libraries called
     from python code.
@@ -96,8 +106,6 @@ def out_redirected(stdout_stderr='stdout', to=os.devnull):
     assert stdout_stderr in {'stdout', 'stderr'}
 
     fd = getattr(sys, stdout_stderr).fileno()
-    assert (stdout_stderr == 'stdout' and fd == 1) or \
-           (stdout_stderr == 'stderr' and fd == 2)
 
     # Loggers which log to the stream being redirected must be modified
     logging_handlers = [h for h in logging.root.handlers
@@ -120,11 +128,35 @@ def out_redirected(stdout_stderr='stdout', to=os.devnull):
             finally:
                 lh.release()
 
-    with os.fdopen(os.dup(fd), 'w') as old_stdout:
+    # By default we don't want to change any non-standard file descriptors,
+    # so we only change 1 and 2
+    if standard_fds_only and \
+            not ((stdout_stderr == 'stdout' and fd == 1) or
+                 (stdout_stderr == 'stderr' and fd == 2)):
+        yield
+
+    # In interactive python, don't redirect by changing file-descriptors
+    # because this will crash the interactive shell (which also uses these
+    # files). Use the regular contextlib context managers.
+    elif no_interactive and is_interactive():
+        if stdout_stderr == 'stdout':
+            redirect_fn = contextlib.redirect_stdout
+        else:
+            redirect_fn = contextlib.redirect_stderr
+
         with open(to, 'w') as file:
-            _redirect(to_stream=file)
-        try:
-            yield  # allow code to be run with the redirected stdout
-        finally:
-            _redirect(to_stream=old_stdout)  # restore stdout.
-            # buffering and flags such as CLOEXEC may be different
+            with redirect_fn(file):
+                yield
+
+    # In non-interactive python, we redirect by changing file descriptors.
+    # The advantage is that this affect non-python code in this process,
+    # such as compiled C libraries.
+    else:
+        with os.fdopen(os.dup(fd), 'w') as old_stdout:
+            with open(to, 'w') as file:
+                _redirect(to_stream=file)
+            try:
+                yield  # allow code to be run with the redirected stdout
+            finally:
+                _redirect(to_stream=old_stdout)  # restore stdout.
+                # buffering and flags such as CLOEXEC may be different
