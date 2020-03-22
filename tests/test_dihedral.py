@@ -17,7 +17,6 @@ import pymol.cmd as pymol
 from pytest import approx
 
 calc_dihedral2 = DihedralAnglesEstimator.calc_dihedral2
-RESOURCES_PATH = tests.TEST_RESOURCES_PATH.joinpath('dihedral')
 
 
 @numba.jit(nopython=True)
@@ -139,7 +138,7 @@ class TestDihedralAnglesVsPyMOL(object):
 
     def _compare_to_pymol(self, pdb_id, estimator):
         pdb_id, pdb_chain = pdb.split_id(pdb_id)
-        pdb_rec = pdb.pdb_struct(pdb_id, pdb_dir=RESOURCES_PATH)
+        pdb_rec = pdb.pdb_struct(pdb_id)
 
         with self.pymol_structure_chains(pdb_id):
             for chain in pdb_rec.get_chains():
@@ -195,7 +194,7 @@ class TestDihedralAnglesEstimators(object):
         pass
 
     def _compare_with_estimator(self, pdb_id, estimator, **kw):
-        pdb_rec = pdb.pdb_struct(pdb_id, pdb_dir=RESOURCES_PATH)
+        pdb_rec = pdb.pdb_struct(pdb_id)
         pp_chains = PPBuilder().build_peptides(pdb_rec, aa_only=True)
 
         for pp in pp_chains:
@@ -234,7 +233,7 @@ class TestDihedralAnglesEstimators(object):
 
     @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
     def test_montecarlo_estimator(self, pdb_id):
-        unit_cell = pdb.pdb_to_unit_cell(pdb_id, pdb_dir=RESOURCES_PATH)
+        unit_cell = pdb.pdb_to_unit_cell(pdb_id)
         estimator = dihedral.DihedralAnglesMonteCarloEstimator(unit_cell)
         # Not sure how to test, for now set infinite abs error
         self._compare_with_estimator(pdb_id, estimator, abs=math.inf)

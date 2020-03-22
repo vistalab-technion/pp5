@@ -22,7 +22,5 @@ def get_tmp_path(name: str, clear=True):
     return path
 
 
-# Set override default paths
-os.environ['UNP_DIR'] = str(get_tmp_path('unp'))
-os.environ['PDB_DIR'] = str(get_tmp_path('pdb'))
-os.environ['ENA_DIR'] = str(get_tmp_path('ena'))
+# Override default paths
+os.environ['DATA_DIR'] = str(get_resource_path('data'))

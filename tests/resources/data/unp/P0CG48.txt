@@ -1,0 +1,1345 @@
+ID   UBC_HUMAN               Reviewed;         685 AA.
+AC   P0CG48; P02248; P02249; P02250; P62988; Q29120; Q6LBL4; Q6LDU5; Q8WYN8;
+AC   Q91887; Q91888; Q9BWD6; Q9BX98; Q9UEF2; Q9UEG1; Q9UEK8; Q9UPK7;
+DT   10-AUG-2010, integrated into UniProtKB/Swiss-Prot.
+DT   13-JUN-2012, sequence version 3.
+DT   26-FEB-2020, entry version 107.
+DE   RecName: Full=Polyubiquitin-C;
+DE   Contains:
+DE     RecName: Full=Ubiquitin;
+DE   Flags: Precursor;
+GN   Name=UBC;
+OS   Homo sapiens (Human).
+OC   Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; Mammalia;
+OC   Eutheria; Euarchontoglires; Primates; Haplorrhini; Catarrhini; Hominidae;
+OC   Homo.
+OX   NCBI_TaxID=9606;
+RN   [1]
+RP   NUCLEOTIDE SEQUENCE [MRNA].
+RX   PubMed=2988935; DOI=10.1002/j.1460-2075.1985.tb03693.x;
+RA   Wiborg O., Pedersen M.S., Wind A., Berglund L.E., Marcker K.A., Vuust J.;
+RT   "The human ubiquitin multigene family: some genes contain multiple directly
+RT   repeated ubiquitin coding sequences.";
+RL   EMBO J. 4:755-759(1985).
+RN   [2]
+RP   NUCLEOTIDE SEQUENCE [MRNA].
+RX   PubMed=9644242; DOI=10.1093/oxfordjournals.jbchem.a022093;
+RA   Kim N.S., Yamaguchi T., Sekine S., Saeki M., Iwamuro S., Kato S.;
+RT   "Cloning of human polyubiquitin cDNAs and a ubiquitin-binding assay
+RT   involving its in vitro translation product.";
+RL   J. Biochem. 124:35-39(1998).
+RN   [3]
+RP   NUCLEOTIDE SEQUENCE [GENOMIC DNA].
+RX   PubMed=14745543; DOI=10.1007/s00239-003-2532-4;
+RA   Tachikui H., Saitou N., Nakajima T., Hayasaka I., Ishida T., Inoue I.;
+RT   "Lineage-specific homogenization of the polyubiquitin gene among human and
+RT   great apes.";
+RL   J. Mol. Evol. 57:737-744(2003).
+RN   [4]
+RP   NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA].
+RX   PubMed=16541075; DOI=10.1038/nature04569;
+RA   Scherer S.E., Muzny D.M., Buhay C.J., Chen R., Cree A., Ding Y.,
+RA   Dugan-Rocha S., Gill R., Gunaratne P., Harris R.A., Hawes A.C.,
+RA   Hernandez J., Hodgson A.V., Hume J., Jackson A., Khan Z.M., Kovar-Smith C.,
+RA   Lewis L.R., Lozado R.J., Metzker M.L., Milosavljevic A., Miner G.R.,
+RA   Montgomery K.T., Morgan M.B., Nazareth L.V., Scott G., Sodergren E.,
+RA   Song X.-Z., Steffen D., Lovering R.C., Wheeler D.A., Worley K.C., Yuan Y.,
+RA   Zhang Z., Adams C.Q., Ansari-Lari M.A., Ayele M., Brown M.J., Chen G.,
+RA   Chen Z., Clerc-Blankenburg K.P., Davis C., Delgado O., Dinh H.H.,
+RA   Draper H., Gonzalez-Garay M.L., Havlak P., Jackson L.R., Jacob L.S.,
+RA   Kelly S.H., Li L., Li Z., Liu J., Liu W., Lu J., Maheshwari M.,
+RA   Nguyen B.-V., Okwuonu G.O., Pasternak S., Perez L.M., Plopper F.J.H.,
+RA   Santibanez J., Shen H., Tabor P.E., Verduzco D., Waldron L., Wang Q.,
+RA   Williams G.A., Zhang J., Zhou J., Allen C.C., Amin A.G., Anyalebechi V.,
+RA   Bailey M., Barbaria J.A., Bimage K.E., Bryant N.P., Burch P.E.,
+RA   Burkett C.E., Burrell K.L., Calderon E., Cardenas V., Carter K., Casias K.,
+RA   Cavazos I., Cavazos S.R., Ceasar H., Chacko J., Chan S.N., Chavez D.,
+RA   Christopoulos C., Chu J., Cockrell R., Cox C.D., Dang M., Dathorne S.R.,
+RA   David R., Davis C.M., Davy-Carroll L., Deshazo D.R., Donlin J.E.,
+RA   D'Souza L., Eaves K.A., Egan A., Emery-Cohen A.J., Escotto M., Flagg N.,
+RA   Forbes L.D., Gabisi A.M., Garza M., Hamilton C., Henderson N.,
+RA   Hernandez O., Hines S., Hogues M.E., Huang M., Idlebird D.G., Johnson R.,
+RA   Jolivet A., Jones S., Kagan R., King L.M., Leal B., Lebow H., Lee S.,
+RA   LeVan J.M., Lewis L.C., London P., Lorensuhewa L.M., Loulseged H.,
+RA   Lovett D.A., Lucier A., Lucier R.L., Ma J., Madu R.C., Mapua P.,
+RA   Martindale A.D., Martinez E., Massey E., Mawhiney S., Meador M.G.,
+RA   Mendez S., Mercado C., Mercado I.C., Merritt C.E., Miner Z.L., Minja E.,
+RA   Mitchell T., Mohabbat F., Mohabbat K., Montgomery B., Moore N., Morris S.,
+RA   Munidasa M., Ngo R.N., Nguyen N.B., Nickerson E., Nwaokelemeh O.O.,
+RA   Nwokenkwo S., Obregon M., Oguh M., Oragunye N., Oviedo R.J., Parish B.J.,
+RA   Parker D.N., Parrish J., Parks K.L., Paul H.A., Payton B.A., Perez A.,
+RA   Perrin W., Pickens A., Primus E.L., Pu L.-L., Puazo M., Quiles M.M.,
+RA   Quiroz J.B., Rabata D., Reeves K., Ruiz S.J., Shao H., Sisson I.,
+RA   Sonaike T., Sorelle R.P., Sutton A.E., Svatek A.F., Svetz L.A.,
+RA   Tamerisa K.S., Taylor T.R., Teague B., Thomas N., Thorn R.D., Trejos Z.Y.,
+RA   Trevino B.K., Ukegbu O.N., Urban J.B., Vasquez L.I., Vera V.A.,
+RA   Villasana D.M., Wang L., Ward-Moore S., Warren J.T., Wei X., White F.,
+RA   Williamson A.L., Wleczyk R., Wooden H.S., Wooden S.H., Yen J., Yoon L.,
+RA   Yoon V., Zorrilla S.E., Nelson D., Kucherlapati R., Weinstock G.,
+RA   Gibbs R.A.;
+RT   "The finished DNA sequence of human chromosome 12.";
+RL   Nature 440:346-351(2006).
+RN   [5]
+RP   NUCLEOTIDE SEQUENCE [LARGE SCALE MRNA].
+RC   TISSUE=Brain, Liver, Lung, and Placenta;
+RX   PubMed=15489334; DOI=10.1101/gr.2596504;
+RG   The MGC Project Team;
+RT   "The status, quality, and expansion of the NIH full-length cDNA project:
+RT   the Mammalian Gene Collection (MGC).";
+RL   Genome Res. 14:2121-2127(2004).
+RN   [6]
+RP   NUCLEOTIDE SEQUENCE [GENOMIC DNA] OF 1-611.
+RX   PubMed=8917096; DOI=10.1016/0378-1119(96)00145-x;
+RA   Nenoi M., Mita K., Ichimura S., Cartwright I.L., Takahashi E., Yamauchi M.,
+RA   Tsuji H.;
+RT   "Heterogeneous structure of the polyubiquitin gene UbC of HeLa S3 cells.";
+RL   Gene 175:179-185(1996).
+RN   [7]
+RP   PROTEIN SEQUENCE OF 1-74.
+RX   PubMed=1128706; DOI=10.1038/255423a0;
+RA   Schlesinger D.H., Goldstein G.;
+RT   "Molecular conservation of 74 amino acid sequence of ubiquitin between
+RT   cattle and man.";
+RL   Nature 255:423-424(1975).
+RN   [8]
+RP   PROTEIN SEQUENCE OF 1-27; 30-42 AND 55-72, AND IDENTIFICATION BY MASS
+RP   SPECTROMETRY.
+RC   TISSUE=Fetal brain cortex;
+RA   Lubec G., Chen W.-Q., Sun Y.;
+RL   Submitted (DEC-2008) to UniProtKB.
+RN   [9]
+RP   PROTEIN SEQUENCE OF 1-27 AND 43-54, UBIQUITINATION AT LYS-6; LYS-11 AND
+RP   LYS-48, AND IDENTIFICATION BY MASS SPECTROMETRY.
+RX   PubMed=16443603; DOI=10.1074/jbc.m512786200;
+RA   Cripps D., Thomas S.N., Jeng Y., Yang F., Davies P., Yang A.J.;
+RT   "Alzheimer disease-specific conformation of hyperphosphorylated paired
+RT   helical filament-tau is polyubiquitinated through Lys-48, Lys-11, and Lys-6
+RT   ubiquitin conjugation.";
+RL   J. Biol. Chem. 281:10825-10838(2006).
+RN   [10]
+RP   NUCLEOTIDE SEQUENCE [GENOMIC DNA] OF 77-685.
+RX   PubMed=9504932;
+RA   Nenoi M., Mita K., Ichimura S., Kawano A.;
+RT   "Higher frequency of concerted evolutionary events in rodents than in man
+RT   at the polyubiquitin gene VNTR locus.";
+RL   Genetics 148:867-876(1998).
+RN   [11]
+RP   NUCLEOTIDE SEQUENCE [MRNA] OF 417-685.
+RX   PubMed=2820408; DOI=10.1016/0006-291x(87)90970-3;
+RA   Einspanier R., Sharma H.S., Scheit K.H.;
+RT   "Cloning and sequence analysis of a cDNA encoding poly-ubiquitin in human
+RT   ovarian granulosa cells.";
+RL   Biochem. Biophys. Res. Commun. 147:581-587(1987).
+RN   [12]
+RP   FUNCTION, UBIQUITINATION AT LYS-11; LYS-29; LYS-48 AND LYS-63, AND
+RP   IDENTIFICATION BY MASS SPECTROMETRY.
+RX   PubMed=16543144; DOI=10.1016/j.molcel.2006.02.018;
+RA   Huang F., Kirkpatrick D., Jiang X., Gygi S.P., Sorkin A.;
+RT   "Differential regulation of EGF receptor internalization and degradation by
+RT   multiubiquitination within the kinase domain.";
+RL   Mol. Cell 21:737-748(2006).
+RN   [13]
+RP   UBIQUITINATION AT LYS-27.
+RX   PubMed=15466860; DOI=10.1074/jbc.m402916200;
+RA   Okumura F., Hatakeyama S., Matsumoto M., Kamura T., Nakayama K.;
+RT   "Functional regulation of FEZ1 by the U-box-type ubiquitin ligase E4B
+RT   contributes to neuritogenesis.";
+RL   J. Biol. Chem. 279:53533-53543(2004).
+RN   [14]
+RP   UBIQUITINATION AT LYS-63, AND MUTAGENESIS OF LYS-48 AND LYS-63.
+RX   PubMed=18719106; DOI=10.1073/pnas.0805685105;
+RA   Motegi A., Liaw H.-J., Lee K.-Y., Roest H.P., Maas A., Wu X., Moinova H.,
+RA   Markowitz S.D., Ding H., Hoeijmakers J.H.J., Myung K.;
+RT   "Polyubiquitination of proliferating cell nuclear antigen by HLTF and SHPRH
+RT   prevents genomic instability from stalled replication forks.";
+RL   Proc. Natl. Acad. Sci. U.S.A. 105:12411-12416(2008).
+RN   [15]
+RP   REVIEW, AND FUNCTION.
+RX   PubMed=19754430; DOI=10.1042/bst0370937;
+RA   Komander D.;
+RT   "The emerging complexity of protein ubiquitination.";
+RL   Biochem. Soc. Trans. 37:937-953(2009).
+RN   [16]
+RP   PHOSPHORYLATION AT SER-65, AND MUTAGENESIS OF SER-65.
+RX   PubMed=24660806; DOI=10.1042/bj20140334;
+RA   Kazlauskaite A., Kondapalli C., Gourlay R., Campbell D.G., Ritorto M.S.,
+RA   Hofmann K., Alessi D.R., Knebel A., Trost M., Muqit M.M.;
+RT   "Parkin is activated by PINK1-dependent phosphorylation of ubiquitin at
+RT   Ser65.";
+RL   Biochem. J. 460:127-139(2014).
+RN   [17]
+RP   PHOSPHORYLATION AT SER-65, AND MUTAGENESIS OF SER-65.
+RX   PubMed=24751536; DOI=10.1083/jcb.201402104;
+RA   Kane L.A., Lazarou M., Fogel A.I., Li Y., Yamano K., Sarraf S.A.,
+RA   Banerjee S., Youle R.J.;
+RT   "PINK1 phosphorylates ubiquitin to activate Parkin E3 ubiquitin ligase
+RT   activity.";
+RL   J. Cell Biol. 205:143-153(2014).
+RN   [18]
+RP   PHOSPHORYLATION AT SER-65, AND MUTAGENESIS OF SER-65.
+RX   PubMed=24784582; DOI=10.1038/nature13392;
+RA   Koyano F., Okatsu K., Kosako H., Tamura Y., Go E., Kimura M., Kimura Y.,
+RA   Tsuchiya H., Yoshihara H., Hirokawa T., Endo T., Fon E.A., Trempe J.F.,
+RA   Saeki Y., Tanaka K., Matsuda N.;
+RT   "Ubiquitin is phosphorylated by PINK1 to activate parkin.";
+RL   Nature 510:162-166(2014).
+RN   [19]
+RP   ADP-RIBOSYLATION AT GLY-76, AND MUTAGENESIS OF HIS-68; ARG-72; ARG-74 AND
+RP   GLY-76.
+RX   PubMed=28525742; DOI=10.1016/j.molcel.2017.04.028;
+RA   Yang C.S., Jividen K., Spencer A., Dworak N., Ni L., Oostdyk L.T.,
+RA   Chatterjee M., Kusmider B., Reon B., Parlak M., Gorbunova V., Abbas T.,
+RA   Jeffery E., Sherman N.E., Paschal B.M.;
+RT   "Ubiquitin Modification by the E3 Ligase/ADP-Ribosyltransferase
+RT   Dtx3L/Parp9.";
+RL   Mol. Cell 66:503-516(2017).
+RN   [20]
+RP   X-RAY CRYSTALLOGRAPHY (1.8 ANGSTROMS).
+RX   PubMed=3041007; DOI=10.1016/0022-2836(87)90679-6;
+RA   Vijay-Kumar S., Bugg C.E., Cook W.J.;
+RT   "Structure of ubiquitin refined at 1.8-A resolution.";
+RL   J. Mol. Biol. 194:531-544(1987).
+RN   [21]
+RP   X-RAY CRYSTALLOGRAPHY (1.8 ANGSTROMS).
+RX   PubMed=8166633; DOI=10.1042/bj2990151;
+RA   Ramage R., Green J., Muir T.W., Ogunjobi O.M., Love S., Shaw K.;
+RT   "Synthetic, structural and biological studies of the ubiquitin system: the
+RT   total chemical synthesis of ubiquitin.";
+RL   Biochem. J. 299:151-158(1994).
+RN   [22]
+RP   X-RAY CRYSTALLOGRAPHY (1.8 ANGSTROMS).
+RX   PubMed=8107144; DOI=10.1006/jmbi.1994.1169;
+RA   Cook W.J., Jeffrey L.C., Kasperek E., Pickart C.M.;
+RT   "Structure of tetraubiquitin shows how multiubiquitin chains can be
+RT   formed.";
+RL   J. Mol. Biol. 236:601-609(1994).
+RN   [23]
+RP   X-RAY CRYSTALLOGRAPHY (2.7 ANGSTROMS).
+RX   PubMed=11173499; DOI=10.1107/s090744490001800x;
+RA   Phillips C.L., Thrower J., Pickart C.M., Hill C.P.;
+RT   "Structure of a new crystal form of tetraubiquitin.";
+RL   Acta Crystallogr. D 57:341-344(2001).
+RN   [24]
+RP   X-RAY CRYSTALLOGRAPHY (2.3 ANGSTROMS) OF 1-75 IN COMPLEX WITH USP7.
+RX   PubMed=12507430; DOI=10.1016/s0092-8674(02)01199-6;
+RA   Hu M., Li P., Li M., Li W., Yao T., Wu J.-W., Gu W., Cohen R.E., Shi Y.;
+RT   "Crystal structure of a UBP-family deubiquitinating enzyme in isolation and
+RT   in complex with ubiquitin aldehyde.";
+RL   Cell 111:1041-1054(2002).
+RN   [25]
+RP   X-RAY CRYSTALLOGRAPHY (2.59 ANGSTROMS) OF 1-75 IN COMPLEX WITH USP21.
+RX   PubMed=21399617; DOI=10.1038/embor.2011.17;
+RA   Ye Y., Akutsu M., Reyes-Turcu F., Enchev R.I., Wilkinson K.D., Komander D.;
+RT   "Polyubiquitin binding and cross-reactivity in the USP domain
+RT   deubiquitinase USP21.";
+RL   EMBO Rep. 12:350-357(2011).
+RN   [26]
+RP   X-RAY CRYSTALLOGRAPHY (2.2 ANGSTROMS) OF 1-76.
+RX   PubMed=20622874; DOI=10.1038/nsmb.1873;
+RA   Bremm A., Freund S.M., Komander D.;
+RT   "Lys11-linked ubiquitin chains adopt compact conformations and are
+RT   preferentially hydrolyzed by the deubiquitinase Cezanne.";
+RL   Nat. Struct. Mol. Biol. 17:939-947(2010).
+RN   [27]
+RP   X-RAY CRYSTALLOGRAPHY (3.03 ANGSTROMS) OF 1-76 IN COMPLEX WITH YOD1.
+RX   PubMed=23827681; DOI=10.1016/j.cell.2013.05.046;
+RA   Mevissen T.E., Hospenthal M.K., Geurink P.P., Elliott P.R., Akutsu M.,
+RA   Arnaudo N., Ekkebus R., Kulathu Y., Wauer T., El Oualid F., Freund S.M.,
+RA   Ovaa H., Komander D.;
+RT   "OTU deubiquitinases reveal mechanisms of linkage specificity and enable
+RT   ubiquitin chain restriction analysis.";
+RL   Cell 154:169-184(2013).
+RN   [28]
+RP   X-RAY CRYSTALLOGRAPHY (1.90 ANGSTROMS) OF 153-228 PHOSPHORYLATED AT SER-65,
+RP   AND PHOSPHORYLATION AT SER-65.
+RX   PubMed=25527291; DOI=10.15252/embj.201489847;
+RA   Wauer T., Swatek K.N., Wagstaff J.L., Gladkova C., Pruneda J.N.,
+RA   Michel M.A., Gersch M., Johnson C.M., Freund S.M., Komander D.;
+RT   "Ubiquitin Ser65 phosphorylation affects ubiquitin structure, chain
+RT   assembly and hydrolysis.";
+RL   EMBO J. 34:307-325(2015).
+CC   -!- FUNCTION: [Ubiquitin]: Exists either covalently attached to another
+CC       protein, or free (unanchored). When covalently bound, it is conjugated
+CC       to target proteins via an isopeptide bond either as a monomer
+CC       (monoubiquitin), a polymer linked via different Lys residues of the
+CC       ubiquitin (polyubiquitin chains) or a linear polymer linked via the
+CC       initiator Met of the ubiquitin (linear polyubiquitin chains).
+CC       Polyubiquitin chains, when attached to a target protein, have different
+CC       functions depending on the Lys residue of the ubiquitin that is linked:
+CC       Lys-6-linked may be involved in DNA repair; Lys-11-linked is involved
+CC       in ERAD (endoplasmic reticulum-associated degradation) and in cell-
+CC       cycle regulation; Lys-29-linked is involved in lysosomal degradation;
+CC       Lys-33-linked is involved in kinase modification; Lys-48-linked is
+CC       involved in protein degradation via the proteasome; Lys-63-linked is
+CC       involved in endocytosis, DNA-damage responses as well as in signaling
+CC       processes leading to activation of the transcription factor NF-kappa-B.
+CC       Linear polymer chains formed via attachment by the initiator Met lead
+CC       to cell signaling. Ubiquitin is usually conjugated to Lys residues of
+CC       target proteins, however, in rare cases, conjugation to Cys or Ser
+CC       residues has been observed. When polyubiquitin is free (unanchored-
+CC       polyubiquitin), it also has distinct roles, such as in activation of
+CC       protein kinases, and in signaling. {ECO:0000269|PubMed:16543144,
+CC       ECO:0000269|PubMed:19754430}.
+CC   -!- INTERACTION:
+CC       Q9UNQ0:ABCG2; NbExp=2; IntAct=EBI-3390054, EBI-1569435;
+CC       Q16186:ADRM1; NbExp=10; IntAct=EBI-3390054, EBI-954387;
+CC       Q9ULH1:ASAP1; NbExp=2; IntAct=EBI-3390054, EBI-346622;
+CC       O43150:ASAP2; NbExp=2; IntAct=EBI-3390054, EBI-310968;
+CC       P54252-1:ATXN3; NbExp=2; IntAct=EBI-3390054, EBI-946068;
+CC       Q9HB09-1:BCL2L12; NbExp=3; IntAct=EBI-3390054, EBI-6968951;
+CC       P35226:BMI1; NbExp=2; IntAct=EBI-3390054, EBI-2341576;
+CC       O60566:BUB1B; NbExp=3; IntAct=EBI-3390054, EBI-1001438;
+CC       P06493:CDK1; NbExp=6; IntAct=EBI-3390054, EBI-444308;
+CC       Q99062:CSF3R; NbExp=2; IntAct=EBI-3390054, EBI-7331284;
+CC       Q9UER7:DAXX; NbExp=2; IntAct=EBI-3390054, EBI-77321;
+CC       Q15038:DAZAP2; NbExp=4; IntAct=EBI-3390054, EBI-724310;
+CC       P40087:DDI1 (xeno); NbExp=2; IntAct=EBI-3390054, EBI-5717;
+CC       O43583:DENR; NbExp=3; IntAct=EBI-3390054, EBI-716083;
+CC       Q6ICB0:DESI1; NbExp=4; IntAct=EBI-3390054, EBI-2806959;
+CC       P48510:DSK2 (xeno); NbExp=2; IntAct=EBI-3390054, EBI-6174;
+CC       Q86Y01:DTX1; NbExp=2; IntAct=EBI-3390054, EBI-1755174;
+CC       Q15717:ELAVL1; NbExp=4; IntAct=EBI-3390054, EBI-374260;
+CC       Q61088:Fzd4 (xeno); NbExp=3; IntAct=EBI-3390054, EBI-7987880;
+CC       P25098:GRK2; NbExp=3; IntAct=EBI-3390054, EBI-3904795;
+CC       Q9Y6K9:IKBKG; NbExp=4; IntAct=EBI-3390054, EBI-81279;
+CC       O88522:Ikbkg (xeno); NbExp=3; IntAct=EBI-3390054, EBI-998011;
+CC       Q13887:KLF5; NbExp=2; IntAct=EBI-3390054, EBI-2696013;
+CC       P06239:LCK; NbExp=2; IntAct=EBI-3390054, EBI-1348;
+CC       P48357-3:LEPR; NbExp=2; IntAct=EBI-3390054, EBI-7886448;
+CC       Q9UDY8:MALT1; NbExp=4; IntAct=EBI-3390054, EBI-1047372;
+CC       Q9Y6R4:MAP3K4; NbExp=2; IntAct=EBI-3390054, EBI-448104;
+CC       O43318:MAP3K7; NbExp=4; IntAct=EBI-3390054, EBI-358684;
+CC       Q9NX47:MARCH5; NbExp=2; IntAct=EBI-3390054, EBI-2341610;
+CC       Q00987:MDM2; NbExp=6; IntAct=EBI-3390054, EBI-389668;
+CC       P01106:MYC; NbExp=5; IntAct=EBI-3390054, EBI-447544;
+CC       Q14596:NBR1; NbExp=3; IntAct=EBI-3390054, EBI-742698;
+CC       O43639:NCK2; NbExp=2; IntAct=EBI-3390054, EBI-713635;
+CC       Q14934:NFATC4; NbExp=3; IntAct=EBI-3390054, EBI-3905796;
+CC       P25963:NFKBIA; NbExp=3; IntAct=EBI-3390054, EBI-307386;
+CC       P09874:PARP1; NbExp=2; IntAct=EBI-3390054, EBI-355676;
+CC       P35227:PCGF2; NbExp=2; IntAct=EBI-3390054, EBI-2129767;
+CC       Q9Y253:POLH; NbExp=4; IntAct=EBI-3390054, EBI-2827270;
+CC       Q9UNA4:POLI; NbExp=4; IntAct=EBI-3390054, EBI-741774;
+CC       P17252:PRKCA; NbExp=2; IntAct=EBI-3390054, EBI-1383528;
+CC       P55036:PSMD4; NbExp=4; IntAct=EBI-3390054, EBI-359318;
+CC       P32628:RAD23 (xeno); NbExp=2; IntAct=EBI-3390054, EBI-14668;
+CC       P54727:RAD23B; NbExp=4; IntAct=EBI-3390054, EBI-954531;
+CC       Q84L31:RAD23C (xeno); NbExp=2; IntAct=EBI-3390054, EBI-4437395;
+CC       Q62921:Rbck1 (xeno); NbExp=2; IntAct=EBI-3390054, EBI-7266339;
+CC       Q96NR8:RDH12; NbExp=2; IntAct=EBI-3390054, EBI-3916363;
+CC       Q04206:RELA; NbExp=6; IntAct=EBI-3390054, EBI-73886;
+CC       P04325:rev (xeno); NbExp=2; IntAct=EBI-3390054, EBI-7061954;
+CC       P55034:RPN10 (xeno); NbExp=2; IntAct=EBI-3390054, EBI-2620423;
+CC       O48726:RPN13 (xeno); NbExp=9; IntAct=EBI-3390054, EBI-7710745;
+CC       Q8N488:RYBP; NbExp=3; IntAct=EBI-3390054, EBI-752324;
+CC       Q9H4L4:SENP3; NbExp=2; IntAct=EBI-3390054, EBI-2880236;
+CC       Q96B97:SH3KBP1; NbExp=6; IntAct=EBI-3390054, EBI-346595;
+CC       Q9Y5X1:SNX9; NbExp=2; IntAct=EBI-3390054, EBI-77848;
+CC       Q13501:SQSTM1; NbExp=3; IntAct=EBI-3390054, EBI-307104;
+CC       Q92783:STAM; NbExp=2; IntAct=EBI-3390054, EBI-752333;
+CC       Q86VP1:TAX1BP1; NbExp=7; IntAct=EBI-3390054, EBI-529518;
+CC       P04637:TP53; NbExp=15; IntAct=EBI-3390054, EBI-366083;
+CC       Q9Y4K3:TRAF6; NbExp=3; IntAct=EBI-3390054, EBI-359276;
+CC       Q9EPK8:Trpv4 (xeno); NbExp=3; IntAct=EBI-3390054, EBI-7091763;
+CC       P98170:XIAP; NbExp=3; IntAct=EBI-3390054, EBI-517127;
+CC       O76080:ZFAND5; NbExp=3; IntAct=EBI-3390054, EBI-8028844;
+CC       Q9UGI0:ZRANB1; NbExp=2; IntAct=EBI-3390054, EBI-527853;
+CC   -!- SUBCELLULAR LOCATION: [Ubiquitin]: Cytoplasm {ECO:0000250}. Nucleus
+CC       {ECO:0000250}.
+CC   -!- PTM: [Ubiquitin]: Phosphorylated at Ser-65 by PINK1 during mitophagy.
+CC       Phosphorylated ubiquitin specifically binds and activates parkin
+CC       (PRKN), triggering mitophagy (PubMed:24660806, PubMed:24751536,
+CC       PubMed:24784582, PubMed:25527291). Phosphorylation does not affect E1-
+CC       mediated E2 charging of ubiquitin but affects discharging of E2 enzymes
+CC       to form polyubiquitin chains. It also affects deubiquitination by
+CC       deubiquitinase enzymes such as USP30 (PubMed:25527291).
+CC       {ECO:0000269|PubMed:24660806, ECO:0000269|PubMed:24751536,
+CC       ECO:0000269|PubMed:24784582, ECO:0000269|PubMed:25527291}.
+CC   -!- PTM: [Ubiquitin]: Mono-ADP-ribosylated at the C-terminus by PARP9, a
+CC       component of the PPAR9-DTX3L complex. ADP-ribosylation requires
+CC       processing by E1 and E2 enzymes and prevents ubiquitin conjugation to
+CC       substrates such as histones. {ECO:0000269|PubMed:28525742}.
+CC   -!- MISCELLANEOUS: Ubiquitin is encoded by 4 different genes. UBA52 and
+CC       RPS27A genes code for a single copy of ubiquitin fused to the ribosomal
+CC       proteins L40 and S27a, respectively. UBB and UBC genes code for a
+CC       polyubiquitin precursor with exact head to tail repeats, the number of
+CC       repeats differ between species and strains.
+CC   -!- MISCELLANEOUS: For the sake of clarity sequence features are annotated
+CC       only for the first chain, and are not repeated for each of the
+CC       following chains.
+CC   -!- SIMILARITY: Belongs to the ubiquitin family. {ECO:0000305}.
+CC   ---------------------------------------------------------------------------
+CC   Copyrighted by the UniProt Consortium, see https://www.uniprot.org/terms
+CC   Distributed under the Creative Commons Attribution (CC BY 4.0) License
+CC   ---------------------------------------------------------------------------
+DR   EMBL; M26880; AAA36789.1; -; mRNA.
+DR   EMBL; AB009010; BAA23632.1; -; mRNA.
+DR   EMBL; AB089613; BAC56951.1; -; Genomic_DNA.
+DR   EMBL; AC126309; -; NOT_ANNOTATED_CDS; Genomic_DNA.
+DR   EMBL; BC039193; AAH39193.1; -; mRNA.
+DR   EMBL; D63791; BAA09860.1; -; Genomic_DNA.
+DR   EMBL; AB003730; BAA23486.1; -; Genomic_DNA.
+DR   EMBL; M17597; AAA36787.1; -; mRNA.
+DR   CCDS; CCDS9260.1; -.
+DR   PIR; A02574; UQHU.
+DR   PIR; A22005; UQHUC.
+DR   PIR; A29526; A29526.
+DR   RefSeq; NP_066289.3; NM_021009.6.
+DR   PDB; 1C3T; NMR; -; A=1-76.
+DR   PDB; 1CMX; X-ray; 2.25 A; B/D=1-76.
+DR   PDB; 1D3Z; NMR; -; A=1-76.
+DR   PDB; 1F9J; X-ray; 2.70 A; A/B=1-76.
+DR   PDB; 1FXT; NMR; -; B=1-76.
+DR   PDB; 1G6J; NMR; -; A=1-76.
+DR   PDB; 1GJZ; NMR; -; A/B=1-51.
+DR   PDB; 1NBF; X-ray; 2.30 A; C/D=1-76.
+DR   PDB; 1OGW; X-ray; 1.32 A; A=1-76.
+DR   PDB; 1Q5W; NMR; -; B=1-76.
+DR   PDB; 1S1Q; X-ray; 2.00 A; B/D=1-76.
+DR   PDB; 1SIF; X-ray; 2.18 A; A=6-76.
+DR   PDB; 1TBE; X-ray; 2.40 A; A/B=1-76.
+DR   PDB; 1UBI; X-ray; 1.80 A; A=1-76.
+DR   PDB; 1UBQ; X-ray; 1.80 A; A=1-76.
+DR   PDB; 1UD7; NMR; -; A=1-76.
+DR   PDB; 1XD3; X-ray; 1.45 A; B/D=1-75.
+DR   PDB; 1XQQ; NMR; -; A=1-76.
+DR   PDB; 1YX5; NMR; -; B=1-76.
+DR   PDB; 1YX6; NMR; -; B=1-76.
+DR   PDB; 1ZGU; NMR; -; B=1-76.
+DR   PDB; 1ZO6; Model; -; B/C=1-76.
+DR   PDB; 2AYO; X-ray; 3.50 A; B=1-76.
+DR   PDB; 2BGF; NMR; -; A/B=1-76.
+DR   PDB; 2DEN; NMR; -; B=1-76.
+DR   PDB; 2FUH; NMR; -; B=1-76.
+DR   PDB; 2G45; X-ray; 1.99 A; B/E=1-76.
+DR   PDB; 2GBJ; X-ray; 1.35 A; A/B=1-76.
+DR   PDB; 2GBK; X-ray; 1.99 A; A/B/C/D=10-76.
+DR   PDB; 2GBM; X-ray; 1.55 A; A/B/C/D=1-76.
+DR   PDB; 2GBN; X-ray; 1.60 A; A=1-76.
+DR   PDB; 2GBR; X-ray; 2.00 A; A/B/C=1-76.
+DR   PDB; 2GMI; X-ray; 2.50 A; C=1-76.
+DR   PDB; 2HTH; X-ray; 2.70 A; A=1-76.
+DR   PDB; 2IBI; X-ray; 2.20 A; B=1-75.
+DR   PDB; 2J7Q; X-ray; 1.80 A; B/D=1-75.
+DR   PDB; 2JF5; X-ray; 1.95 A; A/B=1-76.
+DR   PDB; 2JRI; NMR; -; B/C=1-76.
+DR   PDB; 2JY6; NMR; -; A=1-76.
+DR   PDB; 2JZZ; NMR; -; A=1-76.
+DR   PDB; 2K25; NMR; -; A=1-75.
+DR   PDB; 2K6D; NMR; -; B=1-75.
+DR   PDB; 2K8B; NMR; -; A=1-76.
+DR   PDB; 2K8C; NMR; -; A=1-76.
+DR   PDB; 2KDF; NMR; -; B/C=1-76.
+DR   PDB; 2KHW; NMR; -; B=1-76.
+DR   PDB; 2KJH; NMR; -; B=1-75.
+DR   PDB; 2KLG; NMR; -; A=1-76.
+DR   PDB; 2KN5; NMR; -; A=1-76.
+DR   PDB; 2KX0; NMR; -; A=74-151.
+DR   PDB; 2L3Z; NMR; -; A=1-76.
+DR   PDB; 2LD9; NMR; -; A=76-152.
+DR   PDB; 2LVO; NMR; -; A=1-76.
+DR   PDB; 2LVP; NMR; -; A/B=1-76.
+DR   PDB; 2LVQ; NMR; -; A/B=1-76.
+DR   PDB; 2LZ6; NMR; -; A=609-684.
+DR   PDB; 2MBO; NMR; -; A/B=609-684.
+DR   PDB; 2MBQ; NMR; -; A/B=609-684.
+DR   PDB; 2MCN; NMR; -; B=609-684.
+DR   PDB; 2MI8; NMR; -; A=609-684.
+DR   PDB; 2MJ5; NMR; -; A=609-684.
+DR   PDB; 2MOR; NMR; -; A=609-684.
+DR   PDB; 2MRE; NMR; -; A=609-684.
+DR   PDB; 2MWS; NMR; -; A=609-684.
+DR   PDB; 2N2K; NMR; -; A=609-684, B=609-679.
+DR   PDB; 2NR2; NMR; -; A=1-76.
+DR   PDB; 2O6V; X-ray; 2.20 A; A/B/C/D/E/F/G/H=1-76.
+DR   PDB; 2OJR; X-ray; 2.60 A; A=1-76.
+DR   PDB; 2PE9; NMR; -; A/B=1-76.
+DR   PDB; 2PEA; NMR; -; A/B=1-76.
+DR   PDB; 2RR9; NMR; -; A/B=1-76.
+DR   PDB; 2RU6; NMR; -; A=609-684.
+DR   PDB; 2W9N; X-ray; 2.25 A; A=1-152.
+DR   PDB; 2WDT; X-ray; 2.30 A; B/D=1-75.
+DR   PDB; 2XEW; X-ray; 2.20 A; A/B/C/D/E/F/G/H/I/J/K/L=1-76.
+DR   PDB; 2Y5B; X-ray; 2.70 A; B/F=1-152.
+DR   PDB; 2Z59; NMR; -; B=1-76.
+DR   PDB; 2ZCB; X-ray; 1.60 A; A/B/C=1-76.
+DR   PDB; 2ZVN; X-ray; 3.00 A; A/C/E/G=1-152.
+DR   PDB; 2ZVO; X-ray; 2.90 A; A/G=1-152.
+DR   PDB; 3A33; X-ray; 2.20 A; B=1-76.
+DR   PDB; 3ALB; X-ray; 1.85 A; A/B/C/D=1-76.
+DR   PDB; 3AUL; X-ray; 2.39 A; A/B=1-76.
+DR   PDB; 3B08; X-ray; 1.70 A; A/D/G/J=1-152.
+DR   PDB; 3B0A; X-ray; 1.90 A; A/D=1-152.
+DR   PDB; 3BY4; X-ray; 1.55 A; B=1-75.
+DR   PDB; 3C0R; X-ray; 2.31 A; B/D=1-75.
+DR   PDB; 3DVG; X-ray; 2.60 A; X/Y=1-76.
+DR   PDB; 3DVN; X-ray; 2.70 A; U/V/X/Y=1-76.
+DR   PDB; 3EEC; X-ray; 3.00 A; A/B=1-76.
+DR   PDB; 3EFU; X-ray; 1.84 A; A=1-76.
+DR   PDB; 3EHV; X-ray; 1.81 A; A/B/C=1-76.
+DR   PDB; 3H7P; X-ray; 1.90 A; A/B=1-76.
+DR   PDB; 3H7S; X-ray; 2.30 A; A/B=1-76.
+DR   PDB; 3HM3; X-ray; 1.96 A; A/B/C/D=1-76.
+DR   PDB; 3I3T; X-ray; 2.59 A; B/D/F/H=1-75.
+DR   PDB; 3IFW; X-ray; 2.40 A; B=1-75.
+DR   PDB; 3IHP; X-ray; 2.80 A; C/D=1-75.
+DR   PDB; 3JSV; X-ray; 2.70 A; A/B=1-76.
+DR   PDB; 3JVZ; X-ray; 3.30 A; X/Y=1-76.
+DR   PDB; 3JW0; X-ray; 3.10 A; X/Y=1-76.
+DR   PDB; 3K9O; X-ray; 1.80 A; B=76-151.
+DR   PDB; 3K9P; X-ray; 2.80 A; B=1-76.
+DR   PDB; 3KVF; X-ray; 2.80 A; B=1-75.
+DR   PDB; 3KW5; X-ray; 2.83 A; B=1-75.
+DR   PDB; 3LDZ; X-ray; 2.60 A; E/F/G=1-73.
+DR   PDB; 3MHS; X-ray; 1.89 A; D=1-76.
+DR   PDB; 3MTN; X-ray; 2.70 A; B/D=1-76.
+DR   PDB; 3N30; X-ray; 3.00 A; A/B=1-76.
+DR   PDB; 3N32; X-ray; 1.80 A; A=1-76.
+DR   PDB; 3N3K; X-ray; 2.60 A; B=5-76.
+DR   PDB; 3NS8; X-ray; 1.71 A; A/B=1-76.
+DR   PDB; 3O65; X-ray; 2.70 A; B/D/F/H=1-75.
+DR   PDB; 3OFI; X-ray; 2.35 A; C/D=1-76.
+DR   PDB; 3OJ3; X-ray; 2.50 A; A/B/C/D/E/F/G/H=1-76.
+DR   PDB; 3OJ4; X-ray; 3.40 A; B/E=1-76.
+DR   PDB; 3ONS; X-ray; 1.80 A; A=1-72.
+DR   PDB; 3PRM; X-ray; 2.30 A; B/D=1-75.
+DR   PDB; 3PT2; X-ray; 2.50 A; B=1-75.
+DR   PDB; 3PTF; X-ray; 2.70 A; C/D=1-76.
+DR   PDB; 3Q3F; X-ray; 2.17 A; A=2-76.
+DR   PDB; 3RUL; X-ray; 2.50 A; A/B/C/D=1-75.
+DR   PDB; 3TMP; X-ray; 1.91 A; B/D/F/H=1-76.
+DR   PDB; 3U30; X-ray; 2.43 A; A/D=1-152.
+DR   PDB; 3UGB; X-ray; 2.35 A; B=1-76.
+DR   PDB; 3V6C; X-ray; 1.70 A; B=74-150.
+DR   PDB; 3V6E; X-ray; 2.10 A; B=74-150.
+DR   PDB; 3VFK; X-ray; 2.80 A; A=1-75.
+DR   PDB; 3VUW; X-ray; 1.95 A; A/B/C=1-76.
+DR   PDB; 3VUX; X-ray; 1.70 A; A/B/C=1-76.
+DR   PDB; 3VUY; X-ray; 1.98 A; A/B/C=1-76.
+DR   PDB; 3WXE; X-ray; 2.50 A; B=533-680.
+DR   PDB; 3WXF; X-ray; 2.30 A; B/D=533-680.
+DR   PDB; 3ZLZ; X-ray; 2.90 A; A/B=1-76.
+DR   PDB; 3ZNH; X-ray; 2.30 A; B=1-75.
+DR   PDB; 3ZNI; X-ray; 2.21 A; D/H/L/P=1-76.
+DR   PDB; 3ZNZ; X-ray; 1.90 A; B=1-152.
+DR   PDB; 4AP4; X-ray; 2.21 A; C/F=608-684.
+DR   PDB; 4AUQ; X-ray; 2.18 A; C/F=1-76.
+DR   PDB; 4BOS; X-ray; 2.35 A; C/E=609-684, F=612-625.
+DR   PDB; 4BOZ; X-ray; 3.03 A; B/C/E=1-76.
+DR   PDB; 4BVU; X-ray; 2.70 A; C=609-684.
+DR   PDB; 4DDG; X-ray; 3.30 A; D/E/F/G/H/I/M/N/O/P/Q/R=1-76.
+DR   PDB; 4DDI; X-ray; 3.80 A; G/H/I/J/K/L=1-76.
+DR   PDB; 4DHJ; X-ray; 2.35 A; B/F/J/M=1-76, D/H=1-75.
+DR   PDB; 4DHZ; X-ray; 3.11 A; B=1-76, E=1-75.
+DR   PDB; 4FJV; X-ray; 2.05 A; B/D=1-76.
+DR   PDB; 4HK2; X-ray; 1.40 A; A/B/C/D=1-76.
+DR   PDB; 4HXD; X-ray; 2.85 A; A/C=1-75.
+DR   PDB; 4I6L; X-ray; 2.49 A; B=77-150.
+DR   PDB; 4I6N; X-ray; 1.70 A; B/D=1-75.
+DR   PDB; 4IG7; X-ray; 2.00 A; B=1-75.
+DR   PDB; 4IUM; X-ray; 1.45 A; B=1-75.
+DR   PDB; 4JQW; X-ray; 2.90 A; C=609-684.
+DR   PDB; 4K1R; X-ray; 1.63 A; B/D=607-684.
+DR   PDB; 4K7S; X-ray; 1.76 A; A/B/C=1-76.
+DR   PDB; 4K7U; X-ray; 1.76 A; A/B/C=1-76.
+DR   PDB; 4K7W; X-ray; 1.76 A; A/B/C=1-76.
+DR   PDB; 4KSK; X-ray; 2.40 A; C/D=76-152.
+DR   PDB; 4KSL; X-ray; 2.83 A; C/D/F/H/J/L/N/P/R/T/V/X=76-228.
+DR   PDB; 4LCD; X-ray; 3.10 A; E/F=609-683.
+DR   PDB; 4LDT; X-ray; 1.90 A; B/D=609-684.
+DR   PDB; 4MDK; X-ray; 2.61 A; E/F/G/H=608-684.
+DR   PDB; 4MM3; X-ray; 2.75 A; A=609-684.
+DR   PDB; 4MSM; X-ray; 1.74 A; B/D=609-684.
+DR   PDB; 4MSQ; X-ray; 1.95 A; B/D=609-684.
+DR   PDB; 4NQK; X-ray; 3.70 A; E/F/G/H/I/J=608-684.
+DR   PDB; 4UN2; X-ray; 1.51 A; A=609-684.
+DR   PDB; 4V3K; X-ray; 2.04 A; B/E=609-684.
+DR   PDB; 4V3L; X-ray; 1.53 A; B/D=609-684.
+DR   PDB; 4WZP; X-ray; 1.90 A; A/B/C/D/E/F/G/H=153-228.
+DR   PDB; 4XOK; X-ray; 2.20 A; A/B/C=1-76.
+DR   PDB; 4XOL; X-ray; 2.91 A; A/B=1-76.
+DR   PDB; 4ZQS; X-ray; 1.80 A; A/B=533-684.
+DR   PDB; 5A5B; EM; 9.50 A; 9=609-684.
+DR   PDB; 5AF4; X-ray; 1.85 A; A/B/C/D/E/F/G/H=1-76.
+DR   PDB; 5AF5; X-ray; 1.68 A; A=1-73.
+DR   PDB; 5AF6; X-ray; 3.40 A; A/B/C/D/E=1-76.
+DR   PDB; 5AIT; X-ray; 3.40 A; C/F=609-684.
+DR   PDB; 5AIU; X-ray; 2.21 A; C/F=609-684.
+DR   PDB; 5B83; X-ray; 2.69 A; A/D=1-304.
+DR   PDB; 5C7J; X-ray; 3.00 A; C/D=1-74.
+DR   PDB; 5C7M; X-ray; 3.03 A; B/C=1-75.
+DR   PDB; 5E6J; X-ray; 2.85 A; B/E=609-683.
+DR   PDB; 5H07; X-ray; 2.59 A; A=1-228.
+DR   PDB; 5NL4; X-ray; 1.32 A; A/B/C=1-76.
+DR   PDB; 5NLF; X-ray; 1.50 A; A/B/C=1-76.
+DR   PDB; 5NLI; X-ray; 1.53 A; A/B/C=1-76.
+DR   PDB; 5NMC; X-ray; 1.70 A; A/B/C=1-76.
+DR   PDB; 5OE7; X-ray; 2.95 A; B=1-146.
+DR   PDB; 5OHV; X-ray; 2.80 A; A/C=1-76.
+DR   PDB; 5OXH; X-ray; 1.60 A; A=1-76.
+DR   PDB; 5OXI; X-ray; 1.63 A; A/B=1-76.
+DR   PDB; 5UDH; X-ray; 3.24 A; E=1-76.
+DR   PDB; 5WQ4; X-ray; 3.00 A; A/B=1-152.
+DR   PDB; 5ZQ3; X-ray; 2.18 A; C/D=609-684.
+DR   PDB; 5ZQ4; X-ray; 2.22 A; C/D=609-684.
+DR   PDB; 5ZQ5; X-ray; 2.49 A; B/D=609-684.
+DR   PDB; 5ZQ6; X-ray; 3.01 A; B/D=609-684.
+DR   PDB; 5ZQ7; X-ray; 2.85 A; B/D=609-684.
+DR   PDB; 6A43; X-ray; 2.40 A; A=1-76.
+DR   PDB; 6A44; X-ray; 2.40 A; A=1-76.
+DR   PDB; 6AQR; X-ray; 2.10 A; D=609-684.
+DR   PDB; 6B7M; X-ray; 1.70 A; B/C=609-684.
+DR   PDB; 6B7O; X-ray; 1.85 A; B/C=609-684.
+DR   PDB; 6EQI; X-ray; 3.10 A; A=1-76.
+DR   PDB; 6N13; NMR; -; A=1-76.
+DR   PDB; 6N6R; X-ray; 1.95 A; A/C=1-76.
+DR   PDB; 6NQA; EM; 3.54 A; L=1-76.
+DR   PDB; 6OI4; X-ray; 1.76 A; C/D=1-76.
+DR   PDB; 6RYA; X-ray; 2.21 A; B/D/F=1-76.
+DR   PDB; 6S53; X-ray; 2.80 A; D/F/J/L=1-76.
+DR   PDBsum; 1C3T; -.
+DR   PDBsum; 1CMX; -.
+DR   PDBsum; 1D3Z; -.
+DR   PDBsum; 1F9J; -.
+DR   PDBsum; 1FXT; -.
+DR   PDBsum; 1G6J; -.
+DR   PDBsum; 1GJZ; -.
+DR   PDBsum; 1NBF; -.
+DR   PDBsum; 1OGW; -.
+DR   PDBsum; 1Q5W; -.
+DR   PDBsum; 1S1Q; -.
+DR   PDBsum; 1SIF; -.
+DR   PDBsum; 1TBE; -.
+DR   PDBsum; 1UBI; -.
+DR   PDBsum; 1UBQ; -.
+DR   PDBsum; 1UD7; -.
+DR   PDBsum; 1XD3; -.
+DR   PDBsum; 1XQQ; -.
+DR   PDBsum; 1YX5; -.
+DR   PDBsum; 1YX6; -.
+DR   PDBsum; 1ZGU; -.
+DR   PDBsum; 1ZO6; -.
+DR   PDBsum; 2AYO; -.
+DR   PDBsum; 2BGF; -.
+DR   PDBsum; 2DEN; -.
+DR   PDBsum; 2FUH; -.
+DR   PDBsum; 2G45; -.
+DR   PDBsum; 2GBJ; -.
+DR   PDBsum; 2GBK; -.
+DR   PDBsum; 2GBM; -.
+DR   PDBsum; 2GBN; -.
+DR   PDBsum; 2GBR; -.
+DR   PDBsum; 2GMI; -.
+DR   PDBsum; 2HTH; -.
+DR   PDBsum; 2IBI; -.
+DR   PDBsum; 2J7Q; -.
+DR   PDBsum; 2JF5; -.
+DR   PDBsum; 2JRI; -.
+DR   PDBsum; 2JY6; -.
+DR   PDBsum; 2JZZ; -.
+DR   PDBsum; 2K25; -.
+DR   PDBsum; 2K6D; -.
+DR   PDBsum; 2K8B; -.
+DR   PDBsum; 2K8C; -.
+DR   PDBsum; 2KDF; -.
+DR   PDBsum; 2KHW; -.
+DR   PDBsum; 2KJH; -.
+DR   PDBsum; 2KLG; -.
+DR   PDBsum; 2KN5; -.
+DR   PDBsum; 2KX0; -.
+DR   PDBsum; 2L3Z; -.
+DR   PDBsum; 2LD9; -.
+DR   PDBsum; 2LVO; -.
+DR   PDBsum; 2LVP; -.
+DR   PDBsum; 2LVQ; -.
+DR   PDBsum; 2LZ6; -.
+DR   PDBsum; 2MBO; -.
+DR   PDBsum; 2MBQ; -.
+DR   PDBsum; 2MCN; -.
+DR   PDBsum; 2MI8; -.
+DR   PDBsum; 2MJ5; -.
+DR   PDBsum; 2MOR; -.
+DR   PDBsum; 2MRE; -.
+DR   PDBsum; 2MWS; -.
+DR   PDBsum; 2N2K; -.
+DR   PDBsum; 2NR2; -.
+DR   PDBsum; 2O6V; -.
+DR   PDBsum; 2OJR; -.
+DR   PDBsum; 2PE9; -.
+DR   PDBsum; 2PEA; -.
+DR   PDBsum; 2RR9; -.
+DR   PDBsum; 2RU6; -.
+DR   PDBsum; 2W9N; -.
+DR   PDBsum; 2WDT; -.
+DR   PDBsum; 2XEW; -.
+DR   PDBsum; 2Y5B; -.
+DR   PDBsum; 2Z59; -.
+DR   PDBsum; 2ZCB; -.
+DR   PDBsum; 2ZVN; -.
+DR   PDBsum; 2ZVO; -.
+DR   PDBsum; 3A33; -.
+DR   PDBsum; 3ALB; -.
+DR   PDBsum; 3AUL; -.
+DR   PDBsum; 3B08; -.
+DR   PDBsum; 3B0A; -.
+DR   PDBsum; 3BY4; -.
+DR   PDBsum; 3C0R; -.
+DR   PDBsum; 3DVG; -.
+DR   PDBsum; 3DVN; -.
+DR   PDBsum; 3EEC; -.
+DR   PDBsum; 3EFU; -.
+DR   PDBsum; 3EHV; -.
+DR   PDBsum; 3H7P; -.
+DR   PDBsum; 3H7S; -.
+DR   PDBsum; 3HM3; -.
+DR   PDBsum; 3I3T; -.
+DR   PDBsum; 3IFW; -.
+DR   PDBsum; 3IHP; -.
+DR   PDBsum; 3JSV; -.
+DR   PDBsum; 3JVZ; -.
+DR   PDBsum; 3JW0; -.
+DR   PDBsum; 3K9O; -.
+DR   PDBsum; 3K9P; -.
+DR   PDBsum; 3KVF; -.
+DR   PDBsum; 3KW5; -.
+DR   PDBsum; 3LDZ; -.
+DR   PDBsum; 3MHS; -.
+DR   PDBsum; 3MTN; -.
+DR   PDBsum; 3N30; -.
+DR   PDBsum; 3N32; -.
+DR   PDBsum; 3N3K; -.
+DR   PDBsum; 3NS8; -.
+DR   PDBsum; 3O65; -.
+DR   PDBsum; 3OFI; -.
+DR   PDBsum; 3OJ3; -.
+DR   PDBsum; 3OJ4; -.
+DR   PDBsum; 3ONS; -.
+DR   PDBsum; 3PRM; -.
+DR   PDBsum; 3PT2; -.
+DR   PDBsum; 3PTF; -.
+DR   PDBsum; 3Q3F; -.
+DR   PDBsum; 3RUL; -.
+DR   PDBsum; 3TMP; -.
+DR   PDBsum; 3U30; -.
+DR   PDBsum; 3UGB; -.
+DR   PDBsum; 3V6C; -.
+DR   PDBsum; 3V6E; -.
+DR   PDBsum; 3VFK; -.
+DR   PDBsum; 3VUW; -.
+DR   PDBsum; 3VUX; -.
+DR   PDBsum; 3VUY; -.
+DR   PDBsum; 3WXE; -.
+DR   PDBsum; 3WXF; -.
+DR   PDBsum; 3ZLZ; -.
+DR   PDBsum; 3ZNH; -.
+DR   PDBsum; 3ZNI; -.
+DR   PDBsum; 3ZNZ; -.
+DR   PDBsum; 4AP4; -.
+DR   PDBsum; 4AUQ; -.
+DR   PDBsum; 4BOS; -.
+DR   PDBsum; 4BOZ; -.
+DR   PDBsum; 4BVU; -.
+DR   PDBsum; 4DDG; -.
+DR   PDBsum; 4DDI; -.
+DR   PDBsum; 4DHJ; -.
+DR   PDBsum; 4DHZ; -.
+DR   PDBsum; 4FJV; -.
+DR   PDBsum; 4HK2; -.
+DR   PDBsum; 4HXD; -.
+DR   PDBsum; 4I6L; -.
+DR   PDBsum; 4I6N; -.
+DR   PDBsum; 4IG7; -.
+DR   PDBsum; 4IUM; -.
+DR   PDBsum; 4JQW; -.
+DR   PDBsum; 4K1R; -.
+DR   PDBsum; 4K7S; -.
+DR   PDBsum; 4K7U; -.
+DR   PDBsum; 4K7W; -.
+DR   PDBsum; 4KSK; -.
+DR   PDBsum; 4KSL; -.
+DR   PDBsum; 4LCD; -.
+DR   PDBsum; 4LDT; -.
+DR   PDBsum; 4MDK; -.
+DR   PDBsum; 4MM3; -.
+DR   PDBsum; 4MSM; -.
+DR   PDBsum; 4MSQ; -.
+DR   PDBsum; 4NQK; -.
+DR   PDBsum; 4UN2; -.
+DR   PDBsum; 4V3K; -.
+DR   PDBsum; 4V3L; -.
+DR   PDBsum; 4WZP; -.
+DR   PDBsum; 4XOK; -.
+DR   PDBsum; 4XOL; -.
+DR   PDBsum; 4ZQS; -.
+DR   PDBsum; 5A5B; -.
+DR   PDBsum; 5AF4; -.
+DR   PDBsum; 5AF5; -.
+DR   PDBsum; 5AF6; -.
+DR   PDBsum; 5AIT; -.
+DR   PDBsum; 5AIU; -.
+DR   PDBsum; 5B83; -.
+DR   PDBsum; 5C7J; -.
+DR   PDBsum; 5C7M; -.
+DR   PDBsum; 5E6J; -.
+DR   PDBsum; 5H07; -.
+DR   PDBsum; 5NL4; -.
+DR   PDBsum; 5NLF; -.
+DR   PDBsum; 5NLI; -.
+DR   PDBsum; 5NMC; -.
+DR   PDBsum; 5OE7; -.
+DR   PDBsum; 5OHV; -.
+DR   PDBsum; 5OXH; -.
+DR   PDBsum; 5OXI; -.
+DR   PDBsum; 5UDH; -.
+DR   PDBsum; 5WQ4; -.
+DR   PDBsum; 5ZQ3; -.
+DR   PDBsum; 5ZQ4; -.
+DR   PDBsum; 5ZQ5; -.
+DR   PDBsum; 5ZQ6; -.
+DR   PDBsum; 5ZQ7; -.
+DR   PDBsum; 6A43; -.
+DR   PDBsum; 6A44; -.
+DR   PDBsum; 6AQR; -.
+DR   PDBsum; 6B7M; -.
+DR   PDBsum; 6B7O; -.
+DR   PDBsum; 6EQI; -.
+DR   PDBsum; 6N13; -.
+DR   PDBsum; 6N6R; -.
+DR   PDBsum; 6NQA; -.
+DR   PDBsum; 6OI4; -.
+DR   PDBsum; 6RYA; -.
+DR   PDBsum; 6S53; -.
+DR   SMR; P0CG48; -.
+DR   BioGrid; 113164; 1645.
+DR   IntAct; P0CG48; 188.
+DR   MINT; P0CG48; -.
+DR   STRING; 9606.ENSP00000441543; -.
+DR   DrugBank; DB04464; N-Formylmethionine.
+DR   MoonDB; P0CG48; Predicted.
+DR   iPTMnet; P0CG48; -.
+DR   PhosphoSitePlus; P0CG48; -.
+DR   SwissPalm; P0CG48; -.
+DR   BioMuta; UBC; -.
+DR   DMDM; 391358178; -.
+DR   EPD; P0CG48; -.
+DR   jPOST; P0CG48; -.
+DR   MassIVE; P0CG48; -.
+DR   MaxQB; P0CG48; -.
+DR   PaxDb; P0CG48; -.
+DR   PeptideAtlas; P0CG48; -.
+DR   PRIDE; P0CG48; -.
+DR   ProteomicsDB; 52475; -.
+DR   TopDownProteomics; P0CG48; -.
+DR   ABCD; P0CG48; -.
+DR   Ensembl; ENST00000339647; ENSP00000344818; ENSG00000150991.
+DR   Ensembl; ENST00000536769; ENSP00000441543; ENSG00000150991.
+DR   GeneID; 7316; -.
+DR   KEGG; hsa:7316; -.
+DR   UCSC; uc001ugs.5; human.
+DR   CTD; 7316; -.
+DR   DisGeNET; 7316; -.
+DR   GeneCards; UBC; -.
+DR   HGNC; HGNC:12468; UBC.
+DR   HPA; CAB000362; -.
+DR   HPA; CAB005419; -.
+DR   HPA; HPA041344; -.
+DR   HPA; HPA049132; -.
+DR   MIM; 191340; gene.
+DR   neXtProt; NX_P0CG48; -.
+DR   OpenTargets; ENSG00000150991; -.
+DR   eggNOG; KOG0001; Eukaryota.
+DR   eggNOG; COG5272; LUCA.
+DR   GeneTree; ENSGT00940000163900; -.
+DR   HOGENOM; CLU_010412_1_1_1; -.
+DR   InParanoid; P0CG48; -.
+DR   KO; K08770; -.
+DR   OMA; TTINIKY; -.
+DR   OrthoDB; 1536766at2759; -.
+DR   TreeFam; TF354256; -.
+DR   Reactome; R-HSA-110312; Translesion synthesis by REV1.
+DR   Reactome; R-HSA-110314; Recognition of DNA damage by PCNA-containing replication complex.
+DR   Reactome; R-HSA-110320; Translesion Synthesis by POLH.
+DR   Reactome; R-HSA-1169091; Activation of NF-kappaB in B cells.
+DR   Reactome; R-HSA-1169408; ISG15 antiviral mechanism.
+DR   Reactome; R-HSA-1234176; Oxygen-dependent proline hydroxylation of Hypoxia-inducible Factor Alpha.
+DR   Reactome; R-HSA-1236382; Constitutive Signaling by Ligand-Responsive EGFR Cancer Variants.
+DR   Reactome; R-HSA-1236974; ER-Phagosome pathway.
+DR   Reactome; R-HSA-1253288; Downregulation of ERBB4 signaling.
+DR   Reactome; R-HSA-1295596; Spry regulation of FGF signaling.
+DR   Reactome; R-HSA-1358803; Downregulation of ERBB2:ERBB3 signaling.
+DR   Reactome; R-HSA-162588; Budding and maturation of HIV virion.
+DR   Reactome; R-HSA-168638; NOD1/2 Signaling Pathway.
+DR   Reactome; R-HSA-168927; TICAM1, RIP1-mediated IKK complex recruitment.
+DR   Reactome; R-HSA-168928; DDX58/IFIH1-mediated induction of interferon-alpha/beta.
+DR   Reactome; R-HSA-174048; APC/C:Cdc20 mediated degradation of Cyclin B.
+DR   Reactome; R-HSA-174084; Autodegradation of Cdh1 by Cdh1:APC/C.
+DR   Reactome; R-HSA-174113; SCF-beta-TrCP mediated degradation of Emi1.
+DR   Reactome; R-HSA-174154; APC/C:Cdc20 mediated degradation of Securin.
+DR   Reactome; R-HSA-174178; APC/C:Cdh1 mediated degradation of Cdc20 and other APC/C:Cdh1 targeted proteins in late mitosis/early G1.
+DR   Reactome; R-HSA-174184; Cdc20:Phospho-APC/C mediated degradation of Cyclin A.
+DR   Reactome; R-HSA-174490; Membrane binding and targetting of GAG proteins.
+DR   Reactome; R-HSA-175474; Assembly Of The HIV Virion.
+DR   Reactome; R-HSA-179409; APC-Cdc20 mediated degradation of Nek2A.
+DR   Reactome; R-HSA-180534; Vpu mediated degradation of CD4.
+DR   Reactome; R-HSA-180585; Vif-mediated degradation of APOBEC3G.
+DR   Reactome; R-HSA-182971; EGFR downregulation.
+DR   Reactome; R-HSA-187577; SCF(Skp2)-mediated degradation of p27/p21.
+DR   Reactome; R-HSA-195253; Degradation of beta-catenin by the destruction complex.
+DR   Reactome; R-HSA-201681; TCF dependent signaling in response to WNT.
+DR   Reactome; R-HSA-202424; Downstream TCR signaling.
+DR   Reactome; R-HSA-205043; NRIF signals cell death from the nucleus.
+DR   Reactome; R-HSA-209543; p75NTR recruits signalling complexes.
+DR   Reactome; R-HSA-209560; NF-kB is activated and signals survival.
+DR   Reactome; R-HSA-211733; Regulation of activated PAK-2p34 by proteasome mediated degradation.
+DR   Reactome; R-HSA-2122947; NOTCH1 Intracellular Domain Regulates Transcription.
+DR   Reactome; R-HSA-2122948; Activated NOTCH1 Transmits Signal to the Nucleus.
+DR   Reactome; R-HSA-2173788; Downregulation of TGF-beta receptor signaling.
+DR   Reactome; R-HSA-2173791; TGF-beta receptor signaling in EMT (epithelial to mesenchymal transition).
+DR   Reactome; R-HSA-2173795; Downregulation of SMAD2/3:SMAD4 transcriptional activity.
+DR   Reactome; R-HSA-2173796; SMAD2/SMAD3:SMAD4 heterotrimer regulates transcription.
+DR   Reactome; R-HSA-2467813; Separation of Sister Chromatids.
+DR   Reactome; R-HSA-2559580; Oxidative Stress Induced Senescence.
+DR   Reactome; R-HSA-2559582; Senescence-Associated Secretory Phenotype (SASP).
+DR   Reactome; R-HSA-2559585; Oncogene Induced Senescence.
+DR   Reactome; R-HSA-2565942; Regulation of PLK1 Activity at G2/M Transition.
+DR   Reactome; R-HSA-2644606; Constitutive Signaling by NOTCH1 PEST Domain Mutants.
+DR   Reactome; R-HSA-2672351; Stimuli-sensing channels.
+DR   Reactome; R-HSA-2691232; Constitutive Signaling by NOTCH1 HD Domain Mutants.
+DR   Reactome; R-HSA-2871837; FCERI mediated NF-kB activation.
+DR   Reactome; R-HSA-2894862; Constitutive Signaling by NOTCH1 HD+PEST Domain Mutants.
+DR   Reactome; R-HSA-2979096; NOTCH2 Activation and Transmission of Signal to the Nucleus.
+DR   Reactome; R-HSA-3134975; Regulation of innate immune responses to cytosolic DNA.
+DR   Reactome; R-HSA-3322077; Glycogen synthesis.
+DR   Reactome; R-HSA-349425; Autodegradation of the E3 ubiquitin ligase COP1.
+DR   Reactome; R-HSA-3769402; Deactivation of the beta-catenin transactivating complex.
+DR   Reactome; R-HSA-3785653; Myoclonic epilepsy of Lafora.
+DR   Reactome; R-HSA-382556; ABC-family proteins mediated transport.
+DR   Reactome; R-HSA-400253; Circadian Clock.
+DR   Reactome; R-HSA-445989; TAK1 activates NFkB by phosphorylation and activation of IKKs complex.
+DR   Reactome; R-HSA-450302; activated TAK1 mediates p38 MAPK activation.
+DR   Reactome; R-HSA-450321; JNK (c-Jun kinases) phosphorylation and activation mediated by activated human TAK1.
+DR   Reactome; R-HSA-450408; AUF1 (hnRNP D0) binds and destabilizes mRNA.
+DR   Reactome; R-HSA-4608870; Asymmetric localization of PCP proteins.
+DR   Reactome; R-HSA-4641257; Degradation of AXIN.
+DR   Reactome; R-HSA-4641258; Degradation of DVL.
+DR   Reactome; R-HSA-4641263; Regulation of FZD by ubiquitination.
+DR   Reactome; R-HSA-5205685; Pink/Parkin Mediated Mitophagy.
+DR   Reactome; R-HSA-532668; N-glycan trimming in the ER and Calnexin/Calreticulin cycle.
+DR   Reactome; R-HSA-5357905; Regulation of TNFR1 signaling.
+DR   Reactome; R-HSA-5357956; TNFR1-induced NFkappaB signaling pathway.
+DR   Reactome; R-HSA-5358346; Hedgehog ligand biogenesis.
+DR   Reactome; R-HSA-5362768; Hh mutants that don't undergo autocatalytic processing are degraded by ERAD.
+DR   Reactome; R-HSA-5607761; Dectin-1 mediated noncanonical NF-kB signaling.
+DR   Reactome; R-HSA-5607764; CLEC7A (Dectin-1) signaling.
+DR   Reactome; R-HSA-5610780; Degradation of GLI1 by the proteasome.
+DR   Reactome; R-HSA-5610783; Degradation of GLI2 by the proteasome.
+DR   Reactome; R-HSA-5610785; GLI3 is processed to GLI3R by the proteasome.
+DR   Reactome; R-HSA-5632684; Hedgehog 'on' state.
+DR   Reactome; R-HSA-5654726; Negative regulation of FGFR1 signaling.
+DR   Reactome; R-HSA-5654727; Negative regulation of FGFR2 signaling.
+DR   Reactome; R-HSA-5654732; Negative regulation of FGFR3 signaling.
+DR   Reactome; R-HSA-5654733; Negative regulation of FGFR4 signaling.
+DR   Reactome; R-HSA-5655862; Translesion synthesis by POLK.
+DR   Reactome; R-HSA-5656121; Translesion synthesis by POLI.
+DR   Reactome; R-HSA-5656169; Termination of translesion DNA synthesis.
+DR   Reactome; R-HSA-5658442; Regulation of RAS by GAPs.
+DR   Reactome; R-HSA-5668541; TNFR2 non-canonical NF-kB pathway.
+DR   Reactome; R-HSA-5675221; Negative regulation of MAPK pathway.
+DR   Reactome; R-HSA-5675482; Regulation of necroptotic cell death.
+DR   Reactome; R-HSA-5676590; NIK-->noncanonical NF-kB signaling.
+DR   Reactome; R-HSA-5678895; Defective CFTR causes cystic fibrosis.
+DR   Reactome; R-HSA-5684264; MAP3K8 (TPL2)-dependent MAPK1/3 activation.
+DR   Reactome; R-HSA-5685942; HDR through Homologous Recombination (HRR).
+DR   Reactome; R-HSA-5687128; MAPK6/MAPK4 signaling.
+DR   Reactome; R-HSA-5689603; UCH proteinases.
+DR   Reactome; R-HSA-5689877; Josephin domain DUBs.
+DR   Reactome; R-HSA-5689880; Ub-specific processing proteases.
+DR   Reactome; R-HSA-5689896; Ovarian tumor domain proteases.
+DR   Reactome; R-HSA-5689901; Metalloprotease DUBs.
+DR   Reactome; R-HSA-5693565; Recruitment and ATM-mediated phosphorylation of repair and signaling proteins at DNA double strand breaks.
+DR   Reactome; R-HSA-5693607; Processing of DNA double-strand break ends.
+DR   Reactome; R-HSA-5696394; DNA Damage Recognition in GG-NER.
+DR   Reactome; R-HSA-5696395; Formation of Incision Complex in GG-NER.
+DR   Reactome; R-HSA-5696397; Gap-filling DNA repair synthesis and ligation in GG-NER.
+DR   Reactome; R-HSA-5696400; Dual Incision in GG-NER.
+DR   Reactome; R-HSA-6781823; Formation of TC-NER Pre-Incision Complex.
+DR   Reactome; R-HSA-6781827; Transcription-Coupled Nucleotide Excision Repair (TC-NER).
+DR   Reactome; R-HSA-6782135; Dual incision in TC-NER.
+DR   Reactome; R-HSA-6782210; Gap-filling DNA repair synthesis and ligation in TC-NER.
+DR   Reactome; R-HSA-6783310; Fanconi Anemia Pathway.
+DR   Reactome; R-HSA-6804756; Regulation of TP53 Activity through Phosphorylation.
+DR   Reactome; R-HSA-6804757; Regulation of TP53 Degradation.
+DR   Reactome; R-HSA-6804760; Regulation of TP53 Activity through Methylation.
+DR   Reactome; R-HSA-6807004; Negative regulation of MET activity.
+DR   Reactome; R-HSA-68827; CDT1 association with the CDC6:ORC:origin complex.
+DR   Reactome; R-HSA-68949; Orc1 removal from chromatin.
+DR   Reactome; R-HSA-69017; CDK-mediated phosphorylation and removal of Cdc6.
+DR   Reactome; R-HSA-69231; Cyclin D associated events in G1.
+DR   Reactome; R-HSA-69481; G2/M Checkpoints.
+DR   Reactome; R-HSA-69541; Stabilization of p53.
+DR   Reactome; R-HSA-69601; Ubiquitin Mediated Degradation of Phosphorylated Cdc25A.
+DR   Reactome; R-HSA-75815; Ubiquitin-dependent degradation of Cyclin D.
+DR   Reactome; R-HSA-8849469; PTK6 Regulates RTKs and Their Effectors AKT1 and DOK1.
+DR   Reactome; R-HSA-8852276; The role of GTSE1 in G2/M progression after G2 checkpoint.
+DR   Reactome; R-HSA-8854050; FBXL7 down-regulates AURKA during mitotic entry and in early mitosis.
+DR   Reactome; R-HSA-8856825; Cargo recognition for clathrin-mediated endocytosis.
+DR   Reactome; R-HSA-8856828; Clathrin-mediated endocytosis.
+DR   Reactome; R-HSA-8863795; Downregulation of ERBB2 signaling.
+DR   Reactome; R-HSA-8866652; Synthesis of active ubiquitin: roles of E1 and E2 enzymes.
+DR   Reactome; R-HSA-8866654; E3 ubiquitin ligases ubiquitinate target proteins.
+DR   Reactome; R-HSA-8875360; InlB-mediated entry of Listeria monocytogenes into host cell.
+DR   Reactome; R-HSA-8876493; InlA-mediated entry of Listeria monocytogenes into host cells.
+DR   Reactome; R-HSA-8939236; RUNX1 regulates transcription of genes involved in differentiation of HSCs.
+DR   Reactome; R-HSA-8939902; Regulation of RUNX2 expression and activity.
+DR   Reactome; R-HSA-8941858; Regulation of RUNX3 expression and activity.
+DR   Reactome; R-HSA-8948747; Regulation of PTEN localization.
+DR   Reactome; R-HSA-8948751; Regulation of PTEN stability and activity.
+DR   Reactome; R-HSA-8951664; Neddylation.
+DR   Reactome; R-HSA-901032; ER Quality Control Compartment (ERQC).
+DR   Reactome; R-HSA-9010553; Regulation of expression of SLITs and ROBOs.
+DR   Reactome; R-HSA-9013507; NOTCH3 Activation and Transmission of Signal to the Nucleus.
+DR   Reactome; R-HSA-9013973; TICAM1-dependent activation of IRF3/IRF7.
+DR   Reactome; R-HSA-9014325; TICAM1,TRAF6-dependent induction of TAK1 complex.
+DR   Reactome; R-HSA-9020702; Interleukin-1 signaling.
+DR   Reactome; R-HSA-9033241; Peroxisomal protein import.
+DR   Reactome; R-HSA-912631; Regulation of signaling by CBL.
+DR   Reactome; R-HSA-917729; Endosomal Sorting Complex Required For Transport (ESCRT).
+DR   Reactome; R-HSA-917937; Iron uptake and transport.
+DR   Reactome; R-HSA-936440; Negative regulators of DDX58/IFIH1 signaling.
+DR   Reactome; R-HSA-936964; Activation of IRF3/IRF7 mediated by TBK1/IKK epsilon.
+DR   Reactome; R-HSA-937039; IRAK1 recruits IKK complex.
+DR   Reactome; R-HSA-937041; IKK complex recruitment mediated by RIP1.
+DR   Reactome; R-HSA-937042; IRAK2 mediated activation of TAK1 complex.
+DR   Reactome; R-HSA-937072; TRAF6-mediated induction of TAK1 complex within TLR4 complex.
+DR   Reactome; R-HSA-9604323; Negative regulation of NOTCH4 signaling.
+DR   Reactome; R-HSA-9613829; Chaperone Mediated Autophagy.
+DR   Reactome; R-HSA-9615710; Microautophagy.
+DR   Reactome; R-HSA-9645460; Alpha-protein kinase 1 signaling pathway.
+DR   Reactome; R-HSA-975110; TRAF6 mediated IRF7 activation in TLR7/8 or 9 signaling.
+DR   Reactome; R-HSA-975144; IRAK1 recruits IKK complex upon TLR7/8 or 9 stimulation.
+DR   Reactome; R-HSA-975163; IRAK2 mediated activation of TAK1 complex upon TLR7/8 or 9 stimulation.
+DR   Reactome; R-HSA-977225; Amyloid fiber formation.
+DR   Reactome; R-HSA-983168; Antigen processing: Ubiquitination & Proteasome degradation.
+DR   SIGNOR; P0CG48; -.
+DR   ChiTaRS; UBC; human.
+DR   EvolutionaryTrace; P0CG48; -.
+DR   GeneWiki; Ubiquitin_C; -.
+DR   GenomeRNAi; 7316; -.
+DR   Pharos; P0CG48; Tbio.
+DR   PRO; PR:P0CG48; -.
+DR   Proteomes; UP000005640; Chromosome 12.
+DR   RNAct; P0CG48; protein.
+DR   Bgee; ENSG00000150991; Expressed in Brodmann (1909) area 46 and 238 other tissues.
+DR   ExpressionAtlas; P0CG48; baseline and differential.
+DR   Genevisible; P0CG48; HS.
+DR   GO; GO:0005737; C:cytoplasm; IBA:GO_Central.
+DR   GO; GO:0005829; C:cytosol; TAS:Reactome.
+DR   GO; GO:0030666; C:endocytic vesicle membrane; TAS:Reactome.
+DR   GO; GO:0005789; C:endoplasmic reticulum membrane; TAS:Reactome.
+DR   GO; GO:0010008; C:endosome membrane; TAS:Reactome.
+DR   GO; GO:0070062; C:extracellular exosome; HDA:UniProtKB.
+DR   GO; GO:0005615; C:extracellular space; HDA:UniProtKB.
+DR   GO; GO:0043657; C:host cell; IEA:GOC.
+DR   GO; GO:0005741; C:mitochondrial outer membrane; TAS:Reactome.
+DR   GO; GO:0005654; C:nucleoplasm; TAS:Reactome.
+DR   GO; GO:0005634; C:nucleus; HDA:UniProtKB.
+DR   GO; GO:0005886; C:plasma membrane; TAS:Reactome.
+DR   GO; GO:0031982; C:vesicle; HDA:UniProtKB.
+DR   GO; GO:0002020; F:protease binding; IPI:UniProtKB.
+DR   GO; GO:0031386; F:protein tag; IBA:GO_Central.
+DR   GO; GO:0003723; F:RNA binding; HDA:UniProtKB.
+DR   GO; GO:0031625; F:ubiquitin protein ligase binding; IBA:GO_Central.
+DR   GO; GO:0000187; P:activation of MAPK activity; TAS:Reactome.
+DR   GO; GO:0031145; P:anaphase-promoting complex-dependent catabolic process; TAS:Reactome.
+DR   GO; GO:0044267; P:cellular protein metabolic process; TAS:Reactome.
+DR   GO; GO:0019221; P:cytokine-mediated signaling pathway; TAS:Reactome.
+DR   GO; GO:0042769; P:DNA damage response, detection of DNA damage; TAS:Reactome.
+DR   GO; GO:0016197; P:endosomal transport; TAS:Reactome.
+DR   GO; GO:0070987; P:error-free translesion synthesis; TAS:Reactome.
+DR   GO; GO:0042276; P:error-prone translesion synthesis; TAS:Reactome.
+DR   GO; GO:0070911; P:global genome nucleotide-excision repair; TAS:Reactome.
+DR   GO; GO:0007249; P:I-kappaB kinase/NF-kappaB signaling; TAS:Reactome.
+DR   GO; GO:0070498; P:interleukin-1-mediated signaling pathway; TAS:Reactome.
+DR   GO; GO:0036297; P:interstrand cross-link repair; TAS:Reactome.
+DR   GO; GO:0075733; P:intracellular transport of virus; TAS:Reactome.
+DR   GO; GO:0007254; P:JNK cascade; TAS:Reactome.
+DR   GO; GO:0061024; P:membrane organization; TAS:Reactome.
+DR   GO; GO:0019941; P:modification-dependent protein catabolic process; IBA:GO_Central.
+DR   GO; GO:0002755; P:MyD88-dependent toll-like receptor signaling pathway; TAS:Reactome.
+DR   GO; GO:0002756; P:MyD88-independent toll-like receptor signaling pathway; TAS:Reactome.
+DR   GO; GO:0043066; P:negative regulation of apoptotic process; TAS:Reactome.
+DR   GO; GO:0000122; P:negative regulation of transcription by RNA polymerase II; TAS:Reactome.
+DR   GO; GO:0030512; P:negative regulation of transforming growth factor beta receptor signaling pathway; TAS:Reactome.
+DR   GO; GO:0070423; P:nucleotide-binding oligomerization domain containing signaling pathway; TAS:Reactome.
+DR   GO; GO:0000715; P:nucleotide-excision repair, DNA damage recognition; TAS:Reactome.
+DR   GO; GO:0000717; P:nucleotide-excision repair, DNA duplex unwinding; TAS:Reactome.
+DR   GO; GO:0006297; P:nucleotide-excision repair, DNA gap filling; TAS:Reactome.
+DR   GO; GO:0033683; P:nucleotide-excision repair, DNA incision; TAS:Reactome.
+DR   GO; GO:0006296; P:nucleotide-excision repair, DNA incision, 5'-to lesion; TAS:Reactome.
+DR   GO; GO:0006294; P:nucleotide-excision repair, preincision complex assembly; TAS:Reactome.
+DR   GO; GO:0043065; P:positive regulation of apoptotic process; TAS:Reactome.
+DR   GO; GO:0051092; P:positive regulation of NF-kappaB transcription factor activity; TAS:Reactome.
+DR   GO; GO:0045944; P:positive regulation of transcription by RNA polymerase II; TAS:Reactome.
+DR   GO; GO:0016579; P:protein deubiquitination; TAS:Reactome.
+DR   GO; GO:0000209; P:protein polyubiquitination; TAS:Reactome.
+DR   GO; GO:0006625; P:protein targeting to peroxisome; TAS:Reactome.
+DR   GO; GO:0016567; P:protein ubiquitination; IBA:GO_Central.
+DR   GO; GO:0043488; P:regulation of mRNA stability; TAS:Reactome.
+DR   GO; GO:0061418; P:regulation of transcription from RNA polymerase II promoter in response to hypoxia; TAS:Reactome.
+DR   GO; GO:0051403; P:stress-activated MAPK cascade; TAS:Reactome.
+DR   GO; GO:0006283; P:transcription-coupled nucleotide-excision repair; TAS:Reactome.
+DR   GO; GO:0007179; P:transforming growth factor beta receptor signaling pathway; TAS:Reactome.
+DR   GO; GO:0019985; P:translesion synthesis; TAS:Reactome.
+DR   GO; GO:0055085; P:transmembrane transport; TAS:Reactome.
+DR   GO; GO:0035666; P:TRIF-dependent toll-like receptor signaling pathway; TAS:Reactome.
+DR   GO; GO:0019058; P:viral life cycle; TAS:Reactome.
+DR   GO; GO:0019068; P:virion assembly; TAS:Reactome.
+DR   GO; GO:0016055; P:Wnt signaling pathway; TAS:Reactome.
+DR   InterPro; IPR000626; Ubiquitin-like_dom.
+DR   InterPro; IPR029071; Ubiquitin-like_domsf.
+DR   InterPro; IPR019954; Ubiquitin_CS.
+DR   InterPro; IPR019956; Ubiquitin_dom.
+DR   Pfam; PF00240; ubiquitin; 9.
+DR   PRINTS; PR00348; UBIQUITIN.
+DR   SMART; SM00213; UBQ; 9.
+DR   SUPFAM; SSF54236; SSF54236; 9.
+DR   PROSITE; PS00299; UBIQUITIN_1; 9.
+DR   PROSITE; PS50053; UBIQUITIN_2; 9.
+PE   1: Evidence at protein level;
+KW   3D-structure; ADP-ribosylation; Cytoplasm; Direct protein sequencing;
+KW   Isopeptide bond; Nucleus; Phosphoprotein; Reference proteome; Repeat;
+KW   Ubl conjugation.
+FT   CHAIN           1..76
+FT                   /note="Ubiquitin"
+FT                   /id="PRO_0000396178"
+FT   CHAIN           77..152
+FT                   /note="Ubiquitin"
+FT                   /id="PRO_0000396179"
+FT   CHAIN           153..228
+FT                   /note="Ubiquitin"
+FT                   /id="PRO_0000396180"
+FT   CHAIN           229..304
+FT                   /note="Ubiquitin"
+FT                   /id="PRO_0000396181"
+FT   CHAIN           305..380
+FT                   /note="Ubiquitin"
+FT                   /id="PRO_0000396182"
+FT   CHAIN           381..456
+FT                   /note="Ubiquitin"
+FT                   /id="PRO_0000396183"
+FT   CHAIN           457..532
+FT                   /note="Ubiquitin"
+FT                   /id="PRO_0000396184"
+FT   CHAIN           533..608
+FT                   /note="Ubiquitin"
+FT                   /id="PRO_0000396185"
+FT   CHAIN           609..684
+FT                   /note="Ubiquitin"
+FT                   /id="PRO_0000396186"
+FT   PROPEP          685
+FT                   /id="PRO_0000396187"
+FT   DOMAIN          1..76
+FT                   /note="Ubiquitin-like 1"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00214"
+FT   DOMAIN          77..152
+FT                   /note="Ubiquitin-like 2"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00214"
+FT   DOMAIN          153..228
+FT                   /note="Ubiquitin-like 3"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00214"
+FT   DOMAIN          229..304
+FT                   /note="Ubiquitin-like 4"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00214"
+FT   DOMAIN          305..380
+FT                   /note="Ubiquitin-like 5"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00214"
+FT   DOMAIN          381..456
+FT                   /note="Ubiquitin-like 6"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00214"
+FT   DOMAIN          457..532
+FT                   /note="Ubiquitin-like 7"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00214"
+FT   DOMAIN          533..608
+FT                   /note="Ubiquitin-like 8"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00214"
+FT   DOMAIN          609..684
+FT                   /note="Ubiquitin-like 9"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00214"
+FT   BINDING         54
+FT                   /note="Activating enzyme"
+FT   BINDING         72
+FT                   /note="Activating enzyme"
+FT   SITE            68
+FT                   /note="Essential for function"
+FT   MOD_RES         65
+FT                   /note="Phosphoserine; by PINK1"
+FT                   /evidence="ECO:0000269|PubMed:24660806,
+FT                   ECO:0000269|PubMed:24751536, ECO:0000269|PubMed:24784582,
+FT                   ECO:0000269|PubMed:25527291"
+FT   MOD_RES         76
+FT                   /note="ADP-ribosylglycine"
+FT                   /evidence="ECO:0000269|PubMed:28525742"
+FT   CROSSLNK        6
+FT                   /note="Glycyl lysine isopeptide (Lys-Gly) (interchain with
+FT                   G-Cter in ubiquitin)"
+FT                   /evidence="ECO:0000269|PubMed:16443603"
+FT   CROSSLNK        11
+FT                   /note="Glycyl lysine isopeptide (Lys-Gly) (interchain with
+FT                   G-Cter in ubiquitin)"
+FT                   /evidence="ECO:0000269|PubMed:16443603,
+FT                   ECO:0000269|PubMed:16543144"
+FT   CROSSLNK        27
+FT                   /note="Glycyl lysine isopeptide (Lys-Gly) (interchain with
+FT                   G-Cter in ubiquitin)"
+FT                   /evidence="ECO:0000305|PubMed:15466860"
+FT   CROSSLNK        29
+FT                   /note="Glycyl lysine isopeptide (Lys-Gly) (interchain with
+FT                   G-Cter in ubiquitin)"
+FT                   /evidence="ECO:0000269|PubMed:16543144"
+FT   CROSSLNK        48
+FT                   /note="Glycyl lysine isopeptide (Lys-Gly) (interchain with
+FT                   G-Cter in ubiquitin)"
+FT                   /evidence="ECO:0000269|PubMed:16443603,
+FT                   ECO:0000269|PubMed:16543144"
+FT   CROSSLNK        63
+FT                   /note="Glycyl lysine isopeptide (Lys-Gly) (interchain with
+FT                   G-Cter in ubiquitin)"
+FT                   /evidence="ECO:0000269|PubMed:16543144,
+FT                   ECO:0000269|PubMed:18719106"
+FT   CROSSLNK        76
+FT                   /note="Glycyl lysine isopeptide (Gly-Lys) (interchain with
+FT                   K-? in acceptor proteins)"
+FT   MUTAGEN         48
+FT                   /note="K->R: No effect on HLTF-mediated polyubiquitination
+FT                   of PCNA."
+FT                   /evidence="ECO:0000269|PubMed:18719106"
+FT   MUTAGEN         63
+FT                   /note="K->R: Abolishes HLTF-mediated polyubiquitination of
+FT                   PCNA."
+FT                   /evidence="ECO:0000269|PubMed:18719106"
+FT   MUTAGEN         65
+FT                   /note="S->A: Prevents phosphorylation in case of
+FT                   mitophagy."
+FT                   /evidence="ECO:0000269|PubMed:24660806,
+FT                   ECO:0000269|PubMed:24751536, ECO:0000269|PubMed:24784582"
+FT   MUTAGEN         65
+FT                   /note="S->D: Phosphomimetic mutant that binds and activates
+FT                   PRKN."
+FT                   /evidence="ECO:0000269|PubMed:24751536"
+FT   MUTAGEN         68
+FT                   /note="H->G: Loss of DTX3L-mediated polyubiquitination of
+FT                   histone H3 and H4."
+FT                   /evidence="ECO:0000269|PubMed:28525742"
+FT   MUTAGEN         72
+FT                   /note="R->G: No effect on ADP-ribosylation."
+FT                   /evidence="ECO:0000269|PubMed:28525742"
+FT   MUTAGEN         72
+FT                   /note="R->K: No effect on ADP-ribosylation, when associated
+FT                   with K-74."
+FT                   /evidence="ECO:0000269|PubMed:28525742"
+FT   MUTAGEN         74
+FT                   /note="R->G: No effect on ADP-ribosylation."
+FT                   /evidence="ECO:0000269|PubMed:28525742"
+FT   MUTAGEN         74
+FT                   /note="R->K: No effect on ADP-ribosylation, when associated
+FT                   with K-72."
+FT                   /evidence="ECO:0000269|PubMed:28525742"
+FT   MUTAGEN         76
+FT                   /note="G->A: Loss of ADP-ribosylation."
+FT                   /evidence="ECO:0000269|PubMed:28525742"
+FT   CONFLICT        190
+FT                   /note="P -> S (in Ref. 4; AC126309)"
+FT                   /evidence="ECO:0000305"
+FT   CONFLICT        397
+FT                   /note="V -> G (in Ref. 6; BAA09860)"
+FT                   /evidence="ECO:0000305"
+FT   STRAND          383..386
+FT                   /evidence="ECO:0000244|PDB:5B83"
+FT   STRAND          392..395
+FT                   /evidence="ECO:0000244|PDB:5B83"
+FT   HELIX           403..411
+FT                   /evidence="ECO:0000244|PDB:5B83"
+FT   HELIX           418..420
+FT                   /evidence="ECO:0000244|PDB:5B83"
+FT   STRAND          421..425
+FT                   /evidence="ECO:0000244|PDB:5B83"
+FT   STRAND          428..430
+FT                   /evidence="ECO:0000244|PDB:5B83"
+FT   HELIX           436..438
+FT                   /evidence="ECO:0000244|PDB:5B83"
+FT   STRAND          446..451
+FT                   /evidence="ECO:0000244|PDB:5B83"
+FT   STRAND          458..463
+FT                   /evidence="ECO:0000244|PDB:5H07"
+FT   STRAND          468..472
+FT                   /evidence="ECO:0000244|PDB:5H07"
+FT   HELIX           479..490
+FT                   /evidence="ECO:0000244|PDB:5H07"
+FT   HELIX           494..496
+FT                   /evidence="ECO:0000244|PDB:5H07"
+FT   STRAND          497..501
+FT                   /evidence="ECO:0000244|PDB:5H07"
+FT   HELIX           513..515
+FT                   /evidence="ECO:0000244|PDB:5H07"
+FT   STRAND          522..527
+FT                   /evidence="ECO:0000244|PDB:5H07"
+FT   STRAND          534..539
+FT                   /evidence="ECO:0000244|PDB:3B08"
+FT   STRAND          540..542
+FT                   /evidence="ECO:0000244|PDB:6N6R"
+FT   STRAND          544..548
+FT                   /evidence="ECO:0000244|PDB:3B08"
+FT   HELIX           555..566
+FT                   /evidence="ECO:0000244|PDB:3B08"
+FT   HELIX           570..572
+FT                   /evidence="ECO:0000244|PDB:3B08"
+FT   STRAND          573..577
+FT                   /evidence="ECO:0000244|PDB:3B08"
+FT   STRAND          579..581
+FT                   /evidence="ECO:0000244|PDB:3N3K"
+FT   STRAND          586..588
+FT                   /evidence="ECO:0000244|PDB:6N6R"
+FT   HELIX           589..591
+FT                   /evidence="ECO:0000244|PDB:3B08"
+FT   STRAND          598..603
+FT                   /evidence="ECO:0000244|PDB:3B08"
+FT   STRAND          610..615
+FT                   /evidence="ECO:0000244|PDB:1OGW"
+FT   STRAND          616..618
+FT                   /evidence="ECO:0000244|PDB:4K1R"
+FT   STRAND          620..624
+FT                   /evidence="ECO:0000244|PDB:1OGW"
+FT   STRAND          627..630
+FT                   /evidence="ECO:0000244|PDB:1G6J"
+FT   HELIX           631..642
+FT                   /evidence="ECO:0000244|PDB:1OGW"
+FT   HELIX           646..648
+FT                   /evidence="ECO:0000244|PDB:1OGW"
+FT   STRAND          649..653
+FT                   /evidence="ECO:0000244|PDB:1OGW"
+FT   STRAND          654..657
+FT                   /evidence="ECO:0000244|PDB:4BVU"
+FT   STRAND          660..663
+FT                   /evidence="ECO:0000244|PDB:6B7O"
+FT   HELIX           664..667
+FT                   /evidence="ECO:0000244|PDB:1OGW"
+FT   TURN            668..670
+FT                   /evidence="ECO:0000244|PDB:5OXH"
+FT   STRAND          671..673
+FT                   /evidence="ECO:0000244|PDB:6EQI"
+FT   STRAND          674..679
+FT                   /evidence="ECO:0000244|PDB:1OGW"
+SQ   SEQUENCE   685 AA;  77039 MW;  B6E7BC06FEE77196 CRC64;
+     MQIFVKTLTG KTITLEVEPS DTIENVKAKI QDKEGIPPDQ QRLIFAGKQL EDGRTLSDYN
+     IQKESTLHLV LRLRGGMQIF VKTLTGKTIT LEVEPSDTIE NVKAKIQDKE GIPPDQQRLI
+     FAGKQLEDGR TLSDYNIQKE STLHLVLRLR GGMQIFVKTL TGKTITLEVE PSDTIENVKA
+     KIQDKEGIPP DQQRLIFAGK QLEDGRTLSD YNIQKESTLH LVLRLRGGMQ IFVKTLTGKT
+     ITLEVEPSDT IENVKAKIQD KEGIPPDQQR LIFAGKQLED GRTLSDYNIQ KESTLHLVLR
+     LRGGMQIFVK TLTGKTITLE VEPSDTIENV KAKIQDKEGI PPDQQRLIFA GKQLEDGRTL
+     SDYNIQKEST LHLVLRLRGG MQIFVKTLTG KTITLEVEPS DTIENVKAKI QDKEGIPPDQ
+     QRLIFAGKQL EDGRTLSDYN IQKESTLHLV LRLRGGMQIF VKTLTGKTIT LEVEPSDTIE
+     NVKAKIQDKE GIPPDQQRLI FAGKQLEDGR TLSDYNIQKE STLHLVLRLR GGMQIFVKTL
+     TGKTITLEVE PSDTIENVKA KIQDKEGIPP DQQRLIFAGK QLEDGRTLSD YNIQKESTLH
+     LVLRLRGGMQ IFVKTLTGKT ITLEVEPSDT IENVKAKIQD KEGIPPDQQR LIFAGKQLED
+     GRTLSDYNIQ KESTLHLVLR LRGGV
+//

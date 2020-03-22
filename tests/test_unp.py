@@ -11,30 +11,29 @@ NO_INTERNET = not tests.utils.has_internet()
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
 class TestUNPDownload:
-
     def test_unp_record(self):
         test_id = 'P00720'
-        unp_rec = unp.unp_record(test_id)
+        unp_rec = unp.unp_record(test_id, unp_dir=TEMP_PATH)
         assert unp_rec.sequence_length == 164
 
     def test_unp_download(self):
         test_id = 'P00720'
-        path = unp.unp_download(test_id)
+        path = unp.unp_download(test_id, unp_dir=TEMP_PATH)
         assert path == TEMP_PATH.joinpath(f'{test_id}.txt')
 
     def test_unp_download_with_redirect(self):
-        # This UNP id causes a redirect to
+        # This UNP id causes a redirect to P62707
         test_id = 'P31217'
         replacement_id = unp.replacement_ids(test_id)[0]
-        assert replacement_id != test_id
+        assert replacement_id == 'P62707'
 
-        path = unp.unp_download(test_id)
+        path = unp.unp_download(test_id, unp_dir=TEMP_PATH)
 
         assert path == TEMP_PATH.joinpath(f'{replacement_id}.txt')
 
     def test_unp_download_with_invalid_id(self):
         with pytest.raises(IOError, match='404'):
-            path = unp.unp_download('P000000')
+            path = unp.unp_download('P000000', unp_dir=TEMP_PATH)
 
 
 class TestUNPRecord:

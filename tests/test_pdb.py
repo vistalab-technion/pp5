@@ -117,10 +117,11 @@ class TestSplitIDWithEntity:
 
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
-class TestPDB:
+class TestPDBDownload:
     @classmethod
     def setup_class(cls):
         cls.test_id = '102L'
+        # Use temp path to force download (file won't exists there)
         cls.TEMP_PATH = tests.get_tmp_path('pdb')
 
     @classmethod
@@ -131,16 +132,19 @@ class TestPDB:
         pass
 
     def test_pdb_download(self):
-        path = pdb.pdb_download(self.test_id, self.TEMP_PATH)
+        path = pdb.pdb_download(self.test_id, pdb_dir=self.TEMP_PATH)
         expected_path = self.TEMP_PATH.joinpath(f'{self.test_id.lower()}.cif')
         assert path == expected_path
         assert os.path.isfile(expected_path)
 
     def test_pdb_struct(self):
-        struct = pdb.pdb_struct(self.test_id, self.TEMP_PATH)
+        struct = pdb.pdb_struct(self.test_id, pdb_dir=self.TEMP_PATH)
         chains = list(struct.get_chains())
         assert len(chains) == 1
 
+
+@pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
+class TestPDBMetadata:
     def test_pdb_metadata(self):
         pdb_ids = ['1MWC', '1b0y']
 
@@ -201,12 +205,10 @@ class TestPDB:
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
 class TestPDBToUNP:
-    @classmethod
-    def setup_class(cls):
-        cls.TEMP_PATH = tests.get_tmp_path('pdb')
 
-    def _check(self, pdb_id, expected_unp_id):
-        actual_unp_id = pdb.pdbid_to_unpid(pdb_id, self.TEMP_PATH)
+    @staticmethod
+    def _check(pdb_id, expected_unp_id):
+        actual_unp_id = pdb.pdbid_to_unpid(pdb_id)
         assert actual_unp_id == expected_unp_id
 
     def test_no_chain_single_unp(self):
@@ -219,7 +221,7 @@ class TestPDBToUNP:
         test_id = '4HHB'
         expected_unp_ids = {'P69905', 'P68871'}
 
-        id = pdb.pdbid_to_unpid(test_id, self.TEMP_PATH)
+        id = pdb.pdbid_to_unpid(test_id)
         assert id in expected_unp_ids
 
     def test_with_chain_multi_unp(self):
@@ -249,9 +251,6 @@ class TestPDBToUNP:
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
 class TestPDBQueries:
-    @classmethod
-    def setup_class(cls):
-        cls.TEMP_PATH = tests.get_tmp_path('pdb')
 
     def test_resolution_query(self):
         min_res = 0.4

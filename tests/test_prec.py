@@ -75,10 +75,12 @@ class TestCreation:
 
 
 class TestSave:
-    def test_save(self):
-        pdb_id = '102L:A'
+    TEMP_PATH = get_tmp_path('prec')
+
+    @pytest.mark.parametrize('pdb_id', ['2WUR:A', '102L', '5NL4:A'])
+    def test_save_roundtrip(self, pdb_id):
         prec = ProteinRecord.from_pdb(pdb_id)
-        filepath = prec.save(out_dir=get_tmp_path('prec'))
+        filepath = prec.save(out_dir=self.TEMP_PATH)
 
         with open(str(filepath), 'rb') as f:
             prec2 = pickle.load(f)

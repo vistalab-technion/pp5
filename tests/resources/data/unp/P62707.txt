@@ -1,0 +1,355 @@
+ID   GPMA_ECOLI              Reviewed;         250 AA.
+AC   P62707; P31217;
+DT   19-JUL-2004, integrated into UniProtKB/Swiss-Prot.
+DT   23-JAN-2007, sequence version 2.
+DT   26-FEB-2020, entry version 136.
+DE   RecName: Full=2,3-bisphosphoglycerate-dependent phosphoglycerate mutase {ECO:0000255|HAMAP-Rule:MF_01039, ECO:0000303|PubMed:10437801};
+DE            Short=BPG-dependent PGAM {ECO:0000255|HAMAP-Rule:MF_01039, ECO:0000303|PubMed:10437801};
+DE            Short=PGAM {ECO:0000255|HAMAP-Rule:MF_01039, ECO:0000303|PubMed:10437801};
+DE            Short=Phosphoglyceromutase {ECO:0000255|HAMAP-Rule:MF_01039, ECO:0000303|PubMed:10437801};
+DE            Short=dPGM {ECO:0000255|HAMAP-Rule:MF_01039, ECO:0000303|PubMed:10437801};
+DE            EC=5.4.2.11 {ECO:0000255|HAMAP-Rule:MF_01039, ECO:0000269|PubMed:10437801};
+GN   Name=gpmA {ECO:0000255|HAMAP-Rule:MF_01039}; Synonyms=gpm, pgm, pgmA;
+GN   OrderedLocusNames=b0755, JW0738;
+OS   Escherichia coli (strain K12).
+OC   Bacteria; Proteobacteria; Gammaproteobacteria; Enterobacterales;
+OC   Enterobacteriaceae; Escherichia.
+OX   NCBI_TaxID=83333;
+RN   [1]
+RP   NUCLEOTIDE SEQUENCE [GENOMIC DNA].
+RC   STRAIN=K12;
+RA   Bouffard G.G., Ogihara N., Rudd K.E., Adhya S.L.;
+RL   Unpublished observations (MAY-1993).
+RN   [2]
+RP   NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA].
+RC   STRAIN=K12 / W3110 / ATCC 27325 / DSM 5911;
+RX   PubMed=8905232; DOI=10.1093/dnares/3.3.137;
+RA   Oshima T., Aiba H., Baba T., Fujita K., Hayashi K., Honjo A., Ikemoto K.,
+RA   Inada T., Itoh T., Kajihara M., Kanai K., Kashimoto K., Kimura S.,
+RA   Kitagawa M., Makino K., Masuda S., Miki T., Mizobuchi K., Mori H.,
+RA   Motomura K., Nakamura Y., Nashimoto H., Nishio Y., Saito N., Sampei G.,
+RA   Seki Y., Tagami H., Takemoto K., Wada C., Yamamoto Y., Yano M.,
+RA   Horiuchi T.;
+RT   "A 718-kb DNA sequence of the Escherichia coli K-12 genome corresponding to
+RT   the 12.7-28.0 min region on the linkage map.";
+RL   DNA Res. 3:137-155(1996).
+RN   [3]
+RP   NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA].
+RC   STRAIN=K12 / MG1655 / ATCC 47076;
+RX   PubMed=9278503; DOI=10.1126/science.277.5331.1453;
+RA   Blattner F.R., Plunkett G. III, Bloch C.A., Perna N.T., Burland V.,
+RA   Riley M., Collado-Vides J., Glasner J.D., Rode C.K., Mayhew G.F.,
+RA   Gregor J., Davis N.W., Kirkpatrick H.A., Goeden M.A., Rose D.J., Mau B.,
+RA   Shao Y.;
+RT   "The complete genome sequence of Escherichia coli K-12.";
+RL   Science 277:1453-1462(1997).
+RN   [4]
+RP   NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA].
+RC   STRAIN=K12 / W3110 / ATCC 27325 / DSM 5911;
+RX   PubMed=16738553; DOI=10.1038/msb4100049;
+RA   Hayashi K., Morooka N., Yamamoto Y., Fujita K., Isono K., Choi S.,
+RA   Ohtsubo E., Baba T., Wanner B.L., Mori H., Horiuchi T.;
+RT   "Highly accurate genome sequences of Escherichia coli K-12 strains MG1655
+RT   and W3110.";
+RL   Mol. Syst. Biol. 2:E1-E5(2006).
+RN   [5]
+RP   PRELIMINARY NUCLEOTIDE SEQUENCE [GENOMIC DNA] OF 122-250.
+RC   STRAIN=K12;
+RX   PubMed=6125934; DOI=10.1093/nar/10.13.4045;
+RA   Davies W.D., Davidson B.E.;
+RT   "The nucleotide sequence of aroG, the gene for 3-deoxy-D-
+RT   arabinoheptulosonate-7-phosphate synthetase (phe) in Escherichia coli
+RT   K12.";
+RL   Nucleic Acids Res. 10:4045-4058(1982).
+RN   [6]
+RP   PROTEIN SEQUENCE OF 2-20.
+RC   STRAIN=K12 / EMG2;
+RX   PubMed=9298646; DOI=10.1002/elps.1150180807;
+RA   Link A.J., Robison K., Church G.M.;
+RT   "Comparing the predicted and observed properties of proteins encoded in the
+RT   genome of Escherichia coli K-12.";
+RL   Electrophoresis 18:1259-1313(1997).
+RN   [7]
+RP   PROTEIN SEQUENCE OF 2-11.
+RC   STRAIN=K12 / W3110 / ATCC 27325 / DSM 5911;
+RA   Pasquali C., Sanchez J.-C., Ravier F., Golaz O., Hughes G.J., Frutiger S.,
+RA   Paquet N., Wilkins M., Appel R.D., Bairoch A., Hochstrasser D.F.;
+RL   Submitted (SEP-1994) to UniProtKB.
+RN   [8]
+RP   PROTEIN SEQUENCE OF 2-11.
+RX   PubMed=8670822; DOI=10.1002/j.1460-2075.1996.tb00686.x;
+RA   Nystroem T., Larsson C., Gustafsson L.;
+RT   "Bacterial defense against aging: role of the Escherichia coli ArcA
+RT   regulator in gene expression, readjusted energy flux and survival during
+RT   stasis.";
+RL   EMBO J. 15:3219-3228(1996).
+RN   [9]
+RP   PROTEIN SEQUENCE OF 2-5.
+RC   STRAIN=K12 / W3110 / ATCC 27325 / DSM 5911;
+RX   PubMed=9600841; DOI=10.1006/jmbi.1998.1726;
+RA   Wilkins M.R., Gasteiger E., Tonella L., Ou K., Tyler M., Sanchez J.-C.,
+RA   Gooley A.A., Walsh B.J., Bairoch A., Appel R.D., Williams K.L.,
+RA   Hochstrasser D.F.;
+RT   "Protein identification with N and C-terminal sequence tags in proteome
+RT   projects.";
+RL   J. Mol. Biol. 278:599-608(1998).
+RN   [10]
+RP   IDENTIFICATION BY 2D-GEL.
+RX   PubMed=9298644; DOI=10.1002/elps.1150180805;
+RA   VanBogelen R.A., Abshire K.Z., Moldover B., Olson E.R., Neidhardt F.C.;
+RT   "Escherichia coli proteome analysis using the gene-protein database.";
+RL   Electrophoresis 18:1243-1251(1997).
+RN   [11]
+RP   FUNCTION, CATALYTIC ACTIVITY, BIOPHYSICOCHEMICAL PROPERTIES, ACTIVITY
+RP   REGULATION, DEVELOPMENTAL STAGE, AND SUBUNIT.
+RX   PubMed=10437801; DOI=10.1016/s0014-5793(99)00910-2;
+RA   Fraser H.I., Kvaratskhelia M., White M.F.;
+RT   "The two analogous phosphoglycerate mutases of Escherichia coli.";
+RL   FEBS Lett. 455:344-348(1999).
+RN   [12]
+RP   INDUCTION.
+RX   PubMed=11101675; DOI=10.1099/00221287-146-12-3171;
+RA   Vassinova N., Kozyrev D.;
+RT   "A method for direct cloning of Fur-regulated genes: identification of
+RT   seven new Fur-regulated loci in Escherichia coli.";
+RL   Microbiology 146:3171-3182(2000).
+RN   [13]
+RP   ACETYLATION [LARGE SCALE ANALYSIS] AT LYS-18; LYS-100 AND LYS-106, AND
+RP   IDENTIFICATION BY MASS SPECTROMETRY.
+RC   STRAIN=K12 / JW1106, and K12 / MG1655 / ATCC 47076;
+RX   PubMed=18723842; DOI=10.1074/mcp.m800187-mcp200;
+RA   Zhang J., Sprung R., Pei J., Tan X., Kim S., Zhu H., Liu C.F.,
+RA   Grishin N.V., Zhao Y.;
+RT   "Lysine acetylation is a highly abundant and evolutionarily conserved
+RT   modification in Escherichia coli.";
+RL   Mol. Cell. Proteomics 8:215-225(2009).
+RN   [14]
+RP   X-RAY CRYSTALLOGRAPHY (1.25 ANGSTROMS) IN COMPLEX WITH SUBSTRATE ANALOG,
+RP   ACTIVE SITE, AND SUBUNIT.
+RC   STRAIN=K12;
+RX   PubMed=11038361; DOI=10.1074/jbc.m007318200;
+RA   Bond C.S., White M.F., Hunter W.N.;
+RT   "High resolution structure of the phosphohistidine-activated form of
+RT   Escherichia coli cofactor-dependent phosphoglycerate mutase.";
+RL   J. Biol. Chem. 276:3247-3253(2001).
+RN   [15]
+RP   X-RAY CRYSTALLOGRAPHY (1.3 ANGSTROMS) IN COMPLEX WITH VANADATE, SUBUNIT,
+RP   AND ACTIVE SITE.
+RX   PubMed=11884145; DOI=10.1006/jmbi.2002.5418;
+RA   Bond C.S., White M.F., Hunter W.N.;
+RT   "Mechanistic implications for Escherichia coli cofactor-dependent
+RT   phosphoglycerate mutase based on the high-resolution crystal structure of a
+RT   vanadate complex.";
+RL   J. Mol. Biol. 316:1071-1081(2002).
+CC   -!- FUNCTION: Catalyzes the interconversion of 2-phosphoglycerate and 3-
+CC       phosphoglycerate. {ECO:0000255|HAMAP-Rule:MF_01039,
+CC       ECO:0000269|PubMed:10437801}.
+CC   -!- CATALYTIC ACTIVITY:
+CC       Reaction=(2R)-2-phosphoglycerate = (2R)-3-phosphoglycerate;
+CC         Xref=Rhea:RHEA:15901, ChEBI:CHEBI:58272, ChEBI:CHEBI:58289;
+CC         EC=5.4.2.11; Evidence={ECO:0000255|HAMAP-Rule:MF_01039,
+CC         ECO:0000269|PubMed:10437801};
+CC   -!- ACTIVITY REGULATION: Strongly inhibited by vanadate.
+CC       {ECO:0000269|PubMed:10437801}.
+CC   -!- BIOPHYSICOCHEMICAL PROPERTIES:
+CC       Kinetic parameters:
+CC         KM=190 uM for 2-PGA (at pH 7 and 30 degrees Celsius)
+CC         {ECO:0000269|PubMed:10437801};
+CC         KM=200 uM for 3-PGA (at pH 7 and 30 degrees Celsius)
+CC         {ECO:0000269|PubMed:10437801};
+CC         Note=Kcat is 330 sec(-1) for mutase with 3-PGA as substrate (at pH 7
+CC         and 30 degrees Celsius). Kcat is 220 sec(-1) for mutase with 2-PGA as
+CC         substrate (at pH 7 and 30 degrees Celsius).
+CC         {ECO:0000269|PubMed:10437801};
+CC   -!- PATHWAY: Carbohydrate degradation; glycolysis; pyruvate from D-
+CC       glyceraldehyde 3-phosphate: step 3/5. {ECO:0000255|HAMAP-
+CC       Rule:MF_01039}.
+CC   -!- SUBUNIT: Homodimer. {ECO:0000255|HAMAP-Rule:MF_01039,
+CC       ECO:0000269|PubMed:10437801, ECO:0000269|PubMed:11038361,
+CC       ECO:0000269|PubMed:11884145}.
+CC   -!- DEVELOPMENTAL STAGE: Peak expression observed in mid to late log phase.
+CC       {ECO:0000269|PubMed:10437801}.
+CC   -!- INDUCTION: Regulated by the Fur protein. {ECO:0000269|PubMed:11101675}.
+CC   -!- MISCELLANEOUS: Has a 10-fold higher specific activity than BPG-
+CC       independent phosphoglycerate mutase. {ECO:0000269|PubMed:10437801}.
+CC   -!- MISCELLANEOUS: Inhibition by vanadate is a diagnostic test for
+CC       discrimination between the cofactor-dependent (GpmA) and -independent
+CC       (GpmI) phosphoglycerate mutases. {ECO:0000269|PubMed:10437801}.
+CC   -!- SIMILARITY: Belongs to the phosphoglycerate mutase family. BPG-
+CC       dependent PGAM subfamily. {ECO:0000255|HAMAP-Rule:MF_01039}.
+CC   ---------------------------------------------------------------------------
+CC   Copyrighted by the UniProt Consortium, see https://www.uniprot.org/terms
+CC   Distributed under the Creative Commons Attribution (CC BY 4.0) License
+CC   ---------------------------------------------------------------------------
+DR   EMBL; U00096; AAC73842.1; -; Genomic_DNA.
+DR   EMBL; AP009048; BAA35417.1; -; Genomic_DNA.
+DR   EMBL; J01591; -; NOT_ANNOTATED_CDS; Genomic_DNA.
+DR   PIR; C64811; C64811.
+DR   RefSeq; NP_415276.1; NC_000913.3.
+DR   RefSeq; WP_001295305.1; NZ_STEB01000028.1.
+DR   PDB; 1E58; X-ray; 1.25 A; A=2-250.
+DR   PDB; 1E59; X-ray; 1.30 A; A=2-250.
+DR   PDBsum; 1E58; -.
+DR   PDBsum; 1E59; -.
+DR   SMR; P62707; -.
+DR   BioGrid; 4259673; 8.
+DR   DIP; DIP-35899N; -.
+DR   IntAct; P62707; 16.
+DR   STRING; 511145.b0755; -.
+DR   iPTMnet; P62707; -.
+DR   SWISS-2DPAGE; P62707; -.
+DR   EPD; P62707; -.
+DR   jPOST; P62707; -.
+DR   PaxDb; P62707; -.
+DR   PRIDE; P62707; -.
+DR   EnsemblBacteria; AAC73842; AAC73842; b0755.
+DR   EnsemblBacteria; BAA35417; BAA35417; BAA35417.
+DR   GeneID; 945068; -.
+DR   KEGG; ecj:JW0738; -.
+DR   KEGG; eco:b0755; -.
+DR   PATRIC; fig|1411691.4.peg.1524; -.
+DR   EchoBASE; EB1650; -.
+DR   eggNOG; ENOG4105DKJ; Bacteria.
+DR   eggNOG; COG0588; LUCA.
+DR   HOGENOM; CLU_033323_1_1_6; -.
+DR   InParanoid; P62707; -.
+DR   KO; K01834; -.
+DR   PhylomeDB; P62707; -.
+DR   BioCyc; EcoCyc:GPMA-MONOMER; -.
+DR   BioCyc; ECOL316407:JW0738-MONOMER; -.
+DR   BioCyc; MetaCyc:GPMA-MONOMER; -.
+DR   SABIO-RK; P62707; -.
+DR   UniPathway; UPA00109; UER00186.
+DR   EvolutionaryTrace; P62707; -.
+DR   PRO; PR:P62707; -.
+DR   Proteomes; UP000000318; Chromosome.
+DR   Proteomes; UP000000625; Chromosome.
+DR   GO; GO:0005737; C:cytoplasm; HDA:UniProtKB.
+DR   GO; GO:0005829; C:cytosol; IDA:EcoCyc.
+DR   GO; GO:0046538; F:2,3-bisphosphoglycerate-dependent phosphoglycerate mutase activity; IDA:EcoCyc.
+DR   GO; GO:0005524; F:ATP binding; IDA:EcoCyc.
+DR   GO; GO:0061621; P:canonical glycolysis; IGI:EcoCyc.
+DR   GO; GO:0006094; P:gluconeogenesis; IEA:UniProtKB-UniRule.
+DR   CDD; cd07067; HP_PGM_like; 1.
+DR   Gene3D; 3.40.50.1240; -; 1.
+DR   HAMAP; MF_01039; PGAM_GpmA; 1.
+DR   InterPro; IPR013078; His_Pase_superF_clade-1.
+DR   InterPro; IPR029033; His_PPase_superfam.
+DR   InterPro; IPR001345; PG/BPGM_mutase_AS.
+DR   InterPro; IPR005952; Phosphogly_mut1.
+DR   PANTHER; PTHR11931; PTHR11931; 1.
+DR   Pfam; PF00300; His_Phos_1; 1.
+DR   SMART; SM00855; PGAM; 1.
+DR   SUPFAM; SSF53254; SSF53254; 1.
+DR   TIGRFAMs; TIGR01258; pgm_1; 1.
+DR   PROSITE; PS00175; PG_MUTASE; 1.
+PE   1: Evidence at protein level;
+KW   3D-structure; Acetylation; Direct protein sequencing; Gluconeogenesis;
+KW   Glycolysis; Isomerase; Reference proteome.
+FT   INIT_MET        1
+FT                   /note="Removed"
+FT                   /evidence="ECO:0000269|PubMed:8670822,
+FT                   ECO:0000269|PubMed:9298646, ECO:0000269|PubMed:9600841,
+FT                   ECO:0000269|Ref.7"
+FT   CHAIN           2..250
+FT                   /note="2,3-bisphosphoglycerate-dependent phosphoglycerate
+FT                   mutase"
+FT                   /id="PRO_0000179873"
+FT   REGION          10..17
+FT                   /note="Substrate binding"
+FT                   /evidence="ECO:0000255|HAMAP-Rule:MF_01039,
+FT                   ECO:0000269|PubMed:11884145"
+FT   REGION          23..24
+FT                   /note="Substrate binding"
+FT                   /evidence="ECO:0000255|HAMAP-Rule:MF_01039,
+FT                   ECO:0000269|PubMed:11038361, ECO:0000269|PubMed:11884145"
+FT   REGION          89..92
+FT                   /note="Substrate binding"
+FT                   /evidence="ECO:0000255|HAMAP-Rule:MF_01039,
+FT                   ECO:0000269|PubMed:11884145"
+FT   REGION          116..117
+FT                   /note="Substrate binding"
+FT                   /evidence="ECO:0000255|HAMAP-Rule:MF_01039,
+FT                   ECO:0000269|PubMed:11038361, ECO:0000269|PubMed:11884145"
+FT   REGION          185..186
+FT                   /note="Substrate binding"
+FT                   /evidence="ECO:0000255|HAMAP-Rule:MF_01039,
+FT                   ECO:0000269|PubMed:11884145"
+FT   ACT_SITE        11
+FT                   /note="Tele-phosphohistidine intermediate"
+FT                   /evidence="ECO:0000255|HAMAP-Rule:MF_01039,
+FT                   ECO:0000269|PubMed:11038361, ECO:0000269|PubMed:11884145"
+FT   ACT_SITE        89
+FT                   /note="Proton donor/acceptor"
+FT                   /evidence="ECO:0000255|HAMAP-Rule:MF_01039,
+FT                   ECO:0000269|PubMed:11038361, ECO:0000269|PubMed:11884145"
+FT   BINDING         62
+FT                   /note="Substrate"
+FT                   /evidence="ECO:0000250|UniProtKB:Q3JWH7, ECO:0000255|HAMAP-
+FT                   Rule:MF_01039"
+FT   BINDING         100
+FT                   /note="Substrate"
+FT                   /evidence="ECO:0000255|HAMAP-Rule:MF_01039,
+FT                   ECO:0000269|PubMed:11884145"
+FT   SITE            184
+FT                   /note="Transition state stabilizer"
+FT                   /evidence="ECO:0000255|HAMAP-Rule:MF_01039,
+FT                   ECO:0000269|PubMed:11038361"
+FT   MOD_RES         18
+FT                   /note="N6-acetyllysine"
+FT                   /evidence="ECO:0000269|PubMed:18723842"
+FT   MOD_RES         100
+FT                   /note="N6-acetyllysine"
+FT                   /evidence="ECO:0000269|PubMed:18723842"
+FT   MOD_RES         106
+FT                   /note="N6-acetyllysine"
+FT                   /evidence="ECO:0000269|PubMed:18723842"
+FT   STRAND          4..10
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           15..18
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           32..47
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   STRAND          53..57
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           61..74
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   STRAND          81..83
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           85..87
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           93..95
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           100..107
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           109..117
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           134..136
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           138..140
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   TURN            145..147
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           154..167
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           169..174
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   STRAND          179..183
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           185..195
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           200..205
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   STRAND          214..218
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   STRAND          224..229
+FT                   /evidence="ECO:0000244|PDB:1E58"
+FT   HELIX           233..239
+FT                   /evidence="ECO:0000244|PDB:1E58"
+SQ   SEQUENCE   250 AA;  28556 MW;  A6E0A49406F8482A CRC64;
+     MAVTKLVLVR HGESQWNKEN RFTGWYDVDL SEKGVSEAKA AGKLLKEEGY SFDFAYTSVL
+     KRAIHTLWNV LDELDQAWLP VEKSWKLNER HYGALQGLNK AETAEKYGDE QVKQWRRGFA
+     VTPPELTKDD ERYPGHDPRY AKLSEKELPL TESLALTIDR VIPYWNETIL PRMKSGERVI
+     IAAHGNSLRA LVKYLDNMSE EEILELNIPT GVPLVYEFDE NFKPLKRYYL GNADEIAAKA
+     AAVANQGKAK
+//

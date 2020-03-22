@@ -1,0 +1,1692 @@
+ID   GFP_AEQVI               Reviewed;         238 AA.
+AC   P42212; Q17104; Q27903; Q93125;
+DT   01-NOV-1995, integrated into UniProtKB/Swiss-Prot.
+DT   01-NOV-1995, sequence version 1.
+DT   26-FEB-2020, entry version 165.
+DE   RecName: Full=Green fluorescent protein;
+GN   Name=GFP;
+OS   Aequorea victoria (Jellyfish).
+OC   Eukaryota; Metazoa; Cnidaria; Hydrozoa; Hydroidolina; Leptothecata;
+OC   Aequoreidae; Aequorea.
+OX   NCBI_TaxID=6100;
+RN   [1]
+RP   NUCLEOTIDE SEQUENCE [MRNA], PARTIAL PROTEIN SEQUENCE, AND VARIANTS TYR-100;
+RP   SER-108; MET-141 AND ILE-219.
+RX   PubMed=1347277; DOI=10.1016/0378-1119(92)90691-h;
+RA   Prasher D.C., Eckenrode V.K., Ward W.W., Prendergast F.G., Cormier M.J.;
+RT   "Primary structure of the Aequorea victoria green-fluorescent protein.";
+RL   Gene 111:229-233(1992).
+RN   [2]
+RP   NUCLEOTIDE SEQUENCE [MRNA], AND BIOPHYSICOCHEMICAL PROPERTIES.
+RX   PubMed=8137953; DOI=10.1016/0014-5793(94)80472-9;
+RA   Inouye S., Tsuji F.I.;
+RT   "Aequorea green fluorescent protein. Expression of the gene and
+RT   fluorescence characteristics of the recombinant protein.";
+RL   FEBS Lett. 341:277-280(1994).
+RN   [3]
+RP   NUCLEOTIDE SEQUENCE [MRNA], BIOPHYSICOCHEMICAL PROPERTIES, AND
+RP   BIOTECHNOLOGY.
+RX   PubMed=9154981; DOI=10.1023/a:1005740823703;
+RA   Rouwendal G.J.A., Mendes O., Wolbert E.J.H., de Boer A.D.;
+RT   "Enhanced expression in tobacco of the gene encoding green fluorescent
+RT   protein by modification of its codon usage.";
+RL   Plant Mol. Biol. 33:989-999(1997).
+RN   [4]
+RP   NUCLEOTIDE SEQUENCE [GENOMIC DNA], BIOTECHNOLOGY, AND MUTAGENESIS OF
+RP   PHE-64; SER-65; VAL-68 AND SER-72.
+RX   PubMed=8707053; DOI=10.1016/0378-1119(95)00685-0;
+RA   Cormack B.P., Valdivia R.H., Falkow S.;
+RT   "FACS-optimized mutants of the green fluorescent protein (GFP).";
+RL   Gene 173:33-38(1996).
+RN   [5]
+RP   CHROMOPHORE, AND DEHYDROGENATION AT TYR-66.
+RX   PubMed=8448132; DOI=10.1021/bi00056a003;
+RA   Cody C.W., Prasher D.C., Westler W.M., Prendergast F.G., Ward W.W.;
+RT   "Chemical structure of the hexapeptide chromophore of the Aequorea green-
+RT   fluorescent protein.";
+RL   Biochemistry 32:1212-1218(1993).
+RN   [6]
+RP   MUTAGENESIS OF TYR-66; ILE-167; SER-202 AND THR-203.
+RX   PubMed=7809066; DOI=10.1073/pnas.91.26.12501;
+RA   Heim R., Prasher D.C., Tsien R.Y.;
+RT   "Wavelength mutations and posttranslational autoxidation of green
+RT   fluorescent protein.";
+RL   Proc. Natl. Acad. Sci. U.S.A. 91:12501-12504(1994).
+RN   [7]
+RP   MUTAGENESIS OF PHE-64; SER-65 AND GLN-69.
+RX   PubMed=9634755; DOI=10.1038/nbt0295-151;
+RA   Delagrave S., Hawtin R.E., Silva C.M., Yang M.M., Youvan D.C.;
+RT   "Red-shifted excitation mutants of the green fluorescent protein.";
+RL   Biotechnology (N.Y.) 13:151-154(1995).
+RN   [8]
+RP   MUTAGENESIS OF THR-203 AND GLU-222.
+RX   PubMed=7796912; DOI=10.1016/0014-5793(95)00557-p;
+RA   Ehrig T., O'Kane D.J., Prendergast F.G.;
+RT   "Green-fluorescent protein mutants with altered fluorescence excitation
+RT   spectra.";
+RL   FEBS Lett. 367:163-166(1995).
+RN   [9]
+RP   MUTAGENESIS OF TYR-66, AND BIOTECHNOLOGY.
+RX   PubMed=8578587; DOI=10.1016/s0968-0004(00)89099-4;
+RA   Cubitt A.B., Heim R., Adams S.R., Boyd A.E., Gross L.A., Tsien R.Y.;
+RT   "Understanding, improving and using green fluorescent proteins.";
+RL   Trends Biochem. Sci. 20:448-455(1995).
+RN   [10]
+RP   MUTAGENESIS OF VAL-163 AND SER-175.
+RX   PubMed=8994830; DOI=10.1016/s0960-9822(02)70789-6;
+RA   Siemering K.R., Golbik R., Sever R., Haseloff J.;
+RT   "Mutations that suppress the thermosensitivity of green fluorescent
+RT   protein.";
+RL   Curr. Biol. 6:1653-1663(1996).
+RN   [11]
+RP   MUTAGENESIS OF PHE-99; MET-153 AND VAL-163.
+RX   PubMed=9630892; DOI=10.1038/nbt0396-315;
+RA   Crameri A., Whitehorn E.A., Tate E., Stemmer W.P.;
+RT   "Improved green fluorescent protein by molecular evolution using DNA
+RT   shuffling.";
+RL   Nat. Biotechnol. 14:315-319(1996).
+RN   [12]
+RP   MUTAGENESIS OF PHE-99; MET-153 AND VAL-163.
+RX   PubMed=9631088; DOI=10.1038/nbt1096-1252;
+RA   Yokoe H., Meyer T.;
+RT   "Spatial dynamics of GFP-tagged proteins investigated by local fluorescence
+RT   enhancement.";
+RL   Nat. Biotechnol. 14:1252-1256(1996).
+RN   [13]
+RP   MUTAGENESIS OF SER-147.
+RX   PubMed=9125154; DOI=10.1006/bbrc.1997.6235;
+RA   Kimata Y., Iwaki M., Lim C.R., Kohno K.;
+RT   "A novel mutation which enhances the fluorescence of green fluorescent
+RT   protein at high temperatures.";
+RL   Biochem. Biophys. Res. Commun. 232:69-73(1997).
+RN   [14]
+RP   MUTAGENESIS OF PHE-64; SER-65; TYR-66; PHE-99; MET-153 AND VAL-163.
+RX   PubMed=9370472; DOI=10.1016/s0006-3495(97)78307-3;
+RA   Patterson G.H., Knobel S.M., Sharif W.D., Kain S.R., Piston D.W.;
+RT   "Use of the green fluorescent protein and its mutants in quantitative
+RT   fluorescence microscopy.";
+RL   Biophys. J. 73:2782-2790(1997).
+RN   [15]
+RP   REVIEW ON MUTAGENESIS, AND BIOTECHNOLOGY.
+RX   PubMed=9759496; DOI=10.1146/annurev.biochem.67.1.509;
+RA   Tsien R.Y.;
+RT   "The green fluorescent protein.";
+RL   Annu. Rev. Biochem. 67:509-544(1998).
+RN   [16]
+RP   MUTAGENESIS OF SER-65; VAL-68; SER-72; ASN-146; MET-153; VAL-163 AND
+RP   THR-203.
+RX   PubMed=11299042; DOI=10.1186/1471-213x-1-4;
+RA   Srinivas S., Watanabe T., Lin C.S., William C.M., Tanabe Y., Jessell T.M.,
+RA   Costantini F.;
+RT   "Cre reporter strains produced by targeted insertion of EYFP and ECFP into
+RT   the ROSA26 locus.";
+RL   BMC Dev. Biol. 1:4-4(2001).
+RN   [17]
+RP   MUTAGENESIS OF PHE-64 AND SER-65.
+RX   PubMed=11776264;
+RA   Baumstark-Khan C., Hellweg C.E., Palm M., Horneck G.;
+RT   "Enhanced green fluorescent protein (EGFP) for space radiation research
+RT   using mammalian cells in the International Space Station.";
+RL   Phys. Med. 17:210-214(2001).
+RN   [18]
+RP   MUTAGENESIS OF SER-72; TYR-145 AND THR-203.
+RX   PubMed=12769828; DOI=10.1186/1472-6750-3-5;
+RA   Zapata-Hommer O., Griesbeck O.;
+RT   "Efficiently folding and circularly permuted variants of the Sapphire
+RT   mutant of GFP.";
+RL   BMC Biotechnol. 3:5-5(2003).
+RN   [19]
+RP   MUTAGENESIS OF PHE-64; SER-65; TYR-66; ASN-146; MET-153 AND VAL-163.
+RX   PubMed=15065907; DOI=10.1117/1.1646416;
+RA   Wang Z., Shah J.V., Chen Z., Sun C.H., Berns M.W.;
+RT   "Fluorescence correlation spectroscopy investigation of a GFP mutant-
+RT   enhanced cyan fluorescent protein and its tubulin fusion in living cells
+RT   with two-photon excitation.";
+RL   J. Biomed. Opt. 9:395-403(2004).
+RN   [20]
+RP   MUTAGENESIS OF PHE-64; SER-65; TYR-66; SER-72; TYR-145; ASN-146; HIS-148;
+RP   MET-153 AND VAL-163.
+RX   PubMed=14990965; DOI=10.1038/nbt945;
+RA   Rizzo M.A., Springer G.H., Granada B., Piston D.W.;
+RT   "An improved cyan fluorescent protein variant useful for FRET.";
+RL   Nat. Biotechnol. 22:445-449(2004).
+RN   [21]
+RP   MUTAGENESIS OF SER-30; PHE-46; GLN-69; ASP-103; TYR-145; VAL-176; VAL-193
+RP   AND ASN-198.
+RX   PubMed=16201762; DOI=10.1021/bi050550f;
+RA   Scruggs A.W., Flores C.L., Wachter R., Woodbury N.W.;
+RT   "Development and characterization of green fluorescent protein mutants with
+RT   altered lifetimes.";
+RL   Biochemistry 44:13377-13384(2005).
+RN   [22]
+RP   MUTAGENESIS OF ALA-206.
+RX   PubMed=16739159; DOI=10.1002/cphc.200600057;
+RA   Grailhe R., Merola F., Ridard J., Couvignou S., Le Poupon C.,
+RA   Changeux J.P., Laguitton-Pasquier H.;
+RT   "Monitoring protein interactions in the living cell through the
+RT   fluorescence decays of the cyan fluorescent protein.";
+RL   ChemPhysChem 7:1442-1454(2006).
+RN   [23]
+RP   MUTAGENESIS OF PHE-64; SER-65; SER-72; ASN-149; MET-153 AND ILE-167.
+RX   PubMed=17658219; DOI=10.1016/j.bbagen.2007.06.005;
+RA   Teerawanichpan P., Hoffman T., Ashe P., Datla R., Selvaraj G.;
+RT   "Investigations of combinations of mutations in the jellyfish green
+RT   fluorescent protein (GFP) that afford brighter fluorescence, and use of a
+RT   version (VisGreen) in plant, bacterial, and animal cells.";
+RL   Biochim. Biophys. Acta 1770:1360-1368(2007).
+RN   [24]
+RP   BIOTECHNOLOGY.
+RX   PubMed=17685514; DOI=10.1021/ja0715905;
+RA   Wong F.H., Banks D.S., Abu-Arish A., Fradin C.;
+RT   "A molecular thermometer based on fluorescent protein blinking.";
+RL   J. Am. Chem. Soc. 129:10302-10303(2007).
+RN   [25]
+RP   MUTAGENESIS OF PHE-46; PHE-64; VAL-68; LYS-162; VAL-163; ILE-167 AND
+RP   ILE-171.
+RX   PubMed=18366185; DOI=10.1021/bi702130s;
+RA   Mishin A.S., Subach F.V., Yampolsky I.V., King W., Lukyanov K.A.,
+RA   Verkhusha V.V.;
+RT   "The first mutant of the Aequorea victoria green fluorescent protein that
+RT   forms a red chromophore.";
+RL   Biochemistry 47:4666-4673(2008).
+RN   [26]
+RP   MUTAGENESIS OF SER-30; TYR-39; TYR-66; SER-72; GLN-80; ASN-105; ILE-128;
+RP   TYR-145; VAL-150; ASP-155; ILE-171; ASN-198; ALA-206 AND VAL-224.
+RX   PubMed=22891786; DOI=10.1021/jp306257t;
+RA   Park J.W., Rhee Y.M.;
+RT   "Interpolated mechanics-molecular mechanics study of internal rotation
+RT   dynamics of the chromophore unit in blue fluorescent protein and its
+RT   variants.";
+RL   J. Phys. Chem. B 116:11137-11147(2012).
+RN   [27]
+RP   X-RAY CRYSTALLOGRAPHY (1.9 ANGSTROMS).
+RX   PubMed=9631087; DOI=10.1038/nbt1096-1246;
+RA   Yang F., Moss L.G., Phillips G.N. Jr.;
+RT   "The molecular structure of green fluorescent protein.";
+RL   Nat. Biotechnol. 14:1246-1251(1996).
+RN   [28] {ECO:0000244|PDB:1EMA}
+RP   X-RAY CRYSTALLOGRAPHY (1.90 ANGSTROMS), AND MUTAGENESIS OF SER-65 AND
+RP   THR-203.
+RX   PubMed=8703075; DOI=10.1126/science.273.5280.1392;
+RA   Ormo M., Cubitt A.B., Kallio K., Gross L.A., Tsien R.Y., Remington S.J.;
+RT   "Crystal structure of the Aequorea victoria green fluorescent protein.";
+RL   Science 273:1392-1395(1996).
+RN   [29] {ECO:0000244|PDB:1EMC, ECO:0000244|PDB:1EME, ECO:0000244|PDB:1EMF, ECO:0000244|PDB:1EMK, ECO:0000244|PDB:1EML, ECO:0000244|PDB:1EMM, ECO:0000244|PDB:2EMD, ECO:0000244|PDB:2EMN, ECO:0000244|PDB:2EMO}
+RP   X-RAY CRYSTALLOGRAPHY (2.00 ANGSTROMS), MUTAGENESIS OF PHE-64; TYR-66;
+RP   SER-72; ASN-149; MET-153 AND ILE-167, BIOPHYSICOCHEMICAL PROPERTIES, AND
+RP   BIOTECHNOLOGY.
+RX   PubMed=9145105; DOI=10.1038/nsb0597-361;
+RA   Palm G.J., Zdanov A., Gaitanaris G.A., Stauber R., Pavlakis G.N.,
+RA   Wlodawer A.;
+RT   "The structural basis for spectral variations in green fluorescent
+RT   protein.";
+RL   Nat. Struct. Biol. 4:361-365(1997).
+RN   [30] {ECO:0000244|PDB:1YFP, ECO:0000244|PDB:2YFP}
+RP   X-RAY CRYSTALLOGRAPHY (2.5 ANGSTROMS) OF YELLOW EMISSION MUTANT
+RP   TYR-203/GLY-65/LEU-68/ALA-72, MUTAGENESIS OF SER-65; VAL-68; SER-72 AND
+RP   THR-203, BIOPHYSICOCHEMICAL PROPERTIES, BIOTECHNOLOGY, AND SUBUNIT.
+RX   PubMed=9782051; DOI=10.1016/s0969-2126(98)00127-0;
+RA   Wachter R.M., Elsliger M.-A., Kallio K., Hanson G.T., Remington S.J.;
+RT   "Structural basis of spectral shifts in the yellow-emission variants of
+RT   green fluorescent protein.";
+RL   Structure 6:1267-1277(1998).
+RN   [31]
+RP   X-RAY CRYSTALLOGRAPHY (2.0 ANGSTROMS), AND BIOPHYSICOCHEMICAL PROPERTIES.
+RX   PubMed=10220315; DOI=10.1021/bi9902182;
+RA   Elsliger M.-A., Wachter R.M., Hanson G.T., Kallio K., Remington S.J.;
+RT   "Structural and spectral response of green fluorescent protein variants to
+RT   changes in pH.";
+RL   Biochemistry 38:5296-5301(1999).
+RN   [32] {ECO:0000244|PDB:1HUY}
+RP   X-RAY CRYSTALLOGRAPHY (2.20 ANGSTROMS) OF 2-238 OF MUTANT CITRININE, AND
+RP   MUTAGENESIS OF VAL-68; GLN-69; SER-72 AND THR-203.
+RX   PubMed=11387331; DOI=10.1074/jbc.m102815200;
+RA   Griesbeck O., Baird G.S., Campbell R.E., Zacharias D.A., Tsien R.Y.;
+RT   "Reducing the environmental sensitivity of yellow fluorescent protein.
+RT   Mechanism and applications.";
+RL   J. Biol. Chem. 276:29188-29194(2001).
+RN   [33] {ECO:0000244|PDB:1MYW}
+RP   X-RAY CRYSTALLOGRAPHY (2.20 ANGSTROMS) OF 2-238 OF VENUS, AND MUTAGENESIS
+RP   OF PHE-46; PHE-64; SER-65; VAL-68; SER-72; MET-153; VAL-163; SER-175 AND
+RP   THR-203.
+RX   PubMed=12370172; DOI=10.1074/jbc.m209524200;
+RA   Rekas A., Alattia J.R., Nagai T., Miyawaki A., Ikura M.;
+RT   "Crystal structure of venus, a yellow fluorescent protein with improved
+RT   maturation and reduced environmental sensitivity.";
+RL   J. Biol. Chem. 277:50573-50578(2002).
+RN   [34] {ECO:0000244|PDB:2Q57}
+RP   X-RAY CRYSTALLOGRAPHY (2.00 ANGSTROMS), MUTAGENESIS OF 65-SER-TYR-66,
+RP   BIOPHYSICOCHEMICAL PROPERTIES, AND BIOTECHNOLOGY.
+RX   PubMed=17685554; DOI=10.1021/bi602664c;
+RA   Malo G.D., Pouwels L.J., Wang M., Weichsel A., Montfort W.R., Rizzo M.A.,
+RA   Piston D.W., Wachter R.M.;
+RT   "X-ray structure of Cerulean GFP: a tryptophan-based chromophore useful for
+RT   fluorescence lifetime imaging.";
+RL   Biochemistry 46:9865-9873(2007).
+CC   -!- FUNCTION: Energy-transfer acceptor. Its role is to transduce the blue
+CC       chemiluminescence of the protein aequorin into green fluorescent light
+CC       by energy transfer. Fluoresces in vivo upon receiving energy from the
+CC       Ca(2+)-activated photoprotein aequorin.
+CC   -!- BIOPHYSICOCHEMICAL PROPERTIES:
+CC       Absorption:
+CC         Abs(max)=395 nm;
+CC         Note=Exhibits a smaller absorbance peak at 470 nm. The fluorescence
+CC         emission spectrum peaks at 507-510 nm with a shoulder at 545 nm
+CC         (PubMed:8137953, PubMed:9154981). The exact value of the emission
+CC         maximum depends on the environment of the chromophore
+CC         (PubMed:10220315). As a consequence, mutant versions have been
+CC         designed that have substantially shifted emission spectra, including
+CC         yellow-emission variants (YFP), blue and cerulean fluorescing
+CC         proteins (PubMed:9145105, PubMed:9782051, PubMed:17685554).
+CC         {ECO:0000269|PubMed:10220315, ECO:0000269|PubMed:17685554,
+CC         ECO:0000269|PubMed:8137953, ECO:0000269|PubMed:9145105,
+CC         ECO:0000269|PubMed:9154981, ECO:0000269|PubMed:9782051};
+CC   -!- SUBUNIT: Monomer. {ECO:0000269|PubMed:9782051}.
+CC   -!- TISSUE SPECIFICITY: Photocytes.
+CC   -!- PTM: Contains a chromophore consisting of modified amino acid residues.
+CC       The chromophore is formed by autocatalytic backbone condensation
+CC       between Ser-65 and Gly-67, and oxidation of Tyr-66 to
+CC       didehydrotyrosine. Maturation of the chromophore requires nothing other
+CC       than molecular oxygen. {ECO:0000269|PubMed:8448132}.
+CC   -!- BIOTECHNOLOGY: Green fluorescent protein has been engineered to produce
+CC       a vast number of variously colored mutants, fusion proteins, and
+CC       biosensors. Green fluorescent protein can be mutated to emit at
+CC       different wavelengths such as blue for BFP (when Tyr-66 is replaced by
+CC       His), cyan for CFP (when Tyr-66 is replaced by Trp), and yellow for YFP
+CC       (when THR-203 is replaced by Tyr). Further generation of mutants led to
+CC       more stable proteins (at 37 degrees Celsius for example) with brighter
+CC       fluorescence and longer fluorescence lifetimes. Fluorescent proteins
+CC       and their mutated allelic forms have become a useful and ubiquitous
+CC       tool for making chimeric proteins, where they function as a fluorescent
+CC       protein tag. Typically they tolerate N- and C-terminal fusion to a
+CC       broad variety of proteins. They have been expressed in most known cell
+CC       types and are used as a noninvasive fluorescent marker in living cells
+CC       and organisms. They enable a wide range of applications where they have
+CC       functioned as a cell lineage tracer, reporter of gene expression, or as
+CC       a measure of protein-protein interactions (PubMed:17685514,
+CC       PubMed:17685554, PubMed:8578587, PubMed:8707053, PubMed:9145105,
+CC       PubMed:9154981, PubMed:9759496, PubMed:9782051). Can also be used as a
+CC       molecular thermometer, allowing accurate temperature measurements in
+CC       fluids. The measurement process relies on the detection of the blinking
+CC       of GFP using fluorescence correlation spectroscopy (PubMed:17685514).
+CC       {ECO:0000269|PubMed:17685514, ECO:0000269|PubMed:17685554,
+CC       ECO:0000269|PubMed:8578587, ECO:0000269|PubMed:8707053,
+CC       ECO:0000269|PubMed:9145105, ECO:0000269|PubMed:9154981,
+CC       ECO:0000269|PubMed:9759496, ECO:0000269|PubMed:9782051}.
+CC   -!- SIMILARITY: Belongs to the GFP family. {ECO:0000305}.
+CC   -!- WEB RESOURCE: Name=Protein Spotlight; Note=The greenest of us all
+CC       - Issue 11 of June 2001;
+CC       URL="https://web.expasy.org/spotlight/back_issues/011";
+CC   -!- WEB RESOURCE: Name=Protein Spotlight; Note=Paint my thoughts - Issue
+CC       108 of August 2009;
+CC       URL="https://web.expasy.org/spotlight/back_issues/108";
+CC   -!- WEB RESOURCE: Name=Wikipedia; Note=Green fluorescent protein entry;
+CC       URL="https://en.wikipedia.org/wiki/Green_fluorescent_protein";
+CC   -!- WEB RESOURCE: Name=Protein Spotlight; Note=Paint my thoughts - Issue
+CC       108 of November 2007;
+CC       URL="https://web.expasy.org/spotlight/back_issues/108/";
+CC   ---------------------------------------------------------------------------
+CC   Copyrighted by the UniProt Consortium, see https://www.uniprot.org/terms
+CC   Distributed under the Creative Commons Attribution (CC BY 4.0) License
+CC   ---------------------------------------------------------------------------
+DR   EMBL; M62654; AAA27722.1; -; mRNA.
+DR   EMBL; M62653; AAA27721.1; -; mRNA.
+DR   EMBL; L29345; AAA58246.1; -; mRNA.
+DR   EMBL; X96418; CAA65278.1; -; mRNA.
+DR   EMBL; U73901; AAB18957.1; -; Genomic_DNA.
+DR   PIR; JS0692; JQ1514.
+DR   PDB; 1B9C; X-ray; 2.40 A; A/B/C/D=1-238.
+DR   PDB; 1BFP; X-ray; 2.10 A; A=1-238.
+DR   PDB; 1C4F; X-ray; 2.25 A; A=1-238.
+DR   PDB; 1CV7; X-ray; 2.50 A; A=1-228.
+DR   PDB; 1EMA; X-ray; 1.90 A; A=1-238.
+DR   PDB; 1EMB; X-ray; 2.13 A; A=1-238.
+DR   PDB; 1EMC; X-ray; 2.30 A; A/B/C/D=2-237.
+DR   PDB; 1EME; X-ray; 2.50 A; A=2-237.
+DR   PDB; 1EMF; X-ray; 2.40 A; A=2-238.
+DR   PDB; 1EMG; X-ray; 2.00 A; A=1-229.
+DR   PDB; 1EMK; X-ray; 2.10 A; A=2-237.
+DR   PDB; 1EML; X-ray; 2.30 A; A=2-237.
+DR   PDB; 1EMM; X-ray; 2.30 A; A=2-238.
+DR   PDB; 1F09; X-ray; 2.14 A; A=1-238.
+DR   PDB; 1F0B; X-ray; 2.10 A; A=1-238.
+DR   PDB; 1GFL; X-ray; 1.90 A; A/B=2-238.
+DR   PDB; 1H6R; X-ray; 1.50 A; A/B/C=1-238.
+DR   PDB; 1HCJ; X-ray; 1.80 A; A/B/C/D=1-238.
+DR   PDB; 1HUY; X-ray; 2.20 A; A=2-238.
+DR   PDB; 1JBY; X-ray; 1.80 A; A=1-238.
+DR   PDB; 1JBZ; X-ray; 1.50 A; A=1-238.
+DR   PDB; 1JC0; X-ray; 2.00 A; A/B/C=1-238.
+DR   PDB; 1JC1; X-ray; 1.90 A; A/B/C=1-238.
+DR   PDB; 1KP5; X-ray; 2.60 A; A/B=1-238.
+DR   PDB; 1KYP; X-ray; 1.35 A; A=2-238.
+DR   PDB; 1KYR; X-ray; 1.50 A; A=2-238.
+DR   PDB; 1KYS; X-ray; 1.44 A; A=2-238.
+DR   PDB; 1MYW; X-ray; 2.20 A; A=2-238.
+DR   PDB; 1Q4A; X-ray; 1.45 A; A=1-238.
+DR   PDB; 1Q4B; X-ray; 1.48 A; A=1-238.
+DR   PDB; 1Q4C; X-ray; 1.55 A; A=1-238.
+DR   PDB; 1Q4D; X-ray; 1.58 A; A=1-238.
+DR   PDB; 1Q4E; X-ray; 1.38 A; A=1-238.
+DR   PDB; 1Q73; X-ray; 1.60 A; A=1-238.
+DR   PDB; 1QXT; X-ray; 2.00 A; A=2-229.
+DR   PDB; 1QY3; X-ray; 2.00 A; A=1-229.
+DR   PDB; 1QYF; X-ray; 1.50 A; A=1-227.
+DR   PDB; 1QYO; X-ray; 1.80 A; A=1-238.
+DR   PDB; 1QYQ; X-ray; 1.80 A; A=2-238.
+DR   PDB; 1RM9; X-ray; 2.90 A; A=2-236.
+DR   PDB; 1RMM; X-ray; 1.90 A; A=2-227.
+DR   PDB; 1RMO; X-ray; 1.80 A; A=2-236.
+DR   PDB; 1RMP; X-ray; 3.00 A; A=2-229.
+DR   PDB; 1RRX; X-ray; 2.10 A; A=2-227.
+DR   PDB; 1S6Z; X-ray; 1.50 A; A=1-238.
+DR   PDB; 1W7S; X-ray; 1.85 A; A/B/C/D=1-238.
+DR   PDB; 1W7T; X-ray; 1.85 A; A/B/C/D=1-238.
+DR   PDB; 1W7U; X-ray; 1.85 A; A/B/C/D=1-238.
+DR   PDB; 1YFP; X-ray; 2.50 A; A/B=3-229.
+DR   PDB; 1YHG; X-ray; 2.50 A; A/B=2-238.
+DR   PDB; 1YHH; X-ray; 1.50 A; A=2-238.
+DR   PDB; 1YHI; X-ray; 1.90 A; A=2-238.
+DR   PDB; 1YJ2; X-ray; 1.50 A; A=2-238.
+DR   PDB; 1YJF; X-ray; 1.35 A; A=2-238.
+DR   PDB; 1Z1P; X-ray; 2.00 A; A=1-238.
+DR   PDB; 1Z1Q; X-ray; 1.50 A; A=1-238.
+DR   PDB; 2AH8; X-ray; 2.24 A; A/B=1-238.
+DR   PDB; 2AHA; X-ray; 1.98 A; A/B=1-238.
+DR   PDB; 2AWJ; X-ray; 1.60 A; A=2-229.
+DR   PDB; 2AWK; X-ray; 1.15 A; A=1-229.
+DR   PDB; 2AWL; X-ray; 1.85 A; A=1-229.
+DR   PDB; 2AWM; X-ray; 1.70 A; A=1-229.
+DR   PDB; 2B3P; X-ray; 1.40 A; A=1-238.
+DR   PDB; 2B3Q; X-ray; 2.30 A; A/B/C/D=1-238.
+DR   PDB; 2DUE; X-ray; 1.24 A; A=1-238.
+DR   PDB; 2DUF; X-ray; 1.50 A; A=1-238.
+DR   PDB; 2DUG; X-ray; 1.40 A; A=1-238.
+DR   PDB; 2DUH; X-ray; 1.20 A; A=1-238.
+DR   PDB; 2DUI; X-ray; 1.36 A; A=1-238.
+DR   PDB; 2EMD; X-ray; 2.00 A; A=1-238.
+DR   PDB; 2EMN; X-ray; 2.30 A; A=1-238.
+DR   PDB; 2EMO; X-ray; 2.60 A; A=1-238.
+DR   PDB; 2FWQ; X-ray; 1.40 A; A=2-238.
+DR   PDB; 2FZU; X-ray; 1.25 A; A=2-238.
+DR   PDB; 2G16; X-ray; 2.00 A; A=2-64, B=67-238.
+DR   PDB; 2G2S; X-ray; 1.20 A; A=2-63, B=66-238.
+DR   PDB; 2G3D; X-ray; 1.35 A; A=2-63, B=66-238.
+DR   PDB; 2G5Z; X-ray; 1.80 A; A=2-65, B=66-238.
+DR   PDB; 2G6E; X-ray; 1.30 A; A=2-238.
+DR   PDB; 2H6V; X-ray; 1.47 A; A=2-238.
+DR   PDB; 2H9W; X-ray; 1.82 A; A=2-237.
+DR   PDB; 2HCG; X-ray; 1.35 A; A=2-238.
+DR   PDB; 2HFC; X-ray; 1.20 A; A=2-238.
+DR   PDB; 2HGD; X-ray; 1.60 A; A=2-238.
+DR   PDB; 2HGY; X-ray; 2.05 A; A=2-238.
+DR   PDB; 2HJO; X-ray; 1.25 A; A=1-238.
+DR   PDB; 2HQZ; X-ray; 1.20 A; A=1-238.
+DR   PDB; 2HRS; X-ray; 1.40 A; A=1-238.
+DR   PDB; 2JAD; X-ray; 2.70 A; A=1-238.
+DR   PDB; 2O24; X-ray; 1.45 A; A=2-238.
+DR   PDB; 2O29; X-ray; 1.80 A; A=2-238.
+DR   PDB; 2O2B; X-ray; 1.94 A; A=2-238.
+DR   PDB; 2OKW; X-ray; 1.90 A; A/B/C/D/E/F=1-238.
+DR   PDB; 2OKY; X-ray; 2.40 A; A/B=1-238.
+DR   PDB; 2Q57; X-ray; 2.00 A; A=1-238.
+DR   PDB; 2Q6P; X-ray; 2.10 A; A=1-238.
+DR   PDB; 2QRF; X-ray; 1.50 A; A=1-230.
+DR   PDB; 2QT2; X-ray; 1.31 A; A=1-238.
+DR   PDB; 2QU1; X-ray; 1.70 A; A=1-238.
+DR   PDB; 2QZ0; X-ray; 1.20 A; A=2-229.
+DR   PDB; 2WSN; X-ray; 1.37 A; A=2-238.
+DR   PDB; 2WSO; X-ray; 1.15 A; A=2-238.
+DR   PDB; 2WUR; X-ray; 0.90 A; A=1-237.
+DR   PDB; 2Y0G; X-ray; 1.50 A; A=2-238.
+DR   PDB; 2YDZ; X-ray; 1.59 A; A=2-238.
+DR   PDB; 2YE0; X-ray; 1.47 A; A=2-238.
+DR   PDB; 2YE1; X-ray; 1.63 A; A=2-238.
+DR   PDB; 2YFP; X-ray; 2.60 A; A=1-238.
+DR   PDB; 3AI4; X-ray; 1.60 A; A=1-230.
+DR   PDB; 3CB9; X-ray; 1.31 A; A=2-238.
+DR   PDB; 3CBE; X-ray; 1.49 A; A=2-238.
+DR   PDB; 3CD1; X-ray; 1.31 A; A=2-238.
+DR   PDB; 3CD9; X-ray; 1.50 A; A=2-238.
+DR   PDB; 3DPW; X-ray; 1.59 A; A=2-238.
+DR   PDB; 3DPX; X-ray; 1.50 A; A=2-238.
+DR   PDB; 3DPZ; X-ray; 1.70 A; A=2-238.
+DR   PDB; 3DQ1; X-ray; 1.70 A; A=2-238.
+DR   PDB; 3DQ2; X-ray; 1.60 A; A=2-238.
+DR   PDB; 3DQ3; X-ray; 1.70 A; A=2-238.
+DR   PDB; 3DQ4; X-ray; 1.47 A; A=2-238.
+DR   PDB; 3DQ5; X-ray; 1.50 A; A=2-238.
+DR   PDB; 3DQ6; X-ray; 1.60 A; A=2-238.
+DR   PDB; 3DQ7; X-ray; 1.23 A; A=2-238.
+DR   PDB; 3DQ8; X-ray; 1.51 A; A=2-238.
+DR   PDB; 3DQ9; X-ray; 1.40 A; A=2-238.
+DR   PDB; 3DQA; X-ray; 1.44 A; A=2-238.
+DR   PDB; 3DQC; X-ray; 1.49 A; A=2-238.
+DR   PDB; 3DQD; X-ray; 1.40 A; A=2-238.
+DR   PDB; 3DQE; X-ray; 1.43 A; A=2-238.
+DR   PDB; 3DQF; X-ray; 1.46 A; A=2-238.
+DR   PDB; 3DQH; X-ray; 1.45 A; A=2-238.
+DR   PDB; 3DQI; X-ray; 1.42 A; A=2-238.
+DR   PDB; 3DQJ; X-ray; 1.51 A; A=2-238.
+DR   PDB; 3DQK; X-ray; 1.40 A; A=2-238.
+DR   PDB; 3DQL; X-ray; 1.47 A; A=2-238.
+DR   PDB; 3DQM; X-ray; 1.44 A; A=2-238.
+DR   PDB; 3DQN; X-ray; 1.44 A; A=2-238.
+DR   PDB; 3DQO; X-ray; 1.50 A; A=2-238.
+DR   PDB; 3DQU; X-ray; 1.42 A; A=2-238.
+DR   PDB; 3ED8; X-ray; 2.70 A; A/B/C/D/E=2-238.
+DR   PDB; 3EK4; X-ray; 2.65 A; A=2-238.
+DR   PDB; 3EK7; X-ray; 1.85 A; A=2-238.
+DR   PDB; 3EK8; X-ray; 2.80 A; A=2-238.
+DR   PDB; 3EKH; X-ray; 2.00 A; A=2-238.
+DR   PDB; 3EKJ; X-ray; 2.80 A; A=2-238.
+DR   PDB; 3EVP; X-ray; 1.45 A; A=2-144.
+DR   PDB; 3EVR; X-ray; 2.00 A; A=2-144.
+DR   PDB; 3EVU; X-ray; 1.75 A; A=2-144.
+DR   PDB; 3EVV; X-ray; 2.60 A; A=2-238.
+DR   PDB; 3G9A; X-ray; 1.61 A; A=1-238.
+DR   PDB; 3GEX; X-ray; 1.60 A; A=1-238.
+DR   PDB; 3GJ1; X-ray; 1.80 A; A/B/C/D=1-230.
+DR   PDB; 3GJ2; X-ray; 1.90 A; A/B/C/D=1-230.
+DR   PDB; 3I19; X-ray; 1.36 A; A=1-238.
+DR   PDB; 3K1K; X-ray; 2.15 A; A/B=1-238.
+DR   PDB; 3LA1; X-ray; 1.29 A; A=1-238.
+DR   PDB; 3O77; X-ray; 2.35 A; A=2-238.
+DR   PDB; 3O78; X-ray; 2.60 A; A/B=2-237.
+DR   PDB; 3OGO; X-ray; 2.80 A; A/B/C/D=1-238.
+DR   PDB; 3OSQ; X-ray; 1.90 A; A=2-238.
+DR   PDB; 3OSR; X-ray; 2.00 A; A/B=2-238.
+DR   PDB; 3P28; X-ray; 1.80 A; A=3-229.
+DR   PDB; 3SG2; X-ray; 2.00 A; A=2-238.
+DR   PDB; 3SG3; X-ray; 2.10 A; A=2-238.
+DR   PDB; 3SG4; X-ray; 2.40 A; A=2-238.
+DR   PDB; 3SG5; X-ray; 1.90 A; A=2-238.
+DR   PDB; 3SG6; X-ray; 1.70 A; A=2-238.
+DR   PDB; 3SG7; X-ray; 1.90 A; A=2-238.
+DR   PDB; 3SRY; X-ray; 1.16 A; A=2-238.
+DR   PDB; 3SS0; X-ray; 1.49 A; A=2-238.
+DR   PDB; 3SSH; X-ray; 1.28 A; A=2-238.
+DR   PDB; 3SSK; X-ray; 1.36 A; A=2-238.
+DR   PDB; 3SSL; X-ray; 1.45 A; A=2-238.
+DR   PDB; 3SSP; X-ray; 1.63 A; A=2-238.
+DR   PDB; 3SST; X-ray; 1.40 A; A=2-238.
+DR   PDB; 3SSV; X-ray; 1.86 A; A=2-238.
+DR   PDB; 3SSY; X-ray; 1.77 A; A=2-238.
+DR   PDB; 3ST0; X-ray; 1.19 A; A=2-238.
+DR   PDB; 3SV5; X-ray; 1.53 A; A=2-238.
+DR   PDB; 3SVB; X-ray; 1.30 A; A=2-238.
+DR   PDB; 3SVC; X-ray; 1.31 A; A=2-238.
+DR   PDB; 3SVD; X-ray; 1.78 A; A=2-238.
+DR   PDB; 3SVE; X-ray; 1.49 A; A=2-238.
+DR   PDB; 3U8P; X-ray; 2.75 A; A/B/C=2-238.
+DR   PDB; 3UFZ; X-ray; 1.85 A; A=2-229.
+DR   PDB; 3UG0; X-ray; 2.09 A; A=2-229.
+DR   PDB; 3V3D; X-ray; 1.95 A; A=2-238.
+DR   PDB; 3VHT; X-ray; 2.40 A; A=1-230.
+DR   PDB; 3W1C; X-ray; 1.30 A; A=2-238.
+DR   PDB; 3W1D; X-ray; 1.50 A; A=2-238.
+DR   PDB; 3WLC; X-ray; 2.49 A; A=2-238.
+DR   PDB; 3WLD; X-ray; 2.70 A; A=2-144.
+DR   PDB; 3ZTF; X-ray; 1.31 A; A=2-238.
+DR   PDB; 4ANJ; X-ray; 2.60 A; A=1-238.
+DR   PDB; 4AR7; X-ray; 1.23 A; A=2-238.
+DR   PDB; 4AS8; X-ray; 1.02 A; A=2-238.
+DR   PDB; 4B5Y; X-ray; 1.45 A; A=2-238.
+DR   PDB; 4BDU; X-ray; 3.00 A; A/B/C/D=1-230.
+DR   PDB; 4EN1; X-ray; 1.62 A; A/B=2-238.
+DR   PDB; 4EUL; X-ray; 1.35 A; A=2-238.
+DR   PDB; 4GES; X-ray; 1.23 A; B=1-238.
+DR   PDB; 4GF6; X-ray; 1.10 A; B=1-237.
+DR   PDB; 4H47; X-ray; 1.90 A; A=1-238.
+DR   PDB; 4H48; X-ray; 1.45 A; A=1-238.
+DR   PDB; 4IK1; X-ray; 2.00 A; A=2-144.
+DR   PDB; 4IK3; X-ray; 2.01 A; A=149-238, A=2-142.
+DR   PDB; 4IK4; X-ray; 2.01 A; A=2-142, A=149-238.
+DR   PDB; 4IK5; X-ray; 2.50 A; A=2-142, A=149-238.
+DR   PDB; 4IK8; X-ray; 1.55 A; A=2-144, A=149-238.
+DR   PDB; 4IK9; X-ray; 1.80 A; A=2-144.
+DR   PDB; 4J88; X-ray; 2.08 A; A/B=2-238.
+DR   PDB; 4J89; X-ray; 2.10 A; A/B=2-238.
+DR   PDB; 4J8A; X-ray; 1.26 A; A=2-238.
+DR   PDB; 4JFG; X-ray; 3.00 A; A/B/C/D/E/F/G/H=1-238.
+DR   PDB; 4JRB; X-ray; 2.41 A; A=1-229.
+DR   PDB; 4KA9; X-ray; 1.58 A; A=5-238.
+DR   PDB; 4KAG; X-ray; 1.12 A; A=1-238.
+DR   PDB; 4KEX; X-ray; 1.60 A; A=1-238.
+DR   PDB; 4KF5; X-ray; 2.60 A; A/B=1-196.
+DR   PDB; 4KW4; X-ray; 1.75 A; A=2-238.
+DR   PDB; 4KW8; X-ray; 2.46 A; A=2-238.
+DR   PDB; 4KW9; X-ray; 1.80 A; A=2-238.
+DR   PDB; 4L12; X-ray; 1.78 A; A=2-230.
+DR   PDB; 4L13; X-ray; 1.66 A; A=2-230.
+DR   PDB; 4L1I; X-ray; 1.20 A; A=2-230.
+DR   PDB; 4LQT; X-ray; 1.10 A; A=2-238.
+DR   PDB; 4LQU; X-ray; 1.60 A; A/B/C/D=2-238.
+DR   PDB; 4LW5; X-ray; 2.55 A; A/B/C/D/E=2-238.
+DR   PDB; 4N3D; X-ray; 1.34 A; A/B=1-230.
+DR   PDB; 4NDJ; X-ray; 1.85 A; A=2-238.
+DR   PDB; 4NDK; X-ray; 2.30 A; A/B=2-238.
+DR   PDB; 4OGS; X-ray; 2.21 A; A/B=1-238.
+DR   PDB; 4ORN; X-ray; 1.71 A; A/B=2-238.
+DR   PDB; 4P1Q; X-ray; 1.50 A; A=3-231.
+DR   PDB; 4P7H; X-ray; 3.20 A; A/B=5-238.
+DR   PDB; 4PA0; X-ray; 2.25 A; A/B=5-234.
+DR   PDB; 4PFE; X-ray; 2.60 A; A/B=2-229.
+DR   PDB; 4U2V; X-ray; 2.30 A; A/B/C/D=1-230.
+DR   PDB; 4XBI; X-ray; 2.01 A; A/B=2-230.
+DR   PDB; 4XGY; X-ray; 1.49 A; A=2-238.
+DR   PDB; 4XL5; X-ray; 2.00 A; A=2-238.
+DR   PDB; 4XOV; X-ray; 1.20 A; A=2-238.
+DR   PDB; 4XOW; X-ray; 1.25 A; A=2-238.
+DR   PDB; 4XVP; X-ray; 3.40 A; A/B/C=2-238.
+DR   PDB; 4Z4K; X-ray; 2.80 A; A/B=1-230.
+DR   PDB; 4Z4M; X-ray; 2.15 A; A/B=1-230.
+DR   PDB; 4ZF3; X-ray; 1.90 A; A/B=51-236.
+DR   PDB; 4ZF4; X-ray; 1.82 A; A/B=4-237.
+DR   PDB; 4ZF5; X-ray; 1.70 A; A/B=4-237.
+DR   PDB; 5AQB; X-ray; 1.37 A; B=2-231.
+DR   PDB; 5B61; X-ray; 3.12 A; A/B/C/D/E/F=1-238.
+DR   PDB; 5DPG; X-ray; 1.85 A; A=2-238.
+DR   PDB; 5DPH; X-ray; 1.42 A; A/B=2-238.
+DR   PDB; 5DPI; X-ray; 2.54 A; A/B/C/D/E/F=2-238.
+DR   PDB; 5DPJ; X-ray; 2.50 A; A/B/C/D=2-238.
+DR   PDB; 5DQB; X-ray; 1.25 A; A=2-238.
+DR   PDB; 5DQM; X-ray; 1.30 A; A=2-238.
+DR   PDB; 5DRF; X-ray; 1.14 A; A=2-238.
+DR   PDB; 5DRG; X-ray; 1.14 A; A=2-238.
+DR   PDB; 5DTX; X-ray; 1.45 A; A=1-63, A=65-238.
+DR   PDB; 5DTY; X-ray; 1.50 A; A=1-63, A=65-238.
+DR   PDB; 5DTZ; X-ray; 1.50 A; A/B/C/D=2-238.
+DR   PDB; 5DU0; X-ray; 2.35 A; A/B/C/D=2-238.
+DR   PDB; 5EHU; X-ray; 1.45 A; A/B=2-238.
+DR   PDB; 5F9G; X-ray; 2.77 A; A=2-144.
+DR   PDB; 5FGU; X-ray; 1.90 A; A=1-229.
+DR   PDB; 5HBD; X-ray; 1.65 A; A=1-238.
+DR   PDB; 5HGE; X-ray; 1.86 A; A=1-238.
+DR   PDB; 5HW9; X-ray; 3.00 A; A=1-238.
+DR   PDB; 5HZO; X-ray; 2.49 A; A/B=1-235.
+DR   PDB; 5J2O; X-ray; 1.50 A; A=2-238.
+DR   PDB; 5J3N; X-ray; 2.45 A; A/B=2-238.
+DR   PDB; 5JZK; X-ray; 1.90 A; A/B=3-238.
+DR   PDB; 5JZL; X-ray; 1.80 A; A/B=3-238.
+DR   PDB; 5KTG; X-ray; 2.80 A; A/B=1-230.
+DR   PDB; 5LEL; X-ray; 3.10 A; C/F/I=2-238.
+DR   PDB; 5LEM; X-ray; 2.98 A; C=2-238.
+DR   PDB; 5MA3; X-ray; 1.70 A; B=2-238.
+DR   PDB; 5MA4; X-ray; 1.40 A; B=2-238.
+DR   PDB; 5MA5; X-ray; 1.85 A; B/D=2-238.
+DR   PDB; 5MA6; X-ray; 2.30 A; A=2-238.
+DR   PDB; 5MA8; X-ray; 2.35 A; B/D=2-238.
+DR   PDB; 5MA9; X-ray; 1.57 A; B/D/F/H=2-238.
+DR   PDB; 5MAD; X-ray; 1.53 A; B/D/F/H=2-238.
+DR   PDB; 5MAK; X-ray; 2.50 A; B/D=2-238.
+DR   PDB; 5MSE; X-ray; 1.66 A; A/B/C/D=2-238.
+DR   PDB; 5N9O; X-ray; 1.53 A; A=2-238.
+DR   PDB; 5NHN; X-ray; 1.96 A; A/B=3-231.
+DR   PDB; 5NI3; X-ray; 1.28 A; A=3-229, B/C/D=3-233.
+DR   PDB; 5O89; X-ray; 1.70 A; A=2-238.
+DR   PDB; 5O8B; X-ray; 1.70 A; A=2-238.
+DR   PDB; 5O8C; X-ray; 1.70 A; A=2-238.
+DR   PDB; 5OX8; X-ray; 1.29 A; A=2-238.
+DR   PDB; 5OX9; X-ray; 1.56 A; A=2-238.
+DR   PDB; 5OXA; X-ray; 1.16 A; A=2-238.
+DR   PDB; 5OXB; X-ray; 1.38 A; A=2-238.
+DR   PDB; 5OXC; X-ray; 1.02 A; A=1-238.
+DR   PDB; 5T3I; X-ray; 1.60 A; A=2-238.
+DR   PDB; 5WJ2; X-ray; 2.41 A; A/B=2-238.
+DR   PDB; 5WJ3; X-ray; 1.35 A; A/B=3-238.
+DR   PDB; 5WJ4; X-ray; 1.63 A; A/B=3-238.
+DR   PDB; 6AA2; X-ray; 2.30 A; A/B/C=2-238.
+DR   PDB; 6AA6; X-ray; 2.39 A; A/B=2-238.
+DR   PDB; 6AS9; X-ray; 1.75 A; A=1-238.
+DR   PDB; 6B7R; X-ray; 1.73 A; A/B=2-214.
+DR   PDB; 6B7T; X-ray; 1.91 A; A/B=3-194, A/B=214-237.
+DR   PDB; 6B9C; X-ray; 1.70 A; A=3-238.
+DR   PDB; 6DQ0; X-ray; 2.05 A; A/B=1-238.
+DR   PDB; 6DQ1; X-ray; 1.60 A; A=1-238.
+DR   PDB; 6EFR; X-ray; 2.40 A; A=1-145.
+DR   PDB; 6FWW; X-ray; 1.13 A; A=2-238.
+DR   PDB; 6GEL; X-ray; 2.51 A; A/B=2-227.
+DR   PDB; 6GEZ; X-ray; 2.47 A; A/B=2-227.
+DR   PDB; 6GO8; X-ray; 1.65 A; A=1-238.
+DR   PDB; 6GO9; X-ray; 1.67 A; A=1-238.
+DR   PDB; 6GQG; X-ray; 1.79 A; A=1-238.
+DR   PDB; 6GQH; X-ray; 2.40 A; A=1-238.
+DR   PDB; 6GRM; X-ray; 2.30 A; A=1-238.
+DR   PDB; 6IR6; X-ray; 1.64 A; A=2-238.
+DR   PDB; 6IR7; X-ray; 1.28 A; A=2-237.
+DR   PDB; 6ITC; EM; 3.45 A; G=1-238.
+DR   PDB; 6JGH; X-ray; 0.94 A; A=2-231.
+DR   PDB; 6JGI; X-ray; 0.85 A; A=2-231.
+DR   PDB; 6JGJ; X-ray; 0.78 A; A=2-231.
+DR   PDB; 6MB2; EM; 5.00 A; a/b/c/d/e/f/g/h/i/j/k/l/m/n/o=2-229.
+DR   PDB; 6MDR; EM; 3.47 A; b/d/f/h/j/l/n/p=1-232.
+DR   PDB; 6MKS; EM; 3.40 A; A/B/C/D/E/F/G/H/I/J/K/L/M/N/O/P/Q/R/S/T/U/V/W/X/Y/Z/a/b/c/d=1-230.
+DR   PDB; 6MWQ; EM; 3.00 A; G/H/I/J=2-230.
+DR   PDB; 6OFK; X-ray; 1.15 A; A/B=49-237.
+DR   PDB; 6OFL; X-ray; 1.25 A; A/B=49-237.
+DR   PDB; 6OFM; X-ray; 1.48 A; A/B=49-237.
+DR   PDB; 6OFN; X-ray; 1.65 A; A/B=49-237.
+DR   PDB; 6OFO; X-ray; 2.60 A; A/B=2-194.
+DR   PDB; 6QQ8; X-ray; 1.46 A; A=2-238.
+DR   PDB; 6QQ9; X-ray; 1.82 A; A=2-238.
+DR   PDB; 6QQA; X-ray; 1.66 A; A=2-238.
+DR   PDB; 6QQB; X-ray; 2.45 A; A=2-238.
+DR   PDBsum; 1B9C; -.
+DR   PDBsum; 1BFP; -.
+DR   PDBsum; 1C4F; -.
+DR   PDBsum; 1CV7; -.
+DR   PDBsum; 1EMA; -.
+DR   PDBsum; 1EMB; -.
+DR   PDBsum; 1EMC; -.
+DR   PDBsum; 1EME; -.
+DR   PDBsum; 1EMF; -.
+DR   PDBsum; 1EMG; -.
+DR   PDBsum; 1EMK; -.
+DR   PDBsum; 1EML; -.
+DR   PDBsum; 1EMM; -.
+DR   PDBsum; 1F09; -.
+DR   PDBsum; 1F0B; -.
+DR   PDBsum; 1GFL; -.
+DR   PDBsum; 1H6R; -.
+DR   PDBsum; 1HCJ; -.
+DR   PDBsum; 1HUY; -.
+DR   PDBsum; 1JBY; -.
+DR   PDBsum; 1JBZ; -.
+DR   PDBsum; 1JC0; -.
+DR   PDBsum; 1JC1; -.
+DR   PDBsum; 1KP5; -.
+DR   PDBsum; 1KYP; -.
+DR   PDBsum; 1KYR; -.
+DR   PDBsum; 1KYS; -.
+DR   PDBsum; 1MYW; -.
+DR   PDBsum; 1Q4A; -.
+DR   PDBsum; 1Q4B; -.
+DR   PDBsum; 1Q4C; -.
+DR   PDBsum; 1Q4D; -.
+DR   PDBsum; 1Q4E; -.
+DR   PDBsum; 1Q73; -.
+DR   PDBsum; 1QXT; -.
+DR   PDBsum; 1QY3; -.
+DR   PDBsum; 1QYF; -.
+DR   PDBsum; 1QYO; -.
+DR   PDBsum; 1QYQ; -.
+DR   PDBsum; 1RM9; -.
+DR   PDBsum; 1RMM; -.
+DR   PDBsum; 1RMO; -.
+DR   PDBsum; 1RMP; -.
+DR   PDBsum; 1RRX; -.
+DR   PDBsum; 1S6Z; -.
+DR   PDBsum; 1W7S; -.
+DR   PDBsum; 1W7T; -.
+DR   PDBsum; 1W7U; -.
+DR   PDBsum; 1YFP; -.
+DR   PDBsum; 1YHG; -.
+DR   PDBsum; 1YHH; -.
+DR   PDBsum; 1YHI; -.
+DR   PDBsum; 1YJ2; -.
+DR   PDBsum; 1YJF; -.
+DR   PDBsum; 1Z1P; -.
+DR   PDBsum; 1Z1Q; -.
+DR   PDBsum; 2AH8; -.
+DR   PDBsum; 2AHA; -.
+DR   PDBsum; 2AWJ; -.
+DR   PDBsum; 2AWK; -.
+DR   PDBsum; 2AWL; -.
+DR   PDBsum; 2AWM; -.
+DR   PDBsum; 2B3P; -.
+DR   PDBsum; 2B3Q; -.
+DR   PDBsum; 2DUE; -.
+DR   PDBsum; 2DUF; -.
+DR   PDBsum; 2DUG; -.
+DR   PDBsum; 2DUH; -.
+DR   PDBsum; 2DUI; -.
+DR   PDBsum; 2EMD; -.
+DR   PDBsum; 2EMN; -.
+DR   PDBsum; 2EMO; -.
+DR   PDBsum; 2FWQ; -.
+DR   PDBsum; 2FZU; -.
+DR   PDBsum; 2G16; -.
+DR   PDBsum; 2G2S; -.
+DR   PDBsum; 2G3D; -.
+DR   PDBsum; 2G5Z; -.
+DR   PDBsum; 2G6E; -.
+DR   PDBsum; 2H6V; -.
+DR   PDBsum; 2H9W; -.
+DR   PDBsum; 2HCG; -.
+DR   PDBsum; 2HFC; -.
+DR   PDBsum; 2HGD; -.
+DR   PDBsum; 2HGY; -.
+DR   PDBsum; 2HJO; -.
+DR   PDBsum; 2HQZ; -.
+DR   PDBsum; 2HRS; -.
+DR   PDBsum; 2JAD; -.
+DR   PDBsum; 2O24; -.
+DR   PDBsum; 2O29; -.
+DR   PDBsum; 2O2B; -.
+DR   PDBsum; 2OKW; -.
+DR   PDBsum; 2OKY; -.
+DR   PDBsum; 2Q57; -.
+DR   PDBsum; 2Q6P; -.
+DR   PDBsum; 2QRF; -.
+DR   PDBsum; 2QT2; -.
+DR   PDBsum; 2QU1; -.
+DR   PDBsum; 2QZ0; -.
+DR   PDBsum; 2WSN; -.
+DR   PDBsum; 2WSO; -.
+DR   PDBsum; 2WUR; -.
+DR   PDBsum; 2Y0G; -.
+DR   PDBsum; 2YDZ; -.
+DR   PDBsum; 2YE0; -.
+DR   PDBsum; 2YE1; -.
+DR   PDBsum; 2YFP; -.
+DR   PDBsum; 3AI4; -.
+DR   PDBsum; 3CB9; -.
+DR   PDBsum; 3CBE; -.
+DR   PDBsum; 3CD1; -.
+DR   PDBsum; 3CD9; -.
+DR   PDBsum; 3DPW; -.
+DR   PDBsum; 3DPX; -.
+DR   PDBsum; 3DPZ; -.
+DR   PDBsum; 3DQ1; -.
+DR   PDBsum; 3DQ2; -.
+DR   PDBsum; 3DQ3; -.
+DR   PDBsum; 3DQ4; -.
+DR   PDBsum; 3DQ5; -.
+DR   PDBsum; 3DQ6; -.
+DR   PDBsum; 3DQ7; -.
+DR   PDBsum; 3DQ8; -.
+DR   PDBsum; 3DQ9; -.
+DR   PDBsum; 3DQA; -.
+DR   PDBsum; 3DQC; -.
+DR   PDBsum; 3DQD; -.
+DR   PDBsum; 3DQE; -.
+DR   PDBsum; 3DQF; -.
+DR   PDBsum; 3DQH; -.
+DR   PDBsum; 3DQI; -.
+DR   PDBsum; 3DQJ; -.
+DR   PDBsum; 3DQK; -.
+DR   PDBsum; 3DQL; -.
+DR   PDBsum; 3DQM; -.
+DR   PDBsum; 3DQN; -.
+DR   PDBsum; 3DQO; -.
+DR   PDBsum; 3DQU; -.
+DR   PDBsum; 3ED8; -.
+DR   PDBsum; 3EK4; -.
+DR   PDBsum; 3EK7; -.
+DR   PDBsum; 3EK8; -.
+DR   PDBsum; 3EKH; -.
+DR   PDBsum; 3EKJ; -.
+DR   PDBsum; 3EVP; -.
+DR   PDBsum; 3EVR; -.
+DR   PDBsum; 3EVU; -.
+DR   PDBsum; 3EVV; -.
+DR   PDBsum; 3G9A; -.
+DR   PDBsum; 3GEX; -.
+DR   PDBsum; 3GJ1; -.
+DR   PDBsum; 3GJ2; -.
+DR   PDBsum; 3I19; -.
+DR   PDBsum; 3K1K; -.
+DR   PDBsum; 3LA1; -.
+DR   PDBsum; 3O77; -.
+DR   PDBsum; 3O78; -.
+DR   PDBsum; 3OGO; -.
+DR   PDBsum; 3OSQ; -.
+DR   PDBsum; 3OSR; -.
+DR   PDBsum; 3P28; -.
+DR   PDBsum; 3SG2; -.
+DR   PDBsum; 3SG3; -.
+DR   PDBsum; 3SG4; -.
+DR   PDBsum; 3SG5; -.
+DR   PDBsum; 3SG6; -.
+DR   PDBsum; 3SG7; -.
+DR   PDBsum; 3SRY; -.
+DR   PDBsum; 3SS0; -.
+DR   PDBsum; 3SSH; -.
+DR   PDBsum; 3SSK; -.
+DR   PDBsum; 3SSL; -.
+DR   PDBsum; 3SSP; -.
+DR   PDBsum; 3SST; -.
+DR   PDBsum; 3SSV; -.
+DR   PDBsum; 3SSY; -.
+DR   PDBsum; 3ST0; -.
+DR   PDBsum; 3SV5; -.
+DR   PDBsum; 3SVB; -.
+DR   PDBsum; 3SVC; -.
+DR   PDBsum; 3SVD; -.
+DR   PDBsum; 3SVE; -.
+DR   PDBsum; 3U8P; -.
+DR   PDBsum; 3UFZ; -.
+DR   PDBsum; 3UG0; -.
+DR   PDBsum; 3V3D; -.
+DR   PDBsum; 3VHT; -.
+DR   PDBsum; 3W1C; -.
+DR   PDBsum; 3W1D; -.
+DR   PDBsum; 3WLC; -.
+DR   PDBsum; 3WLD; -.
+DR   PDBsum; 3ZTF; -.
+DR   PDBsum; 4ANJ; -.
+DR   PDBsum; 4AR7; -.
+DR   PDBsum; 4AS8; -.
+DR   PDBsum; 4B5Y; -.
+DR   PDBsum; 4BDU; -.
+DR   PDBsum; 4EN1; -.
+DR   PDBsum; 4EUL; -.
+DR   PDBsum; 4GES; -.
+DR   PDBsum; 4GF6; -.
+DR   PDBsum; 4H47; -.
+DR   PDBsum; 4H48; -.
+DR   PDBsum; 4IK1; -.
+DR   PDBsum; 4IK3; -.
+DR   PDBsum; 4IK4; -.
+DR   PDBsum; 4IK5; -.
+DR   PDBsum; 4IK8; -.
+DR   PDBsum; 4IK9; -.
+DR   PDBsum; 4J88; -.
+DR   PDBsum; 4J89; -.
+DR   PDBsum; 4J8A; -.
+DR   PDBsum; 4JFG; -.
+DR   PDBsum; 4JRB; -.
+DR   PDBsum; 4KA9; -.
+DR   PDBsum; 4KAG; -.
+DR   PDBsum; 4KEX; -.
+DR   PDBsum; 4KF5; -.
+DR   PDBsum; 4KW4; -.
+DR   PDBsum; 4KW8; -.
+DR   PDBsum; 4KW9; -.
+DR   PDBsum; 4L12; -.
+DR   PDBsum; 4L13; -.
+DR   PDBsum; 4L1I; -.
+DR   PDBsum; 4LQT; -.
+DR   PDBsum; 4LQU; -.
+DR   PDBsum; 4LW5; -.
+DR   PDBsum; 4N3D; -.
+DR   PDBsum; 4NDJ; -.
+DR   PDBsum; 4NDK; -.
+DR   PDBsum; 4OGS; -.
+DR   PDBsum; 4ORN; -.
+DR   PDBsum; 4P1Q; -.
+DR   PDBsum; 4P7H; -.
+DR   PDBsum; 4PA0; -.
+DR   PDBsum; 4PFE; -.
+DR   PDBsum; 4U2V; -.
+DR   PDBsum; 4XBI; -.
+DR   PDBsum; 4XGY; -.
+DR   PDBsum; 4XL5; -.
+DR   PDBsum; 4XOV; -.
+DR   PDBsum; 4XOW; -.
+DR   PDBsum; 4XVP; -.
+DR   PDBsum; 4Z4K; -.
+DR   PDBsum; 4Z4M; -.
+DR   PDBsum; 4ZF3; -.
+DR   PDBsum; 4ZF4; -.
+DR   PDBsum; 4ZF5; -.
+DR   PDBsum; 5AQB; -.
+DR   PDBsum; 5B61; -.
+DR   PDBsum; 5DPG; -.
+DR   PDBsum; 5DPH; -.
+DR   PDBsum; 5DPI; -.
+DR   PDBsum; 5DPJ; -.
+DR   PDBsum; 5DQB; -.
+DR   PDBsum; 5DQM; -.
+DR   PDBsum; 5DRF; -.
+DR   PDBsum; 5DRG; -.
+DR   PDBsum; 5DTX; -.
+DR   PDBsum; 5DTY; -.
+DR   PDBsum; 5DTZ; -.
+DR   PDBsum; 5DU0; -.
+DR   PDBsum; 5EHU; -.
+DR   PDBsum; 5F9G; -.
+DR   PDBsum; 5FGU; -.
+DR   PDBsum; 5HBD; -.
+DR   PDBsum; 5HGE; -.
+DR   PDBsum; 5HW9; -.
+DR   PDBsum; 5HZO; -.
+DR   PDBsum; 5J2O; -.
+DR   PDBsum; 5J3N; -.
+DR   PDBsum; 5JZK; -.
+DR   PDBsum; 5JZL; -.
+DR   PDBsum; 5KTG; -.
+DR   PDBsum; 5LEL; -.
+DR   PDBsum; 5LEM; -.
+DR   PDBsum; 5MA3; -.
+DR   PDBsum; 5MA4; -.
+DR   PDBsum; 5MA5; -.
+DR   PDBsum; 5MA6; -.
+DR   PDBsum; 5MA8; -.
+DR   PDBsum; 5MA9; -.
+DR   PDBsum; 5MAD; -.
+DR   PDBsum; 5MAK; -.
+DR   PDBsum; 5MSE; -.
+DR   PDBsum; 5N9O; -.
+DR   PDBsum; 5NHN; -.
+DR   PDBsum; 5NI3; -.
+DR   PDBsum; 5O89; -.
+DR   PDBsum; 5O8B; -.
+DR   PDBsum; 5O8C; -.
+DR   PDBsum; 5OX8; -.
+DR   PDBsum; 5OX9; -.
+DR   PDBsum; 5OXA; -.
+DR   PDBsum; 5OXB; -.
+DR   PDBsum; 5OXC; -.
+DR   PDBsum; 5T3I; -.
+DR   PDBsum; 5WJ2; -.
+DR   PDBsum; 5WJ3; -.
+DR   PDBsum; 5WJ4; -.
+DR   PDBsum; 6AA2; -.
+DR   PDBsum; 6AA6; -.
+DR   PDBsum; 6AS9; -.
+DR   PDBsum; 6B7R; -.
+DR   PDBsum; 6B7T; -.
+DR   PDBsum; 6B9C; -.
+DR   PDBsum; 6DQ0; -.
+DR   PDBsum; 6DQ1; -.
+DR   PDBsum; 6EFR; -.
+DR   PDBsum; 6FWW; -.
+DR   PDBsum; 6GEL; -.
+DR   PDBsum; 6GEZ; -.
+DR   PDBsum; 6GO8; -.
+DR   PDBsum; 6GO9; -.
+DR   PDBsum; 6GQG; -.
+DR   PDBsum; 6GQH; -.
+DR   PDBsum; 6GRM; -.
+DR   PDBsum; 6IR6; -.
+DR   PDBsum; 6IR7; -.
+DR   PDBsum; 6ITC; -.
+DR   PDBsum; 6JGH; -.
+DR   PDBsum; 6JGI; -.
+DR   PDBsum; 6JGJ; -.
+DR   PDBsum; 6MB2; -.
+DR   PDBsum; 6MDR; -.
+DR   PDBsum; 6MKS; -.
+DR   PDBsum; 6MWQ; -.
+DR   PDBsum; 6OFK; -.
+DR   PDBsum; 6OFL; -.
+DR   PDBsum; 6OFM; -.
+DR   PDBsum; 6OFN; -.
+DR   PDBsum; 6OFO; -.
+DR   PDBsum; 6QQ8; -.
+DR   PDBsum; 6QQ9; -.
+DR   PDBsum; 6QQA; -.
+DR   PDBsum; 6QQB; -.
+DR   SMR; P42212; -.
+DR   IntAct; P42212; 1.
+DR   PRIDE; P42212; -.
+DR   ABCD; P42212; -.
+DR   BioCyc; MetaCyc:MONOMER-20291; -.
+DR   EvolutionaryTrace; P42212; -.
+DR   GO; GO:0008218; P:bioluminescence; TAS:UniProtKB.
+DR   GO; GO:0006091; P:generation of precursor metabolites and energy; TAS:UniProtKB.
+DR   GO; GO:0018298; P:protein-chromophore linkage; IEA:UniProtKB-KW.
+DR   InterPro; IPR009017; GFP.
+DR   InterPro; IPR011584; GFP-related.
+DR   InterPro; IPR000786; Green_fluorescent_prot.
+DR   Pfam; PF01353; GFP; 1.
+DR   PRINTS; PR01229; GFLUORESCENT.
+DR   SUPFAM; SSF54511; SSF54511; 1.
+PE   1: Evidence at protein level;
+KW   3D-structure; Chromophore; Direct protein sequencing; Luminescence;
+KW   Photoprotein.
+FT   CHAIN           1..238
+FT                   /note="Green fluorescent protein"
+FT                   /id="PRO_0000192576"
+FT   MOD_RES         66
+FT                   /note="(Z)-2,3-didehydrotyrosine"
+FT                   /evidence="ECO:0000269|PubMed:8448132"
+FT   CROSSLNK        65..67
+FT                   /note="5-imidazolinone (Ser-Gly)"
+FT                   /evidence="ECO:0000269|PubMed:8448132"
+FT   VARIANT         100
+FT                   /note="F -> Y"
+FT                   /evidence="ECO:0000269|PubMed:1347277"
+FT   VARIANT         108
+FT                   /note="T -> S"
+FT                   /evidence="ECO:0000269|PubMed:1347277"
+FT   VARIANT         141
+FT                   /note="L -> M"
+FT                   /evidence="ECO:0000269|PubMed:1347277"
+FT   VARIANT         219
+FT                   /note="V -> I"
+FT                   /evidence="ECO:0000269|PubMed:1347277"
+FT   MUTAGEN         30
+FT                   /note="S->R: In mut1.28; shifts fluorescence lifetime from
+FT                   3.03 to 2.76 ns; when associated with H-145. In mut2.2;
+FT                   shifts fluorescence lifetime from 3.03 to 1.94 ns; when
+FT                   associated with H-69 and H-145. In mut3.3; shifts
+FT                   fluorescence lifetime from 3.03 to 1.88 ns; when associated
+FT                   with L-46; H-69 and H-145. In EBFP1.2; shifts the
+FT                   excitation and emission spectra to shorter wavelengths and
+FT                   increases quantum yields compared to BFP; when associated
+FT                   with N-39; H-66; A-72; T-105; F-145; V-171; S-198 and V-
+FT                   206. In EBFP2.0; shifts the excitation and emission spectra
+FT                   to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with N-39; H-66; A-72; T-
+FT                   105; V-128; F-145; I-150; V-155; V-171; S-198; V-206 and V-
+FT                   224."
+FT                   /evidence="ECO:0000269|PubMed:16201762,
+FT                   ECO:0000269|PubMed:22891786"
+FT   MUTAGEN         39
+FT                   /note="Y->N: In EBFP1.2; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with R-30; H-66; A-72; T-
+FT                   105; F-145; V-171; S-198 and V-206. In EBFP2.0; shifts the
+FT                   excitation and emission spectra to shorter wavelengths and
+FT                   increases quantum yields compared to BFP; when associated
+FT                   with R-30; H-66; A-72; T-105; V-128; F-145; I-150; V-155;
+FT                   V-171; S-198; V-206 and V-224."
+FT                   /evidence="ECO:0000269|PubMed:22891786"
+FT   MUTAGEN         46
+FT                   /note="F->L: In mut3.3; shifts fluorescence lifetime from
+FT                   3.03 to 1.88 ns; when associated with R-30; H-69 and H-145.
+FT                   In R10-3; matures to the red-emitting state with excitation
+FT                   and emission maxima at 555 and 585 nm, respectively; when
+FT                   associated with L-64; N-68; Q-162; A-163; V-167 and L-171.
+FT                   In Venus; leads to yellow fluorescence, improved maturation
+FT                   and reduced environmental sensitivity; when associated with
+FT                   L-64; G-65; L-68; A-72; T-153; A-163; G-175 and Y-203."
+FT                   /evidence="ECO:0000269|PubMed:12370172,
+FT                   ECO:0000269|PubMed:16201762, ECO:0000269|PubMed:18366185"
+FT   MUTAGEN         64
+FT                   /note="F->L: In EGFP; increases fluoresence at warmer
+FT                   temperatures such as 37 degrees Celsius; when associated
+FT                   with T-65. In EBFP; gives rise to variants with blue
+FT                   fluorescence; when associated with T-65 and H-66. In ECFP;
+FT                   leads to cyan fluorescence, folds faster and more
+FT                   efficiently at 37 degrees Celsius and has superior
+FT                   solubility and brightness; when associated with T-65; W-66;
+FT                   I-146; T-153 and A-163. In Cerulean; leads to improved
+FT                   quantum yield, a higher extinction coefficient and is 2.5-
+FT                   fold brighterH than ECFP; when associated with T-65; W-66;
+FT                   A-72; A-145; I-146; D-148; T-153 and A-163. In R10-3;
+FT                   matures to the red-emitting state with excitation and
+FT                   emission maxima at 555 and 585 nm, respectively; when
+FT                   associated with L-46; N-68; Q-162; A-163; V-167 and L-171.
+FT                   In GFPmut 1; red-shifts by about 100 nm the excitation
+FT                   maxima, permitting efficient excitation at 488 nm and
+FT                   increases fluorescence; when associated with T-65. In
+FT                   VisGreen; leads to brighter fluorescence; when associated
+FT                   with T-65; A-72; K-149 and T-167. In Venus; leads to yellow
+FT                   fluorescence, improved maturation and reduced environmental
+FT                   sensitivity; when associated with L-46; G-65; L-68; A-72;
+FT                   T-153; A-163; G-175 and Y-203."
+FT                   /evidence="ECO:0000269|PubMed:11299042,
+FT                   ECO:0000269|PubMed:11776264, ECO:0000269|PubMed:12370172,
+FT                   ECO:0000269|PubMed:14990965, ECO:0000269|PubMed:15065907,
+FT                   ECO:0000269|PubMed:17658219, ECO:0000269|PubMed:18366185,
+FT                   ECO:0000269|PubMed:8707053, ECO:0000269|PubMed:9145105,
+FT                   ECO:0000269|PubMed:9370472"
+FT   MUTAGEN         64
+FT                   /note="F->M: In RSGFP4; increases fluorescence and shifts
+FT                   the major exitation peak to 489-490 nm; when associated
+FT                   with G-65 and L-69."
+FT                   /evidence="ECO:0000269|PubMed:9634755"
+FT   MUTAGEN         65..66
+FT                   /note="SY->TW: Gives rise to variants with cerulean
+FT                   fluorsecence."
+FT                   /evidence="ECO:0000269|PubMed:17685554"
+FT   MUTAGEN         65
+FT                   /note="S->A: In GFPmut 2; red-shifts by about 100 nm the
+FT                   excitation maxima, permitting efficient excitation at 488
+FT                   nm and increases fluorescence; when associated with L-68
+FT                   and A-72."
+FT                   /evidence="ECO:0000269|PubMed:8707053"
+FT   MUTAGEN         65
+FT                   /note="S->G: In EYFP; leads to yellow fluorescence, folds
+FT                   faster and more efficiently at 37 degrees Celsius and has
+FT                   superior solubility and brightness; when associated with L-
+FT                   68; A-72 and Y-203. In GFPmut 3; highly fluorescent mutant
+FT                   when excited at 488 nm; when associated with A-72. Highly
+FT                   fluorescent; when associated with Y-203; L-68 and A-72. In
+FT                   RSGFP4; increases fluoresence and shifts the major
+FT                   exitation peak to 489-490 nm; when associated with M-64 and
+FT                   L-69. In YFP 10C; shifts the major emission and exitation
+FT                   peak up to 20 nm; when associated with L-68; A-72 and Y-
+FT                   203. In Topaz; shifts the major emission and exitation peak
+FT                   up to 20 nm; when associated with A-72; R-79 and Y-203. In
+FT                   Venus; leads to yellow fluorescence, improved maturation
+FT                   and reduced environmental sensitivity; when associated with
+FT                   L-46; L-64; L-68; A-72; T-153; A-163; G-175 and Y-203."
+FT                   /evidence="ECO:0000269|PubMed:11299042,
+FT                   ECO:0000269|PubMed:12370172, ECO:0000269|PubMed:8707053,
+FT                   ECO:0000269|PubMed:9634755, ECO:0000269|PubMed:9759496,
+FT                   ECO:0000269|PubMed:9782051"
+FT   MUTAGEN         65
+FT                   /note="S->T: Increases fluoresence, photostability and
+FT                   shifts the major exitation peak to 488 nm. In EGFP;
+FT                   increases fluoresence at warmer temperatures such as 37
+FT                   degrees Celsius; when associated with L-64. In EBFP; gives
+FT                   rise to variants with blue fluorescence; when associated
+FT                   with L-64 and H-66. In GFPmut 1; red-shifts by about 100 nm
+FT                   the excitation maxima, permitting efficient excitation at
+FT                   488 nm and increases fluorescence; when associated with T-
+FT                   65. In ECFP; leads to cyan fluorescence, folds faster and
+FT                   more efficiently at 37 degrees Celsius and has superior
+FT                   solubility and brightness; when associated with L-64; W-66;
+FT                   I-146; T-153 and A-163. In Cerulean; leads to improved
+FT                   quantum yield, a higher extinction coefficient and is 2.5-
+FT                   fold brighter than ECFP; when associated with L-64; W-66;
+FT                   A-72; A-145; I-146; D-148; T-153 and A-163. In Esmerald;
+FT                   leads to brighter fluorescence; when associated with A-72;
+FT                   K-149; T-153 and T-167. In VisGreen; leads to brighter
+FT                   fluorescence; when associated with L-64; A-72; K-149 and T-
+FT                   167."
+FT                   /evidence="ECO:0000269|PubMed:11299042,
+FT                   ECO:0000269|PubMed:11776264, ECO:0000269|PubMed:14990965,
+FT                   ECO:0000269|PubMed:15065907, ECO:0000269|PubMed:17658219,
+FT                   ECO:0000269|PubMed:8703075, ECO:0000269|PubMed:8707053,
+FT                   ECO:0000269|PubMed:9370472"
+FT   MUTAGEN         66
+FT                   /note="Y->H: In BFP; shifts the excitation and emission
+FT                   spectra to shorter wavelengths. In EBFP; gives rise to
+FT                   variants with blue fluorescence; when associated with L-64
+FT                   and T-65. In Azurite; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with R-80; F-145; I-150
+FT                   and R-224. In EBFP1.2; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with R-30; N-39; A-72; T-
+FT                   105; F-145; V-171; S-198 and V-206. In EBFP2.0; shifts the
+FT                   excitation and emission spectra to shorter wavelengths and
+FT                   increases quantum yields compared to BFP; when associated
+FT                   with R-30; N-39; A-72; T-105; V-128; F-145; I-150; V-155;
+FT                   V-171; S-198; V-206 and V-224."
+FT                   /evidence="ECO:0000269|PubMed:22891786,
+FT                   ECO:0000269|PubMed:8578587, ECO:0000269|PubMed:9145105,
+FT                   ECO:0000269|PubMed:9370472"
+FT   MUTAGEN         66
+FT                   /note="Y->T,F: Shifts the excitation and emission spectra
+FT                   to shorter wavelengths."
+FT                   /evidence="ECO:0000269|PubMed:8578587"
+FT   MUTAGEN         66
+FT                   /note="Y->W: In W; leads to excitation and emission
+FT                   wavelengths intermediate between tyrosine and histidine but
+FT                   is only weakly fluorescent. In ECFP; leads to cyan
+FT                   fluorescence, folds faster and more efficiently at 37
+FT                   degrees Celsius and has superior solubility and brightness;
+FT                   when associated with L-64; T-65; I-146; T-153 and A-163. In
+FT                   Cerulean; leads to improved quantum yield, a higher
+FT                   extinction coefficient and is 2.5-fold brighter than ECFP;
+FT                   when associated with L-64; T-65; A-72; A-145; I-146; D-148;
+FT                   T-153 and A-163."
+FT                   /evidence="ECO:0000269|PubMed:11299042,
+FT                   ECO:0000269|PubMed:14990965, ECO:0000269|PubMed:15065907,
+FT                   ECO:0000269|PubMed:7809066"
+FT   MUTAGEN         68
+FT                   /note="V->L: In EYFP; leads to yellow fluorescence, folds
+FT                   faster and more efficiently at 37 degrees Celsius and has
+FT                   superior solubility and brightness; when associated with G-
+FT                   65; A-72 and Y-203. In GFPmut 2; red-shifts by about 100 nm
+FT                   the excitation maxima, permitting efficient excitation at
+FT                   488 nm and increases fluorescence; when associated with A-
+FT                   65 and A-72. In Citrinine; leads to excitation and emission
+FT                   peaks of 516 and 529 nm, respectively; when associated with
+FT                   M-69; A-72 and Y-203. In YFP 10C; shifts the major emission
+FT                   and exitation peak up to 20 nm; when associated with G-65;
+FT                   A-72 and Y-203. In Venus; leads to yellow fluorescence,
+FT                   improved maturation and reduced environmental sensitivity;
+FT                   when associated with L-46; L-64; G-65; A-72; T-153; A-163;
+FT                   G-175 and Y-203."
+FT                   /evidence="ECO:0000269|PubMed:11299042,
+FT                   ECO:0000269|PubMed:11387331, ECO:0000269|PubMed:12370172,
+FT                   ECO:0000269|PubMed:8707053, ECO:0000269|PubMed:9759496,
+FT                   ECO:0000269|PubMed:9782051"
+FT   MUTAGEN         68
+FT                   /note="V->N: In R10-3; matures to the red-emitting state
+FT                   with excitation and emission maxima at 555 and 585 nm,
+FT                   respectively; when associated with L-46; L-64; Q-162; A-
+FT                   163; V-167 and L-171."
+FT                   /evidence="ECO:0000269|PubMed:18366185"
+FT   MUTAGEN         69
+FT                   /note="Q->H: In P4; leads to no detectable fluorescence. In
+FT                   mut2.2; shifts fluorescence lifetime from 3.03 to 1.94 ns;
+FT                   when associated with R-30 and H-145. In mut3.3; shifts
+FT                   fluorescence lifetime from 3.03 to 1.88 ns; when associated
+FT                   with R-30; L-46 and H-145."
+FT                   /evidence="ECO:0000269|PubMed:16201762,
+FT                   ECO:0000269|PubMed:7809066"
+FT   MUTAGEN         69
+FT                   /note="Q->L: In RSGFP4; increases fluorescence and shifts
+FT                   the major exitation peak to 489-490 nm; when associated
+FT                   with M-64 and G-65."
+FT                   /evidence="ECO:0000269|PubMed:9634755"
+FT   MUTAGEN         69
+FT                   /note="Q->M: In Citrinine; leads to excitation and emission
+FT                   peaks of 516 and 529 nm, respectively; when associated with
+FT                   L-68; A-72 and Y-203."
+FT                   /evidence="ECO:0000269|PubMed:11387331"
+FT   MUTAGEN         72
+FT                   /note="S->A: Increases fluoresence at warmer temperatures
+FT                   such as 37 degrees Celsius. In GFPmut 3; highly fluorescent
+FT                   mutant when excited at 488 nm; when associated with G-65.
+FT                   In EYFP; leads to yellow fluorescence, folds faster and
+FT                   more efficiently at 37 degrees Celsius and has superior
+FT                   solubility and brightness; when associated with G-65; L-68
+FT                   and Y-203. In GFPmut 2; red-shifts by about 100 nm the
+FT                   excitation maxima, permitting efficient excitation at 488
+FT                   nm and increases fluorescence; when associated with A-65
+FT                   and L-68. In Citrinine; leads to excitation and emission
+FT                   peaks of 516 and 529 nm, respectively; when associated with
+FT                   L-68; M-69 and Y-203. In YFP 10C; shifts the major emission
+FT                   and exitation peak up to 20 nm; when associated with G-65;
+FT                   L-68; and Y-203. In Topaz; shifts the major emission and
+FT                   exitation peak up to 20 nm; when associated with G-65; R-79
+FT                   and Y-203. In Cerulean; leads to improved quantum yield, a
+FT                   higher extinction coefficient and is 2.5-fold brighter than
+FT                   ECFP; when associated with L-64; T-65; W-66; A-145; I-146;
+FT                   D-148; T-153 and A-163. In Sapphire/H9-40; exhibits a huge
+FT                   Stoke's shift, with an excitation peak at 399 nm and an
+FT                   emission peak at 511 nm; when associated with F-145 and I-
+FT                   203. In EBFP1.2; shifts the excitation and emission spectra
+FT                   to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with R-30; N-39; H-66; T-
+FT                   105; F-145; V-171; S-198 and V-206. In EBFP2.0; shifts the
+FT                   excitation and emission spectra to shorter wavelengths and
+FT                   increases quantum yields compared to BFP; when associated
+FT                   with R-30; N-39; H-66; T-105; V-128; F-145; I-150; V-155;
+FT                   V-171; S-198; V-206 and V-224. In Esmerald; leads to
+FT                   brighter fluorescence; when associated with T-65; K-149; T-
+FT                   153 and T-167. In VisGreen; leads to brighter fluorescence;
+FT                   when associated with L-64; T-65; K-149 and T-167. In Venus;
+FT                   leads to yellow fluorescence, improved maturation and
+FT                   reduced environmental sensitivity; when associated with L-
+FT                   46; L-64; G-65; L-68; T-153; A-163; G-175 and Y-203."
+FT                   /evidence="ECO:0000269|PubMed:11299042,
+FT                   ECO:0000269|PubMed:11387331, ECO:0000269|PubMed:12370172,
+FT                   ECO:0000269|PubMed:12769828, ECO:0000269|PubMed:14990965,
+FT                   ECO:0000269|PubMed:17658219, ECO:0000269|PubMed:22891786,
+FT                   ECO:0000269|PubMed:8707053, ECO:0000269|PubMed:9145105,
+FT                   ECO:0000269|PubMed:9759496, ECO:0000269|PubMed:9782051"
+FT   MUTAGEN         79
+FT                   /note="K->R: In Topaz; shifts the major emission and
+FT                   exitation peak up to 20 nm; when associated with G-65; A-72
+FT                   and Y-203."
+FT                   /evidence="ECO:0000269|PubMed:9759496"
+FT   MUTAGEN         80
+FT                   /note="Q->R: In Azurite; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with H-66; F-145; I-150
+FT                   and R-224."
+FT                   /evidence="ECO:0000269|PubMed:22891786"
+FT   MUTAGEN         99
+FT                   /note="F->S: In alphaGFP/cycle 3 GFP; improves folding at
+FT                   37 degrees Celsius, reduces aggregation at high
+FT                   concentrations, and increases the diffusibility of the
+FT                   protein inside cells; when associated with T-153 and A-
+FT                   163."
+FT                   /evidence="ECO:0000269|PubMed:9370472,
+FT                   ECO:0000269|PubMed:9630892, ECO:0000269|PubMed:9631088"
+FT   MUTAGEN         103
+FT                   /note="D->E: In mut1.27; shifts fluorescence lifetime from
+FT                   3.03 to 2.85 ns; when associated with H-145."
+FT                   /evidence="ECO:0000269|PubMed:16201762"
+FT   MUTAGEN         105
+FT                   /note="N->T: In EBFP1.2; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with R-30; N-39; H-66; A-
+FT                   72; F-145; V-171; S-198 and V-206. In EBFP2.0; shifts the
+FT                   excitation and emission spectra to shorter wavelengths and
+FT                   increases quantum yields compared to BFP; when associated
+FT                   with R-30; N-39; H-66; A-72; V-128; F-145; I-150; V-155; V-
+FT                   171; S-198; V-206 and V-224."
+FT                   /evidence="ECO:0000269|PubMed:22891786"
+FT   MUTAGEN         128
+FT                   /note="I->V: In EBFP2.0; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with R-30; N-39; H-66; A-
+FT                   72; T-105; F-145; I-150; V-155; V-171; S-198; V-206 and V-
+FT                   224."
+FT                   /evidence="ECO:0000269|PubMed:22891786"
+FT   MUTAGEN         145
+FT                   /note="Y->A: In Cerulean; leads to improved quantum yield,
+FT                   a higher extinction coefficient and is 2.5-fold brighter
+FT                   than ECFP; when associated with L-64; T-65; W-66; A-72; I-
+FT                   146; D-148; T-153 and A-163."
+FT                   /evidence="ECO:0000269|PubMed:14990965"
+FT   MUTAGEN         145
+FT                   /note="Y->C: In mut1.9; shifts fluorescence lifetime from
+FT                   3.03 to 2.74 ns."
+FT                   /evidence="ECO:0000269|PubMed:16201762"
+FT   MUTAGEN         145
+FT                   /note="Y->F: In Sapphire/H9-40; exhibits a huge Stoke's
+FT                   shift, with an excitation peak at 399 nm and an emission
+FT                   peak at 511 nm; when associated with A-72 and I-203. In
+FT                   Azurite; shifts the excitation and emission spectra to
+FT                   shorter wavelengths and increases quantum yields compared
+FT                   to BFP; when associated with H-66; R-80; I-150 and R-224.
+FT                   In EBFP1.2; shifts the excitation and emission spectra to
+FT                   shorter wavelengths and increases quantum yields compared
+FT                   to BFP; when associated with R-30; N-39; H-66; A-72; T-105;
+FT                   V-171; S-198 and V-206. In EBFP2.0; shifts the excitation
+FT                   and emission spectra to shorter wavelengths and increases
+FT                   quantum yields compared to BFP; when associated with R-30;
+FT                   N-39; H-66; A-72; T-105; V-128; I-150; V-155; V-171; S-198;
+FT                   V-206 and V-224."
+FT                   /evidence="ECO:0000269|PubMed:12769828,
+FT                   ECO:0000269|PubMed:22891786"
+FT   MUTAGEN         145
+FT                   /note="Y->H: In mut1.3; shifts fluorescence lifetime from
+FT                   3.03 to 2.78 ns. In mut1.5; shifts fluorescence lifetime
+FT                   from 3.03 to 2.72 ns; when associated with A-193. In
+FT                   mut1.27; shifts fluorescence lifetime from 3.03 to 2.85 ns;
+FT                   when associated with E-103. In mut1.28; shifts fluorescence
+FT                   lifetime from 3.03 to 2.76 ns; when associated with R-30.
+FT                   In mut2.1; shifts fluorescence lifetime from 3.03 to 2.50
+FT                   ns; when associated with A-176 and I-198. In mut2.2; shifts
+FT                   fluorescence lifetime from 3.03 to 1.94 ns; when associated
+FT                   with R-30 and H-69. In mut3.3; shifts fluorescence lifetime
+FT                   from 3.03 to 1.88 ns; when associated with R-30; L-46 and
+FT                   H-69."
+FT                   /evidence="ECO:0000269|PubMed:16201762"
+FT   MUTAGEN         146
+FT                   /note="N->I: In ECFP; leads to cyan fluorescence, folds
+FT                   faster and more efficiently at 37 degrees Celsius and has
+FT                   superior solubility and brightness; when associated with L-
+FT                   64; T-65; W-66; T-153 and A-163. In Cerulean; leads to
+FT                   improved quantum yield, a higher extinction coefficient and
+FT                   is 2.5-fold brighter than ECFP; when associated with L-64;
+FT                   T-65; W-66; A-72; A-145; D-148; T-153 and A-163."
+FT                   /evidence="ECO:0000269|PubMed:11299042,
+FT                   ECO:0000269|PubMed:14990965, ECO:0000269|PubMed:15065907"
+FT   MUTAGEN         147
+FT                   /note="S->P: Increases fluorescence at warmer temperatures
+FT                   such as 37 degrees Celsius."
+FT                   /evidence="ECO:0000269|PubMed:9125154"
+FT   MUTAGEN         148
+FT                   /note="H->D: In Cerulean; leads to improved quantum yield,
+FT                   a higher extinction coefficient and is 2.5-fold brighter
+FT                   than ECFP; when associated with L-64; T-65; W-66; A-72; A-
+FT                   145; I-146; T-153 and A-163."
+FT                   /evidence="ECO:0000269|PubMed:14990965"
+FT   MUTAGEN         149
+FT                   /note="N->K: Increases fluorescence at warmer temperatures
+FT                   such as 37 degrees Celsius. In Esmerald; leads to brighter
+FT                   fluorescence; when associated with T-65; A-72; T-153 and T-
+FT                   167. In VisGreen; leads to brighter fluorescence; when
+FT                   associated with L-64; T-65; A-72 and T-167."
+FT                   /evidence="ECO:0000269|PubMed:17658219,
+FT                   ECO:0000269|PubMed:9145105"
+FT   MUTAGEN         150
+FT                   /note="V->I: In Azurite; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with H-66; R-80; F-145 and
+FT                   R-224. In EBFP2.0; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with R-30; N-39; H-66; A-
+FT                   72; T-105; V-128; F-145; V-155; V-171; S-198; V-206 and V-
+FT                   224."
+FT                   /evidence="ECO:0000269|PubMed:22891786"
+FT   MUTAGEN         153
+FT                   /note="M->T: Increases fluorescence at warmer temperatures
+FT                   such as 37 degrees Celsius. In alphaGFP/cycle 3 GFP;
+FT                   improves folding at 37 degrees Celsius, reduces aggregation
+FT                   at high concentrations, and increases the diffusibility of
+FT                   the protein inside cells; when associated with S-99 and A-
+FT                   163. In ECFP; leads to cyan fluorescence, folds faster and
+FT                   more efficiently at 37 degrees Celsius and has superior
+FT                   solubility and brightness; when associated with L-64; T-65;
+FT                   W-66; I-146 and A-163. In Cerulean; leads to improved
+FT                   quantum yield, a higher extinction coefficient and is 2.5-
+FT                   fold brighter than ECFP; when associated with L-64; T-65;
+FT                   W-66; A-72; A-145; I-146; D-148 and A-163. In Esmerald;
+FT                   leads to brighter fluorescence; when associated with T-65;
+FT                   A-72; K-149 and T-167. In Venus; leads to yellow
+FT                   fluorescence, improved maturation and reduced environmental
+FT                   sensitivity; when associated with L-46; L-64; G-65; L-68;
+FT                   A-72; A-163; G-175 and Y-203."
+FT                   /evidence="ECO:0000269|PubMed:11299042,
+FT                   ECO:0000269|PubMed:12370172, ECO:0000269|PubMed:14990965,
+FT                   ECO:0000269|PubMed:15065907, ECO:0000269|PubMed:17658219,
+FT                   ECO:0000269|PubMed:9145105, ECO:0000269|PubMed:9370472,
+FT                   ECO:0000269|PubMed:9630892, ECO:0000269|PubMed:9631088"
+FT   MUTAGEN         155
+FT                   /note="D->V: In EBFP2.0; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with R-30; N-39; H-66; A-
+FT                   72; T-105; V-128; F-145; I-150; V-171; S-198; V-206 and V-
+FT                   224."
+FT                   /evidence="ECO:0000269|PubMed:22891786"
+FT   MUTAGEN         162
+FT                   /note="K->Q: In R10-3; matures to the red-emitting state
+FT                   with excitation and emission maxima at 555 and 585 nm,
+FT                   respectively; when associated with L-46; L-64; N-68; A-163;
+FT                   V-167 and L-171."
+FT                   /evidence="ECO:0000269|PubMed:18366185"
+FT   MUTAGEN         163
+FT                   /note="V->A: In GFPB; leads to enhanced fluorescence at 37
+FT                   degrees Celsius. In GFPA; leads to even higher fluorescence
+FT                   at 37 degrees Celsius than GFPA; whenassociated with G-175.
+FT                   In alphaGFP/cycle 3 GFP; improves folding at 37 degrees
+FT                   Celsius, reduces aggregation at high concentrations, and
+FT                   increases the diffusibility of the protein inside cells;
+FT                   when associated with S-99 and T-153. In R10-3; matures to
+FT                   the red-emitting state with excitation and emission maxima
+FT                   at 555 and 585 nm, respectively; when associated with L-46;
+FT                   L-64; N-68; Q-162; V-167 and L-171. In ECFP; leads to cyan
+FT                   fluorescence, folds faster and more efficiently at 37
+FT                   degrees Celsius and has superior solubility and brightness;
+FT                   when associated with L-64; T-65; W-66; I-146 and T-153. In
+FT                   Cerulean; leads to improved quantum yield, a higher
+FT                   extinction coefficient and is 2.5-fold brighter than ECFP;
+FT                   when associated with L-64; T-65; W-66; A-72; A-145; I-146;
+FT                   D-148 and T-153. In Venus; leads to yellow fluorescence,
+FT                   improved maturation and reduced environmental sensitivity;
+FT                   when associated with L-46; L-64; G-65; L-68; A-72; T-153;
+FT                   G-175 and Y-203."
+FT                   /evidence="ECO:0000269|PubMed:11299042,
+FT                   ECO:0000269|PubMed:12370172, ECO:0000269|PubMed:14990965,
+FT                   ECO:0000269|PubMed:15065907, ECO:0000269|PubMed:18366185,
+FT                   ECO:0000269|PubMed:8994830, ECO:0000269|PubMed:9370472,
+FT                   ECO:0000269|PubMed:9630892, ECO:0000269|PubMed:9631088"
+FT   MUTAGEN         167
+FT                   /note="I->T: In P11; increases fluorescence at 475 nm
+FT                   excitation and at warmer temperatures such as 37 degrees
+FT                   Celsius. In Esmerald; leads to brighter fluorescence; when
+FT                   associated with T-65; A-72; K-149 and T-153. In VisGreen;
+FT                   leads to brighter fluorescence; when associated with L-64;
+FT                   T-65; A-72 and K-149."
+FT                   /evidence="ECO:0000269|PubMed:17658219,
+FT                   ECO:0000269|PubMed:7809066, ECO:0000269|PubMed:9145105"
+FT   MUTAGEN         167
+FT                   /note="I->V: In P9; increases fluorescence at 475 nm
+FT                   excitation. In R10-3; matures to the red-emitting state
+FT                   with excitation and emission maxima at 555 and 585 nm,
+FT                   respectively; when associated with L-46; L-64; N-68; Q-162;
+FT                   A-163 and L-171."
+FT                   /evidence="ECO:0000269|PubMed:18366185,
+FT                   ECO:0000269|PubMed:7809066"
+FT   MUTAGEN         171
+FT                   /note="I->L: In R10-3; matures to the red-emitting state
+FT                   with excitation and emission maxima at 555 and 585 nm,
+FT                   respectively; when associated with L-46; L-64; N-68; Q-162;
+FT                   A-163 and V-167."
+FT                   /evidence="ECO:0000269|PubMed:18366185"
+FT   MUTAGEN         171
+FT                   /note="I->V: In EBFP1.2; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with R-30; N-39; H-66; A-
+FT                   72; T-105; F-145; S-198 and V-206. In EBFP2.0; shifts the
+FT                   excitation and emission spectra to shorter wavelengths and
+FT                   increases quantum yields compared to BFP; when associated
+FT                   with R-30; N-39; H-66; A-72; T-105; V-128; F-145; I-150; V-
+FT                   155; S-198; V-206 and V-224."
+FT                   /evidence="ECO:0000269|PubMed:22891786"
+FT   MUTAGEN         175
+FT                   /note="S->G: In GFPA; leads to enhanced fluorescence at 37
+FT                   degrees Celsius; when associated with A-163. In Venus;
+FT                   leads to yellow fluorescence, improved maturation and
+FT                   reduced environmental sensitivity; when associated with L-
+FT                   46; L-64; G-65; L-68; A-72; T-153; A-163 and Y-203."
+FT                   /evidence="ECO:0000269|PubMed:12370172,
+FT                   ECO:0000269|PubMed:8994830"
+FT   MUTAGEN         176
+FT                   /note="V->A: In mut2.1; shifts fluorescence lifetime from
+FT                   3.03 to 2.50 ns; when associated with H-145 and I-198."
+FT                   /evidence="ECO:0000269|PubMed:16201762"
+FT   MUTAGEN         193
+FT                   /note="V->A: In mut1.5; shifts fluorescence lifetime from
+FT                   3.03 to 2.72 ns; when associated with H-145."
+FT                   /evidence="ECO:0000269|PubMed:16201762"
+FT   MUTAGEN         198
+FT                   /note="N->I: In mut2.1; shifts fluorescence lifetime from
+FT                   3.03 to 2.50 ns; when associated with H-145 and A-176."
+FT                   /evidence="ECO:0000269|PubMed:16201762"
+FT   MUTAGEN         198
+FT                   /note="N->S: In EBFP1.2; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with R-30; N-39; H-66; A-
+FT                   72; T-105; F-145; V-171 and V-206. In EBFP2.0; shifts the
+FT                   excitation and emission spectra to shorter wavelengths and
+FT                   increases quantum yields compared to BFP; when associated
+FT                   with R-30; N-39; H-66; A-72; T-105; V-128; F-145; I-150; V-
+FT                   155; V-171; S-198 and V-224."
+FT                   /evidence="ECO:0000269|PubMed:22891786"
+FT   MUTAGEN         202
+FT                   /note="S->F: In H9; increases fluorescence at 395 nm
+FT                   excitation; when associated with I-203."
+FT                   /evidence="ECO:0000269|PubMed:7809066"
+FT   MUTAGEN         203
+FT                   /note="T->H,W,F: Results in significantly red-shifted
+FT                   excitation and emission maxima."
+FT                   /evidence="ECO:0000269|PubMed:8703075"
+FT   MUTAGEN         203
+FT                   /note="T->I: Suppresses the 475 nm excitation peak, leaving
+FT                   only the shorter wavelength peak at 399 nm. In H9;
+FT                   increases fluorescence at 395 nm excitation; when
+FT                   associated with I-203. In Sapphire/H9-40; exhibits a huge
+FT                   Stoke's shift, with an excitation peak at 399 nm and an
+FT                   emission peak at 511 nm; when associated with A-72 and F-
+FT                   145."
+FT                   /evidence="ECO:0000269|PubMed:12769828,
+FT                   ECO:0000269|PubMed:7796912, ECO:0000269|PubMed:7809066"
+FT   MUTAGEN         203
+FT                   /note="T->Y: Gives rise to yellow-emission variants. In
+FT                   EYFP; leads to yellow fluorescence, folds faster and more
+FT                   efficiently at 37 degrees Celsius and has superior
+FT                   solubility and brightness; when associated with G-65; L-68
+FT                   and A-72. In Citrinine; leads to excitation and emission
+FT                   peaks of 516 and 529 nm, respectively; when associated with
+FT                   L-68; M-69 and A-72. In YFP 10C; shifts the major emission
+FT                   and exitation peak up to 20 nm; when associated with G-65;
+FT                   L-68 and A-72. In Topaz; shifts the major emission and
+FT                   exitation peak up to 20 nm; when associated with G-65; A-72
+FT                   and R-79. In Venus; leads to yellow fluorescence, improved
+FT                   maturation and reduced environmental sensitivity; when
+FT                   associated with L-46; L-64; G-65; L-68; A-72; T-153; A-163
+FT                   and G-175."
+FT                   /evidence="ECO:0000269|PubMed:11299042,
+FT                   ECO:0000269|PubMed:11387331, ECO:0000269|PubMed:12370172,
+FT                   ECO:0000269|PubMed:9759496, ECO:0000269|PubMed:9782051"
+FT   MUTAGEN         206
+FT                   /note="A->K: Abolishes the tendency to dimerize and leads
+FT                   to monomeric fluorescent proteins."
+FT                   /evidence="ECO:0000269|PubMed:16739159"
+FT   MUTAGEN         206
+FT                   /note="A->V: In EBFP1.2; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with R-30; N-39; H-66; A-
+FT                   72; T-105; F-145; V-171 and S-198. In EBFP2.0; shifts the
+FT                   excitation and emission spectra to shorter wavelengths and
+FT                   increases quantum yields compared to BFP; when associated
+FT                   with R-30; N-39; H-66; A-72; T-105; V-128; F-145; I-150; V-
+FT                   155; V-171; S-198 and V-206."
+FT   MUTAGEN         222
+FT                   /note="E->G: Suppresses the 399 nm excitation peak, leaving
+FT                   only the longer wavelength peak at 475 nm."
+FT                   /evidence="ECO:0000269|PubMed:7796912"
+FT   MUTAGEN         224
+FT                   /note="V->R: In Azurite; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with H-66; R-80; F-145 and
+FT                   I-150. In EBFP2.0; shifts the excitation and emission
+FT                   spectra to shorter wavelengths and increases quantum yields
+FT                   compared to BFP; when associated with R-30; N-39; H-66; A-
+FT                   72; T-105; V-128; F-145; I-150; V-155; V-171; S-198 and V-
+FT                   206."
+FT                   /evidence="ECO:0000269|PubMed:22891786"
+FT   CONFLICT        2
+FT                   /note="S -> G (in Ref. 3; CAA65278)"
+FT                   /evidence="ECO:0000305"
+FT   CONFLICT        25
+FT                   /note="H -> Q (in Ref. 3; CAA65278)"
+FT                   /evidence="ECO:0000305"
+FT   CONFLICT        80
+FT                   /note="Q -> R (in Ref. 3; CAA65278)"
+FT                   /evidence="ECO:0000305"
+FT   CONFLICT        157
+FT                   /note="Q -> P (in Ref. 2; AAA58246)"
+FT                   /evidence="ECO:0000305"
+FT   CONFLICT        172
+FT                   /note="E -> K (in Ref. 2; AAA58246)"
+FT                   /evidence="ECO:0000305"
+FT   HELIX           3..6
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   STRAND          8..10
+FT                   /evidence="ECO:0000244|PDB:3DQA"
+FT   STRAND          12..22
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   STRAND          25..36
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   HELIX           37..39
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   STRAND          41..48
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   STRAND          50..52
+FT                   /evidence="ECO:0000244|PDB:5LEM"
+FT   HELIX           57..60
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   HELIX           61..64
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   TURN            65..67
+FT                   /evidence="ECO:0000244|PDB:1QYO"
+FT   HELIX           69..71
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   HELIX           73..75
+FT                   /evidence="ECO:0000244|PDB:3EVV"
+FT   HELIX           76..81
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   HELIX           83..86
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   TURN            87..90
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   STRAND          92..100
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   STRAND          101..103
+FT                   /evidence="ECO:0000244|PDB:6MWQ"
+FT   STRAND          105..115
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   STRAND          118..129
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   STRAND          132..134
+FT                   /evidence="ECO:0000244|PDB:1EMK"
+FT   TURN            135..139
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   STRAND          143..145
+FT                   /evidence="ECO:0000244|PDB:3OSQ"
+FT   STRAND          146..148
+FT                   /evidence="ECO:0000244|PDB:4IK8"
+FT   STRAND          149..155
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   HELIX           156..158
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   STRAND          160..171
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   TURN            172..174
+FT                   /evidence="ECO:0000244|PDB:4OGS"
+FT   STRAND          176..187
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   STRAND          189..191
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   STRAND          198..208
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   HELIX           209..213
+FT                   /evidence="ECO:0000244|PDB:4IK8"
+FT   STRAND          215..228
+FT                   /evidence="ECO:0000244|PDB:6JGJ"
+FT   HELIX           233..236
+FT                   /evidence="ECO:0000244|PDB:4GF6"
+SQ   SEQUENCE   238 AA;  26886 MW;  EA5A6F21FBFB6E05 CRC64;
+     MSKGEELFTG VVPILVELDG DVNGHKFSVS GEGEGDATYG KLTLKFICTT GKLPVPWPTL
+     VTTFSYGVQC FSRYPDHMKQ HDFFKSAMPE GYVQERTIFF KDDGNYKTRA EVKFEGDTLV
+     NRIELKGIDF KEDGNILGHK LEYNYNSHNV YIMADKQKNG IKVNFKIRHN IEDGSVQLAD
+     HYQQNTPIGD GPVLLPDNHY LSTQSALSKD PNEKRDHMVL LEFVTAAGIT HGMDELYK
+//
