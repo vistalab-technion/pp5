@@ -17,6 +17,7 @@ from Bio.PDB import PPBuilder
 from Bio.PDB.Polypeptide import Polypeptide
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
+from pytest import approx
 
 import pp5
 from pp5.dihedral import Dihedral, DihedralAnglesEstimator, \
@@ -94,9 +95,15 @@ class ResidueRecord(object):
             return True
         if not isinstance(other, ResidueRecord):
             return False
-
-        # Uses Dihedral's __eq__
-        return self.__dict__ == other.__dict__
+        for k, v in self.__dict__.items():
+            other_v = other.__dict__.get(k, math.inf)
+            if isinstance(v, float):
+                equal = v == approx(other_v, nan_ok=True)
+            else:
+                equal = v == other_v
+            if not equal:
+                return False
+        return True
 
 
 class ResidueMatch(ResidueRecord):
