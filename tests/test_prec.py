@@ -1,7 +1,9 @@
+import pickle
 import pytest
 
 from pp5.protein import ProteinRecord, ProteinInitError
 from pp5.external_dbs import unp
+from tests import get_tmp_path
 
 
 class TestCreation:
@@ -70,3 +72,15 @@ class TestCreation:
 
         with pytest.raises(ProteinInitError):
             ProteinRecord('P00720', '4GY3')
+
+
+class TestSave:
+    def test_save(self):
+        pdb_id = '102L:A'
+        prec = ProteinRecord.from_pdb(pdb_id)
+        filepath = prec.save(out_dir=get_tmp_path('prec'))
+
+        with open(str(filepath), 'rb') as f:
+            prec2 = pickle.load(f)
+
+        assert prec == prec2

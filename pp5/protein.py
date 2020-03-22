@@ -4,6 +4,8 @@ import logging
 import math
 import warnings
 import enum
+import pickle
+from pathlib import Path
 from typing import List, Tuple, Dict, Iterator, Callable, Any, Union, Iterable, \
     Generator, Optional
 from collections import OrderedDict
@@ -86,6 +88,15 @@ class ResidueRecord(object):
     def __repr__(self):
         return f'{self.name}{self.res_id:<4s} [{self.codon}]' \
                f'[{self.secondary}] {self.angles} b={self.bfactor:.2f}'
+
+    def __eq__(self, other):
+        if self is other:
+            return True
+        if not isinstance(other, ResidueRecord):
+            return False
+
+        # Uses Dihedral's __eq__
+        return self.__dict__ == other.__dict__
 
 
 class ResidueMatch(ResidueRecord):
@@ -419,20 +430,42 @@ class ProteinRecord(object):
         return pd.DataFrame(data)
 
     def to_csv(self, out_dir=pp5.out_subdir('prec'), tag=None):
+        """
+        Writes the ProteinRecord as a CSV file.
+        Filename will be <PDB_ID>_<CHAIN_ID>_<TAG>.csv.
+        Note that this is meant as a human-readable output format only,
+        so a ProteinRecord cannot be re-created from this CSV.
+        To save a ProteinRecord for later loading, use save().
+        :param out_dir: Output dir.
+        :param tag: Optional extra tag to add to filename.
+        :return: The path to the written file.
+        """
+        filepath = self._tagged_filepath(out_dir, 'csv', tag)
         df = self.to_dataframe()
-        tag = f'_{tag}' if tag else ''
-        filename = f'{self.pdb_base_id}_{self.pdb_chain_id}{tag}'
-        filepath = out_dir.joinpath(f'{filename}.csv')
         df.to_csv(filepath, na_rep='nan', header=True, index=False,
                   encoding='utf-8', float_format='%.3f')
+
         LOGGER.info(f'Wrote {self} to {filepath}')
         return filepath
 
-    def __iter__(self) -> Iterator[ResidueRecord]:
-        return iter(self._residue_recs)
+    def save(self, out_dir=pp5.data_subdir('prec'), tag=None):
+        """
+        Write the ProteinRecord to a binary file which can later to
+        re-loaded into memory, recreating the ProteinRecord.
+        :param out_dir: Output dir.
+        :param tag: Optional extra tag to add to filename.
+        :return: The path to the written file.
+        """
+        filepath = self._tagged_filepath(out_dir, 'prec', tag)
+        with open(str(filepath), 'wb') as f:
+            pickle.dump(self, f)
+        return filepath
 
-    def __getitem__(self, item: int) -> ResidueRecord:
-        return self._residue_recs[item]
+    def _tagged_filepath(self, out_dir: Path, suffix: str, tag: str):
+        tag = f'_{tag}' if tag else ''
+        filename = f'{self.pdb_base_id}_{self.pdb_chain_id}{tag}'
+        filepath = out_dir.joinpath(f'{filename}.{suffix}')
+        return filepath
 
     def _find_dna_alignment(self, pdb_aa_seq: str) \
             -> Tuple[SeqRecord, Dict[int, str]]:
@@ -594,6 +627,12 @@ class ProteinRecord(object):
                                  isotropic=True)
         return d_est, b_est
 
+    def __iter__(self) -> Iterator[ResidueRecord]:
+        return iter(self._residue_recs)
+
+    def __getitem__(self, item: int) -> ResidueRecord:
+        return self._residue_recs[item]
+
     def __repr__(self):
         return f'({self.unp_id}, {self.pdb_id})'
 
@@ -608,6 +647,22 @@ class ProteinRecord(object):
         self.__dict__.update(state)
         for attr in self._SKIP_SERIALIZE:
             self.__setattr__(attr, None)
+
+    def __len__(self):
+        return len(self._residue_recs)
+
+    def __eq__(self, other):
+        if self is other:
+            return True
+        if not isinstance(other, ProteinRecord):
+            return False
+        if self.pdb_id != other.pdb_id:
+            return False
+        if self.unp_id != other.unp_id:
+            return False
+        if len(self) != len(other):
+            return False
+        return all(map(lambda x: x[0] == x[1], zip(self, other)))
 
 
 class ProteinGroup(object):
