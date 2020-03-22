@@ -5,7 +5,7 @@ import math
 import warnings
 import enum
 from typing import List, Tuple, Dict, Iterator, Callable, Any, Union, Iterable, \
-    Generator
+    Generator, Optional
 from collections import OrderedDict
 
 import pandas as pd
@@ -672,8 +672,8 @@ class ProteinGroup(object):
         self.ref_prec = ProteinRecord.from_pdb(self.ref_pdb_id)
 
         # Find residues matches with the reference
-        self.ref_matches: Dict[int, Dict[str, ResidueMatch]] = {}
-        self.query_pdb_to_unp_ids = {}
+        ref_matches: Dict[int, Dict[str, ResidueMatch]] = OrderedDict()
+        query_pdb_to_unp_ids = {}
         for q_pdb_id, alignment in self._struct_align_filter(query_pdb_ids):
             q_pdb_id = q_pdb_id.upper()
             try:
@@ -685,16 +685,20 @@ class ProteinGroup(object):
             # go over aligned AAs, use pair if neighborhood matches
             for r_idx, q_idx in self._match_to_ref(q_prec, alignment):
                 # ref idx -> query pdb_id -> query residue
-                ref_idx_matches = self.ref_matches.setdefault(r_idx, {})
+                ref_idx_matches = ref_matches.setdefault(r_idx, OrderedDict())
 
                 # Reference and query matching residues
                 r_res, q_res = self.ref_prec[r_idx], q_prec[q_idx]
 
                 # Calculate match type and angle diff
                 match = self._make_match(q_prec, r_idx, q_idx)
-                ref_idx_matches[q_pdb_id] = match
+                if match is not None:
+                    ref_idx_matches[q_pdb_id] = match
 
-            self.query_pdb_to_unp_ids[q_pdb_id] = q_prec.unp_id
+            query_pdb_to_unp_ids[q_pdb_id] = q_prec.unp_id
+
+        self.ref_matches = ref_matches
+        self.query_pdb_to_unp_ids = query_pdb_to_unp_ids
 
     def to_dataframe(self):
         df_index = []
@@ -770,24 +774,25 @@ class ProteinGroup(object):
         n = struct_alignment.get_alignment_length()
         assert n == len(stars)
 
+        r_seq_pymol = struct_alignment[0].seq
+        q_seq_pymol = struct_alignment[1].seq
+
         # Map from index in the structural alignment to the index within each
         # sequence we got from pymol
         r_idx, q_idx = -1, -1
         stars_to_pymol_idx = {}
         for i in range(n):
-            if struct_alignment[0].seq[i] is not '-':
+            if r_seq_pymol[i] is not '-':
                 r_idx += 1
-            if struct_alignment[1].seq[i] is not '-':
+            if q_seq_pymol[i] is not '-':
                 q_idx += 1
             stars_to_pymol_idx[i] = (r_idx, q_idx)
 
         # Map from pymol sequence index to the index in the precs
         # Need to do another pairwise alignment for this
         # Align the ref and query seqs from our prec and pymol
-        r_pymol_to_prec = \
-            self._align_pymol_to_prec(self.ref_prec, struct_alignment[0].seq)
-        q_pymol_to_prec = \
-            self._align_pymol_to_prec(query_prec, struct_alignment[1].seq)
+        r_pymol_to_prec = self._align_pymol_to_prec(self.ref_prec, r_seq_pymol)
+        q_pymol_to_prec = self._align_pymol_to_prec(query_prec, q_seq_pymol)
 
         # Context size is the number of stars required on EACH SIDE of a match
         ctx = self.context_size
@@ -796,6 +801,12 @@ class ProteinGroup(object):
             # Check that context around i has only stars
             pre, point, post = stars[i - ctx], stars[i], stars[i + ctx]
             if pre != stars_ctx or post != stars_ctx:
+                continue
+
+            # We allow the AA at the match point to differ (mutation and
+            # alteration), but if it's the same AA we require a star there
+            # (structural alignment as well as sequence alignment)
+            if r_seq_pymol[i] == q_seq_pymol[i] and point != '*':
                 continue
 
             # Now we need to convert i into the index in the prec of each
@@ -829,7 +840,7 @@ class ProteinGroup(object):
         return pymol_to_prec
 
     def _make_match(self, q_prec: ProteinRecord, r_idx: int, q_idx: int) \
-            -> ResidueMatch:
+            -> Optional[ResidueMatch]:
 
         # Get the matching residues
         r_res, q_res = self.ref_prec[r_idx], q_prec[q_idx]
@@ -850,8 +861,7 @@ class ProteinGroup(object):
                 if codon_match:
                     match_type = ResidueMatch.Type.VARIANT
                 else:
-                    # TODO: Verify with Alex
-                    match_type = ResidueMatch.Type.SILENT
+                    return None  # This is not a match!
             else:
                 match_type = ResidueMatch.Type.ALTERATION
         else:
