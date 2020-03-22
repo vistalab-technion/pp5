@@ -15,6 +15,7 @@ from Bio.PDB.Atom import Atom
 from Bio.PDB.Polypeptide import Polypeptide
 from Bio.PDB.Residue import Residue
 from numpy import ndarray
+from pytest import approx
 
 from pp5.external_dbs.pdb import PDBUnitCell
 
@@ -38,7 +39,6 @@ class Dihedral(object):
         std) containing a nominal value and standard deviation.
         """
 
-        cls = self.__class__
         loc = locals()
         for name in self.NAMES:
             a = loc[name]
@@ -56,14 +56,8 @@ class Dihedral(object):
             setattr(self, name_std, std)
             val_deg = math.degrees(val)
             std_deg = math.degrees(std) if std else None
-            setattr(cls, f'{name}_deg',
-                    property(lambda s=self, n=name: s._deg(n)))
-            setattr(cls, f'{name_std}_deg',
-                    property(lambda s=self, n=name_std: s._deg(n)))
-
-    def _deg(self, name):
-        r = getattr(self, name)
-        return math.degrees(r) if r is not None else None
+            setattr(self, f'{name}_deg', val_deg)
+            setattr(self, f'{name_std}_deg', std_deg)
 
     def as_dict(self, degrees=False, skip_omega=False, with_std=False):
         """
@@ -102,8 +96,8 @@ class Dihedral(object):
     @staticmethod
     @numba.jit(nopython=True)
     def wraparound_diff(a1: float, a2: float):
-        d = math.fabs(a1-a2)
-        return min(d, 2*math.pi - d)
+        d = math.fabs(a1 - a2)
+        return min(d, 2 * math.pi - d)
 
     def __repr__(self, deg=True):
         reprs = []
@@ -116,6 +110,21 @@ class Dihedral(object):
             std_str = f'{self.SYMBOLS["pm"]}{std:.1f}' if std else ''
             reprs.append(f'{self.SYMBOLS[name]}={val:.1f}{std_str}{unit_sym}')
         return f'({str.join(",", reprs)})'
+
+    def __eq__(self, other, delta=1e-10):
+        if self is other:
+            return True
+        if not isinstance(other, Dihedral):
+            return False
+
+        self_d = self.as_dict()
+        other_d = other.as_dict()
+        for k, v in self_d.items():
+            other_v = other_d.get(k, math.inf)
+            if not v == approx(other_v, nan_ok=True):
+                return False
+
+        return True
 
 
 class DihedralAnglesEstimator(object):

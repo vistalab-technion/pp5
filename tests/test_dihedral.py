@@ -238,3 +238,41 @@ class TestDihedralAnglesEstimators(object):
         estimator = dihedral.DihedralAnglesMonteCarloEstimator(unit_cell)
         # Not sure how to test, for now set infinite abs error
         self._compare_with_estimator(pdb_id, estimator, abs=math.inf)
+
+
+class TestDihedralEq:
+    def test_eq_deg(self):
+        d1 = dihedral.Dihedral.from_deg(1, 2, 3)
+        d2 = dihedral.Dihedral.from_deg(1, 2, 3)
+        assert d1 == d2
+
+    def test_eq_rad(self):
+        d1 = dihedral.Dihedral.from_rad(1., 1.5, 3.)
+        d2 = dihedral.Dihedral.from_rad(1., 1.5, 3.)
+        assert d1 == d2
+
+    def test_eq_deg_rad(self):
+        d1 = dihedral.Dihedral.from_deg(degrees(1.), degrees(1.5), degrees(3.))
+        d2 = dihedral.Dihedral.from_rad(1., 1.5, 3.)
+        assert d1 == d2
+
+    def test_zero(self):
+        d1 = dihedral.Dihedral.from_deg(0., 0., 0.)
+        d2 = dihedral.Dihedral.from_rad(0., 0., 0.)
+        assert d1 == d2
+
+    def test_nan(self):
+        d1 = dihedral.Dihedral.from_rad(math.nan, 0., 0.)
+        d2 = dihedral.Dihedral.from_deg(math.nan, 0., 0.)
+        assert d1 == d2
+        d1 = dihedral.Dihedral.from_deg(0., math.nan, 0.)
+        d2 = dihedral.Dihedral.from_rad(0., math.nan, 0.)
+        assert d1 == d2
+        d1 = dihedral.Dihedral.from_deg(1., 2., math.nan)
+        d2 = dihedral.Dihedral.from_deg(1., 2., math.nan)
+        assert d1 == d2
+
+    def test_std(self):
+        d1 = dihedral.Dihedral.from_deg([1., 0.1], [2., 0.2], math.nan)
+        d2 = dihedral.Dihedral.from_deg([1., 0.1], [2., 0.2], math.nan)
+        assert d1 == d2
