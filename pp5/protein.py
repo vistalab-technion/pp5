@@ -925,7 +925,8 @@ class ProteinGroup(object):
         stars_ctx = '*' * self.context_size
         for i in range(ctx, n - ctx):
             # Check that context around i has only stars
-            pre, point, post = stars[i - ctx], stars[i], stars[i + ctx]
+            point = stars[i]
+            pre, post = stars[i - ctx:i], stars[i + 1:i + 1 + ctx]
             if pre != stars_ctx or post != stars_ctx:
                 continue
 
@@ -933,6 +934,11 @@ class ProteinGroup(object):
             # alteration), but if it's the same AA we require a star there
             # (structural alignment as well as sequence alignment)
             if r_seq_pymol[i] == q_seq_pymol[i] and point != '*':
+                continue
+
+            # We allow them to differ, but both must be an aligned AA,
+            # not a gap symbol
+            if r_seq_pymol[i] == '-' or q_seq_pymol[i] == '-':
                 continue
 
             # Now we need to convert i into the index in the prec of each
