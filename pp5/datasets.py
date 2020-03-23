@@ -258,17 +258,17 @@ class ProteinGroupsCollector(ParallelDataCollector):
         pdb_base_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
         try:
             # Convert entity to chain and Uniprot id
-            struct_d = pdb.pdb_dict(pdb_base_id)
-            metadata = pdb.pdb_metadata(pdb_base_id, struct_d=struct_d)
-
             if entity_id:
-                chain_id = metadata.get_chain(int(entity_id))
+                prec = ProteinRecord.from_pdb_entity(pdb_base_id, entity_id)
+                chain_id = prec.pdb_meta.get_chain(int(entity_id))
+            elif chain_id:
+                prec = ProteinRecord.from_pdb(pdb_id)
+            else:
+                raise ValueError(f'Unspecified chain or entity for {pdb_id}')
 
-            if not chain_id:
-                raise ValueError(f'Unspecified chain for {pdb_id}')
-
-            pdb_id = f'{pdb_base_id}:{chain_id}'
-            unp_id = pdb.pdbid_to_unpid(pdb_id, struct_d=struct_d)
+            pdb_id = prec.pdb_id
+            unp_id = prec.unp_id
+            metadata = prec.pdb_meta
             seq_len = len(
                 metadata.entity_sequence[metadata.chain_entities[chain_id]]
             )
@@ -279,7 +279,7 @@ class ProteinGroupsCollector(ParallelDataCollector):
                 outlier_rejection_cutoff=self.structural_outlier_cutoff,
             )
         except Exception as e:
-            raise ProteinInitError(f"{e}") from e
+            raise ProteinInitError(f"Error processing {pdb_id}: {e}") from e
 
         if rmse is None or rmse > self.structural_max_all_atom_rmsd:
             LOGGER.info(f'Rejecting {pdb_id} due to insufficient structural '
@@ -316,6 +316,8 @@ if __name__ == '__main__':
     #     out_dir=pp5.out_subdir('prec')
     # )
 
-    for pdb_id in ['5nl4:a', ]:  # '1mwc:a', '2wur:a', '5jdt:a']:
+    for pdb_id in ['2wur:a', '5nl4:a', '5tnt:b', '1nkd:a', '1n19:a', '6mv4:h',
+                   '6mv4:l', ]:
+        # '1mwc:a', ' \ ''2wur:a', # '5jdt:a']:
         collector = ProteinGroupsCollector(pdb_id, blast_identity_cutoff=0)
         collector.collect()
