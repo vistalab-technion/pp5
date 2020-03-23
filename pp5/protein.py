@@ -795,15 +795,15 @@ class ProteinGroup(object):
         self.max_all_atom_rmsd = max_all_atom_rmsd
         self.min_aligned_residues = min_aligned_residues
 
-        self.ref_prec = ProteinRecord.from_pdb(self.ref_pdb_id)
+        self.ref_prec = ProteinRecord.from_pdb(self.ref_pdb_id, cache=True)
 
         # Find residues matches with the reference
         ref_matches: Dict[int, Dict[str, ResidueMatch]] = OrderedDict()
-        query_pdb_to_unp_ids = {}
+        query_pdb_to_prec = {}
         for q_pdb_id, alignment in self._struct_align_filter(query_pdb_ids):
             q_pdb_id = q_pdb_id.upper()
             try:
-                q_prec = ProteinRecord.from_pdb(q_pdb_id)
+                q_prec = ProteinRecord.from_pdb(q_pdb_id, cache=True)
             except ProteinInitError as e:
                 LOGGER.error(f'Failed to create prec for query structure: {e}')
                 continue
@@ -813,18 +813,15 @@ class ProteinGroup(object):
                 # ref idx -> query pdb_id -> query residue
                 ref_idx_matches = ref_matches.setdefault(r_idx, OrderedDict())
 
-                # Reference and query matching residues
-                r_res, q_res = self.ref_prec[r_idx], q_prec[q_idx]
-
                 # Calculate match type and angle diff
                 match = self._make_match(q_prec, r_idx, q_idx)
                 if match is not None:
                     ref_idx_matches[q_pdb_id] = match
 
-            query_pdb_to_unp_ids[q_pdb_id] = q_prec.unp_id
+            query_pdb_to_prec[q_pdb_id] = q_prec
 
         self.ref_matches = ref_matches
-        self.query_pdb_to_unp_ids = query_pdb_to_unp_ids
+        self.query_pdb_to_prec = query_pdb_to_prec
 
     def to_dataframe(self):
         df_index = []
@@ -832,6 +829,7 @@ class ProteinGroup(object):
 
         for ref_idx, matches in self.ref_matches.items():
             for query_pdb_id, match in matches.items():
+                q_prec = self.query_pdb_to_prec[query_pdb_id]
                 data = OrderedDict(match.__dict__.copy())
 
                 del data['angles']
@@ -840,8 +838,10 @@ class ProteinGroup(object):
 
                 data['type'] = match.type.name
                 data.move_to_end('type', last=False)
-                data['unp_id'] = self.query_pdb_to_unp_ids[query_pdb_id]
+                data['unp_id'] = q_prec.unp_id
                 data.move_to_end('unp_id', last=False)
+                data['resolution'] = q_prec.pdb_meta.resolution
+                data.move_to_end('resolution', last=False)
 
                 df_data.append(data)
                 df_index.append((ref_idx, query_pdb_id))
@@ -1009,4 +1009,4 @@ class ProteinGroup(object):
         return math.degrees(dist)
 
     def __repr__(self):
-        return f'{self.ref_pdb_id}, size={len(self.query_pdb_to_unp_ids)}'
+        return f'{self.ref_pdb_id}, size={len(self.query_pdb_to_prec)}'
