@@ -17,7 +17,10 @@ def get_tmp_path(name: str, clear=True):
 
     if clear:
         for f in path.glob('*'):
-            os.remove(f)
+            try:
+                os.remove(f)
+            except OSError:
+                pass
 
     return path
 
