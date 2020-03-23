@@ -1,6 +1,7 @@
 import pickle
 import pytest
 
+import pp5
 from pp5.protein import ProteinRecord, ProteinInitError
 from pp5.external_dbs import unp
 from tests import get_tmp_path
@@ -75,7 +76,9 @@ class TestCreation:
 
 
 class TestSave:
-    TEMP_PATH = get_tmp_path('prec')
+    @classmethod
+    def setup_class(cls):
+        cls.TEMP_PATH = get_tmp_path('prec')
 
     @pytest.mark.parametrize('pdb_id', ['2WUR:A', '102L', '5NL4:A'])
     def test_save_roundtrip(self, pdb_id):
@@ -86,3 +89,38 @@ class TestSave:
             prec2 = pickle.load(f)
 
         assert prec == prec2
+
+
+class TestCache:
+    @classmethod
+    def setup_class(cls):
+        cls.CACHE_DIR = get_tmp_path('prec_cache')
+
+    @pytest.mark.parametrize('pdb_id', ['1MWC:A', ])
+    def test_from_pdb_with_cache(self, pdb_id):
+        prec = ProteinRecord.from_pdb(pdb_id, cache=self.CACHE_DIR)
+
+        filename = f"{pdb_id.replace(':', '_')}.prec"
+        expected_filepath = self.CACHE_DIR.joinpath(filename)
+        assert expected_filepath.is_file()
+
+        with open(str(expected_filepath), 'rb') as f:
+            loaded_prec = pickle.load(f)
+
+        assert prec == loaded_prec
+
+        actual_filepath, loaded_prec = \
+            ProteinRecord.from_cache(pdb_id, cache_dir=self.CACHE_DIR)
+
+        assert prec == loaded_prec
+        assert expected_filepath == actual_filepath
+
+    @pytest.mark.parametrize('pdb_id', ['1B0Y:A', ])
+    def test_from_cache_non_existant_id(self, pdb_id):
+        path, prec = ProteinRecord.from_cache(pdb_id, cache_dir=self.CACHE_DIR)
+
+        filename = f"{pdb_id.replace(':', '_')}.prec"
+        expected_filepath = self.CACHE_DIR.joinpath(filename)
+        assert not expected_filepath.is_file()
+        assert prec is None
+        assert expected_filepath == path

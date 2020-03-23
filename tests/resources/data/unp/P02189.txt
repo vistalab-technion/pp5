@@ -1,0 +1,180 @@
+ID   MYG_PIG                 Reviewed;         154 AA.
+AC   P02189;
+DT   21-JUL-1986, integrated into UniProtKB/Swiss-Prot.
+DT   23-JAN-2007, sequence version 2.
+DT   11-DEC-2019, entry version 115.
+DE   RecName: Full=Myoglobin;
+GN   Name=MB;
+OS   Sus scrofa (Pig).
+OC   Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; Mammalia;
+OC   Eutheria; Laurasiatheria; Artiodactyla; Suina; Suidae; Sus.
+OX   NCBI_TaxID=9823;
+RN   [1]
+RP   NUCLEOTIDE SEQUENCE [MRNA].
+RX   PubMed=3005120; DOI=10.1016/0378-1119(85)90033-2;
+RA   Akaboshi E.;
+RT   "Cloning and sequence analysis of porcine myoglobin cDNA.";
+RL   Gene 40:137-140(1985).
+RN   [2]
+RP   PROTEIN SEQUENCE OF 2-154.
+RX   PubMed=952959; DOI=10.1016/0005-2795(76)90160-4;
+RA   Rousseaux J., Dautrevaux M., Han K.;
+RT   "Comparison of the amino acid sequence of pig heart myoglobin with other
+RT   ungulate myoglobins.";
+RL   Biochim. Biophys. Acta 439:55-62(1976).
+RN   [3]
+RP   X-RAY CRYSTALLOGRAPHY (2.50 ANGSTROMS) OF 2-154 IN COMPLEX WITH HEME.
+RX   PubMed=2383370; DOI=10.1107/s0108768189012450;
+RA   Smerdon S.J., Oldfield T.J., Dodson E.J., Dodson G.G., Hubbard R.E.,
+RA   Wilkinson A.J.;
+RT   "Determination of the crystal structure of recombinant pig myoglobin by
+RT   molecular replacement and its refinement.";
+RL   Acta Crystallogr. B 46:370-377(1990).
+RN   [4]
+RP   X-RAY CRYSTALLOGRAPHY (1.70 ANGSTROMS) OF 2-154 IN COMPLEX WITH HEME.
+RX   PubMed=9843395; DOI=10.1021/bi9812470;
+RA   Krzywda S., Murshudov G.N., Brzozowski A.M., Jaskolski M., Scott E.E.,
+RA   Klizas S.A., Gibson Q.H., Olson J.S., Wilkinson A.J.;
+RT   "Stabilizing bound O2 in myoglobin by valine68 (E11) to asparagine
+RT   substitution.";
+RL   Biochemistry 37:15896-15907(1998).
+CC   -!- FUNCTION: Serves as a reserve supply of oxygen and facilitates the
+CC       movement of oxygen within muscles.
+CC   -!- SIMILARITY: Belongs to the globin family. {ECO:0000255|PROSITE-
+CC       ProRule:PRU00238}.
+CC   ---------------------------------------------------------------------------
+CC   Copyrighted by the UniProt Consortium, see https://www.uniprot.org/terms
+CC   Distributed under the Creative Commons Attribution (CC BY 4.0) License
+CC   ---------------------------------------------------------------------------
+DR   EMBL; M14433; AAA31073.1; -; mRNA.
+DR   PIR; A23988; MYPG.
+DR   RefSeq; NP_999401.1; NM_214236.1.
+DR   PDB; 1M6C; X-ray; 1.90 A; A/B=2-154.
+DR   PDB; 1M6M; X-ray; 1.80 A; A/B=2-154.
+DR   PDB; 1MDN; X-ray; 1.98 A; A/B=2-154.
+DR   PDB; 1MNH; X-ray; 2.30 A; A=2-154.
+DR   PDB; 1MNI; X-ray; 2.07 A; A/B=2-154.
+DR   PDB; 1MNJ; X-ray; 2.20 A; A/B=2-154.
+DR   PDB; 1MNK; X-ray; 2.20 A; A/B=2-154.
+DR   PDB; 1MNO; X-ray; 1.95 A; A/B=2-154.
+DR   PDB; 1MWC; X-ray; 1.70 A; A/B=2-154.
+DR   PDB; 1MWD; X-ray; 1.80 A; A/B=2-154.
+DR   PDB; 1MYG; X-ray; 1.75 A; A/B=2-154.
+DR   PDB; 1MYH; X-ray; 1.90 A; A/B=2-154.
+DR   PDB; 1MYI; X-ray; 2.00 A; A/B=2-154.
+DR   PDB; 1MYJ; X-ray; 1.90 A; A/B=2-154.
+DR   PDB; 1PMB; X-ray; 2.50 A; A/B=2-154.
+DR   PDB; 1YCA; X-ray; 2.90 A; A/B=2-154.
+DR   PDB; 1YCB; X-ray; 2.10 A; A/B=2-154.
+DR   PDBsum; 1M6C; -.
+DR   PDBsum; 1M6M; -.
+DR   PDBsum; 1MDN; -.
+DR   PDBsum; 1MNH; -.
+DR   PDBsum; 1MNI; -.
+DR   PDBsum; 1MNJ; -.
+DR   PDBsum; 1MNK; -.
+DR   PDBsum; 1MNO; -.
+DR   PDBsum; 1MWC; -.
+DR   PDBsum; 1MWD; -.
+DR   PDBsum; 1MYG; -.
+DR   PDBsum; 1MYH; -.
+DR   PDBsum; 1MYI; -.
+DR   PDBsum; 1MYJ; -.
+DR   PDBsum; 1PMB; -.
+DR   PDBsum; 1YCA; -.
+DR   PDBsum; 1YCB; -.
+DR   SMR; P02189; -.
+DR   CarbonylDB; P02189; -.
+DR   PeptideAtlas; P02189; -.
+DR   PRIDE; P02189; -.
+DR   Ensembl; ENSSSCT00005025786; ENSSSCP00005015616; ENSSSCG00005016417.
+DR   Ensembl; ENSSSCT00005025817; ENSSSCP00005015636; ENSSSCG00005016417.
+DR   Ensembl; ENSSSCT00005025838; ENSSSCP00005015652; ENSSSCG00005016417.
+DR   Ensembl; ENSSSCT00030031982; ENSSSCP00030014409; ENSSSCG00030023027.
+DR   Ensembl; ENSSSCT00040092074; ENSSSCP00040040622; ENSSSCG00040067247.
+DR   Ensembl; ENSSSCT00045029098; ENSSSCP00045020148; ENSSSCG00045017115.
+DR   Ensembl; ENSSSCT00045029138; ENSSSCP00045020182; ENSSSCG00045017115.
+DR   Ensembl; ENSSSCT00045029160; ENSSSCP00045020198; ENSSSCG00045017115.
+DR   Ensembl; ENSSSCT00050074045; ENSSSCP00050031909; ENSSSCG00050054308.
+DR   Ensembl; ENSSSCT00070018337; ENSSSCP00070015233; ENSSSCG00070009373.
+DR   Ensembl; ENSSSCT00070018457; ENSSSCP00070015335; ENSSSCG00070009373.
+DR   GeneID; 397467; -.
+DR   CTD; 4151; -.
+DR   InParanoid; P02189; -.
+DR   EvolutionaryTrace; P02189; -.
+DR   Proteomes; UP000008227; Unplaced.
+DR   Proteomes; UP000314985; Chromosome 5.
+DR   GO; GO:0020037; F:heme binding; IEA:InterPro.
+DR   GO; GO:0046872; F:metal ion binding; IEA:UniProtKB-KW.
+DR   GO; GO:0019825; F:oxygen binding; IEA:InterPro.
+DR   GO; GO:0005344; F:oxygen carrier activity; IEA:UniProtKB-KW.
+DR   Gene3D; 1.10.490.10; -; 1.
+DR   InterPro; IPR000971; Globin.
+DR   InterPro; IPR009050; Globin-like_sf.
+DR   InterPro; IPR012292; Globin/Proto.
+DR   InterPro; IPR002335; Myoglobin.
+DR   PANTHER; PTHR47132; PTHR47132; 1.
+DR   Pfam; PF00042; Globin; 1.
+DR   PRINTS; PR00613; MYOGLOBIN.
+DR   SUPFAM; SSF46458; SSF46458; 1.
+DR   PROSITE; PS01033; GLOBIN; 1.
+PE   1: Evidence at protein level;
+KW   3D-structure; Direct protein sequencing; Heme; Iron; Metal-binding;
+KW   Muscle protein; Oxygen transport; Phosphoprotein; Reference proteome;
+KW   Transport.
+FT   INIT_MET        1
+FT                   /note="Removed"
+FT                   /evidence="ECO:0000269|PubMed:952959"
+FT   CHAIN           2..154
+FT                   /note="Myoglobin"
+FT                   /id="PRO_0000053336"
+FT   METAL           65
+FT                   /note="Iron (heme distal ligand)"
+FT                   /evidence="ECO:0000269|PubMed:9843395"
+FT   METAL           94
+FT                   /note="Iron (heme proximal ligand)"
+FT                   /evidence="ECO:0000244|PDB:1M6C, ECO:0000244|PDB:1M6M,
+FT                   ECO:0000244|PDB:1MDN, ECO:0000244|PDB:1MNH,
+FT                   ECO:0000244|PDB:1MNI, ECO:0000244|PDB:1MNJ,
+FT                   ECO:0000244|PDB:1MNK, ECO:0000244|PDB:1MNO,
+FT                   ECO:0000244|PDB:1MWC, ECO:0000244|PDB:1MWD,
+FT                   ECO:0000244|PDB:1MYG, ECO:0000244|PDB:1MYH,
+FT                   ECO:0000244|PDB:1MYI, ECO:0000244|PDB:1MYJ,
+FT                   ECO:0000244|PDB:1PMB, ECO:0000244|PDB:1YCA,
+FT                   ECO:0000244|PDB:1YCB, ECO:0000269|PubMed:2383370,
+FT                   ECO:0000269|PubMed:9843395"
+FT   MOD_RES         4
+FT                   /note="Phosphoserine"
+FT                   /evidence="ECO:0000250|UniProtKB:Q9QZ76"
+FT   MOD_RES         68
+FT                   /note="Phosphothreonine"
+FT                   /evidence="ECO:0000250|UniProtKB:P04247"
+FT   HELIX           5..19
+FT                   /evidence="ECO:0000244|PDB:1MWC"
+FT   HELIX           22..36
+FT                   /evidence="ECO:0000244|PDB:1MWC"
+FT   HELIX           38..41
+FT                   /evidence="ECO:0000244|PDB:1MWC"
+FT   HELIX           45..47
+FT                   /evidence="ECO:0000244|PDB:1MWC"
+FT   HELIX           53..58
+FT                   /evidence="ECO:0000244|PDB:1MWC"
+FT   HELIX           60..77
+FT                   /evidence="ECO:0000244|PDB:1MWC"
+FT   TURN            78..81
+FT                   /evidence="ECO:0000244|PDB:1MWC"
+FT   HELIX           84..95
+FT                   /evidence="ECO:0000244|PDB:1MWC"
+FT   TURN            96..98
+FT                   /evidence="ECO:0000244|PDB:1M6M"
+FT   HELIX           102..119
+FT                   /evidence="ECO:0000244|PDB:1MWC"
+FT   TURN            121..123
+FT                   /evidence="ECO:0000244|PDB:1MWC"
+FT   HELIX           126..149
+FT                   /evidence="ECO:0000244|PDB:1MWC"
+SQ   SEQUENCE   154 AA;  17085 MW;  1CF92ACD400A76D0 CRC64;
+     MGLSDGEWQL VLNVWGKVEA DVAGHGQEVL IRLFKGHPET LEKFDKFKHL KSEDEMKASE
+     DLKKHGNTVL TALGGILKKK GHHEAELTPL AQSHATKHKI PVKYLEFISE AIIQVLQSKH
+     PGDFGADAQG AMSKALELFR NDMAAKYKEL GFQG
+//
