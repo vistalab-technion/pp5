@@ -804,12 +804,17 @@ class ProteinGroup(object):
         # Find residues matches with the reference
         self.ref_matches: Dict[int, Dict[str, ResidueMatch]] = OrderedDict()
         self.query_pdb_to_prec = {}
-        for q_prec, q_matches_dict in q_aligned:
+        for qa in q_aligned:
+            if not qa:
+                continue
+            q_prec, q_matches_dict = qa
             for res_idx, res_matches in q_matches_dict.items():
                 if res_idx not in self.ref_matches:
                     self.ref_matches[res_idx] = OrderedDict()
                 self.ref_matches[res_idx].update(res_matches)
             self.query_pdb_to_prec[q_prec.pdb_id] = q_prec
+
+        # TODO: Compute aggregates
 
     def to_dataframe(self):
         df_index = []
