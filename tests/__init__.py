@@ -24,3 +24,4 @@ def get_tmp_path(name: str, clear=True):
 
 # Override default paths
 os.environ['DATA_DIR'] = str(get_resource_path('data'))
+os.environ['PREC_DIR'] = str(get_tmp_path('prec'))  # don't want to save precs

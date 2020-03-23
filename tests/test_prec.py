@@ -98,7 +98,8 @@ class TestCache:
 
     @pytest.mark.parametrize('pdb_id', ['1MWC:A', ])
     def test_from_pdb_with_cache(self, pdb_id):
-        prec = ProteinRecord.from_pdb(pdb_id, cache=self.CACHE_DIR)
+        prec = ProteinRecord.from_pdb(pdb_id, cache=True,
+                                      cache_dir=self.CACHE_DIR)
 
         filename = f"{pdb_id.replace(':', '_')}.prec"
         expected_filepath = self.CACHE_DIR.joinpath(filename)
@@ -106,21 +107,17 @@ class TestCache:
 
         with open(str(expected_filepath), 'rb') as f:
             loaded_prec = pickle.load(f)
-
         assert prec == loaded_prec
 
-        actual_filepath, loaded_prec = \
-            ProteinRecord.from_cache(pdb_id, cache_dir=self.CACHE_DIR)
-
+        loaded_prec = ProteinRecord.from_cache(pdb_id,
+                                               cache_dir=self.CACHE_DIR)
         assert prec == loaded_prec
-        assert expected_filepath == actual_filepath
 
     @pytest.mark.parametrize('pdb_id', ['1B0Y:A', ])
     def test_from_cache_non_existant_id(self, pdb_id):
-        path, prec = ProteinRecord.from_cache(pdb_id, cache_dir=self.CACHE_DIR)
+        prec = ProteinRecord.from_cache(pdb_id, cache_dir=self.CACHE_DIR)
 
         filename = f"{pdb_id.replace(':', '_')}.prec"
         expected_filepath = self.CACHE_DIR.joinpath(filename)
         assert not expected_filepath.is_file()
         assert prec is None
-        assert expected_filepath == path
