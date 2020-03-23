@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import warnings
 import enum
 import pickle
@@ -522,6 +523,8 @@ class ProteinRecord(object):
         """
         filepath = self._tagged_filepath(self.pdb_id, out_dir, 'prec', tag)
         filepath = pp5.get_resource_path(filepath.parent, filepath.name)
+        os.makedirs(filepath.parent, exist_ok=True)
+
         with open(str(filepath), 'wb') as f:
             pickle.dump(self, f, protocol=4)
 
