@@ -152,8 +152,34 @@ class ProteinRecord(object):
     """
     _SKIP_SERIALIZE = ['_unp_rec', '_pdb_rec', '_pdb_dict', '_pp']
 
+    @staticmethod
+    def from_cache(pdb_id, cache_dir: Union[bool, str, Path] = None,
+                   tag=None) -> Tuple[Path, Optional[ProteinRecord]]:
+        """
+        Loads a cached ProteinRecord, if it exists.
+        :param pdb_id: PDB ID with chain.
+        :param cache_dir: Directory with cached files.
+        :param tag: Optional extra tag on the filename.
+        :return: Tuple of (path, prec). If the cached prec does not exist,
+        then prec will be None and path will be the path where the prec
+        should be saved after creation.
+        """
+        if not isinstance(cache_dir, (str, Path)):
+            cache_dir = pp5.PREC_DIR
+
+        path = ProteinRecord._tagged_filepath(pdb_id, cache_dir, 'prec', tag)
+        filename = path.name
+        path = pp5.get_resource_path(cache_dir, filename)
+        prec = None
+        if path.is_file():
+            with open(str(path), 'rb') as f:
+                prec = pickle.load(f)
+                LOGGER.info(f'Loaded cached ProteinRecord: {path}')
+        return path, prec
+
     @classmethod
-    def from_pdb(cls, pdb_id: str, pdb_dict=None, **kwargs) -> ProteinRecord:
+    def from_pdb(cls, pdb_id: str, pdb_dict: dict = None,
+                 cache: Union[bool, str] = None, **kwargs) -> ProteinRecord:
         """
         Given a PDB id (and optionally a chain), finds the
         corresponding Uniprot id, and returns a ProteinRecord object for
@@ -161,20 +187,34 @@ class ProteinRecord(object):
         :param pdb_id: The PDB id to query, with optional chain, e.g. '0ABC:D'.
         :param pdb_dict: Optional structure dict for the PDB record, in case it
         was already parsed.
+        :param cache: Whether to load prec from cache if available, and if
+        not, whether to write the prec to cache. Can also be a Path/str
+        specifying the cache dir.
         :param kwargs: Extra args for the ProteinRecord initializer.
         :return: A ProteinRecord.
         """
         try:
+            prec_path = None
+            if cache:
+                prec_path, prec = cls.from_cache(pdb_id, cache_dir=cache)
+                if prec is not None:
+                    return prec
+
             pdb_dict = pdb.pdb_dict(pdb_id, struct_d=pdb_dict)
             unp_id = pdb.pdbid_to_unpid(pdb_id, struct_d=pdb_dict)
-            return cls(unp_id, pdb_id, pdb_dict=pdb_dict, **kwargs)
+
+            prec = cls(unp_id, pdb_id, pdb_dict=pdb_dict, **kwargs)
+            if prec_path is not None:
+                prec.save(out_dir=prec_path.parent)
+
+            return prec
         except Exception as e:
             raise ProteinInitError(f"Failed to created protein record for "
                                    f"pdb_id={pdb_id}: {e}") from e
 
     @classmethod
-    def from_pdb_entity(cls, pdb_id: str, entity_id: Union[int, str], **kw) \
-            -> ProteinRecord:
+    def from_pdb_entity(cls, pdb_id: str, entity_id: Union[int, str],
+                        cache: Union[bool, str] = None, **kw) -> ProteinRecord:
         """
         Creates a ProteinRecord based on a PDB ID and an entity ID (not
         chain) within that structure.
@@ -185,6 +225,9 @@ class ProteinRecord(object):
         One of the chains belonging to the desired entity will be selected.
         :param pdb_id: PDB ID, should not contain chain.
         :param entity_id: ID of the desired entity (a number).
+        :param cache: Whether to load prec from cache if available, and if
+        not, whether to write the prec to cache. Can also be a Path/str
+        specifying the cache dir.
         :return: A ProteinRecord.
         """
 
@@ -200,10 +243,11 @@ class ProteinRecord(object):
             raise ProteinInitError(f'No matching chain found for entity '
                                    f'{entity_id} in PDB structure {pdb_id}')
 
-        return cls.from_pdb(f'{pdb_id}:{chain}', pdb_dict=struct_d, **kw)
+        pdb_id = f'{pdb_id}:{chain}'
+        return cls.from_pdb(pdb_id, pdb_dict=struct_d, cache=cache, **kw)
 
     @classmethod
-    def from_unp(cls, unp_id: str,
+    def from_unp(cls, unp_id: str, cache: Union[bool, str] = None,
                  xref_selector: Callable[[unp.UNPPDBXRef], Any] = None,
                  **kwargs) -> ProteinRecord:
         """
@@ -212,6 +256,9 @@ class ProteinRecord(object):
         :param unp_id: The Uniprot id to query.
         :param xref_selector: Sort key for PDB cross refs. If None,
         resolution will be used.
+        :param cache: Whether to load prec from cache if available, and if
+        not, whether to write the prec to cache. Can also be a Path/str
+        specifying the cache dir.
         :param kwargs: Extra args for the ProteinRecord initializer.
         :return: A ProteinRecord.
         """
@@ -222,7 +269,17 @@ class ProteinRecord(object):
             xrefs = unp.find_pdb_xrefs(unp_id)
             xrefs = sorted(xrefs, key=xref_selector)
             pdb_id = f'{xrefs[0].pdb_id}:{xrefs[0].chain_id}'
-            return cls(unp_id, pdb_id, **kwargs)
+
+            prec_path = None
+            if cache:
+                prec_path, prec = cls.from_cache(pdb_id, cache_dir=cache)
+                if prec is not None:
+                    return prec
+
+            prec = cls(unp_id, pdb_id, **kwargs)
+            if prec_path is not None:
+                prec.save(out_dir=prec_path.parent)
+            return prec
         except Exception as e:
             raise ProteinInitError(f"Failed to created protein record for "
                                    f"unp_id={unp_id}") from e
@@ -447,7 +504,7 @@ class ProteinRecord(object):
         :param tag: Optional extra tag to add to filename.
         :return: The path to the written file.
         """
-        filepath = self._tagged_filepath(out_dir, 'csv', tag)
+        filepath = self._tagged_filepath(self.pdb_id, out_dir, 'csv', tag)
         df = self.to_dataframe()
         df.to_csv(filepath, na_rep='nan', header=True, index=False,
                   encoding='utf-8', float_format='%.3f')
@@ -463,14 +520,17 @@ class ProteinRecord(object):
         :param tag: Optional extra tag to add to filename.
         :return: The path to the written file.
         """
-        filepath = self._tagged_filepath(out_dir, 'prec', tag)
+        filepath = self._tagged_filepath(self.pdb_id, out_dir, 'prec', tag)
         with open(str(filepath), 'wb') as f:
-            pickle.dump(self, f)
+            pickle.dump(self, f, protocol=4)
+
+        LOGGER.info(f'Wrote {self} to {filepath}')
         return filepath
 
-    def _tagged_filepath(self, out_dir: Path, suffix: str, tag: str):
+    @staticmethod
+    def _tagged_filepath(pdb_id: str, out_dir: Path, suffix: str, tag: str):
         tag = f'_{tag}' if tag else ''
-        filename = f'{self.pdb_base_id}_{self.pdb_chain_id}{tag}'
+        filename = f'{pdb_id.replace(":", "_").upper()}{tag}'
         filepath = out_dir.joinpath(f'{filename}.{suffix}')
         return filepath
 

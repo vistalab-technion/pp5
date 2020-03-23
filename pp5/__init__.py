@@ -18,19 +18,10 @@ names.
 BASE_DATA_DIR = Path(os.getenv('DATA_DIR', PROJECT_DIR.joinpath('data')))
 BASE_DOWNLOAD_DIR = BASE_DATA_DIR
 
-# Directory for PDB files
-PDB_DIR = Path(os.getenv('PDB_DIR', BASE_DATA_DIR.joinpath('pdb')))
-
-# Directory for UniProt files
-UNP_DIR = Path(os.getenv('UNP_DIR', BASE_DATA_DIR.joinpath('unp')))
-
-# Directory for ENA files
-ENA_DIR = Path(os.getenv('ENA_DIR', BASE_DATA_DIR.joinpath('ena')))
-
 # Directory for writing output files
 OUT_DIR = Path(os.getenv('OUT_DIR', PROJECT_DIR.joinpath('out')))
 
-for d in [BASE_DATA_DIR, PDB_DIR, UNP_DIR, ENA_DIR, OUT_DIR]:
+for d in [BASE_DATA_DIR, OUT_DIR]:
     os.makedirs(d, exist_ok=True)
 
 
@@ -52,6 +43,19 @@ def out_subdir(name):
     :return: An existing sub-directory of the output dir.
     """
     return _get_subdir(OUT_DIR, name)
+
+
+# Directory for PDB files
+PDB_DIR = Path(os.getenv('PDB_DIR', data_subdir('pdb')))
+
+# Directory for UniProt files
+UNP_DIR = Path(os.getenv('UNP_DIR', data_subdir('unp')))
+
+# Directory for ENA files
+ENA_DIR = Path(os.getenv('ENA_DIR', data_subdir('ena')))
+
+# Directory for ProteinRecords
+PREC_DIR = Path(os.getenv('PREC_DIR', data_subdir('prec')))
 
 
 def get_resource_path(data_dir: Path, basename: str):
