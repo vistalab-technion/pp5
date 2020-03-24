@@ -27,6 +27,8 @@ from pp5.external_dbs import pdb
 
 LOGGER = logging.getLogger(__name__)
 
+PYMOL_SA_GAP_SYMBOLS = {'-', '?'}
+
 
 def multiseq_align(seqs: Iterable[Seq] = None, in_file=None, out_file=None,
                    **clustal_kw) -> MultipleSeqAlignment:

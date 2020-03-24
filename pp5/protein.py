@@ -40,6 +40,7 @@ START_CODONS = CodonTable.standard_dna_table.start_codons
 STOP_CODONS = CodonTable.standard_dna_table.stop_codons
 UNKNOWN_AA = 'X'
 UNKNOWN_CODON = '---'
+from pp5.align import PYMOL_SA_GAP_SYMBOLS as PSA_GAP
 
 LOGGER = logging.getLogger(__name__)
 
@@ -879,9 +880,9 @@ class ProteinGroup(object):
         r_idx, q_idx = -1, -1
         stars_to_pymol_idx = {}
         for i in range(n):
-            if r_seq_pymol[i] is not '-':
+            if r_seq_pymol[i] not in PSA_GAP:
                 r_idx += 1
-            if q_seq_pymol[i] is not '-':
+            if q_seq_pymol[i] not in PSA_GAP:
                 q_idx += 1
             stars_to_pymol_idx[i] = (r_idx, q_idx)
 
@@ -911,7 +912,7 @@ class ProteinGroup(object):
 
             # We allow them to differ, but both must be an aligned AA,
             # not a gap symbol
-            if r_seq_pymol[i] == '-' or q_seq_pymol[i] == '-':
+            if r_seq_pymol[i] in PSA_GAP or q_seq_pymol[i] in PSA_GAP:
                 continue
 
             # Now we need to convert i into the index in the prec of each
@@ -920,8 +921,16 @@ class ProteinGroup(object):
             r_idx_prec = r_pymol_to_prec[r_idx_pymol]
             q_idx_prec = q_pymol_to_prec[q_idx_pymol]
 
-            # Get the matching residues
+            # Get the matching residues, make sure they are usable
             r_res, q_res = self.ref_prec[r_idx_prec], q_prec[q_idx_prec]
+            if r_res.name == UNKNOWN_AA or q_res.name == UNKNOWN_AA:
+                continue
+            if r_res.codon == UNKNOWN_CODON or q_res.codon == UNKNOWN_CODON:
+                continue
+
+            # Make sure we got from i to the correct residues in the precs
+            assert r_res.name == r_seq_pymol[i], i
+            assert q_res.name == q_seq_pymol[i], i
 
             # Compute type of match
             pdb_match = self.ref_prec.pdb_id == q_prec.pdb_id
@@ -969,10 +978,12 @@ class ProteinGroup(object):
     def _align_pymol_to_prec(prec: ProteinRecord, pymol_seq: Seq) \
             -> Dict[int, int]:
 
-        # Align the ref seq from our prec and pymol
+        sa_r_seq = str(pymol_seq)
+        for gap_symbol in PSA_GAP:
+            sa_r_seq = sa_r_seq.replace(gap_symbol, '')
+
         aligner = PairwiseAligner(substitution_matrix=BLOSUM80,
                                   open_gap_score=-10, extend_gap_score=-0.5)
-        sa_r_seq = str(pymol_seq).replace('-', '').replace('?', '')
         rr_alignment = aligner.align(prec.protein_seq, sa_r_seq)[0]
         rr_idx_prec, rr_idx_pymol = rr_alignment.aligned
         assert len(rr_idx_prec) == len(rr_idx_pymol)
