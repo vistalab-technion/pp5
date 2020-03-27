@@ -1,8 +1,10 @@
-# deeprr
+# pp5
 /.make/
 /data/
 out/
 tests/resources/**/tmp/
+/tmp.*
+/temp.*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
