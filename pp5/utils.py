@@ -8,6 +8,7 @@ import contextlib
 from pathlib import Path
 
 import requests
+from IPython import get_ipython
 from requests import HTTPError
 
 LOGGER = logging.getLogger(__name__)
@@ -87,8 +88,10 @@ def is_interactive():
     """
     :return: Whether python is running as an interactive shell.
     """
-    main = importlib.import_module('__main__')
-    return not hasattr(main, '__file__')
+    # main = importlib.import_module('__main__')
+    # return not hasattr(main, '__file__')
+    ipy = get_ipython()
+    return ipy is not None
 
 
 @contextlib.contextmanager
@@ -133,6 +136,7 @@ def out_redirected(stdout_stderr='stdout', to=os.devnull,
     if standard_fds_only and \
             not ((stdout_stderr == 'stdout' and fd == 1) or
                  (stdout_stderr == 'stderr' and fd == 2)):
+        LOGGER.warning(f"None standard fd {stdout_stderr}={fd}")
         yield
 
     # In interactive python, don't redirect by changing file-descriptors
