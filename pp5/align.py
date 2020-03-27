@@ -13,7 +13,7 @@ from pp5.utils import out_redirected
 
 with out_redirected('stderr'), contextlib.redirect_stdout(sys.stderr):
     # Suppress pymol messages about license and about running without GUI
-    import pymol.cmd as pymol
+    from pymol import cmd as pymol
 
     pymol.delete('all')
 
