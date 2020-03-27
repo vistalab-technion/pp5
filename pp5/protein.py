@@ -12,7 +12,7 @@ from typing import List, Tuple, Dict, Iterator, Callable, Any, Union, Iterable, 
 from collections import OrderedDict
 
 import pandas as pd
-from Bio.Align import PairwiseAligner, MultipleSeqAlignment
+from Bio.Align import PairwiseAligner, MultipleSeqAlignment as MSA
 from Bio.Data import CodonTable
 from Bio.PDB import PPBuilder
 from Bio.PDB.Polypeptide import Polypeptide
@@ -522,7 +522,7 @@ class ProteinRecord(object):
 
     @staticmethod
     def _tagged_filepath(pdb_id: str, out_dir: Path, suffix: str, tag: str):
-        tag = f'_{tag}' if tag else ''
+        tag = f'-{tag}' if tag else ''
         filename = f'{pdb_id.replace(":", "_").upper()}{tag}'
         filepath = out_dir.joinpath(f'{filename}.{suffix}')
         return filepath
@@ -855,20 +855,32 @@ class ProteinGroup(object):
 
         # Find residues matches with the reference
         self.ref_matches: Dict[int, Dict[str, ResidueMatch]] = OrderedDict()
-        self.query_pdb_to_prec = {}
+        self.query_pdb_ids = []
+        self.query_pdb_to_prec: Dict[str, ProteinRecord] = OrderedDict()
+        self.query_pdb_to_alignment: Dict[str, MSA] = OrderedDict()
         for qa in q_aligned:
             if not qa:
                 continue
-            q_prec, q_matches_dict = qa
+
+            # qa contains a dict of matches for one query structure
+            q_prec, q_alignment, q_matches_dict = qa
+
             for res_idx, res_matches in q_matches_dict.items():
                 if res_idx not in self.ref_matches:
                     self.ref_matches[res_idx] = OrderedDict()
                 self.ref_matches[res_idx].update(res_matches)
+
+            self.query_pdb_ids.append(q_prec.pdb_id)
             self.query_pdb_to_prec[q_prec.pdb_id] = q_prec
+            self.query_pdb_to_alignment[q_prec.pdb_id] = q_alignment
 
         # TODO: Compute aggregates
 
-    def to_dataframe(self):
+    def to_residue_dataframe(self):
+        """
+        :return: A DataFrame containing the aligned residues matches for
+        each residue in the reference structure.
+        """
         df_index = []
         df_data = []
 
@@ -896,18 +908,82 @@ class ProteinGroup(object):
         df = pd.DataFrame(data=df_data, index=df_index)
         return df
 
-    def to_csv(self, out_dir=pp5.out_subdir('pgroup'), tag=None):
-        df = self.to_dataframe()
-        tag = f'_{tag}' if tag else ''
-        filename = f'{self.ref_pdb_base_id}_{self.ref_pdb_chain}{tag}'
-        filepath = out_dir.joinpath(f'{filename}.csv')
-        df.to_csv(filepath, na_rep='nan', header=True, index=True,
-                  encoding='utf-8', float_format='%.3f')
-        LOGGER.info(f'Wrote {self} to {filepath}')
-        return filepath
+    def to_struct_dataframe(self):
+        """
+        :return: A DataFrame containing metadata about each of the
+        structures in the ProteinGroup.
+        """
+        data = []
+        for q_pdb_id in self.query_pdb_ids:
+            q_prec = self.query_pdb_to_prec[q_pdb_id]
+            q_alignment = self.query_pdb_to_alignment[q_pdb_id]
+            data.append({
+                'unp_id': q_prec.unp_id, 'pdb_id': q_prec.pdb_id,
+                'resolution': q_prec.pdb_meta.resolution,
+                'struct_rmse': q_alignment.annotations['rmse'],
+                'n_stars': q_alignment.annotations['n_stars'],
+                'seq_len': q_alignment.annotations['seq_len'],
+                'description': q_prec.pdb_meta.description,
+                'src_org': q_prec.pdb_meta.src_org,
+                'src_org_id': q_prec.pdb_meta.src_org_id,
+                'host_org': q_prec.pdb_meta.host_org,
+                'host_org_id': q_prec.pdb_meta.host_org_id,
+                'ligands': q_prec.pdb_meta.ligands,
+                'space_group': q_prec.pdb_meta.space_group,
+                'r_free': q_prec.pdb_meta.r_free,
+                'r_work': q_prec.pdb_meta.r_work,
+                'cg_ph': q_prec.pdb_meta.cg_ph,
+                'cg_temp': q_prec.pdb_meta.cg_temp,
+            })
+
+        df = pd.DataFrame(data)
+        df['ref_group'] = df['unp_id'] == self.ref_prec.unp_id
+        df = df.astype({'src_org_id': "Int32", 'host_org_id': "Int32"})
+        df.sort_values(by=['ref_group', 'unp_id', 'struct_rmse'],
+                       ascending=[False, True, True], inplace=True,
+                       ignore_index=True)
+        return df
+
+    def to_csv(self, out_dir=pp5.out_subdir('pgroup'), types='all', tag=None):
+        """
+        Writes one or more CSV files describing this protein group.
+        :param out_dir: Output directory.
+        :param types: What CSV types to write. Can be either 'all',
+        or a list containing a combination of:
+        struct - write the structure metadata
+        residue - write the per-residue alignment data
+        :param tag: Optional tag to add to the output filenames.
+        :return: A list of file paths written.
+        """
+
+        df_funcs = {'struct': self.to_struct_dataframe,
+                    'residue': self.to_residue_dataframe}
+
+        if not types or types == 'all':
+            types = df_funcs.keys()
+
+        filepaths = []
+        for csv_type in types:
+            df_func = df_funcs.get(csv_type)
+            if not df_func:
+                LOGGER.warning(f'Unknown ProteinGroup CSV type {csv_type}')
+                continue
+
+            df = df_func()
+            tag_str = f'-{tag}' if tag else ''
+            filename = f'{self.ref_pdb_base_id}_{self.ref_pdb_chain}{tag_str}'
+            filepath = out_dir.joinpath(f'{filename}-{csv_type}.csv')
+
+            df.to_csv(filepath, na_rep='', header=True, index=True,
+                      encoding='utf-8', float_format='%.3f')
+
+            LOGGER.info(f'Wrote {self} to {filepath}')
+            filepaths.append(filepath)
+
+        return filepaths
 
     def _align_query_residues_to_ref(self, q_pdb_id: str) -> Optional[
-        Tuple[ProteinRecord, Dict[int, Dict[str, ResidueMatch]]]
+        Tuple[ProteinRecord, MSA, Dict[int, Dict[str, ResidueMatch]]]
     ]:
         try:
             q_prec = ProteinRecord.from_pdb(q_pdb_id, cache=True)
@@ -915,16 +991,16 @@ class ProteinGroup(object):
             LOGGER.error(f'Failed to create prec for query structure: {e}')
             return None
 
-        msa = self._struct_align_filter(q_prec.pdb_id)
-        if msa is None:
+        alignment = self._struct_align_filter(q_prec)
+        if alignment is None:
             return None
 
-        stars = msa.column_annotations['clustal_consensus']
-        n = msa.get_alignment_length()
+        stars = alignment.column_annotations['clustal_consensus']
+        n = alignment.get_alignment_length()
         assert n == len(stars)
 
-        r_seq_pymol = msa[0].seq
-        q_seq_pymol = msa[1].seq
+        r_seq_pymol = alignment[0].seq
+        q_seq_pymol = alignment[1].seq
 
         # Map from index in the structural alignment to the index within each
         # sequence we got from pymol
@@ -999,10 +1075,9 @@ class ProteinGroup(object):
             res_matches = matches.setdefault(r_idx_prec, OrderedDict())
             res_matches[q_prec.pdb_id] = match
 
-        return q_prec, matches
+        return q_prec, alignment, matches
 
-    def _struct_align_filter(self, q_pdb_id: str) \
-            -> Optional[MultipleSeqAlignment]:
+    def _struct_align_filter(self, q_prec: ProteinRecord) -> Optional[MSA]:
         """
         Performs structural alignment between the query and the reference
         structure. Rejects query structures which do not conform to the
@@ -1010,6 +1085,7 @@ class ProteinGroup(object):
         :param q_pdb_id: Query PDB ID.
         :return: Alignment object, or None if query was rejected.
         """
+        q_pdb_id = q_prec.pdb_id
         rmse, n_stars, msa = structural_align(self.ref_pdb_id, q_pdb_id)
 
         if rmse is None or rmse > self.max_all_atom_rmsd:
@@ -1022,6 +1098,13 @@ class ProteinGroup(object):
             LOGGER.info(f'Rejecting {q_pdb_id} due to insufficient aligned '
                         f'residues, n_stars={n_stars}')
             return None
+
+        # Save extra details about the alignment
+        meta = q_prec.pdb_meta
+        seq = meta.entity_sequence[meta.chain_entities[q_prec.pdb_chain_id]]
+        msa.annotations['seq_len'] = len(seq)
+        msa.annotations['rmse'] = rmse
+        msa.annotations['n_stars'] = n_stars
 
         return msa
 
