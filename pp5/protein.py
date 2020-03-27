@@ -183,9 +183,11 @@ class ProteinRecord(object):
     def from_pdb(cls, pdb_id: str, pdb_dict: dict = None, cache=False,
                  cache_dir=pp5.PREC_DIR, **kwargs) -> ProteinRecord:
         """
-        Given a PDB id (and optionally a chain), finds the
-        corresponding Uniprot id, and returns a ProteinRecord object for
-        that protein.
+        Given a PDB id, finds the corresponding Uniprot id, and returns a
+        ProteinRecord object for that protein.
+        The PDB ID can be any valid format: either base ID only,
+        e.g. '1ABC'; with a specified chain, e.g. '1ABC:D'; or with a
+        specified entity, e.g. '1ABC:2'.
         :param pdb_id: The PDB id to query, with optional chain, e.g. '0ABC:D'.
         :param pdb_dict: Optional structure dict for the PDB record, in case it
         was already parsed.
@@ -196,12 +198,33 @@ class ProteinRecord(object):
         :return: A ProteinRecord.
         """
         try:
-            if cache:
+            pdb_dict = None
+
+            # Either chain or entity or none can be provided, but not both
+            pdb_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
+            if entity_id:
+                entity_id = int(entity_id)
+
+                # Discover which chains belong to this entity
+                pdb_dict = pdb.pdb_dict(pdb_id)
+                meta = pdb.pdb_metadata(pdb_id, struct_d=pdb_dict)
+                chain_id = meta.get_chain(entity_id)
+                if not chain_id:
+                    raise ProteinInitError(
+                        f'No matching chain found for entity '
+                        f'{entity_id} in PDB structure {pdb_id}')
+                pdb_id = f'{pdb_id}:{chain_id}'
+
+            elif chain_id:
+                pdb_id = f'{pdb_id}:{chain_id}'
+
+            if cache and chain_id:
                 prec = cls.from_cache(pdb_id, cache_dir)
                 if prec is not None:
                     return prec
 
-            pdb_dict = pdb.pdb_dict(pdb_id, struct_d=pdb_dict)
+            if not pdb_dict:
+                pdb_dict = pdb.pdb_dict(pdb_id, struct_d=pdb_dict)
             unp_id = pdb.pdbid_to_unpid(pdb_id, struct_d=pdb_dict)
 
             prec = cls(unp_id, pdb_id, pdb_dict=pdb_dict, **kwargs)
@@ -212,42 +235,6 @@ class ProteinRecord(object):
         except Exception as e:
             raise ProteinInitError(f"Failed to created protein record for "
                                    f"pdb_id={pdb_id}: {e}") from e
-
-    @classmethod
-    def from_pdb_entity(cls, pdb_id: str, entity_id: Union[int, str],
-                        cache=False, cache_dir=pp5.PREC_DIR, **kw) \
-            -> ProteinRecord:
-        """
-        Creates a ProteinRecord based on a PDB ID and an entity ID (not
-        chain) within that structure.
-        Entities are the distinct chemical components of structures in the
-        PDB. Unlike chains, entities do not include duplicate copies. In
-        other words, each entity in a structure is different from every
-        other entity in the structure.
-        One of the chains belonging to the desired entity will be selected.
-        :param pdb_id: PDB ID, should not contain chain.
-        :param entity_id: ID of the desired entity (a number).
-        :param cache: Whether to load prec from cache if available.
-        :param cache_dir: Where the cache dir is. ProteinRecords will be
-        written to this folder after creation, unless it's None.
-        :return: A ProteinRecord.
-        """
-
-        # Make sure PDB ID has correct format and ignore chain if provided
-        pdb_id, _ = pdb.split_id(pdb_id)
-        entity_id = int(entity_id)
-
-        # Discover which chains belong to this entity
-        struct_d = pdb.pdb_dict(pdb_id)
-        meta = pdb.pdb_metadata(pdb_id, struct_d=struct_d)
-        chain = meta.get_chain(entity_id)
-        if not chain:
-            raise ProteinInitError(f'No matching chain found for entity '
-                                   f'{entity_id} in PDB structure {pdb_id}')
-
-        pdb_id = f'{pdb_id}:{chain}'
-        return cls.from_pdb(pdb_id, pdb_dict=struct_d, cache=cache,
-                            cache_dir=cache_dir, **kw)
 
     @classmethod
     def from_unp(cls, unp_id: str, cache=False, cache_dir=pp5.PREC_DIR,

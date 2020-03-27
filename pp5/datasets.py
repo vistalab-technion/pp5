@@ -110,15 +110,8 @@ class ProteinRecordCollector(ParallelDataCollector):
 
         async_results = []
         for i, pdb_id in enumerate(pdb_ids):
-            pdb_base_id, chain, entity = pdb.split_id_with_entity(pdb_id)
-            if entity:
-                r = pool.apply_async(ProteinRecord.from_pdb_entity,
-                                     args=(pdb_base_id, entity),
-                                     kwds=self.prec_init_args)
-            else:
-                r = pool.apply_async(ProteinRecord.from_pdb,
-                                     args=(pdb_id,),
-                                     kwds=self.prec_init_args)
+            r = pool.apply_async(ProteinRecord.from_pdb, args=(pdb_id,),
+                                 kwds=self.prec_init_args)
             async_results.append(r)
 
         start_time, counter, pps = time.time(), 0, 0
@@ -244,7 +237,7 @@ class ProteinGroupsCollector(ParallelDataCollector):
                        ignore_index=True)
 
         file_pdb_id = self.ref_pdb_id.replace(":", "_")
-        out_file = self.out_dir.joinpath(f'{file_pdb_id}.csv')
+        out_file = self.out_dir.joinpath(f'{file_pdb_id}_collected.csv')
 
         LOGGER.info(f'Writing output file {out_file}...')
         df.to_csv(out_file, float_format='%.2f')
@@ -255,18 +248,11 @@ class ProteinGroupsCollector(ParallelDataCollector):
                     f"{pps:.1f} proteins/sec).")
 
     def _process_entity(self, pdb_id: str):
-        pdb_base_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
         try:
-            # Convert entity to chain and Uniprot id
-            if entity_id:
-                prec = ProteinRecord.from_pdb_entity(pdb_base_id, entity_id)
-                chain_id = prec.pdb_meta.get_chain(int(entity_id))
-            elif chain_id:
-                prec = ProteinRecord.from_pdb(pdb_id)
-            else:
-                raise ValueError(f'Unspecified chain or entity for {pdb_id}')
+            prec = ProteinRecord.from_pdb(pdb_id)
 
             pdb_id = prec.pdb_id
+            chain_id = prec.pdb_chain_id
             unp_id = prec.unp_id
             metadata = prec.pdb_meta
             seq_len = len(
