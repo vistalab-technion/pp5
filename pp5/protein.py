@@ -25,7 +25,7 @@ from pp5.dihedral import Dihedral, DihedralAnglesEstimator, \
     DihedralAnglesUncertaintyEstimator, DihedralAnglesMonteCarloEstimator, \
     BFactorEstimator
 from pp5.external_dbs import pdb, unp, ena
-from pp5.external_dbs.pdb import PDBRecord
+from pp5.external_dbs.pdb import PDBRecord, PDBQuery
 from pp5.external_dbs.unp import UNPRecord
 from pp5.align import structural_align
 
@@ -734,17 +734,64 @@ class ProteinGroup(object):
     All proteins in the group are aligned to the reference and different
     residue pairs are created. The pairs have different types based on the
     properties of the alignment (variant/same/silent/mutation/alteration).
-
-    TODO
     """
+    DEFAULT_EXPR_SYS = 'Escherichia Coli'
+    DEFAULT_RES = 1.8
 
     @classmethod
-    def from_ref(cls, pdb_id: str):
-        # Use collector?
-        pass
+    def from_pdb_ref(cls, ref_pdb_id: str,
+                     expr_sys_query: Union[str, PDBQuery] = DEFAULT_EXPR_SYS,
+                     resolution_query: Union[float, PDBQuery] = DEFAULT_RES,
+                     blast_e_cutoff: float = 1.,
+                     blast_identity_cutoff: float = 30.,
+                     **kw):
+        """
+        Creates a ProteinGroup given a reference PDB ID.
+        Performs a query combining expression system, resolution and
+        sequence matching (BLAST) to find PDB IDs of the group.
+        Then initializes a ProteinGroup with the PDB IDs obtained from the
+        query.
+
+        :param ref_pdb_id: PDB ID of reference structure. Should include chain.
+        :param expr_sys_query: Expression system query object or a a string
+        containing the organism name.
+        :param resolution_query: Resolution query or a number specifying the
+        maximal resolution value.
+        :param blast_e_cutoff: Expectation value cutoff parameter for BLAST.
+        :param blast_identity_cutoff: Identity cutoff parameter for BLAST.
+        :param kw: Keyword args for the ProteinGroup __init__()
+        :return: A ProteinGroup for the given reference id.
+        """
+
+        ref_pdb_id = ref_pdb_id.upper()
+        ref_pdb_base_id, ref_chain = pdb.split_id(ref_pdb_id)
+        if not ref_chain:
+            raise ValueError('Must provide chain for reference')
+
+        if isinstance(expr_sys_query, str):
+            expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys_query)
+
+        if isinstance(resolution_query, (int, float)):
+            resolution_query = pdb.PDBResolutionQuery(max_res=resolution_query)
+
+        sequence_query = pdb.PDBSequenceQuery(
+            pdb_id=ref_pdb_id, e_cutoff=blast_e_cutoff,
+            identity_cutoff=blast_identity_cutoff
+        )
+
+        composite_query = pdb.PDBCompositeQuery(
+            expr_sys_query, resolution_query, sequence_query
+        )
+
+        pdb_entities = set(composite_query.execute())
+        LOGGER.info(f'Initializing ProteinGroup for {ref_pdb_id} with '
+                    f'{len(pdb_entities)} query results...')
+
+        return cls.from_query_ids(ref_pdb_id, pdb_entities, **kw)
 
     @classmethod
-    def from_pdb(cls, ref_pdb_id: str, query_pdb_ids: Iterable[str], **kw):
+    def from_query_ids(cls, ref_pdb_id: str, query_pdb_ids: Iterable[str],
+                       **kw):
         return cls(ref_pdb_id, query_pdb_ids, **kw)
 
     @classmethod
@@ -754,7 +801,7 @@ class ProteinGroup(object):
         # everything is aligned to the reference.
         df = pd.read_csv(filepath, header=0, index_col=0)
         query_pdb_ids = list(df['pdb_id'])
-        return cls.from_pdb(ref_pdb_id, query_pdb_ids, **kw)
+        return cls.from_query_ids(ref_pdb_id, query_pdb_ids, **kw)
 
     def __init__(self, ref_pdb_id: str, query_pdb_ids: Iterable[str],
                  context_len: int = 1, max_all_atom_rmsd: float = 2.,
@@ -769,10 +816,27 @@ class ProteinGroup(object):
         # Make sure that the query IDs are valid
         if not query_pdb_ids:
             raise ProteinInitError('No query PDB IDs provided')
+
         try:
-            split_ids = [pdb.split_id(query_id) for query_id in query_pdb_ids]
-            if not all(map(lambda x: x[1], split_ids)):
-                raise ValueError('Must specify chain for all structures')
+            query_pdb_ids = list(query_pdb_ids)  # to allow multiple iteration
+            split_ids = [pdb.split_id_with_entity(query_id) for query_id in
+                         query_pdb_ids]
+
+            # Make sure all query ids have either chain or entity
+            if not all(map(lambda x: x[1] or x[2], split_ids)):
+                raise ValueError('Must specify chain or entity for all '
+                                 'structures')
+
+            # If there's no entry for the reference, add it
+            if not any(map(lambda x: x[0] == self.ref_pdb_base_id, split_ids)):
+                query_pdb_ids.insert(0, self.ref_pdb_id)
+
+            # Sort query ids so that the reference is first, then by id
+            def sort_key(pdb_id: str):
+                return not pdb_id.startswith(self.ref_pdb_base_id), pdb_id
+
+            query_pdb_ids = sorted(query_pdb_ids, key=sort_key)
+
         except ValueError as e:
             # can also be raised by split, if format invalid
             raise ProteinInitError(str(e)) from None
