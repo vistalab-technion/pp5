@@ -5,6 +5,7 @@ import os
 import sys
 from collections.abc import Mapping, Set, Sequence
 import contextlib
+from io import UnsupportedOperation
 from pathlib import Path
 
 import requests
@@ -108,6 +109,20 @@ def out_redirected(stdout_stderr='stdout', to=os.devnull,
     """
     assert stdout_stderr in {'stdout', 'stderr'}
 
+    # In interactive python, don't redirect by changing file-descriptors
+    # because this will crash the interactive shell (which also uses these
+    # files). Use the regular contextlib context managers.
+    if no_interactive and is_interactive():
+        if stdout_stderr == 'stdout':
+            redirect_fn = contextlib.redirect_stdout
+        else:
+            redirect_fn = contextlib.redirect_stderr
+
+        with open(to, 'w') as file:
+            with redirect_fn(file):
+                yield
+        return
+
     fd = getattr(sys, stdout_stderr).fileno()
 
     # Loggers which log to the stream being redirected must be modified
@@ -138,19 +153,6 @@ def out_redirected(stdout_stderr='stdout', to=os.devnull,
                  (stdout_stderr == 'stderr' and fd == 2)):
         LOGGER.warning(f"None standard fd {stdout_stderr}={fd}")
         yield
-
-    # In interactive python, don't redirect by changing file-descriptors
-    # because this will crash the interactive shell (which also uses these
-    # files). Use the regular contextlib context managers.
-    elif no_interactive and is_interactive():
-        if stdout_stderr == 'stdout':
-            redirect_fn = contextlib.redirect_stdout
-        else:
-            redirect_fn = contextlib.redirect_stderr
-
-        with open(to, 'w') as file:
-            with redirect_fn(file):
-                yield
 
     # In non-interactive python, we redirect by changing file descriptors.
     # The advantage is that this affect non-python code in this process,
