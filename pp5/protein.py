@@ -821,7 +821,8 @@ class ProteinGroup(object):
                  context_len: int = 1, prec_cache=True,
                  sa_outlier_cutoff: float = 2.,
                  sa_max_all_atom_rmsd: float = 2.,
-                 sa_min_aligned_residues: int = 50,):
+                 sa_min_aligned_residues: int = 50,
+                 **kw_not_used):
         """
         Creates a ProteinGroup based on a reference PDB ID, and a sequence of
         query PDB IDs. Structural alignment will be performed, and some
@@ -996,6 +997,7 @@ class ProteinGroup(object):
         df_funcs = {'struct': self.to_struct_dataframe,
                     'residue': self.to_residue_dataframe}
 
+        os.makedirs(str(out_dir), exist_ok=True)
         if isinstance(types, str):
             types = [types]
 
