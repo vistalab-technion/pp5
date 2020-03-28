@@ -1,70 +1,29 @@
 import abc
 import logging
 import multiprocessing as mp
-import os
-import shutil
-import tempfile
 import time
 from pathlib import Path
-from typing import Callable, Any, Union
+from typing import Callable, Any
 
 import pp5
+import pp5.parallel
 from pp5.external_dbs import pdb
 from pp5.external_dbs.pdb import PDBQuery
 from pp5.protein import ProteinRecord, ProteinInitError
-from pp5.align import structural_align
-
-import pandas as pd
 
 LOGGER = logging.getLogger(__name__)
 
-BASE_WORKERS_DL_DIR = Path(tempfile.gettempdir()).joinpath('pp5_data')
-os.makedirs(str(BASE_WORKERS_DL_DIR), exist_ok=True)
-
 
 class ParallelDataCollector(abc.ABC):
-    def __init__(self, max_processes=None, async_res_timeout_sec=30):
+    def __init__(self, max_processes=pp5.parallel.MAX_PROCESSES,
+                 async_res_timeout_sec=30):
         self.max_processes = max_processes
         self.async_res_timeout_sec = async_res_timeout_sec
 
-    @staticmethod
-    def worker_process_init(base_workers_dl_dir, *args):
-        # Provide each process with a unique download folder.
-        pid = os.getpid()
-        worker_dl_dir = base_workers_dl_dir.joinpath(f'{pid}')
-        os.makedirs(worker_dl_dir, exist_ok=True)
-        LOGGER.info(f'Worker process {pid} using dir {worker_dl_dir}...')
-        # Override the default with the process-specific dir to have a
-        # different download directory for each process.
-        pp5.BASE_DOWNLOAD_DIR = worker_dl_dir
-
-    @staticmethod
-    def clean_worker_downloads(base_workers_dl_dir):
-        n_copied = 0
-        downloaded_files = base_workers_dl_dir.glob('**/*/*.*')
-        for downloaded_file in downloaded_files:
-            rel_path = downloaded_file.relative_to(base_workers_dl_dir)
-            # Remove pid dir and append the relative path to the main data dir
-            data_path = pp5.BASE_DATA_DIR.joinpath(*rel_path.parts[1:])
-            if data_path.is_file():
-                continue
-            # The downloaded file is not in the data dir, so copy it.
-            shutil.copy2(str(downloaded_file), str(data_path))
-            n_copied += 1
-        LOGGER.info(f'Copied {n_copied} downloaded files from '
-                    f'{base_workers_dl_dir} into {pp5.BASE_DATA_DIR}')
-        shutil.rmtree(base_workers_dl_dir)
-        LOGGER.info(f'Deleted temp folder {base_workers_dl_dir}')
-
     def collect(self):
-        mp_ctx = mp.get_context('spawn')
-        try:
-            with mp_ctx.Pool(processes=self.max_processes,
-                             initializer=self.worker_process_init,
-                             initargs=(BASE_WORKERS_DL_DIR,)) as pool:
-                self._collect_with_pool(pool)
-        finally:
-            self.clean_worker_downloads(BASE_WORKERS_DL_DIR)
+        pool_name = self.__class__.__name__
+        with pp5.parallel.pool(pool_name, self.max_processes) as pool:
+            self._collect_with_pool(pool)
 
     @abc.abstractmethod
     def _collect_with_pool(self, pool: mp.Pool):
@@ -141,13 +100,7 @@ if __name__ == '__main__':
         pdb.PDBResolutionQuery(max_res=0.8)
     )
 
-    # collector = ProteinRecordCollector(
-    #     query, prec_init_args={'dihedral_est_name': ''},
-    #     out_dir=pp5.out_subdir('prec')
-    # )
-
-    for pdb_id in ['2wur:a', '5nl4:a', '5tnt:b', '1nkd:a', '1n19:a', '6mv4:h',
-                   '6mv4:l', ]:
-        # '1mwc:a', ' \ ''2wur:a', # '5jdt:a']:
-        collector = ProteinGroupsCollector(pdb_id, blast_identity_cutoff=0)
-        collector.collect()
+    ProteinRecordCollector(
+        query, prec_init_args={'dihedral_est_name': ''},
+        out_dir=pp5.out_subdir('prec')
+    ).collect()
