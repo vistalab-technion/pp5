@@ -16,6 +16,7 @@ LOGGER = logging.getLogger(__name__)
 __GLOBAL_POOL = None
 MAX_PROCESSES = os.cpu_count()
 BASE_WORKERS_DL_DIR = Path(tempfile.gettempdir()).joinpath('pp5_data')
+GLOBAL_WORKERS_DL_DIR = BASE_WORKERS_DL_DIR.joinpath('_global')
 
 
 def _worker_process_init(base_workers_dl_dir, *args):
@@ -45,31 +46,43 @@ def _clean_worker_downloads(base_workers_dl_dir):
                 f'{base_workers_dl_dir} into {pp5.BASE_DATA_DIR}')
 
 
+def _remove_workers_dir(base_workers_dl_dir):
+    try:
+        shutil.rmtree(base_workers_dl_dir)
+        LOGGER.info(f'Deleted temp folder {base_workers_dl_dir}')
+    except Exception as e:
+        LOGGER.warning(f'Failed to delete {base_workers_dl_dir}: {e}')
+
+
 @contextlib.contextmanager
 def global_pool() -> ContextManager[mp.pool.Pool]:
     global __GLOBAL_POOL
+    base_workers_dl_dir = GLOBAL_WORKERS_DL_DIR
+
     if __GLOBAL_POOL is None:
         mp_ctx = mp.get_context('spawn')
         LOGGER.info(f'Starting global pool with {MAX_PROCESSES} processes')
         __GLOBAL_POOL = mp_ctx.Pool(processes=MAX_PROCESSES,
                                     initializer=_worker_process_init,
-                                    initargs=(BASE_WORKERS_DL_DIR,))
-
+                                    initargs=(base_workers_dl_dir,))
     try:
         yield __GLOBAL_POOL
     finally:
-        _clean_worker_downloads(BASE_WORKERS_DL_DIR)
+        _clean_worker_downloads(base_workers_dl_dir)
 
 
 @contextlib.contextmanager
-def pool(processes=MAX_PROCESSES) -> ContextManager[mp.pool.Pool]:
+def pool(name: str, processes=MAX_PROCESSES) -> ContextManager[mp.pool.Pool]:
+    base_workers_dl_dir = BASE_WORKERS_DL_DIR.joinpath(name)
     mp_ctx = mp.get_context('spawn')
     try:
+        LOGGER.info(f'Starting pool {name} with {processes} processes')
         with mp_ctx.Pool(processes, initializer=_worker_process_init,
-                         initargs=(BASE_WORKERS_DL_DIR,)) as p:
+                         initargs=(base_workers_dl_dir,)) as p:
             yield p
     finally:
-        _clean_worker_downloads(BASE_WORKERS_DL_DIR)
+        _clean_worker_downloads(base_workers_dl_dir)
+        _remove_workers_dir(base_workers_dl_dir)
 
 
 def _cleanup():
@@ -78,11 +91,7 @@ def _cleanup():
         LOGGER.info(f'Closing global pool...')
         __GLOBAL_POOL.close()
         __GLOBAL_POOL.join()
-        try:
-            shutil.rmtree(BASE_WORKERS_DL_DIR)
-            LOGGER.info(f'Deleted temp folder {BASE_WORKERS_DL_DIR}')
-        except Exception as e:
-            LOGGER.warning(f'Failed to delete {BASE_WORKERS_DL_DIR}: {e}')
+        _remove_workers_dir(GLOBAL_WORKERS_DL_DIR)
 
 
 atexit.register(_cleanup)
