@@ -11,6 +11,7 @@ from Bio.PDB import PPBuilder
 import tests
 from pp5.external_dbs import pdb
 from pp5 import dihedral
+from pp5.dihedral import Dihedral
 from pp5.dihedral import DihedralAnglesEstimator
 
 import pymol.cmd as pymol
@@ -275,3 +276,42 @@ class TestDihedralEq:
         d1 = dihedral.Dihedral.from_deg([1., 0.1], [2., 0.2], math.nan)
         d2 = dihedral.Dihedral.from_deg([1., 0.1], [2., 0.2], math.nan)
         assert d1 == d2
+
+
+class TestFlatTorusDistance:
+    TEST_CASES = [
+        ((170, 170), (-170, -170), 20 * math.sqrt(2)),
+        ((-170, 170), (170, -170), 20 * math.sqrt(2)),
+        ((0, 173), (0, -177), 10.),
+        ((172, 0), (-178, 0), 10.),
+        ((5, 5), (-5, -5), 10 * math.sqrt(2)),
+    ]
+
+    @pytest.mark.parametrize(('a1', 'a2', 'expected_dist'), TEST_CASES)
+    def test_1(self, a1, a2, expected_dist):
+        a1 = Dihedral.from_deg(*a1, 0)
+        a2 = Dihedral.from_deg(*a2, 0)
+        actual_dist = Dihedral.flat_torus_distance(a1, a2, degrees=True)
+        assert actual_dist == approx(expected_dist)
+
+
+class TestFlatTorusDistance:
+    TEST_CASES = [
+        # phi, psi, phi_expected, psi_expected
+        ([-45, 45], [-30, 30], 0, 0),
+        ([-45, -30, 30, 45], [75, 80, 100, 105], 0, 90),
+        ([-140, -145, -155, -160], [-75, -80, -100, -105], -150, -90),
+        ([-170, -175, 175, 170], [0, 0, 0, 0], -180, 0),
+        ([-90, 90], [0, 180], 0, -90),
+        ([12.34], [56.78], 12.34, 56.78),
+    ]
+
+    @pytest.mark.parametrize(('phi', 'psi', 'phi_exp', 'psi_exp'), TEST_CASES)
+    def test_1(self, phi, psi, phi_exp, psi_exp):
+        assert len(phi) == len(psi), 'test case error'
+
+        angs = [Dihedral.from_deg(phi[i], psi[i], 0) for i in range(len(psi))]
+        actual = Dihedral.frechet_torus_centroid(*angs)
+
+        assert actual.phi_deg == approx(phi_exp, abs=1e-2)
+        assert actual.psi_deg == approx(psi_exp, abs=1e-2)
