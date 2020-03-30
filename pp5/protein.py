@@ -133,7 +133,7 @@ class ResidueMatch(ResidueRecord):
 
     @classmethod
     def from_residue(cls, res: ResidueRecord,
-                     match_type: ResidueMatch.Type, diff_deg: float):
+                     match_type: ResidueMatchType, diff_deg: float):
         return cls(match_type, diff_deg, **res.__dict__)
 
     def __init__(self, match_type: ResidueMatchType, diff_deg: float,
@@ -144,6 +144,27 @@ class ResidueMatch(ResidueRecord):
 
     def __repr__(self):
         return f'{self.type.name}, diff={self.ang_dist:.2f}'
+
+
+class ResidueMatchGroup(object):
+    """
+    Represents a group of residue matches which share a common Uniprot ID
+    and codon.
+    """
+
+    def __init__(self, unp_id: str, codon: str, group_size: int,
+                 match_type: ResidueMatchType, angles: Dihedral,
+                 ang_dist: float):
+        self.unp_id = unp_id
+        self.codon = codon
+        self.group_size = group_size
+        self.match_type = match_type
+        self.angles = angles
+        self.ang_dist = ang_dist
+
+    def __repr__(self):
+        return f'[{self.unp_id}, {self.codon}] {self.match_type.name} ' \
+               f'{self.angles}, n={self.group_size}, diff={self.ang_dist:.2f}'
 
 
 class ProteinRecord(object):
@@ -808,7 +829,7 @@ class ProteinGroup(object):
         :param kw: Extra args for the ProteinGroup __init__()
         :return: A ProteinGroup
         """
-        tag = f'struct-{tag}' if tag else 'struct'
+        tag = f'structs-{tag}' if tag else 'structs'
         filepath = _tagged_filepath(ref_pdb_id, indir, 'csv', tag)
         if not filepath.is_file():
             raise ProteinInitError(f'ProteinGroup structure CSV not found:'
@@ -912,9 +933,34 @@ class ProteinGroup(object):
             self.query_pdb_to_prec[q_prec.pdb_id] = q_prec
             self.query_pdb_to_alignment[q_prec.pdb_id] = q_alignment
 
-        # TODO: Compute aggregates
+        self.ref_groups = self._group_matches(self._aggregate_fn_best_res)
 
-    def to_residue_dataframe(self):
+    def to_groups_dataframe(self) -> pd.DataFrame:
+        df_index = []
+        df_data = []
+
+        for ref_idx, grouped_matches in self.ref_groups.items():
+            grouped_matches: List[ResidueMatchGroup]
+
+            for match_group in grouped_matches:
+                idx = (ref_idx, match_group.unp_id, match_group.codon)
+                data = {
+                    'type': match_group.match_type.name,
+                    'group_size': match_group.group_size,
+                    'ang_dist': match_group.ang_dist,
+                }
+                data.update(match_group.angles.as_dict(
+                    degrees=True, skip_omega=True, with_std=True)
+                )
+                df_index.append(idx)
+                df_data.append(data)
+
+        df_index_names = ['ref_idx', 'unp_id', 'codon']
+        df_index = pd.MultiIndex.from_tuples(df_index, names=df_index_names)
+        df = pd.DataFrame(data=df_data, index=df_index)
+        return df
+
+    def to_residue_dataframe(self) -> pd.DataFrame:
         """
         :return: A DataFrame containing the aligned residues matches for
         each residue in the reference structure.
@@ -925,18 +971,17 @@ class ProteinGroup(object):
         for ref_idx, matches in self.ref_matches.items():
             for query_pdb_id, match in matches.items():
                 q_prec = self.query_pdb_to_prec[query_pdb_id]
+
                 data = OrderedDict(match.__dict__.copy())
-
-                del data['angles']
-                data.update(match.angles.as_dict(
-                    degrees=True, skip_omega=True, with_std=True))
-
+                angles: Dihedral = data.pop('angles')
+                data.update(angles.as_dict(degrees=True, skip_omega=True,
+                                           with_std=True))
+                data['resolution'] = q_prec.pdb_meta.resolution
+                data.move_to_end('resolution', last=False)
                 data['type'] = match.type.name
                 data.move_to_end('type', last=False)
                 data['unp_id'] = q_prec.unp_id
                 data.move_to_end('unp_id', last=False)
-                data['resolution'] = q_prec.pdb_meta.resolution
-                data.move_to_end('resolution', last=False)
 
                 df_data.append(data)
                 df_index.append((ref_idx, query_pdb_id))
@@ -946,7 +991,7 @@ class ProteinGroup(object):
         df = pd.DataFrame(data=df_data, index=df_index)
         return df
 
-    def to_struct_dataframe(self):
+    def to_struct_dataframe(self) -> pd.DataFrame:
         """
         :return: A DataFrame containing metadata about each of the
         structures in the ProteinGroup.
@@ -982,20 +1027,23 @@ class ProteinGroup(object):
                        ignore_index=True)
         return df
 
-    def to_csv(self, out_dir=pp5.out_subdir('pgroup'), types='all', tag=None):
+    def to_csv(self, out_dir=pp5.out_subdir('pgroup'), types=('all',),
+               tag=None):
         """
         Writes one or more CSV files describing this protein group.
         :param out_dir: Output directory.
         :param types: What CSV types to write. Can be either 'all',
         or a list containing a combination of:
-        struct - write the structure metadata
-        residue - write the per-residue alignment data
+        structs - write the structure metadata
+        residues - write the per-residue alignment data
+        groups - write the per-residue grouped alignment data
         :param tag: Optional tag to add to the output filenames.
         :return: A list of file paths written.
         """
 
-        df_funcs = {'struct': self.to_struct_dataframe,
-                    'residue': self.to_residue_dataframe}
+        df_funcs = {'structs': self.to_struct_dataframe,
+                    'residues': self.to_residue_dataframe,
+                    'groups': self.to_groups_dataframe}
 
         os.makedirs(str(out_dir), exist_ok=True)
         if isinstance(types, str):
@@ -1109,7 +1157,7 @@ class ProteinGroup(object):
                                           codon_match)
             if match_type is None:
                 continue
-            ang_dist = self._angle_distance(r_res, q_res)
+            ang_dist = self._angle_distance(r_res.angles, q_res.angles)
 
             # Save match object
             match = ResidueMatch.from_residue(q_res, match_type, ang_dist)
@@ -1201,9 +1249,9 @@ class ProteinGroup(object):
         return match_type
 
     @staticmethod
-    def _angle_distance(r_res: ResidueRecord, q_res: ResidueRecord) -> float:
-        dphi = Dihedral.wraparound_diff(r_res.angles.phi, q_res.angles.phi)
-        dpsi = Dihedral.wraparound_diff(r_res.angles.psi, q_res.angles.psi)
+    def _angle_distance(a1: Dihedral, a2: Dihedral) -> float:
+        dphi = Dihedral.wraparound_diff(a1.phi, a2.phi)
+        dpsi = Dihedral.wraparound_diff(a1.psi, a2.psi)
         dist = math.sqrt(dphi ** 2 + dpsi ** 2)
         return math.degrees(dist)
 
@@ -1212,3 +1260,65 @@ class ProteinGroup(object):
         return f'{self.__class__.__name__} {self.ref_pdb_id}, ' \
                f'#structures={len(self.query_pdb_to_prec)} ' \
                f'#matches={n_matches}'
+
+    def _group_matches(self, aggregate_fn: Callable):
+
+        grouped_matches: Dict[int, List[ResidueMatchGroup]] = OrderedDict()
+
+        for ref_res_idx, matches in self.ref_matches.items():
+
+            # Reference structure residue
+            ref_res = self.ref_prec[ref_res_idx]
+
+            # Group matches of queries to current residue by unp_id and codon
+            match_groups = {}
+            for q_pdb_id, q_match in matches.items():
+                # Dont include the reference structure in the groups
+                if q_match.type == ResidueMatchType.REFERENCE:
+                    continue
+
+                q_prec = self.query_pdb_to_prec[q_pdb_id]
+                unp_id = q_prec.unp_id
+                codon = q_match.codon
+
+                match_group_idx = (unp_id, codon)
+                res_group = match_groups.setdefault(match_group_idx, {})
+                res_group[q_pdb_id] = q_match
+
+            # Compute aggregate statistics in each group
+            for match_group_idx, match_group in match_groups.items():
+                (unp_id, codon) = match_group_idx
+                match_group: Dict[str, ResidueMatch]
+
+                group_size = len(match_group)
+                group_angles = aggregate_fn(match_group)
+                ang_dist = self._angle_distance(ref_res.angles, group_angles)
+
+                # Make sure all members of group have the same type
+                types = list(v.type for v in match_group.values())
+                group_type = types[0]
+                assert all(map(lambda t: t == group_type, types))
+
+                # Store the aggregate info
+                ref_res_groups = grouped_matches.setdefault(ref_res_idx, [])
+                ref_res_groups.append(ResidueMatchGroup(
+                    unp_id, codon, group_size, group_type, group_angles,
+                    ang_dist
+                ))
+
+        return grouped_matches
+
+    def _aggregate_fn_best_res(self, match_group: Dict[str, ResidueMatch]) \
+            -> Dihedral:
+        """
+        Aggregator which selects the angles from the best resolution
+        structure in a match group.
+        :param match_group: Match group dict.
+        :return:
+        """
+
+        def sort_key(q_pdb_id):
+            return self.query_pdb_to_prec[q_pdb_id].pdb_meta.resolution
+
+        q_pdb_id_best_res = sorted(match_group, key=sort_key)[0]
+        return match_group[q_pdb_id_best_res].angles
