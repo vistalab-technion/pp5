@@ -843,6 +843,7 @@ class ProteinGroup(object):
                  sa_outlier_cutoff: float = 2.,
                  sa_max_all_atom_rmsd: float = 2.,
                  sa_min_aligned_residues: int = 50,
+                 angle_aggregation='max_res',
                  **kw_not_used):
         """
         Creates a ProteinGroup based on a reference PDB ID, and a sequence of
@@ -852,16 +853,19 @@ class ProteinGroup(object):
         :param query_pdb_ids: List of PDB ODs of query structures.
         :param context_len: Number of stars required around an aligmed AA
         pair to consider that pair for a match.
+        :param prec_cache:  Whether to load ProteinRecords from cache if
+        available.
         :param sa_outlier_cutoff: RMS cutoff for determining outliers in
         structural alignment.
         :param sa_max_all_atom_rmsd: Maximal allowed average RMSD
         after structural alignment to include a structure in a group.
         :param sa_min_aligned_residues: Minimal number of aligned residues (stars)
         required to include a structure in a group.
-        :param prec_cache:  Whether to load ProteinRecords from cache if
-        available.
+        :param angle_aggregation: Method for angle-aggregation of matching
+        query residues of each reference residue. Options are
+        'frechet' - Frechet centroid;
+        'max_res' - No aggregation, take angle of maximal resolution structure
         """
-
         self.ref_pdb_id = ref_pdb_id.upper()
         self.ref_pdb_base_id, self.ref_pdb_chain = pdb.split_id(ref_pdb_id)
         if not self.ref_pdb_chain:
@@ -871,6 +875,18 @@ class ProteinGroup(object):
         # Make sure that the query IDs are valid
         if not query_pdb_ids:
             raise ProteinInitError('No query PDB IDs provided')
+
+        angle_aggregation_methods = {
+            'frechet': self._aggregate_fn_frechet,
+            'max_res': self._aggregate_fn_best_res
+        }
+        if angle_aggregation not in angle_aggregation_methods:
+            raise ProteinInitError(
+                f'Unknown aggregation method: {angle_aggregation}, '
+                f'must be one of {angle_aggregation_methods.keys()}'
+            )
+        self.angle_aggregation = angle_aggregation
+        aggregation_fn = angle_aggregation_methods[angle_aggregation]
 
         try:
             query_pdb_ids = list(query_pdb_ids)  # to allow multiple iteration
@@ -908,15 +924,19 @@ class ProteinGroup(object):
         self.ref_prec = ProteinRecord.from_pdb(self.ref_pdb_id,
                                                cache=self.prec_cache)
 
+        # Align all query structure residues to the reference structure
+        # Process different query structures in parallel
         with global_pool() as pool:
-            q_aligned = pool.map(self._align_query_residues_to_ref,
-                                 query_pdb_ids)
+            align_fn = self._align_query_residues_to_ref
+            q_aligned = pool.map(align_fn, query_pdb_ids)
 
-        # Find residues matches with the reference
         self.ref_matches: Dict[int, Dict[str, ResidueMatch]] = OrderedDict()
+        self.ref_groups: Dict[int, List[ResidueMatchGroup]] = OrderedDict()
         self.query_pdb_ids = []
         self.query_pdb_to_prec: Dict[str, ProteinRecord] = OrderedDict()
         self.query_pdb_to_alignment: Dict[str, MSA] = OrderedDict()
+
+        # Go over aligned queries. Save the matching residues and group them.
         for qa in q_aligned:
             if not qa:
                 continue
@@ -924,16 +944,15 @@ class ProteinGroup(object):
             # qa contains a dict of matches for one query structure
             q_prec, q_alignment, q_matches_dict = qa
 
-            for res_idx, res_matches in q_matches_dict.items():
-                if res_idx not in self.ref_matches:
-                    self.ref_matches[res_idx] = OrderedDict()
-                self.ref_matches[res_idx].update(res_matches)
+            for ref_res_idx, res_matches in q_matches_dict.items():
+                self.ref_matches.setdefault(ref_res_idx, OrderedDict())
+                self.ref_matches[ref_res_idx].update(res_matches)
 
             self.query_pdb_ids.append(q_prec.pdb_id)
             self.query_pdb_to_prec[q_prec.pdb_id] = q_prec
             self.query_pdb_to_alignment[q_prec.pdb_id] = q_alignment
 
-        self.ref_groups = self._group_matches(self._aggregate_fn_best_res)
+        self.ref_groups = self._group_matches(aggregation_fn)
 
     def to_groups_dataframe(self) -> pd.DataFrame:
         df_index = []
@@ -1157,7 +1176,9 @@ class ProteinGroup(object):
                                           codon_match)
             if match_type is None:
                 continue
-            ang_dist = self._angle_distance(r_res.angles, q_res.angles)
+
+            ang_dist = Dihedral.flat_torus_distance(r_res.angles, q_res.angles,
+                                                    degrees=True)
 
             # Save match object
             match = ResidueMatch.from_residue(q_res, match_type, ang_dist)
@@ -1248,19 +1269,6 @@ class ProteinGroup(object):
                 match_type = ResidueMatchType.MUTATION
         return match_type
 
-    @staticmethod
-    def _angle_distance(a1: Dihedral, a2: Dihedral) -> float:
-        dphi = Dihedral.wraparound_diff(a1.phi, a2.phi)
-        dpsi = Dihedral.wraparound_diff(a1.psi, a2.psi)
-        dist = math.sqrt(dphi ** 2 + dpsi ** 2)
-        return math.degrees(dist)
-
-    def __repr__(self):
-        n_matches = sum(len(res_m) for res_m in self.ref_matches.values())
-        return f'{self.__class__.__name__} {self.ref_pdb_id}, ' \
-               f'#structures={len(self.query_pdb_to_prec)} ' \
-               f'#matches={n_matches}'
-
     def _group_matches(self, aggregate_fn: Callable):
 
         grouped_matches: Dict[int, List[ResidueMatchGroup]] = OrderedDict()
@@ -1292,7 +1300,8 @@ class ProteinGroup(object):
 
                 group_size = len(match_group)
                 group_angles = aggregate_fn(match_group)
-                ang_dist = self._angle_distance(ref_res.angles, group_angles)
+                ang_dist = Dihedral.flat_torus_distance(
+                    ref_res.angles, group_angles, degrees=True)
 
                 # Make sure all members of group have the same type
                 types = list(v.type for v in match_group.values())
@@ -1313,8 +1322,8 @@ class ProteinGroup(object):
         """
         Aggregator which selects the angles from the best resolution
         structure in a match group.
-        :param match_group: Match group dict.
-        :return:
+        :param match_group: Match group dict, keys are query pdb_ids.
+        :return: The dihedral angles frmo the best-resolution structure.
         """
 
         def sort_key(q_pdb_id):
@@ -1322,3 +1331,22 @@ class ProteinGroup(object):
 
         q_pdb_id_best_res = sorted(match_group, key=sort_key)[0]
         return match_group[q_pdb_id_best_res].angles
+
+    def _aggregate_fn_frechet(self, match_group: Dict[str, ResidueMatch]) \
+            -> Dihedral:
+        """
+        Aggregator which computes the Frechet mean of the dihedral angles in
+        the group.
+        :param match_group: Match group dict, keys are query pdb_ids.
+        :return: The Frechet mean of the dihedral angles in
+        the group.
+        """
+        return Dihedral.frechet_torus_centroid(
+            *[m.angles for m in match_group.values()]
+        )
+
+    def __repr__(self):
+        n_matches = sum(len(res_m) for res_m in self.ref_matches.values())
+        return f'{self.__class__.__name__} {self.ref_pdb_id}, ' \
+               f'#structures={len(self.query_pdb_to_prec)} ' \
+               f'#matches={n_matches}'
