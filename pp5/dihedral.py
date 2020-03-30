@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-import warnings
+from functools import partial
 from math import nan
 from typing import List
 
@@ -16,6 +16,7 @@ from Bio.PDB.Polypeptide import Polypeptide
 from Bio.PDB.Residue import Residue
 from numpy import ndarray
 from pytest import approx
+from scipy.optimize import minimize_scalar
 
 from pp5.external_dbs.pdb import PDBUnitCell
 
@@ -98,6 +99,57 @@ class Dihedral(object):
     def wraparound_diff(a1: float, a2: float):
         d = math.fabs(a1 - a2)
         return min(d, 2 * math.pi - d)
+
+    @staticmethod
+    def flat_torus_distance(a1: Dihedral, a2: Dihedral, degrees=False) \
+            -> float:
+        """
+        Computes the distance between two dihedral angles as if they were on a
+        "flat torus" (also a Ramachandran Plot). Calculates a euclidean
+        distance, but with a "wrap-around" at +-180, so e.g. the distance
+        between -178 and 178 degrees is actually 4 degrees.
+        :param a1: first angle.
+        :param a2: second angle.
+        :param degrees: Whether to return degrees (True) or radians (False)
+        :return: The angle difference.
+        """
+        dphi = Dihedral.wraparound_diff(a1.phi, a2.phi)
+        dpsi = Dihedral.wraparound_diff(a1.psi, a2.psi)
+        dist = math.sqrt(dphi ** 2 + dpsi ** 2)
+        dist = math.degrees(dist) if degrees else dist
+        return dist
+
+    @staticmethod
+    def frechet_torus_centroid(*angles: Dihedral):
+        """
+        Calculates the centroid point of a set of points on a torus.
+        Finds the Frechet mean of a simple distance metric on S1 (circle)
+        for every angle separately.
+        :param angles: Sequence of Dihedral angles. Only phi, psi will be used.
+        :return: A Dihedral object with phi, psi representing the centroid
+        location.
+        """
+
+        @numba.jit(nopython=True)
+        def mean_sq_metric_s1(phi0, phi1):
+            # A metric function for S1 (mean squared)
+            # Note: arccos returns values in [0, pi]
+            return np.mean(np.arccos(np.cos(phi0 - phi1)) ** 2)
+
+        def frechet_mean_s1(phi):
+            res = minimize_scalar(
+                fun=mean_sq_metric_s1, args=(phi,),
+                bounds=(-math.pi, math.pi), method='Bounded',
+                options=dict(xatol=1e-4, maxiter=50)
+            )
+            # Return optimum and function value at optimum (Frechet variance)
+            return res.x, math.sqrt(res.fun)
+
+        phi_psi = np.array([(a.phi, a.psi) for a in angles], dtype=np.float32)
+        m_phi = frechet_mean_s1(phi_psi[:, 0])
+        m_psi = frechet_mean_s1(phi_psi[:, 1])
+
+        return Dihedral.from_rad(m_phi, m_psi, math.pi)
 
     def __repr__(self, deg=True):
         reprs = []
