@@ -107,11 +107,40 @@ class Dihedral(object):
         :param degrees: Whether to return degrees (True) or radians (False)
         :return: The angle difference.
         """
-        dphi = Dihedral._wraparound_diff(a1.phi, a2.phi)
-        dpsi = Dihedral._wraparound_diff(a1.psi, a2.psi)
+        return Dihedral._flat_torus_distance(a1.phi, a2.phi, a1.psi, a2.psi,
+                                             degrees)
+
+    @staticmethod
+    @numba.jit(nopython=True)
+    def _flat_torus_distance(phi0, phi1, psi0, psi1, degrees=False):
+        dphi = math.fabs(phi0 - phi1)
+        dphi = min(dphi, 2 * math.pi - dphi)
+        dpsi = math.fabs(psi0 - psi1)
+        dpsi = min(dpsi, 2 * math.pi - dpsi)
         dist = math.sqrt(dphi ** 2 + dpsi ** 2)
-        dist = math.degrees(dist) if degrees else dist
-        return dist
+        return math.degrees(dist) if degrees else dist
+
+    @staticmethod
+    def s1_distance(a1: Dihedral, a2: Dihedral, degrees=False):
+        """
+        Computes the distance between two dihedral angles using the S1
+        distance metric (arc length difference) in each direction separately.
+        Equivalent to flat torus distance.
+        :param a1: first angle.
+        :param a2: second angle.
+        :param degrees: Whether to return degrees (True) or radians (False)
+        :return: The angle difference.
+        """
+        return Dihedral._s1_distance(a1.phi, a2.phi, a1.psi, a2.psi, degrees)
+
+    @staticmethod
+    @numba.jit(nopython=True)
+    def _s1_distance(phi0, phi1, psi0, psi1, degrees=False):
+        dist = np.sqrt(
+            np.arccos(np.cos(phi0 - phi1)) ** 2 +
+            np.arccos(np.cos(psi0 - psi1)) ** 2
+        )
+        return np.degrees(dist) if degrees else dist
 
     @staticmethod
     def frechet_torus_centroid(*angles: Dihedral, metric_fn=None):

@@ -20,6 +20,12 @@ from pytest import approx
 calc_dihedral2 = DihedralAnglesEstimator.calc_dihedral2
 
 
+def random_angles(n=100):
+    phi_psi = np.random.uniform(-np.pi, np.pi, size=(n, 2))
+    angles = [Dihedral.from_rad(phi, psi, 0.) for phi, psi in phi_psi]
+    return angles
+
+
 @numba.jit(nopython=True)
 def calc_dihedral_naive(v1: ndarray, v2: ndarray,
                         v3: ndarray, v4: ndarray):
@@ -79,23 +85,6 @@ class TestRawDihedralAngleCalculation(object):
             vs = [np.random.standard_normal((3,)) * 10. for _ in range(4)]
             expected = calc_dihedral_naive(*vs)
             assert calc_dihedral2(*vs) == approx(expected)
-
-
-class TestWraparoundDiff(object):
-    TEST_CASES = [
-        ((170, -170), 20), ((180, -180), 0), ((-20, 30), 50), ((30, 30), 0),
-    ]
-
-    @pytest.mark.parametrize(('angles', 'expected'), TEST_CASES)
-    def test_wraparound_diff(self, angles, expected):
-        a1, a2 = angles
-        a1, a2 = math.radians(a1), math.radians(a2)
-
-        actual = dihedral.Dihedral._wraparound_diff(a1, a2)
-        assert actual == approx(math.radians(expected))
-
-        actual2 = dihedral.Dihedral._wraparound_diff(a2, a1)
-        assert actual2 == approx(math.radians(expected))
 
 
 class TestPerformance(object):
@@ -278,6 +267,23 @@ class TestDihedralEq:
         assert d1 == d2
 
 
+class TestWraparoundDiff(object):
+    TEST_CASES = [
+        ((170, -170), 20), ((180, -180), 0), ((-20, 30), 50), ((30, 30), 0),
+    ]
+
+    @pytest.mark.parametrize(('angles', 'expected'), TEST_CASES)
+    def test_wraparound_diff(self, angles, expected):
+        a1, a2 = angles
+        a1, a2 = math.radians(a1), math.radians(a2)
+
+        actual = dihedral.Dihedral._wraparound_diff(a1, a2)
+        assert actual == approx(math.radians(expected))
+
+        actual2 = dihedral.Dihedral._wraparound_diff(a2, a1)
+        assert actual2 == approx(math.radians(expected))
+
+
 class TestFlatTorusDistance:
     TEST_CASES = [
         ((170, 170), (-170, -170), 20 * math.sqrt(2)),
@@ -293,6 +299,14 @@ class TestFlatTorusDistance:
         a2 = Dihedral.from_deg(*a2, 0)
         actual_dist = Dihedral.flat_torus_distance(a1, a2, degrees=True)
         assert actual_dist == approx(expected_dist)
+
+    def test_compare_to_s1_distance(self):
+        diffs = [
+            Dihedral.flat_torus_distance(a1, a2) - Dihedral.s1_distance(a1, a2)
+            for a1, a2 in zip(random_angles(1000), random_angles(1000))
+        ]
+
+        assert max(diffs) == approx(0.)
 
 
 class TestFrechetMean:
@@ -316,21 +330,15 @@ class TestFrechetMean:
         assert actual.phi_deg == approx(phi_exp, abs=1e-2)
         assert actual.psi_deg == approx(psi_exp, abs=1e-2)
 
-    @staticmethod
-    def random_angles(n=100):
-        phi_psi = np.random.uniform(-np.pi, np.pi, size=(n, 2))
-        angles = [Dihedral.from_rad(phi, psi, 0.) for phi, psi in phi_psi]
-        return angles
-
     def test_benchmark_frechet_controid_numba(self, benchmark):
         benchmark.pedantic(
-            Dihedral.frechet_torus_centroid, args=self.random_angles(1000),
+            Dihedral.frechet_torus_centroid, args=random_angles(1000),
             rounds=10, iterations=50, warmup_rounds=1,
         )
 
     def test_benchmark_frechet_centroid_python(self, benchmark):
         benchmark.pedantic(
-            Dihedral.frechet_torus_centroid, args=self.random_angles(1000),
+            Dihedral.frechet_torus_centroid, args=random_angles(1000),
             kwargs=dict(metric_fn=Dihedral._mean_sq_metric_s1.py_func),
             rounds=10, iterations=50, warmup_rounds=1,
         )
