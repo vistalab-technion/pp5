@@ -845,7 +845,7 @@ class ProteinGroup(object):
                  sa_outlier_cutoff: float = 2.,
                  sa_max_all_atom_rmsd: float = 2.,
                  sa_min_aligned_residues: int = 50,
-                 angle_aggregation='max_res'):
+                 angle_aggregation='frechet'):
         """
         Creates a ProteinGroup based on a reference PDB ID, and a sequence of
         query PDB IDs. Structural alignment will be performed, and some
