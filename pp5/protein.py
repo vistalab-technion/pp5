@@ -1278,23 +1278,27 @@ class ProteinGroup(object):
 
         for ref_res_idx, matches in self.ref_matches.items():
 
-            # Reference structure residue
-            ref_res = self.ref_prec[ref_res_idx]
-
             # Group matches of queries to current residue by unp_id and codon
-            match_groups = {}
+            match_groups: Dict[Tuple[str, str], ResidueMatch] = {}
+            ref_group_idx = None
             for q_pdb_id, q_match in matches.items():
-                # Dont include the reference structure in the groups
-                if q_match.type == ResidueMatchType.REFERENCE:
-                    continue
 
                 q_prec = self.query_pdb_to_prec[q_pdb_id]
                 unp_id = q_prec.unp_id
                 codon = q_match.codon
 
+                # Reference group will include the REFERENCE residue and zero
+                # or more VARIANT residues. We want to calculate the angle
+                # difference between all other groups and this group.
+                if q_match.type == ResidueMatchType.REFERENCE:
+                    ref_group_idx = (unp_id, codon)
+
                 match_group_idx = (unp_id, codon)
-                res_group = match_groups.setdefault(match_group_idx, {})
-                res_group[q_pdb_id] = q_match
+                match_group = match_groups.setdefault(match_group_idx, {})
+                match_group[q_pdb_id] = q_match
+
+            # Compute reference group aggregate angles
+            ref_group_angles = aggregate_fn(match_groups[ref_group_idx])
 
             # Compute aggregate statistics in each group
             for match_group_idx, match_group in match_groups.items():
@@ -1302,14 +1306,21 @@ class ProteinGroup(object):
                 match_group: Dict[str, ResidueMatch]
 
                 group_size = len(match_group)
-                group_angles = aggregate_fn(match_group)
+                if match_group_idx == ref_group_idx:
+                    group_angles = ref_group_angles
+                else:
+                    group_angles = aggregate_fn(match_group)
                 ang_dist = Dihedral.flat_torus_distance(
-                    ref_res.angles, group_angles, degrees=True)
+                    ref_group_angles, group_angles, degrees=True)
 
-                # Make sure all members of group have the same type
-                types = list(v.type for v in match_group.values())
-                group_type = types[0]
-                assert all(map(lambda t: t == group_type, types))
+                # Make sure all members of group have the same type, except
+                # the VARIANT group which should have one REFERENCE
+                types = set(v.type for v in match_group.values())
+                if ResidueMatchType.REFERENCE in types:
+                    types.remove(ResidueMatchType.REFERENCE)
+                    types.add(ResidueMatchType.VARIANT)
+                group_type = types.pop()
+                assert len(types) == 0, types
 
                 # Store the aggregate info
                 ref_res_groups = grouped_matches.setdefault(ref_res_idx, [])
