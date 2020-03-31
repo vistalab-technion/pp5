@@ -304,7 +304,7 @@ class ProteinRecord(object):
                                    f"unp_id={unp_id}") from e
 
     def __init__(self, unp_id: str, pdb_id, pdb_dict: dict = None,
-                 dihedral_est_name='erp', dihedral_est_args={}, **kw):
+                 dihedral_est_name='erp', dihedral_est_args: dict = None):
         """
         Initialize a protein record from both Uniprot and PDB ids.
         To initialize a protein from Uniprot id or PDB id only, use the
@@ -353,7 +353,7 @@ class ProteinRecord(object):
 
         # Get estimators of dihedral angles and b-factor
         dihedral_est, bfactor_est = self._get_dihedral_estimators(
-            dihedral_est_name, **dihedral_est_args
+            dihedral_est_name, dihedral_est_args
         )
 
         # Extract the PDB AA sequence, dihedral angles and b-factors
@@ -688,8 +688,10 @@ class ProteinRecord(object):
 
         return pdb_id.upper(), chain_id.upper()
 
-    def _get_dihedral_estimators(self, est_name, **est_args):
+    def _get_dihedral_estimators(self, est_name: str, est_args: dict):
         est_name = est_name.lower() if est_name else est_name
+        est_args = {} if est_args is None else est_args
+
         if not est_name in {None, '', 'erp', 'mc'}:
             raise ProteinInitError(
                 f'Unknown dihedral estimation method {est_name}')
@@ -843,8 +845,7 @@ class ProteinGroup(object):
                  sa_outlier_cutoff: float = 2.,
                  sa_max_all_atom_rmsd: float = 2.,
                  sa_min_aligned_residues: int = 50,
-                 angle_aggregation='max_res',
-                 **kw_not_used):
+                 angle_aggregation='max_res'):
         """
         Creates a ProteinGroup based on a reference PDB ID, and a sequence of
         query PDB IDs. Structural alignment will be performed, and some
@@ -883,7 +884,7 @@ class ProteinGroup(object):
         if angle_aggregation not in angle_aggregation_methods:
             raise ProteinInitError(
                 f'Unknown aggregation method: {angle_aggregation}, '
-                f'must be one of {angle_aggregation_methods.keys()}'
+                f'must be one of {tuple(angle_aggregation_methods.keys())}'
             )
         self.angle_aggregation = angle_aggregation
         aggregation_fn = angle_aggregation_methods[angle_aggregation]
@@ -952,6 +953,8 @@ class ProteinGroup(object):
             self.query_pdb_to_prec[q_prec.pdb_id] = q_prec
             self.query_pdb_to_alignment[q_prec.pdb_id] = q_alignment
 
+        LOGGER.info(f'{self}: Grouping matches with angle_aggregation='
+                    f'{self.angle_aggregation}')
         self.ref_groups = self._group_matches(aggregation_fn)
 
     def to_groups_dataframe(self) -> pd.DataFrame:
