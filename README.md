@@ -15,15 +15,17 @@ of proteins structure.
 |---- align.py      # Multisequence and structural alignment
 |---- datasets.py   # Scraping and data collection
 |---- dihedral.py   # Dihedral angle calculation and error estimation
-|---- protein.py    # ProteinRecord, our representation of a protein structure
+|---- protein.py    # ProteinRecord and ProteinGroup, model what we need to know about a protein or group of similar proteins
+|---- parallel.py   # Support for worker sub-processes
 |---- utils.py      # You guessed it... utilities
 |---- external_dbs/ # Package for interacting with external databases
 |------- ena.py     # European Nucleutide Archive
 |------- pdb.py     # Protein Databank (includes search API)
 |------- unp.py     # Uniprot
 |- tests/           # Unit tests and benchmarks
-|- data/            # Folder for storing downloaded dataset files
-|- out/             # Folder for generated output files
+|- notebooks/       # Jupyter notebooks
+|- data/            # Folder for storing downloaded or generated dataset files for machine consumption
+|- out/             # Folder for generated output files for human consumption
 ```
 
 ## Initial set-up
@@ -59,4 +61,24 @@ of proteins structure.
    
 ## Examples
 
-TODO.
+### Using the CLI
+
+To see available commands:
+```shell script
+python pp5.py --help
+```
+
+To see available options for one command (e.g. pgroup):
+```shell script
+python pp5.py pgroup --help
+```
+
+To create a protein record with default options:
+```shell script
+python pp5.py prec --pdb-id 2WUR:A
+```
+
+To run a protein group collection with some custom options:
+```shell script
+python pp5.py pgroup --ref-pdb-id 1nkd:a --resolution-query 2.5 --out-dir out/testcli --tag test1 --context-len 1
+```
