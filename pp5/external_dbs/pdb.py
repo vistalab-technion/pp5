@@ -206,7 +206,13 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
     path = pdb_download(pdb_id, pdb_dir)
 
     try:
-        dssp_dict, keys = dssp_dict_from_pdb_file(str(path), DSSP='mkdssp')
+        with warnings.catch_warnings(record=True) as ws:
+            warnings.simplefilter("ignore")
+            dssp_dict, keys = dssp_dict_from_pdb_file(str(path), DSSP='mkdssp')
+            if len(ws) > 0:
+                for w in ws:
+                    LOGGER.warning(f'Got DSSP warning for {pdb_id}: '
+                                   f'{w.message}')
     except Exception as e:
         raise RuntimeError(f"Failed to get secondary structure for {pdb_id}")
 
