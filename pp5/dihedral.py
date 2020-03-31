@@ -95,12 +95,6 @@ class Dihedral(object):
         return cls(nan, nan, nan)
 
     @staticmethod
-    @numba.jit(nopython=True)
-    def wraparound_diff(a1: float, a2: float):
-        d = math.fabs(a1 - a2)
-        return min(d, 2 * math.pi - d)
-
-    @staticmethod
     def flat_torus_distance(a1: Dihedral, a2: Dihedral, degrees=False) \
             -> float:
         """
@@ -113,14 +107,14 @@ class Dihedral(object):
         :param degrees: Whether to return degrees (True) or radians (False)
         :return: The angle difference.
         """
-        dphi = Dihedral.wraparound_diff(a1.phi, a2.phi)
-        dpsi = Dihedral.wraparound_diff(a1.psi, a2.psi)
+        dphi = Dihedral._wraparound_diff(a1.phi, a2.phi)
+        dpsi = Dihedral._wraparound_diff(a1.psi, a2.psi)
         dist = math.sqrt(dphi ** 2 + dpsi ** 2)
         dist = math.degrees(dist) if degrees else dist
         return dist
 
     @staticmethod
-    def frechet_torus_centroid(*angles: Dihedral):
+    def frechet_torus_centroid(*angles: Dihedral, metric_fn=None):
         """
         Calculates the centroid point of a set of points on a torus.
         Finds the Frechet mean of a simple distance metric on S1 (circle)
@@ -129,16 +123,12 @@ class Dihedral(object):
         :return: A Dihedral object with phi, psi representing the centroid
         location.
         """
-
-        @numba.jit(nopython=True)
-        def mean_sq_metric_s1(phi0, phi1):
-            # A metric function for S1 (mean squared)
-            # Note: arccos returns values in [0, pi]
-            return np.mean(np.arccos(np.cos(phi0 - phi1)) ** 2)
+        if not metric_fn:
+            metric_fn = Dihedral._mean_sq_metric_s1
 
         def frechet_mean_s1(phi):
             res = minimize_scalar(
-                fun=mean_sq_metric_s1, args=(phi,),
+                fun=metric_fn, args=(phi,),
                 bounds=(-math.pi, math.pi), method='Bounded',
                 options=dict(xatol=1e-4, maxiter=50)
             )
@@ -150,6 +140,19 @@ class Dihedral(object):
         m_psi = frechet_mean_s1(phi_psi[:, 1])
 
         return Dihedral.from_rad(m_phi, m_psi, math.pi)
+
+    @staticmethod
+    @numba.jit(nopython=True)
+    def _wraparound_diff(a1: float, a2: float):
+        d = math.fabs(a1 - a2)
+        return min(d, 2 * math.pi - d)
+
+    @staticmethod
+    @numba.jit(nopython=True)
+    def _mean_sq_metric_s1(phi0, phi1):
+        # A metric function for S1 (mean squared)
+        # Note: arccos returns values in [0, pi]
+        return np.mean(np.arccos(np.cos(phi0 - phi1)) ** 2)
 
     def __repr__(self, deg=True):
         reprs = []

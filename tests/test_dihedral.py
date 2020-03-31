@@ -91,10 +91,10 @@ class TestWraparoundDiff(object):
         a1, a2 = angles
         a1, a2 = math.radians(a1), math.radians(a2)
 
-        actual = dihedral.Dihedral.wraparound_diff(a1, a2)
+        actual = dihedral.Dihedral._wraparound_diff(a1, a2)
         assert actual == approx(math.radians(expected))
 
-        actual2 = dihedral.Dihedral.wraparound_diff(a2, a1)
+        actual2 = dihedral.Dihedral._wraparound_diff(a2, a1)
         assert actual2 == approx(math.radians(expected))
 
 
@@ -105,10 +105,10 @@ class TestPerformance(object):
         sigma = np.random.normal(0, 1, size=(3, 3))
         return [np.random.multivariate_normal(mu, sigma) for _ in range(4)]
 
-    def test_benchmark_naive_numba(self, benchmark):
+    def test_benchmark_calc_dihedral_naive_numba(self, benchmark):
         benchmark(calc_dihedral_naive, *self.random_coords())
 
-    def test_benchmark_naive_python(self, benchmark):
+    def test_benchmark_calc_dihedral_naive_python(self, benchmark):
         benchmark(calc_dihedral_naive.py_func, *self.random_coords())
 
     def test_benchmark_calc_dihedral_fast_numba(self, benchmark):
@@ -315,3 +315,22 @@ class TestFrechetMean:
 
         assert actual.phi_deg == approx(phi_exp, abs=1e-2)
         assert actual.psi_deg == approx(psi_exp, abs=1e-2)
+
+    @staticmethod
+    def random_angles(n=100):
+        phi_psi = np.random.uniform(-np.pi, np.pi, size=(n, 2))
+        angles = [Dihedral.from_rad(phi, psi, 0.) for phi, psi in phi_psi]
+        return angles
+
+    def test_benchmark_frechet_controid_numba(self, benchmark):
+        benchmark.pedantic(
+            Dihedral.frechet_torus_centroid, args=self.random_angles(1000),
+            rounds=10, iterations=50, warmup_rounds=1,
+        )
+
+    def test_benchmark_frechet_centroid_python(self, benchmark):
+        benchmark.pedantic(
+            Dihedral.frechet_torus_centroid, args=self.random_angles(1000),
+            kwargs=dict(metric_fn=Dihedral._mean_sq_metric_s1.py_func),
+            rounds=10, iterations=50, warmup_rounds=1,
+        )
