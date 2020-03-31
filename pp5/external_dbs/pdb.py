@@ -458,7 +458,7 @@ class PDBQuery(abc.ABC):
     def to_xml_pretty(self):
         return yattag.indent(self.to_xml())
 
-    def execute(self):
+    def execute(self, retries=2):
         """
         Executes the query on PDB.
         :return: A list of PDB IDs for proteins matching the query.
@@ -470,6 +470,11 @@ class PDBQuery(abc.ABC):
         try:
             LOGGER.info(f'Executing PDB query: {self.description()}')
             response = requests.post(PDB_SEARCH_URL, query, headers=header)
+            while not response.ok and retries > 0:
+                LOGGER.warning(f'PDB query failed: {response.status_code}'
+                               f' {response.text}, retrying ({retries})...')
+                response = requests.post(PDB_SEARCH_URL, query, headers=header)
+                retries -= 1
             response.raise_for_status()
             pdb_ids = response.text.split()
         except requests.exceptions.RequestException as e:
