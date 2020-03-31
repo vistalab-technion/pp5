@@ -295,7 +295,7 @@ class TestFlatTorusDistance:
         assert actual_dist == approx(expected_dist)
 
 
-class TestFlatTorusDistance:
+class TestFrechetMean:
     TEST_CASES = [
         # phi, psi, phi_expected, psi_expected
         ([-45, 45], [-30, 30], 0, 0),
