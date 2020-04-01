@@ -7,9 +7,10 @@ import warnings
 import enum
 import pickle
 from pathlib import Path
-from typing import List, Tuple, Dict, Iterator, Callable, Any, Union, Iterable, \
-    Generator, Optional
+from typing import List, Tuple, Dict, Iterator, Callable, Any, Union, \
+    Iterable, Optional
 from collections import OrderedDict
+import itertools as it
 
 import pandas as pd
 from Bio.Align import PairwiseAligner, MultipleSeqAlignment as MSA
@@ -153,11 +154,14 @@ class ResidueMatchGroup(object):
     """
 
     def __init__(self, unp_id: str, codon: str, group_size: int,
-                 match_type: ResidueMatchType, angles: Dihedral,
-                 ang_dist: float):
+                 match_type: ResidueMatchType, name: str, codon_opts: set,
+                 secondary: list, angles: Dihedral, ang_dist: float):
         self.unp_id = unp_id
         self.codon = codon
         self.group_size = group_size
+        self.name = name
+        self.codon_opts = codon_opts
+        self.secondary = secondary
         self.match_type = match_type
         self.angles = angles
         self.ang_dist = ang_dist
@@ -968,6 +972,9 @@ class ProteinGroup(object):
                 idx = (ref_idx, match_group.unp_id, match_group.codon)
                 data = {
                     'type': match_group.match_type.name,
+                    'name': match_group.name,
+                    'codon_opts': str.join('/', match_group.codon_opts),
+                    'secondary': str.join('/', match_group.secondary),
                     'group_size': match_group.group_size,
                     'ang_dist': match_group.ang_dist,
                 }
@@ -1272,14 +1279,26 @@ class ProteinGroup(object):
                 match_type = ResidueMatchType.MUTATION
         return match_type
 
-    def _group_matches(self, aggregate_fn: Callable):
+    def _group_matches(self, aggregate_fn: Callable[[Dict], Dihedral]) \
+            -> Dict[int, List[ResidueMatchGroup]]:
+        """
+        Grops the matches of each reference residue into subgroups by their
+        unp_id and codon, and computes an aggregate angle statistic based on
+        the structures in each subgroup.
+        :param aggregate_fn: Function for angle aggregation.
+        Should accept a dict from pdb_id to residue match and return an angle
+        pair.
+        :return: Mapping from residue id in the reference to a list of
+        subgroups.
+        """
 
         grouped_matches: Dict[int, List[ResidueMatchGroup]] = OrderedDict()
 
         for ref_res_idx, matches in self.ref_matches.items():
+            ref_res = self.ref_prec[ref_res_idx]
 
             # Group matches of queries to current residue by unp_id and codon
-            match_groups: Dict[Tuple[str, str], ResidueMatch] = {}
+            match_groups: Dict[Tuple[str, str], Dict[str, ResidueMatch]] = {}
             ref_group_idx = None
             for q_pdb_id, q_match in matches.items():
 
@@ -1313,20 +1332,40 @@ class ProteinGroup(object):
                 ang_dist = Dihedral.flat_torus_distance(
                     ref_group_angles, group_angles, degrees=True)
 
-                # Make sure all members of group have the same type, except
-                # the VARIANT group which should have one REFERENCE
-                types = set(v.type for v in match_group.values())
+                # Collect sets of features from the matches in the group
+                vals = ((v.type, v.name, v.secondary, v.codon_opts)
+                        for v in match_group.values())
+                types, names, secondaries, opts = [set(z) for z in zip(*vals)]
+
+                # Make sure all members of group have the same match type,
+                # except the VARIANT group which should have one REFERENCE.
+                # Alsp AA name should be the same since codon is the same
                 if ResidueMatchType.REFERENCE in types:
                     types.remove(ResidueMatchType.REFERENCE)
                     types.add(ResidueMatchType.VARIANT)
                 group_type = types.pop()
+                group_aa_name = names.pop()
                 assert len(types) == 0, types
+                assert len(names) == 0, names
+
+                # Get alternative possible codon options. Remove the
+                # group codon to prevent redundancy.  Note that
+                # UNKNOWN_CODON is a possiblity, we leave it in.
+                group_codon_opts = set(it.chain(*[o.split('/') for o in opts]))
+                group_codon_opts.remove(codon)
+
+                # Get possible secondary structures. Make sure the ref
+                # residue structure appears first.
+                if ref_res.secondary in secondaries:
+                    secondaries.remove(ref_res.secondary)
+                group_secondary = [ref_res.secondary]
+                group_secondary.extend(secondaries)
 
                 # Store the aggregate info
                 ref_res_groups = grouped_matches.setdefault(ref_res_idx, [])
                 ref_res_groups.append(ResidueMatchGroup(
-                    unp_id, codon, group_size, group_type, group_angles,
-                    ang_dist
+                    unp_id, codon, group_size, group_type, group_aa_name,
+                    group_codon_opts, group_secondary, group_angles, ang_dist
                 ))
 
         return grouped_matches
