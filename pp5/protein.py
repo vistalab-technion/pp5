@@ -879,7 +879,8 @@ class ProteinGroup(object):
                  sa_outlier_cutoff: float = 2.,
                  sa_max_all_atom_rmsd: float = 2.,
                  sa_min_aligned_residues: int = 50,
-                 angle_aggregation='frechet'):
+                 angle_aggregation='frechet',
+                 strict_xref=False):
         """
         Creates a ProteinGroup based on a reference PDB ID, and a sequence of
         query PDB IDs. Structural alignment will be performed, and some
@@ -900,6 +901,8 @@ class ProteinGroup(object):
         query residues of each reference residue. Options are
         'frechet' - Frechet centroid;
         'max_res' - No aggregation, take angle of maximal resolution structure
+        :param strict_xref: See strict_xref parameter in the ProteinRecord
+        initializer.
         """
         self.ref_pdb_id = ref_pdb_id.upper()
         self.ref_pdb_base_id, self.ref_pdb_chain = pdb.split_id(ref_pdb_id)
@@ -955,9 +958,12 @@ class ProteinGroup(object):
         self.sa_max_all_atom_rmsd = sa_max_all_atom_rmsd
         self.sa_min_aligned_residues = sa_min_aligned_residues
         self.prec_cache = prec_cache
+        self.strict_xref = strict_xref
 
-        self.ref_prec = ProteinRecord.from_pdb(self.ref_pdb_id,
-                                               cache=self.prec_cache)
+        self.ref_prec = ProteinRecord.from_pdb(
+            self.ref_pdb_id, cache=self.prec_cache,
+            strict_xref=self.strict_xref,
+        )
 
         # Align all query structure residues to the reference structure
         # Process different query structures in parallel
@@ -1134,7 +1140,9 @@ class ProteinGroup(object):
         Tuple[ProteinRecord, MSA, Dict[int, Dict[str, ResidueMatch]]]
     ]:
         try:
-            q_prec = ProteinRecord.from_pdb(q_pdb_id, cache=self.prec_cache)
+            q_prec = ProteinRecord.from_pdb(
+                q_pdb_id, cache=self.prec_cache, strict_xref=self.strict_xref
+            )
         except ProteinInitError as e:
             LOGGER.error(f'Failed to create prec for query structure: {e}')
             return None
