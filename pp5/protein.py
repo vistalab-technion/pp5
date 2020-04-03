@@ -313,8 +313,9 @@ class ProteinRecord(object):
             raise ProteinInitError(f"Failed to created protein record for "
                                    f"unp_id={unp_id}") from e
 
-    def __init__(self, unp_id: str, pdb_id, pdb_dict: dict = None,
-                 dihedral_est_name='erp', dihedral_est_args: dict = None):
+    def __init__(self, unp_id: str, pdb_id: str, pdb_dict: dict = None,
+                 dihedral_est_name='erp', dihedral_est_args: dict = None,
+                 strict_xref=True):
         """
         Initialize a protein record from both Uniprot and PDB ids.
         To initialize a protein from Uniprot id or PDB id only, use the
@@ -324,12 +325,18 @@ class ProteinRecord(object):
         :param pdb_id: PDB id with or without chain (e.g. '1ABC' or '1ABC:D')
         of the specific structure desired. Note that this structure must match
         the unp_id, i.e. it must exist in the cross-refs of the given unp_id.
-        Otherwise an error will be raised. If no chain is specified, a chain
-        matching the unp_id will be used, if it exists.
-        :param dihedral_est_name: Method of dihedral angle estimation. None
-        or empty to calculate angles without error estimation; 'erp' for
-        standard error propagation; 'mc' for montecarlo error estimation.
+        Otherwise an error will be raised (unless strict_xref=False). If no
+        chain is specified, a chain matching the unp_id will be used,
+        if it exists.
+        :param dihedral_est_name: Method of dihedral angle estimation.
+        Options are:
+        None or empty to calculate angles without error estimation;
+        'erp' for standard error propagation;
+        'mc' for montecarlo error estimation.
         :param dihedral_est_args: Extra arguments for dihedral estimator.
+        :param strict_xref: Whether to require that there be both a PDB
+        cross-ref for the given Uniprot ID and that there be a Uniprot
+        cross-ref for the given PDB ID.
         """
         if not (unp_id and pdb_id):
             raise ProteinInitError("Must provide both Uniprot and PDB IDs")
@@ -340,6 +347,7 @@ class ProteinRecord(object):
         # First we must find a matching PDB structure and chain for the
         # Uniprot id. If a proposed_pdb_id is given we'll try to use that.
         self.unp_id = unp_id
+        self.strict_xref = strict_xref
         self.pdb_base_id, self.pdb_chain_id = self._find_pdb_xref(pdb_id)
         self.pdb_id = f'{self.pdb_base_id}:{self.pdb_chain_id}'
         if pdb_dict:
@@ -657,15 +665,15 @@ class ProteinRecord(object):
         if not ref_chain_id:
             ref_chain_id = ''
 
-        ref_pdb_id, ref_chain_id = ref_pdb_id.lower(), ref_chain_id.lower()
+        ref_pdb_id, ref_chain_id = ref_pdb_id.upper(), ref_chain_id.upper()
 
         xrefs = unp.find_pdb_xrefs(self.unp_rec, method='x-ray')
 
         # We'll sort the PDB entries according to multiple criteria based on
         # the resolution, number of chains and sequence length.
         def sort_key(xref: unp.UNPPDBXRef):
-            id_cmp = xref.pdb_id.lower() != ref_pdb_id
-            chain_cmp = xref.chain_id.lower() != ref_chain_id
+            id_cmp = xref.pdb_id.upper() != ref_pdb_id
+            chain_cmp = xref.chain_id.upper() != ref_chain_id
             seq_len_diff = abs(xref.seq_len - self.unp_rec.sequence_length)
             # The sort key for PDB entries
             # First, if we have a matching id to the reference PDB id we take
@@ -675,26 +683,42 @@ class ProteinRecord(object):
 
         xrefs = sorted(xrefs, key=sort_key)
         if not xrefs:
-            raise ProteinInitError(f"No PDB cross-refs for {self.unp_id}")
+            msg = f"No PDB cross-refs for {self.unp_id}"
+            if self.strict_xref:
+                raise ProteinInitError(msg)
+            elif not ref_chain_id:
+                raise ProteinInitError(f"{msg} and no chain provided in ref")
+            else:
+                LOGGER.warning(f'{msg}, using ref {ref_pdb_id}:{ref_chain_id}')
+                return ref_pdb_id, ref_chain_id
 
         # Get best match according to sort key and return its id.
         xref = xrefs[0]
         LOGGER.info(f'{self.unp_id}: PDB XREF = {xref}')
 
-        pdb_id = xref.pdb_id.lower()
-        chain_id = xref.chain_id.lower()
+        pdb_id = xref.pdb_id.upper()
+        chain_id = xref.chain_id.upper()
 
         # Make sure we have a match with the Uniprot id. Id chain wasn't
         # specified, match only PDB ID, otherwise, both must match.
         if pdb_id != ref_pdb_id:
-            raise ProteinInitError(
-                f"Reference PDB ID {ref_pdb_id} not found as "
-                f"cross-reference for protein {self.unp_id}")
+            msg = f"Reference PDB ID {ref_pdb_id} not found as " \
+                  f"cross-reference for protein {self.unp_id}"
+            if self.strict_xref:
+                raise ProteinInitError(msg)
+            else:
+                LOGGER.warning(msg)
+                pdb_id = ref_pdb_id
+
         if ref_chain_id and chain_id != ref_chain_id:
-            raise ProteinInitError(
-                f"Reference chain {ref_chain_id} of PDB ID {ref_pdb_id} not"
-                f"found as cross-reference for protein {self.unp_id}. "
-                f"Did you mean chain {chain_id}?")
+            msg = f"Reference chain {ref_chain_id} of PDB ID {ref_pdb_id} not" \
+                  f"found as cross-reference for protein {self.unp_id}. " \
+                  f"Did you mean chain {chain_id}?"
+            if self.strict_xref:
+                raise ProteinInitError(msg)
+            else:
+                LOGGER.warning(msg)
+                chain_id = ref_chain_id
 
         return pdb_id.upper(), chain_id.upper()
 
