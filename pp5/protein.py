@@ -207,9 +207,15 @@ class ProteinRecord(object):
         path = pp5.get_resource_path(cache_dir, filename)
         prec = None
         if path.is_file():
-            with open(str(path), 'rb') as f:
-                prec = pickle.load(f)
-                LOGGER.info(f'Loaded cached ProteinRecord: {path}')
+            try:
+                with open(str(path), 'rb') as f:
+                    prec = pickle.load(f)
+                    LOGGER.info(f'Loaded cached ProteinRecord: {path}')
+            except Exception as e:
+                # If we can't unpickle, probably the code changed since
+                # saving this object. We'll just return None, so that a new
+                # prec will be created and stored.
+                LOGGER.warning(f'Failed to load cached ProteinRecord {path}')
         return prec
 
     @classmethod
