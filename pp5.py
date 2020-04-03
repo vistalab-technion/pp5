@@ -51,7 +51,7 @@ def _generate_cli_from_function(func: Callable, skip=()):
     doc = inspect.cleandoc(inspect.getdoc(func))
     doc_split = re.sub(r'\r?\n', ' ', doc).split(':param ')
     func_description = doc_split[0]
-    param_doc_split = (d.split(":") for d in doc_split[1:])
+    param_doc_split = (d.split(":", maxsplit=1) for d in doc_split[1:])
     param_doc = {d[0]: d[1].strip() for d in param_doc_split}
 
     # We'll return a dict of dics for the arguments.
@@ -71,21 +71,35 @@ def _generate_cli_from_function(func: Callable, skip=()):
         if param.kind == inspect.Parameter.VAR_KEYWORD:
             continue
 
-        arg_name_long = f'--{param.name.replace("_", "-")}'
-        arg_desc = param_doc.get(param.name)
-        arg_default = param.default
-        arg_required = False
-        if arg_default == inspect.Parameter.empty:
-            arg_default = None
-            arg_required = True
+        arg_name_long = f'{param.name.replace("_", "-")}'
 
-        cli_args[param.name] = dict(
-            names=[arg_name_long],
-            help=arg_desc,
-            required=arg_required,
-            default=arg_default,
-            type=type(arg_default) if arg_default else None,
-        )
+        args = {}
+        args['dest'] = param.name
+        args['help'] = param_doc.get(param.name)
+        args['required'] = False
+        args['default'] = param.default
+        if args['default'] == inspect.Parameter.empty:
+            args['default'] = None
+            args['required'] = True
+            args['type'] = None
+        else:
+            args['type'] = type(args['default'])
+
+        args['action'] = 'store'
+
+        # For bools, convert to flags which flip the default
+        if args['type'] is bool:
+            if args['default'] is True:
+                arg_name_long = f'no-{arg_name_long}'
+                args['action'] = 'store_false'
+            else:
+                args['action'] = 'store_true'
+            # cant specify both store_true/false and type
+            args.pop('type')
+
+        args['names'] = [f'--{arg_name_long}']
+
+        cli_args[param.name] = args
 
     return func_description, cli_args
 
@@ -99,17 +113,20 @@ def _parse_cli():
     sp = p.add_subparsers(help='Available actions', dest='action')
 
     # prec
-    desc, args = _generate_cli_from_function(ProteinRecord.from_pdb)
+    desc, args = _generate_cli_from_function(
+        ProteinRecord.from_pdb, skip=['unp_id', 'pdb_dict']
+    )
     _, init_args = _generate_cli_from_function(
         ProteinRecord.__init__, skip=['unp_id', 'pdb_dict']
     )
     _, csv_args = _generate_cli_from_function(ProteinRecord.to_csv)
 
-    def _handle_prec(args=args, init_args=init_args, csv_args=csv_args, **kw):
-        kw1 = {k: kw[k] for k in _merge_dicts(args, init_args)}
+    def _handle_prec(args=args, init_args=init_args, csv_args=csv_args,
+                     **parsed_args):
+        kw1 = {k: parsed_args[k] for k in _merge_dicts(args, init_args)}
         prec = ProteinRecord.from_pdb(**kw1)
 
-        kw2 = {k: kw[k] for k in csv_args}
+        kw2 = {k: parsed_args[k] for k in csv_args}
         prec.to_csv(**kw2)
 
     sp_prec = sp.add_parser('prec', help=desc, formatter_class=hf)
@@ -126,11 +143,11 @@ def _parse_cli():
     _, csv_args = _generate_cli_from_function(ProteinGroup.to_csv)
 
     def _handle_pgroup(args=args, init_args=init_args, csv_args=csv_args,
-                       **kw):
-        kw1 = {k: kw[k] for k in _merge_dicts(args, init_args)}
+                       **parsed_args):
+        kw1 = {k: parsed_args[k] for k in _merge_dicts(args, init_args)}
         pgroup = ProteinGroup.from_pdb_ref(**kw1)
 
-        kw2 = {k: kw[k] for k in csv_args}
+        kw2 = {k: parsed_args[k] for k in csv_args}
         pgroup.to_csv(**kw2)
 
     sp_pgroup = sp.add_parser('pgroup', help=desc, formatter_class=hf)
