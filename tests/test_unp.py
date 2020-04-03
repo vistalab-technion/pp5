@@ -19,7 +19,7 @@ class TestUNPDownload:
         assert unp_rec.sequence_length == 164
 
     def test_unp_download(self):
-        test_id = 'P00720'
+        test_id = 'P42212'
         path = unp.unp_download(test_id, unp_dir=self.TEMP_PATH)
         assert path == self.TEMP_PATH.joinpath(f'{test_id}.txt')
 
