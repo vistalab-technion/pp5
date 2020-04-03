@@ -84,8 +84,8 @@ class TestCreation:
         assert prec.pdb_id == '3SG4:A'
 
     def test_no_strict_xref_with_no_xref_in_pdb_and_no_chain(self):
-        with pytest.raises(ProteinInitError):
-            ProteinRecord.from_pdb('3SG4', strict_xref=False)
+        with pytest.raises(ProteinInitError, match='and no chain provided'):
+            ProteinRecord('Q6LDG3', '3SG4', strict_xref=False)
 
     def test_strict_xref_with_no_matching_xref_in_pdb(self):
         with pytest.raises(ProteinInitError):

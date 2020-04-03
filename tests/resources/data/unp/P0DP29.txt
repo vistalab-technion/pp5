@@ -1,0 +1,460 @@
+ID   CALM1_RAT               Reviewed;         149 AA.
+AC   P0DP29; P02593; P62161; P70667; P99014; Q61379; Q61380;
+DT   10-MAY-2017, integrated into UniProtKB/Swiss-Prot.
+DT   10-MAY-2017, sequence version 1.
+DT   26-FEB-2020, entry version 29.
+DE   RecName: Full=Calmodulin-1 {ECO:0000250|UniProtKB:P0DP23};
+GN   Name=Calm1 {ECO:0000312|RGD:2257};
+GN   Synonyms=Calm, Cam, Cam1, CaMI {ECO:0000303|PubMed:3035194};
+OS   Rattus norvegicus (Rat).
+OC   Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; Mammalia;
+OC   Eutheria; Euarchontoglires; Glires; Rodentia; Myomorpha; Muroidea; Muridae;
+OC   Murinae; Rattus.
+OX   NCBI_TaxID=10116;
+RN   [1]
+RP   NUCLEOTIDE SEQUENCE [MRNA], AND NUCLEOTIDE SEQUENCE [GENOMIC DNA].
+RC   TISSUE=Brain;
+RX   PubMed=3035194; DOI=10.1016/0022-2836(87)90258-0;
+RA   Nojima H., Hirofumi S.;
+RT   "Structure of a gene for rat calmodulin.";
+RL   J. Mol. Biol. 193:439-445(1987).
+RN   [2]
+RP   NUCLEOTIDE SEQUENCE [MRNA].
+RC   STRAIN=Wistar; TISSUE=Brain;
+RX   PubMed=1315919; DOI=10.1016/0169-328x(92)90039-e;
+RA   Ni B., Rush S., Gurd J.W., Brown I.R.;
+RT   "Molecular cloning of calmodulin mRNA species which are preferentially
+RT   expressed in neurons in the rat brain.";
+RL   Brain Res. Mol. Brain Res. 13:7-17(1992).
+RN   [3]
+RP   PROTEIN SEQUENCE OF 2-149, ACETYLATION AT ALA-2, AND METHYLATION AT
+RP   LYS-116.
+RC   TISSUE=Testis;
+RX   PubMed=201628;
+RA   Dedman J.R., Jackson R.L., Schreiber W.E., Means A.R.;
+RT   "Sequence homology of the Ca2+-dependent regulator of cyclic nucleotide
+RT   phosphodiesterase from rat testis with other Ca2+-binding proteins.";
+RL   J. Biol. Chem. 253:343-346(1978).
+RN   [4]
+RP   PROTEIN SEQUENCE OF 15-31; 79-87 AND 92-107, AND IDENTIFICATION BY MASS
+RP   SPECTROMETRY.
+RC   STRAIN=Sprague-Dawley; TISSUE=Brain, and Hippocampus;
+RA   Lubec G., Chen W.-Q., Kang S.U., Lubec S.;
+RL   Submitted (SEP-2007) to UniProtKB.
+RN   [5]
+RP   INTERACTION WITH CEACAM1.
+RX   PubMed=8576129; DOI=10.1074/jbc.271.3.1393;
+RA   Edlund M., Blikstad I., Obrink B.;
+RT   "Calmodulin binds to specific sequences in the cytoplasmic domain of C-CAM
+RT   and down-regulates C-CAM self-association.";
+RL   J. Biol. Chem. 271:1393-1399(1996).
+RN   [6]
+RP   PHOSPHORYLATION AT THR-45.
+RX   PubMed=12392717; DOI=10.1016/s0003-9861(02)00514-3;
+RA   Ishida A., Kameshita I., Okuno S., Kitani T., Fujisawa H.;
+RT   "Phosphorylation of calmodulin by Ca2+/calmodulin-dependent protein kinase
+RT   IV.";
+RL   Arch. Biochem. Biophys. 407:72-82(2002).
+RN   [7]
+RP   INTERACTION WITH RRAD.
+RX   PubMed=18056528; DOI=10.1161/circulationaha.107.707257;
+RA   Chang L., Zhang J., Tseng Y.-H., Xie C.-Q., Ilany J., Bruning J.C., Sun Z.,
+RA   Zhu X., Cui T., Youker K.A., Yang Q., Day S.M., Kahn C.R., Chen Y.E.;
+RT   "Rad GTPase deficiency leads to cardiac hypertrophy.";
+RL   Circulation 116:2976-2983(2007).
+RN   [8]
+RP   ACETYLATION AT ALA-2, AND IDENTIFICATION BY MASS SPECTROMETRY.
+RA   Lubec G., Chen W.-Q.;
+RL   Submitted (FEB-2007) to UniProtKB.
+RN   [9]
+RP   PHOSPHORYLATION [LARGE SCALE ANALYSIS] AT TYR-100 AND SER-102, AND
+RP   IDENTIFICATION BY MASS SPECTROMETRY [LARGE SCALE ANALYSIS].
+RX   PubMed=22673903; DOI=10.1038/ncomms1871;
+RA   Lundby A., Secher A., Lage K., Nordsborg N.B., Dmytriyev A., Lundby C.,
+RA   Olsen J.V.;
+RT   "Quantitative maps of protein phosphorylation sites across 14 different rat
+RT   organs and tissues.";
+RL   Nat. Commun. 3:876-876(2012).
+RN   [10]
+RP   INTERACTION WITH KIF1A.
+RX   PubMed=30021165; DOI=10.1016/j.celrep.2018.06.071;
+RA   Stucchi R., Plucinska G., Hummel J.J.A., Zahavi E.E., Guerra San Juan I.,
+RA   Klykov O., Scheltema R.A., Altelaar A.F.M., Hoogenraad C.C.;
+RT   "Regulation of KIF1A-Driven Dense Core Vesicle Transport: Ca2+/CaM Controls
+RT   DCV Binding and Liprin-alpha/TANC2 Recruits DCVs to Postsynaptic Sites.";
+RL   Cell Rep. 24:685-700(2018).
+RN   [11]
+RP   X-RAY CRYSTALLOGRAPHY (3.0 ANGSTROMS).
+RX   PubMed=3990807; DOI=10.1038/315037a0;
+RA   Babu Y.S., Sack J.S., Greenhough T.J., Bugg C.E., Means A.R., Cook W.J.;
+RT   "Three-dimensional structure of calmodulin.";
+RL   Nature 315:37-40(1985).
+RN   [12]
+RP   X-RAY CRYSTALLOGRAPHY (2.2 ANGSTROMS).
+RX   PubMed=3145979; DOI=10.1016/0022-2836(88)90608-0;
+RA   Babu Y.S., Bugg C.E., Cook W.J.;
+RT   "Structure of calmodulin refined at 2.2-A resolution.";
+RL   J. Mol. Biol. 204:191-204(1988).
+RN   [13]
+RP   X-RAY CRYSTALLOGRAPHY (1.90 ANGSTROMS) IN COMPLEX WITH ORAI1, AND
+RP   INTERACTION WITH ORAI1.
+RX   PubMed=23109337; DOI=10.1074/jbc.m112.380964;
+RA   Liu Y., Zheng X., Mueller G.A., Sobhany M., DeRose E.F., Zhang Y.,
+RA   London R.E., Birnbaumer L.;
+RT   "Crystal structure of calmodulin binding domain of orai1 in complex with
+RT   Ca2+ calmodulin displays a unique binding mode.";
+RL   J. Biol. Chem. 287:43030-43041(2012).
+CC   -!- FUNCTION: Calmodulin mediates the control of a large number of enzymes,
+CC       ion channels, aquaporins and other proteins through calcium-binding.
+CC       Among the enzymes to be stimulated by the calmodulin-calcium complex
+CC       are a number of protein kinases and phosphatases. Together with CCP110
+CC       and centrin, is involved in a genetic pathway that regulates the
+CC       centrosome cycle and progression through cytokinesis. Mediates calcium-
+CC       dependent inactivation of CACNA1C. Positively regulates calcium-
+CC       activated potassium channel activity of KCNN2.
+CC       {ECO:0000250|UniProtKB:P62158}.
+CC   -!- SUBUNIT: Interacts with CEP97, CCP110, TTN/titin and SRY (By
+CC       similarity). Interacts with MYO5A and RRAD (PubMed:18056528). Interacts
+CC       with USP6; the interaction is calcium dependent (By similarity).
+CC       Interacts with CDK5RAP2 (By similarity). Interacts with SCN5A (By
+CC       similarity). Interacts with RYR1 (By similarity). Interacts with FCHO1
+CC       (By similarity). Interacts with MIP in a 1:2 stoichiometry; the
+CC       interaction with the cytoplasmic domains from two MIP subunits promotes
+CC       MIP water channel closure (By similarity). Interacts with ORAI1; this
+CC       may play a role in the regulation of ORAI1-mediated calcium transport
+CC       (PubMed:23109337). Interacts with SYT7 (By similarity). Interacts with
+CC       MYO10 and MYO1C (By similarity). Interacts with CEACAM1 (via
+CC       cytoplasmic domain); this interaction is in a calcium dependent manner
+CC       and reduces homophilic cell adhesion through dissociation of dimer
+CC       (PubMed:8576129). Interacts with RYR2; regulates RYR2 calcium-release
+CC       channel activity (By similarity). Interacts with PCP4; regulates
+CC       calmodulin calcium-binding (By similarity). Interacts with the
+CC       heterotetrameric KCNQ2 and KCNQ3 channel; the interaction is calcium-
+CC       independent, constitutive and participates to the proper assembly of a
+CC       functional heterotetrameric M channel (By similarity). Interacts with
+CC       SLC9A1 in a calcium-dependent manner (By similarity). In the absence of
+CC       Ca(+2), interacts with GIMAP4 (via IQ domain) (By similarity).
+CC       Interacts with SCN8A; the interaction modulates the inactivation rate
+CC       of SCN8A (By similarity). Interaction with KIF1A; the interaction is
+CC       increased in presence of calcium and increases neuronal dense core
+CC       vesicles motility (PubMed:30021165). {ECO:0000250|UniProtKB:P0DP23,
+CC       ECO:0000250|UniProtKB:P0DP26, ECO:0000250|UniProtKB:P62157,
+CC       ECO:0000250|UniProtKB:P62158, ECO:0000250|UniProtKB:P62204,
+CC       ECO:0000269|PubMed:18056528, ECO:0000269|PubMed:23109337,
+CC       ECO:0000269|PubMed:30021165, ECO:0000269|PubMed:8576129}.
+CC   -!- SUBCELLULAR LOCATION: Cytoplasm, cytoskeleton, spindle. Cytoplasm,
+CC       cytoskeleton, spindle pole. Note=Distributed throughout the cell during
+CC       interphase, but during mitosis becomes dramatically localized to the
+CC       spindle poles and the spindle microtubules. {ECO:0000250}.
+CC   -!- PTM: Ubiquitination results in a strongly decreased activity.
+CC       {ECO:0000250}.
+CC   -!- PTM: Phosphorylation results in a decreased activity.
+CC       {ECO:0000269|PubMed:12392717}.
+CC   -!- MISCELLANEOUS: This protein has four functional calcium-binding sites.
+CC       {ECO:0000250|UniProtKB:P0DP23}.
+CC   -!- SIMILARITY: Belongs to the calmodulin family. {ECO:0000305}.
+CC   ---------------------------------------------------------------------------
+CC   Copyrighted by the UniProt Consortium, see https://www.uniprot.org/terms
+CC   Distributed under the Creative Commons Attribution (CC BY 4.0) License
+CC   ---------------------------------------------------------------------------
+DR   EMBL; X13933; CAA32120.1; -; mRNA.
+DR   EMBL; X13931; CAA32119.1; -; Genomic_DNA.
+DR   EMBL; X13932; CAA32119.1; JOINED; Genomic_DNA.
+DR   EMBL; X05117; CAA32119.1; JOINED; Genomic_DNA.
+DR   EMBL; AF178845; AAD55398.1; -; mRNA.
+DR   PIR; S03206; MCRT.
+DR   RefSeq; NP_036650.1; NM_012518.3.
+DR   RefSeq; NP_059022.1; NM_017326.3.
+DR   RefSeq; NP_114175.1; NM_031969.2.
+DR   PDB; 1G4Y; X-ray; 1.60 A; R=2-149.
+DR   PDB; 1NIW; X-ray; 2.05 A; A/C/E/G=2-149.
+DR   PDB; 1QX5; X-ray; 2.54 A; B/D/I/J/K/R/T/Y=2-149.
+DR   PDB; 1QX7; X-ray; 3.09 A; A/B/I/M/R=2-149.
+DR   PDB; 1UP5; X-ray; 1.90 A; A/B=2-149.
+DR   PDB; 2HQW; X-ray; 1.90 A; A=2-149.
+DR   PDB; 2MGU; NMR; -; A=2-149.
+DR   PDB; 2PQ3; X-ray; 1.30 A; A=2-77.
+DR   PDB; 2YGG; X-ray; 2.23 A; B=1-149.
+DR   PDB; 3B32; X-ray; 1.60 A; A=2-76.
+DR   PDB; 3BXK; X-ray; 2.55 A; A/C=2-149.
+DR   PDB; 3BXL; X-ray; 2.30 A; A=2-149.
+DR   PDB; 3CLN; X-ray; 2.20 A; A=2-149.
+DR   PDB; 3EK4; X-ray; 2.65 A; A=3-149.
+DR   PDB; 3EK7; X-ray; 1.85 A; A=3-149.
+DR   PDB; 3EK8; X-ray; 2.80 A; A=3-149.
+DR   PDB; 3EKH; X-ray; 2.00 A; A=3-149.
+DR   PDB; 3EKJ; X-ray; 2.80 A; A=3-149.
+DR   PDB; 3EVR; X-ray; 2.00 A; A=3-148.
+DR   PDB; 3EVU; X-ray; 1.75 A; A=3-148.
+DR   PDB; 3EVV; X-ray; 2.60 A; A=3-148.
+DR   PDB; 3IFK; X-ray; 2.03 A; A/B=2-91.
+DR   PDB; 3SG2; X-ray; 2.00 A; A=3-149.
+DR   PDB; 3SG3; X-ray; 2.10 A; A=3-149.
+DR   PDB; 3SG4; X-ray; 2.40 A; A=3-149.
+DR   PDB; 3SG5; X-ray; 1.90 A; A=3-149.
+DR   PDB; 3SG6; X-ray; 1.70 A; A=3-149.
+DR   PDB; 3SG7; X-ray; 1.90 A; A=3-149.
+DR   PDB; 3SJQ; X-ray; 1.90 A; A/B=1-149.
+DR   PDB; 3WLC; X-ray; 2.49 A; A=3-149.
+DR   PDB; 3WLD; X-ray; 2.70 A; A=3-149.
+DR   PDB; 4EHQ; X-ray; 1.90 A; A=2-149.
+DR   PDB; 4G27; X-ray; 1.65 A; R=1-149.
+DR   PDB; 4G28; X-ray; 1.63 A; R=1-149.
+DR   PDB; 4I2Y; X-ray; 2.20 A; A/B=3-149.
+DR   PDB; 4IL1; X-ray; 3.00 A; A/B/C/D=1-149.
+DR   PDB; 4J9Y; X-ray; 1.51 A; R=1-149.
+DR   PDB; 4J9Z; X-ray; 1.66 A; R=1-149.
+DR   PDB; 4OY4; X-ray; 2.03 A; A=3-147.
+DR   PDB; 4QNH; X-ray; 2.02 A; R=1-149.
+DR   PDB; 4RJD; X-ray; 2.00 A; A/B=83-148.
+DR   PDB; 6CZQ; X-ray; 2.20 A; R=5-148.
+DR   PDB; 6DMW; EM; 4.40 A; E=1-149.
+DR   PDB; 6MBA; X-ray; 1.80 A; B=1-149.
+DR   PDB; 6MC9; X-ray; 3.30 A; B=1-149.
+DR   PDBsum; 1G4Y; -.
+DR   PDBsum; 1NIW; -.
+DR   PDBsum; 1QX5; -.
+DR   PDBsum; 1QX7; -.
+DR   PDBsum; 1UP5; -.
+DR   PDBsum; 2HQW; -.
+DR   PDBsum; 2MGU; -.
+DR   PDBsum; 2PQ3; -.
+DR   PDBsum; 2YGG; -.
+DR   PDBsum; 3B32; -.
+DR   PDBsum; 3BXK; -.
+DR   PDBsum; 3BXL; -.
+DR   PDBsum; 3CLN; -.
+DR   PDBsum; 3EK4; -.
+DR   PDBsum; 3EK7; -.
+DR   PDBsum; 3EK8; -.
+DR   PDBsum; 3EKH; -.
+DR   PDBsum; 3EKJ; -.
+DR   PDBsum; 3EVR; -.
+DR   PDBsum; 3EVU; -.
+DR   PDBsum; 3EVV; -.
+DR   PDBsum; 3IFK; -.
+DR   PDBsum; 3SG2; -.
+DR   PDBsum; 3SG3; -.
+DR   PDBsum; 3SG4; -.
+DR   PDBsum; 3SG5; -.
+DR   PDBsum; 3SG6; -.
+DR   PDBsum; 3SG7; -.
+DR   PDBsum; 3SJQ; -.
+DR   PDBsum; 3WLC; -.
+DR   PDBsum; 3WLD; -.
+DR   PDBsum; 4EHQ; -.
+DR   PDBsum; 4G27; -.
+DR   PDBsum; 4G28; -.
+DR   PDBsum; 4I2Y; -.
+DR   PDBsum; 4IL1; -.
+DR   PDBsum; 4J9Y; -.
+DR   PDBsum; 4J9Z; -.
+DR   PDBsum; 4OY4; -.
+DR   PDBsum; 4QNH; -.
+DR   PDBsum; 4RJD; -.
+DR   PDBsum; 6CZQ; -.
+DR   PDBsum; 6DMW; -.
+DR   PDBsum; 6MBA; -.
+DR   PDBsum; 6MC9; -.
+DR   SMR; P0DP29; -.
+DR   STRING; 10116.ENSRNOP00000063822; -.
+DR   iPTMnet; P0DP29; -.
+DR   jPOST; P0DP29; -.
+DR   PRIDE; P0DP29; -.
+DR   Ensembl; ENSRNOT00000022603; ENSRNOP00000022603; ENSRNOG00000016770.
+DR   Ensembl; ENSRNOT00000064679; ENSRNOP00000063822; ENSRNOG00000004060.
+DR   GeneID; 24242; -.
+DR   GeneID; 24244; -.
+DR   GeneID; 50663; -.
+DR   KEGG; rno:24242; -.
+DR   KEGG; rno:24244; -.
+DR   KEGG; rno:50663; -.
+DR   CTD; 801; -.
+DR   CTD; 805; -.
+DR   CTD; 808; -.
+DR   RGD; 2257; Calm1.
+DR   KO; K02183; -.
+DR   OMA; SPHESSN; -.
+DR   OrthoDB; 1386217at2759; -.
+DR   PRO; PR:P0DP29; -.
+DR   Proteomes; UP000002494; Chromosome 1.
+DR   Proteomes; UP000002494; Chromosome 6.
+DR   ExpressionAtlas; P0DP29; baseline and differential.
+DR   GO; GO:0034704; C:calcium channel complex; ISO:RGD.
+DR   GO; GO:1902494; C:catalytic complex; ISO:RGD.
+DR   GO; GO:0005623; C:cell; IEA:GOC.
+DR   GO; GO:0005813; C:centrosome; ISO:RGD.
+DR   GO; GO:0005737; C:cytoplasm; IDA:RGD.
+DR   GO; GO:0005829; C:cytosol; TAS:Reactome.
+DR   GO; GO:0030426; C:growth cone; IDA:RGD.
+DR   GO; GO:0005739; C:mitochondrion; IEA:GOC.
+DR   GO; GO:0043209; C:myelin sheath; IDA:CAFA.
+DR   GO; GO:0043005; C:neuron projection; IDA:RGD.
+DR   GO; GO:0005654; C:nucleoplasm; TAS:Reactome.
+DR   GO; GO:0005634; C:nucleus; IDA:RGD.
+DR   GO; GO:0005886; C:plasma membrane; IDA:RGD.
+DR   GO; GO:0032991; C:protein-containing complex; ISO:RGD.
+DR   GO; GO:0030017; C:sarcomere; ISO:RGD.
+DR   GO; GO:0005876; C:spindle microtubule; ISO:RGD.
+DR   GO; GO:0000922; C:spindle pole; ISO:RGD.
+DR   GO; GO:0008076; C:voltage-gated potassium channel complex; ISO:RGD.
+DR   GO; GO:0010856; F:adenylate cyclase activator activity; ISO:RGD.
+DR   GO; GO:0008179; F:adenylate cyclase binding; IDA:RGD.
+DR   GO; GO:0019855; F:calcium channel inhibitor activity; ISS:UniProtKB.
+DR   GO; GO:0005246; F:calcium channel regulator activity; NAS:RGD.
+DR   GO; GO:0005509; F:calcium ion binding; IDA:RGD.
+DR   GO; GO:0048306; F:calcium-dependent protein binding; IPI:RGD.
+DR   GO; GO:0097718; F:disordered domain specific binding; ISO:RGD.
+DR   GO; GO:0030234; F:enzyme regulator activity; IBA:GO_Central.
+DR   GO; GO:0044325; F:ion channel binding; IDA:RGD.
+DR   GO; GO:0031997; F:N-terminal myristoylation domain binding; ISO:RGD.
+DR   GO; GO:0050998; F:nitric-oxide synthase binding; IDA:RGD.
+DR   GO; GO:0030235; F:nitric-oxide synthase regulator activity; IDA:RGD.
+DR   GO; GO:0043548; F:phosphatidylinositol 3-kinase binding; IPI:RGD.
+DR   GO; GO:0019904; F:protein domain specific binding; IPI:RGD.
+DR   GO; GO:0019901; F:protein kinase binding; ISO:RGD.
+DR   GO; GO:0047485; F:protein N-terminus binding; IDA:RGD.
+DR   GO; GO:0072542; F:protein phosphatase activator activity; ISO:RGD.
+DR   GO; GO:0031432; F:titin binding; ISO:RGD.
+DR   GO; GO:0031800; F:type 3 metabotropic glutamate receptor binding; IPI:RGD.
+DR   GO; GO:0007190; P:activation of adenylate cyclase activity; IDA:RGD.
+DR   GO; GO:0019722; P:calcium-mediated signaling; IMP:RGD.
+DR   GO; GO:0005513; P:detection of calcium ion; ISO:RGD.
+DR   GO; GO:0090150; P:establishment of protein localization to membrane; IMP:CAFA.
+DR   GO; GO:0090151; P:establishment of protein localization to mitochondrial membrane; IMP:CAFA.
+DR   GO; GO:0000086; P:G2/M transition of mitotic cell cycle; ISO:RGD.
+DR   GO; GO:0000226; P:microtubule cytoskeleton organization; IBA:GO_Central.
+DR   GO; GO:0060315; P:negative regulation of ryanodine-sensitive calcium-release channel activity; ISS:UniProtKB.
+DR   GO; GO:0051343; P:positive regulation of cyclic-nucleotide phosphodiesterase activity; ISO:RGD.
+DR   GO; GO:0043388; P:positive regulation of DNA binding; ISO:RGD.
+DR   GO; GO:0051000; P:positive regulation of nitric-oxide synthase activity; IDA:RGD.
+DR   GO; GO:0032516; P:positive regulation of phosphoprotein phosphatase activity; ISO:RGD.
+DR   GO; GO:0035307; P:positive regulation of protein dephosphorylation; ISO:RGD.
+DR   GO; GO:0060316; P:positive regulation of ryanodine-sensitive calcium-release channel activity; ISO:RGD.
+DR   GO; GO:0055117; P:regulation of cardiac muscle contraction; ISO:RGD.
+DR   GO; GO:0032465; P:regulation of cytokinesis; ISO:RGD.
+DR   GO; GO:0002027; P:regulation of heart rate; ISO:RGD.
+DR   GO; GO:1901841; P:regulation of high voltage-gated calcium channel activity; IMP:RGD.
+DR   GO; GO:0010880; P:regulation of release of sequestered calcium ion into cytosol by sarcoplasmic reticulum; ISO:RGD.
+DR   GO; GO:0060314; P:regulation of ryanodine-sensitive calcium-release channel activity; IDA:RGD.
+DR   GO; GO:1901339; P:regulation of store-operated calcium channel activity; IC:RGD.
+DR   GO; GO:1900242; P:regulation of synaptic vesicle endocytosis; IMP:CAFA.
+DR   GO; GO:2000300; P:regulation of synaptic vesicle exocytosis; IMP:CAFA.
+DR   GO; GO:0001975; P:response to amphetamine; IEP:RGD.
+DR   GO; GO:0051592; P:response to calcium ion; ISO:RGD.
+DR   CDD; cd00051; EFh; 2.
+DR   InterPro; IPR039030; Calmodulin.
+DR   InterPro; IPR011992; EF-hand-dom_pair.
+DR   InterPro; IPR018247; EF_Hand_1_Ca_BS.
+DR   InterPro; IPR002048; EF_hand_dom.
+DR   PANTHER; PTHR23050:SF379; PTHR23050:SF379; 1.
+DR   Pfam; PF13499; EF-hand_7; 2.
+DR   SMART; SM00054; EFh; 4.
+DR   SUPFAM; SSF47473; SSF47473; 1.
+DR   PROSITE; PS00018; EF_HAND_1; 4.
+DR   PROSITE; PS50222; EF_HAND_2; 4.
+PE   1: Evidence at protein level;
+KW   3D-structure; Acetylation; Calcium; Cytoplasm; Cytoskeleton;
+KW   Direct protein sequencing; Isopeptide bond; Metal-binding; Methylation;
+KW   Phosphoprotein; Reference proteome; Repeat; Ubl conjugation.
+FT   INIT_MET        1
+FT                   /note="Removed"
+FT                   /evidence="ECO:0000269|PubMed:201628, ECO:0000269|Ref.8"
+FT   CHAIN           2..149
+FT                   /note="Calmodulin-1"
+FT                   /id="PRO_0000439938"
+FT   DOMAIN          8..43
+FT                   /note="EF-hand 1"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00448"
+FT   DOMAIN          44..79
+FT                   /note="EF-hand 2"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00448"
+FT   DOMAIN          81..116
+FT                   /note="EF-hand 3"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00448"
+FT   DOMAIN          117..149
+FT                   /note="EF-hand 4"
+FT                   /evidence="ECO:0000255|PROSITE-ProRule:PRU00448"
+FT   CA_BIND         21..32
+FT                   /note="1"
+FT   CA_BIND         57..68
+FT                   /note="2"
+FT   CA_BIND         94..105
+FT                   /note="3"
+FT   CA_BIND         130..141
+FT                   /note="4"
+FT   REGION          77..149
+FT                   /note="Necessary and sufficient for interaction with PCP4"
+FT                   /evidence="ECO:0000250|UniProtKB:P0DP23"
+FT   MOD_RES         2
+FT                   /note="N-acetylalanine"
+FT                   /evidence="ECO:0000269|PubMed:201628, ECO:0000269|Ref.8"
+FT   MOD_RES         22
+FT                   /note="N6-acetyllysine; alternate"
+FT                   /evidence="ECO:0000250|UniProtKB:P0DP23"
+FT   MOD_RES         45
+FT                   /note="Phosphothreonine; by CaMK4"
+FT                   /evidence="ECO:0000269|PubMed:12392717"
+FT   MOD_RES         82
+FT                   /note="Phosphoserine"
+FT                   /evidence="ECO:0000250|UniProtKB:P0DP23"
+FT   MOD_RES         95
+FT                   /note="N6-acetyllysine"
+FT                   /evidence="ECO:0000250|UniProtKB:P0DP23"
+FT   MOD_RES         100
+FT                   /note="Phosphotyrosine"
+FT                   /evidence="ECO:0000244|PubMed:22673903"
+FT   MOD_RES         102
+FT                   /note="Phosphoserine"
+FT                   /evidence="ECO:0000244|PubMed:22673903"
+FT   MOD_RES         111
+FT                   /note="Phosphothreonine"
+FT                   /evidence="ECO:0000250|UniProtKB:P0DP23"
+FT   MOD_RES         116
+FT                   /note="N6,N6,N6-trimethyllysine; alternate"
+FT                   /evidence="ECO:0000269|PubMed:201628"
+FT   MOD_RES         116
+FT                   /note="N6-methyllysine; alternate"
+FT                   /evidence="ECO:0000250|UniProtKB:P0DP23"
+FT   MOD_RES         139
+FT                   /note="Phosphotyrosine"
+FT                   /evidence="ECO:0000250|UniProtKB:P0DP23"
+FT   CROSSLNK        22
+FT                   /note="Glycyl lysine isopeptide (Lys-Gly) (interchain with
+FT                   G-Cter in SUMO2); alternate"
+FT                   /evidence="ECO:0000250|UniProtKB:P0DP23"
+FT   CROSSLNK        22
+FT                   /note="Glycyl lysine isopeptide (Lys-Gly) (interchain with
+FT                   G-Cter in ubiquitin); alternate"
+FT                   /evidence="ECO:0000250|UniProtKB:P62157"
+FT   HELIX           7..20
+FT                   /evidence="ECO:0000244|PDB:6MBA"
+FT   STRAND          25..28
+FT                   /evidence="ECO:0000244|PDB:3SG6"
+FT   HELIX           30..39
+FT                   /evidence="ECO:0000244|PDB:3SG6"
+FT   HELIX           46..54
+FT                   /evidence="ECO:0000244|PDB:3SG6"
+FT   STRAND          60..65
+FT                   /evidence="ECO:0000244|PDB:3SG6"
+FT   HELIX           66..74
+FT                   /evidence="ECO:0000244|PDB:3SG6"
+FT   TURN            79..81
+FT                   /evidence="ECO:0000244|PDB:3SG7"
+FT   HELIX           83..93
+FT                   /evidence="ECO:0000244|PDB:3SG6"
+FT   STRAND          98..101
+FT                   /evidence="ECO:0000244|PDB:3SG6"
+FT   HELIX           103..113
+FT                   /evidence="ECO:0000244|PDB:3SG6"
+FT   HELIX           119..129
+FT                   /evidence="ECO:0000244|PDB:3SG6"
+FT   STRAND          133..138
+FT                   /evidence="ECO:0000244|PDB:3SG6"
+FT   HELIX           139..146
+FT                   /evidence="ECO:0000244|PDB:3SG6"
+SQ   SEQUENCE   149 AA;  16838 MW;  6B4BC3FCDE10727B CRC64;
+     MADQLTEEQI AEFKEAFSLF DKDGDGTITT KELGTVMRSL GQNPTEAELQ DMINEVDADG
+     NGTIDFPEFL TMMARKMKDT DSEEEIREAF RVFDKDGNGY ISAAELRHVM TNLGEKLTDE
+     EVDEMIREAD IDGDGQVNYE EFVQMMTAK
+//
