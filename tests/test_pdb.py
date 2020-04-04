@@ -248,6 +248,9 @@ class TestPDBToUNP:
         for test_id in {'3G53', '3G53:A'}:
             self._check(test_id, 'P02213')
 
+    def test_multi_unp_for_single_chain(self):
+        self._check('3SG4:A', 'P0DP29')
+
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
 class TestPDBQueries:

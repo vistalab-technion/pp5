@@ -7,8 +7,9 @@ import warnings
 from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
-from typing import NamedTuple, Type, Dict
+from typing import NamedTuple, Type, Dict, List, Set
 from urllib.request import urlopen
+import itertools as it
 
 import pandas as pd
 import requests
@@ -124,6 +125,27 @@ def pdb_dict(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> dict:
     return MMCIF2Dict.MMCIF2Dict(filename)
 
 
+def query_pdb_uniprot_ids(pdb_id: str) -> Set[str]:
+    """
+    Retrieves all Uniprot IDs associated with a PDB structure by querying
+    the PDB database.
+    :param pdb_id: The PDB ID to search for. Can be with or without chain.
+    :return: A list of associated Uniprot IDs.
+    """
+    # In the url of the query, chain is separated with a '.'
+    url_pdb_id = pdb_id.replace(":", ".")
+    url = PDB_TO_UNP_URL_TEMPLATE.format(url_pdb_id)
+    with urlopen(url) as f:
+        df = pd.read_csv(f, header=0, na_filter=False)
+
+    # Filter out empty rows, then split each row by '#' because in cases
+    # where there are multiple Uniprot IDs for a single CHAIN, this is
+    # how they're separated (e.g. 3SG4:A).
+    unp_ids = filter(lambda x: x, df['uniprotAcc'])
+    unp_ids = set(it.chain(*map(lambda s: s.split('#'), unp_ids)))
+    return unp_ids
+
+
 def pdbid_to_unpid(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> str:
     """
     Extracts a Uniprot protein id from a PDB protein structure.
@@ -140,10 +162,22 @@ def pdbid_to_unpid(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> str:
     # Go over referenced DBs and take all uniprot IDs
     unp_ids = set()
 
-    def warn_if_multiple():
-        if not chain_id and len(unp_ids) > 1:
+    def raise_or_warn_if_zero_or_multiple():
+        if not unp_ids:
+            raise ValueError(f'No Uniprot cross-reference found for '
+                             f'{f"chain {chain_id} of " if chain_id else ""}'
+                             f'{pdb_id}')
+
+        if len(unp_ids) == 1:
+            return
+
+        if not chain_id:
             LOGGER.warning(f"Multiple Uniprot IDs exists for {pdb_id}, and no "
                            f"chain specified. Returning first Uniprot ID.")
+        else:
+            LOGGER.warning(f"Multiple Uniprot IDs exists for chain "
+                           f"{chain_id} of {pdb_id}. Returning "
+                           f"most-overlapping.")
 
     if '_struct_ref.db_name' in struct_d:
         for i, db_name in enumerate(struct_d['_struct_ref.db_name']):
@@ -151,37 +185,43 @@ def pdbid_to_unpid(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> str:
                 unp_ids.add(struct_d['_struct_ref.pdbx_db_accession'][i])
 
     if not unp_ids:
-        LOGGER.warning(f'No Uniprot cross-references found in {pdb_id}. '
+        LOGGER.warning(f'No Uniprot cross-references found in {pdb_id} file. '
                        f'Attempting to query PDB API.')
 
-        url_pdb_id = f'{pdb_id}{f".{chain_id}" if chain_id else ""}'
-        url = PDB_TO_UNP_URL_TEMPLATE.format(url_pdb_id)
-        with urlopen(url) as f:
-            df = pd.read_csv(f, header=0, na_filter=False)
-
-        unp_ids = list(filter(lambda x: x, df['uniprotAcc']))
-        if not unp_ids:
-            raise ValueError(f'No Uniprot cross-reference found for {pdb_id}')
-
-        warn_if_multiple()
-        return unp_ids[0].upper()
-
-    if not chain_id:
-        warn_if_multiple()
-        return next(iter(unp_ids)).upper()
+        full_pdb_id = f'{pdb_id}{f":{chain_id}" if chain_id else ""}'
+        unp_ids = query_pdb_uniprot_ids(full_pdb_id)
+        raise_or_warn_if_zero_or_multiple()
+        return unp_ids.pop().upper()
 
     # Loop over extra information about each cross-reference.
-    # The chains are contained here. Find the Uniprot ID for the requested
+    # The chains are contained here. Find the Uniprot ID(s) for the requested
     # chain.
+    unp_id_to_seq_len = {}
     for i, curr_id in enumerate(struct_d['_struct_ref_seq.pdbx_db_accession']):
         if curr_id not in unp_ids:
             continue
 
+        # If we have a specified chain, ignore other chains
         curr_chain = struct_d['_struct_ref_seq.pdbx_strand_id'][i]
-        if curr_chain.lower() == chain_id.lower():
-            return curr_id.upper()
+        if chain_id and curr_chain.lower() != chain_id.lower():
+            continue
 
-    raise ValueError(f"Can't find Uniprot ID for chain {chain_id} of {pdb_id}")
+        # There are cases (e.g. 3SG4:A) where different parts of the structure
+        # correspond to different UNP ids, even within the same chain.
+        # So, if there are multiple UNP IDs for our chain, we'll take the
+        # one with the longest sequence (so it "covers" more parts of our
+        # chain).
+        ref_end = int(struct_d['_struct_ref_seq.seq_align_end'][i])
+        ref_start = int(struct_d['_struct_ref_seq.seq_align_beg'][i])
+        seq_len = ref_end - ref_start
+        unp_id_to_seq_len[curr_id] = max(
+            seq_len, unp_id_to_seq_len.setdefault(curr_id, 0)
+        )
+
+    # Select Uniprot ID with longest sequence length
+    unp_ids = sorted(unp_id_to_seq_len, key=lambda k: unp_id_to_seq_len[k])
+    raise_or_warn_if_zero_or_multiple()
+    return unp_ids.pop().upper()
 
 
 def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):

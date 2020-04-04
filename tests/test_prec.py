@@ -74,12 +74,8 @@ class TestCreation:
         with pytest.raises(ProteinInitError):
             ProteinRecord('P00720', '4GY3')
 
-    def test_strict_xref_with_no_xref_in_pdb(self):
-        with pytest.raises(ProteinInitError):
-            ProteinRecord.from_pdb('3SG4:A')
-
     def test_no_strict_xref_with_no_xref_in_pdb(self):
-        prec = ProteinRecord.from_pdb('3SG4:A', strict_xref=False)
+        prec = ProteinRecord('Q6LDG3', '3SG4:A', strict_xref=False)
         assert prec.unp_id == 'Q6LDG3'
         assert prec.pdb_id == '3SG4:A'
 
@@ -95,6 +91,15 @@ class TestCreation:
         prec = ProteinRecord.from_pdb('2QLE:A', strict_xref=False)
         assert prec.unp_id == 'P42212'
         assert prec.pdb_id == '2QLE:A'
+
+    def test_multiple_unp_ids_for_same_pdb_chain(self):
+        prec = ProteinRecord.from_pdb('3SG4:A', strict_xref=False)
+        assert prec.unp_id == 'P0DP29'
+        assert prec.pdb_id == '3SG4:A'
+
+        prec = ProteinRecord.from_pdb('3SG4', strict_xref=False)
+        assert prec.unp_id == 'P0DP29'
+        assert prec.pdb_id == '3SG4:A'
 
 
 class TestSave:
