@@ -246,7 +246,7 @@ class ProteinRecord(object):
 
                 # Discover which chains belong to this entity
                 pdb_dict = pdb.pdb_dict(pdb_id)
-                meta = pdb.pdb_metadata(pdb_id, struct_d=pdb_dict)
+                meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
                 chain_id = meta.get_chain(entity_id)
                 if not chain_id:
                     raise ProteinInitError(
@@ -353,7 +353,7 @@ class ProteinRecord(object):
         if pdb_dict:
             self._pdb_dict = pdb_dict
 
-        self.pdb_meta = pdb.pdb_metadata(self.pdb_id, struct_d=self.pdb_dict)
+        self.pdb_meta = pdb.PDBMetadata(self.pdb_id, struct_d=self.pdb_dict)
         LOGGER.info(
             f'{self}: {self.pdb_meta.description}, '
             f'org={self.pdb_meta.src_org} ({self.pdb_meta.src_org_id}), '

@@ -161,7 +161,7 @@ class TestPDBMetadata:
             df_groups = df.groupby('structureId')
 
         for pdb_id in pdb_ids:
-            meta = pdb.pdb_metadata(pdb_id)
+            meta = pdb.PDBMetadata(pdb_id)
             pdb_id_group: pd.DataFrame = df_groups.get_group(pdb_id.upper())
             expected = pdb_id_group.iloc[0]
             chain = expected['chainId']

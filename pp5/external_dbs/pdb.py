@@ -261,103 +261,101 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
     return ss_dict, keys
 
 
-def pdb_metadata(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> PDBMetadata:
+class PDBMetadata(object):
     """
     Extracts metadata from a PDB structure.
     Helpful metadata fields:
     https://www.rcsb.org/pdb/results/reportField.do
-
-    :param pdb_id: The PDB ID of the structure.
-    :param pdb_dir: Where to store PDB files.
-    :param struct_d: Optional dict which will be used if given, instead of
-    parsing the PDB file.
-    :return: A PDBMetadata object.
     """
-    pdb_id, chain_id = split_id(pdb_id)
-    struct_d = pdb_dict(pdb_id, pdb_dir, struct_d)
 
-    def meta(key: str, convert_to: Type = str):
-        val = struct_d.get(key, None)
-        if not val:
-            return None
-        if isinstance(val, list):
-            val = val[0]
-        if not val or val == '?':
-            return None
-        return convert_to(val)
+    def __init__(self, pdb_id: str, struct_d=None):
+        """
+        :param pdb_id: The PDB ID of the structure.
+        :param struct_d: Optional dict which will be used if given, instead of
+        parsing the PDB file.
+        """
+        pdb_id, chain_id = split_id(pdb_id)
+        struct_d = pdb_dict(pdb_id, struct_d=struct_d)
 
-    title = meta('_struct.title')
-    description = meta('_entity.pdbx_description')
+        def _meta(key: str, convert_to: Type = str):
+            val = struct_d.get(key, None)
+            if not val:
+                return None
+            if isinstance(val, list):
+                val = val[0]
+            if not val or val == '?':
+                return None
+            return convert_to(val)
 
-    src_org = meta('_entity_src_nat.pdbx_organism_scientific')
-    if not src_org:
-        src_org = meta('_entity_src_gen.pdbx_gene_src_scientific_name')
+        title = _meta('_struct.title')
+        description = _meta('_entity.pdbx_description')
 
-    src_org_id = meta('_entity_src_nat.pdbx_ncbi_taxonomy_id', int)
-    if not src_org_id:
-        src_org_id = meta('_entity_src_gen.pdbx_gene_src_ncbi_taxonomy_id',
-                          int)
+        src_org = _meta('_entity_src_nat.pdbx_organism_scientific')
+        if not src_org:
+            src_org = _meta('_entity_src_gen.pdbx_gene_src_scientific_name')
 
-    host_org = meta('_entity_src_gen.pdbx_host_org_scientific_name')
-    host_org_id = meta('_entity_src_gen.pdbx_host_org_ncbi_taxonomy_id', int)
-    resolution = meta('_refine.ls_d_res_high', float)
-    resolution_low = meta('_refine.ls_d_res_low', float)
-    r_free = meta('_refine.ls_R_factor_R_free', float)
-    r_work = meta('_refine.ls_R_factor_R_work', float)
-    space_group = meta('_symmetry.space_group_name_H-M')
+        src_org_id = _meta('_entity_src_nat.pdbx_ncbi_taxonomy_id', int)
+        if not src_org_id:
+            src_org_id = \
+                _meta('_entity_src_gen.pdbx_gene_src_ncbi_taxonomy_id', int)
 
-    # Find ligands
-    ligands = set()
-    for i, chemical_type in enumerate(struct_d['_chem_comp.id']):
-        if chemical_type.lower() == 'hoh':
-            continue
-        if chemical_type not in STANDARD_ACID_NAMES:
-            ligands.add(chemical_type)
-    ligands = str.join(',', ligands)
+        host_org = _meta('_entity_src_gen.pdbx_host_org_scientific_name')
+        host_org_id = _meta('_entity_src_gen.pdbx_host_org_ncbi_taxonomy_id',
+                            int)
+        resolution = _meta('_refine.ls_d_res_high', float)
+        resolution_low = _meta('_refine.ls_d_res_low', float)
+        r_free = _meta('_refine.ls_R_factor_R_free', float)
+        r_work = _meta('_refine.ls_R_factor_R_work', float)
+        space_group = _meta('_symmetry.space_group_name_H-M')
 
-    # Crystal growth details
-    cg_ph = meta('_exptl_crystal_grow.pH', float)
-    cg_temp = meta('_exptl_crystal_grow.temp', float)
+        # Find ligands
+        ligands = set()
+        for i, chemical_type in enumerate(struct_d['_chem_comp.id']):
+            if chemical_type.lower() == 'hoh':
+                continue
+            if chemical_type not in STANDARD_ACID_NAMES:
+                ligands.add(chemical_type)
+        ligands = str.join(',', ligands)
 
-    # Map each chain to it's entity id, and entity to its 1-letter sequence.
-    chain_entities, entity_seq = {}, {}
-    for i, entity_id in enumerate(struct_d['_entity_poly.entity_id']):
-        if not struct_d['_entity_poly.type'][i].startswith('polypeptide'):
-            continue
+        # Crystal growth details
+        cg_ph = _meta('_exptl_crystal_grow.pH', float)
+        cg_temp = _meta('_exptl_crystal_grow.temp', float)
 
-        entity_id = int(entity_id)
-        chains_str = struct_d['_entity_poly.pdbx_strand_id'][i]
-        for chain in chains_str.split(','):
-            chain_entities[chain] = entity_id
+        # Map each chain to entity id, and entity to 1-letter sequence.
+        chain_entities, entity_seq = {}, {}
+        for i, entity_id in enumerate(struct_d['_entity_poly.entity_id']):
+            if not struct_d['_entity_poly.type'][i].startswith('polypeptide'):
+                continue
 
-        seq_str: str = struct_d['_entity_poly.pdbx_seq_one_letter_code_can'][i]
-        seq_str = seq_str.replace('\n', '')
-        entity_seq[entity_id] = seq_str
+            entity_id = int(entity_id)
+            chains_str = struct_d['_entity_poly.pdbx_strand_id'][i]
+            for chain in chains_str.split(','):
+                chain_entities[chain] = entity_id
 
-    return PDBMetadata(pdb_id, title, description, src_org, src_org_id,
-                       host_org, host_org_id, resolution, resolution_low,
-                       r_free, r_work, space_group, ligands,
-                       cg_ph, cg_temp, chain_entities, entity_seq)
+            seq_str: str = \
+                struct_d['_entity_poly.pdbx_seq_one_letter_code_can'][i]
+            seq_str = seq_str.replace('\n', '')
+            entity_seq[entity_id] = seq_str
 
-
-class PDBMetadata(NamedTuple):
-    pdb_id: str
-    title: str
-    description: str
-    src_org: str
-    src_org_id: int
-    host_org: str
-    host_org_id: int
-    resolution: float
-    resolution_low: float
-    r_free: float
-    r_work: float
-    space_group: str
-    ligands: str
-    cg_ph: float  # crystal growth pH
-    cg_temp: float  # crystal growth temperature
-    chain_entities: Dict[str, int]  # mapping from chain_id to entity_id
-    entity_sequence: Dict[int, str]  # mapping from entity_id to sequence
+        self.pdb_id: str = pdb_id
+        self.title: str = title
+        self.description: str = description
+        self.src_org: str = src_org
+        self.src_org_id: int = src_org_id
+        self.host_org: str = host_org
+        self.host_org_id: int = host_org_id
+        self.resolution: float = resolution
+        self.resolution_low: float = resolution_low
+        self.r_free: float = r_free
+        self.r_work: float = r_work
+        self.space_group: str = space_group
+        self.ligands: str = ligands
+        self.cg_ph: float = cg_ph  # crystal growth pH
+        self.cg_temp: float = cg_temp  # crystal growth temperature
+        # mapping from chain_id to  entity_id
+        self.chain_entities: Dict[str, int] = chain_entities
+        # mapping from entity_id to sequence
+        self.entity_sequence: Dict[int, str] = entity_seq
 
     def get_chain(self, entity_id: int):
         chains = [c for c, e in self.chain_entities.items() if e == entity_id]
