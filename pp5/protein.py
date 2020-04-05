@@ -730,7 +730,7 @@ class ProteinRecord(object):
             raise ProteinInitError(
                 f'Unknown dihedral estimation method {est_name}')
 
-        unit_cell = pdb.pdb_to_unit_cell(self.pdb_id, struct_d=self.pdb_dict)
+        unit_cell = pdb.PDBUnitCell(self.pdb_id, struct_d=self.pdb_dict)
         args = dict(isotropic=False, n_samples=100, skip_omega=True)
         args.update(est_args)
 

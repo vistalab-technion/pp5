@@ -261,25 +261,6 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
     return ss_dict, keys
 
 
-def pdb_to_unit_cell(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) \
-        -> PDBUnitCell:
-    """
-    :return: a UnitCell object given a PDB id.
-    """
-    d = pdb_dict(pdb_id, pdb_dir, struct_d=struct_d)
-    try:
-        a, b, c = d['_cell.length_a'], d['_cell.length_b'], d['_cell.length_c']
-        alpha, beta = d['_cell.angle_alpha'], d['_cell.angle_beta']
-        gamma = d['_cell.angle_gamma']
-
-        a, b, c = float(a[0]), float(b[0]), float(c[0])
-        alpha, beta, gamma = float(alpha[0]), float(beta[0]), float(gamma[0])
-    except KeyError:
-        raise ValueError(f"Can't create UnitCell for {pdb_id}")
-
-    return PDBUnitCell(pdb_id, a, b, c, alpha, beta, gamma)
-
-
 def pdb_metadata(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> PDBMetadata:
     """
     Extracts metadata from a PDB structure.
@@ -399,12 +380,26 @@ class PDBUnitCell(object):
 
     """
 
-    def __init__(self, pdb_id, a, b, c, alpha, beta, gamma):
+    def __init__(self, pdb_id, struct_d: dict = None):
         """
-        a, b, c: Unit cell lengths in Angstroms
-        alpha, beta, gamma: Unit-cell angles in degrees
+        :param struct_d: Optional dict containing the parsed structure.
         """
+        d = pdb_dict(pdb_id, struct_d=struct_d)
+        try:
+            a, b = d['_cell.length_a'], d['_cell.length_b']
+            c = d['_cell.length_c']
+            alpha, beta = d['_cell.angle_alpha'], d['_cell.angle_beta']
+            gamma = d['_cell.angle_gamma']
+            a, b, c = float(a[0]), float(b[0]), float(c[0])
+            alpha, beta = float(alpha[0]), float(beta[0])
+            gamma = float(gamma[0])
+        except KeyError:
+            raise ValueError(f"Can't create UnitCell for {pdb_id}")
+
         self.pdb_id = pdb_id
+
+        # a, b, c: Unit cell lengths in Angstroms
+        # alpha, beta, gamma: Unit-cell angles in degrees
         self.a, self.b, self.c = a, b, c
         self.alpha, self.beta, self.gamma = alpha, beta, gamma
 
@@ -731,8 +726,3 @@ class CustomMMCIFParser(PDB.MMCIFParser):
             self._structure_builder.set_header(self._get_header())
 
         return self._structure_builder.get_structure()
-
-
-if __name__ == '__main__':
-    uc = pdb_to_unit_cell('1b0y')
-    j = 3

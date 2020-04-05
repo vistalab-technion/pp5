@@ -223,7 +223,7 @@ class TestDihedralAnglesEstimators(object):
 
     @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
     def test_montecarlo_estimator(self, pdb_id):
-        unit_cell = pdb.pdb_to_unit_cell(pdb_id)
+        unit_cell = pdb.PDBUnitCell(pdb_id)
         estimator = dihedral.DihedralAnglesMonteCarloEstimator(unit_cell)
         # Not sure how to test, for now set infinite abs error
         self._compare_with_estimator(pdb_id, estimator, abs=math.inf)
