@@ -196,7 +196,7 @@ def pdbid_to_unpid(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> str:
     # Loop over extra information about each cross-reference.
     # The chains are contained here. Find the Uniprot ID(s) for the requested
     # chain.
-    unp_id_to_seq_len = {}
+    unp_id_seq_len = {}
     for i, curr_id in enumerate(struct_d['_struct_ref_seq.pdbx_db_accession']):
         if curr_id not in unp_ids:
             continue
@@ -214,12 +214,10 @@ def pdbid_to_unpid(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> str:
         ref_end = int(struct_d['_struct_ref_seq.seq_align_end'][i])
         ref_start = int(struct_d['_struct_ref_seq.seq_align_beg'][i])
         seq_len = ref_end - ref_start
-        unp_id_to_seq_len[curr_id] = max(
-            seq_len, unp_id_to_seq_len.setdefault(curr_id, 0)
-        )
+        unp_id_seq_len[curr_id] = seq_len + unp_id_seq_len.get(curr_id, 0)
 
     # Select Uniprot ID with longest sequence length
-    unp_ids = sorted(unp_id_to_seq_len, key=lambda k: unp_id_to_seq_len[k])
+    unp_ids = sorted(unp_id_seq_len, key=lambda k: unp_id_seq_len[k])
     raise_or_warn_if_zero_or_multiple()
     return unp_ids.pop().upper()
 

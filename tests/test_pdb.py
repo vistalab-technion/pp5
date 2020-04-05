@@ -248,8 +248,10 @@ class TestPDBToUNP:
     def test_with_no_struct_ref_entry(self, test_id):
         self._check(test_id, 'P02213')
 
-    def test_multi_unp_for_single_chain(self):
-        self._check('3SG4:A', 'P0DP29')
+    @pytest.mark.parametrize(('test_id', 'unp_id'),
+                             [('3SG4:A', 'P42212'), ('4IK8:A', 'P42212')])
+    def test_multi_unp_for_single_chain(self, test_id, unp_id):
+        self._check(test_id, unp_id)
 
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')

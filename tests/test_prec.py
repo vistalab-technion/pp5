@@ -94,11 +94,11 @@ class TestCreation:
 
     def test_multiple_unp_ids_for_same_pdb_chain(self):
         prec = ProteinRecord.from_pdb('3SG4:A', strict_xref=False)
-        assert prec.unp_id == 'P0DP29'
+        assert prec.unp_id == 'P42212'
         assert prec.pdb_id == '3SG4:A'
 
         prec = ProteinRecord.from_pdb('3SG4', strict_xref=False)
-        assert prec.unp_id == 'P0DP29'
+        assert prec.unp_id == 'P42212'
         assert prec.pdb_id == '3SG4:A'
 
 
