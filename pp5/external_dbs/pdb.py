@@ -275,7 +275,7 @@ class PDB2UNP(object):
         os.makedirs(str(filepath.parent), exist_ok=True)
 
         with open(str(filepath), 'w', encoding='utf-8') as f:
-            json.dump(self.__dict__, f, indent=2)
+            json.dump(self.__dict__, f, indent=None)
 
         LOGGER.info(f'Wrote {self} to {filepath}')
         return filepath
