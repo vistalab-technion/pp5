@@ -267,7 +267,7 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
 class PDB2UNP(object):
     """
     Maps PDB IDs (in each chain) to one or more Uniprot IDs which correspond
-    to that chain.
+    to that chain, and their locations in the PDB sequence.
     """
 
     def __init__(self, pdb_id: str, struct_d: dict = None):
@@ -283,37 +283,25 @@ class PDB2UNP(object):
         # Get all chain Uniprot IDs by querying PDB. This gives us the most
         # up to date IDs, but it doesn't provide alignment info between the
         # PDB structure's sequence and the Uniprot xref sequence.
+        # Map is chain -> [unp1, unp2, ...]
         chain_to_unp_ids = self.query_all_uniprot_ids(pdb_id)
 
         # Get Uniprot cross-refs from the PDB file. Map is
         # chain -> unp -> [ (s1,e1), (s2, e2), ... ]
-        chain_to_unp_xrefs: Dict[str, Dict[str, List[tuple]]] = {}
-        for i, curr_id in enumerate(
-                struct_d['_struct_ref_seq.pdbx_db_accession']):
-            curr_id = curr_id.upper()
-            curr_chain = struct_d['_struct_ref_seq.pdbx_strand_id'][i].upper()
-            curr_chain_xrefs = chain_to_unp_xrefs.setdefault(curr_chain,
-                                                             OrderedDict())
-
-            # In case the xref DB id is not from Uniprot
-            if curr_id not in chain_to_unp_ids[curr_chain]:
-                continue
-
-            ref_start = int(struct_d['_struct_ref_seq.seq_align_beg'][i])
-            ref_end = int(struct_d['_struct_ref_seq.seq_align_end'][i])
-            curr_chain_unp_ranges = curr_chain_xrefs.setdefault(curr_id, [])
-            curr_chain_unp_ranges.append((ref_start, ref_end))
+        chain_to_unp_xrefs = self.parse_all_uniprot_xrefs(pdb_id, struct_d)
 
         # Make sure all Unprot IDs we got from the PDB API exist in our
-        # final dict. If not, we need to add them. For now we'll add
+        # final dict and appear in the order we got them from the PDB API.
+        # If not, we need to add them. For now we'll add
         # these missing Uniprot IDs with an empty list of ranges.
         # It's possible to query PDB for these ranges, see here:
         # https://www.rcsb.org/pdb/software/rest.do#dasfeatures
         for chain, unp_ids in chain_to_unp_ids.items():
-            curr_chain_xrefs = chain_to_unp_xrefs[chain]
-            for unp_id in unp_ids:
+            d = OrderedDict()
+            curr_chain_xrefs = chain_to_unp_xrefs.setdefault(chain, d)
+            for unp_id in reversed(unp_ids):
                 curr_chain_xrefs.setdefault(unp_id, [])
-                curr_chain_xrefs.move_to_end(unp_id, last=True)
+                curr_chain_xrefs.move_to_end(unp_id, last=False)
 
         self.pdb_id = pdb_id
         self.chain_to_unp_xrefs = chain_to_unp_xrefs
@@ -369,6 +357,12 @@ class PDB2UNP(object):
         return {c: tuple(u.keys()) for c, u in self.chain_to_unp_xrefs.items()}
 
     def save(self, out_dir=pp5.PDB2UNP_DIR) -> Path:
+        """
+        Write the current mapping to a human-readable text file (json) which
+        can also be loaded later using from_cache.
+        :param out_dir: Output directory.
+        :return: The path of the written file.
+        """
         filename = f'{self.pdb_id}.json'
         filepath = pp5.get_resource_path(out_dir, filename)
         with open(str(filepath), 'w', encoding='utf-8') as f:
@@ -402,8 +396,66 @@ class PDB2UNP(object):
         chain_to_unp_ids = {k.upper(): v for k, v in zip(chains, unp_ids)}
         return chain_to_unp_ids
 
+    @staticmethod
+    def parse_all_uniprot_xrefs(pdb_id: str, struct_d: dict = None) \
+            -> Dict[str, Dict[str, List[tuple]]]:
+        """
+        Parses the Uniprot cross references and sequence ranges from a PDB
+        file of a given PDB ID.
+        :param pdb_id: The PDB ID.
+        :param struct_d: Optional parsed PDB file.
+        :return: Uniprot cross-refs from the PDB file. Mapping is
+        chain -> unp -> [ (s1,e1), (s2, e2), ... ]
+        """
+
+        pdb_id, _ = split_id(pdb_id)
+        struct_d = pdb_dict(pdb_id, struct_d=struct_d)
+
+        # Go over referenced DBs and take all uniprot IDs
+        unp_ids = set()
+        if '_struct_ref.db_name' in struct_d:
+            for i, db_name in enumerate(struct_d['_struct_ref.db_name']):
+                if db_name.lower() == 'unp':
+                    unp_ids.add(struct_d['_struct_ref.pdbx_db_accession'][i])
+
+        # Get Uniprot cross-refs from the PDB file. Map is
+        # chain -> unp -> [ (s1,e1), (s2, e2), ... ]
+        chain_to_unp_xrefs: Dict[str, Dict[str, List[tuple]]] = {}
+
+        if not unp_ids or '_struct_ref_seq.pdbx_db_accession' not in struct_d:
+            return chain_to_unp_xrefs
+
+        for i, curr_id in enumerate(
+                struct_d['_struct_ref_seq.pdbx_db_accession']):
+
+            curr_id = curr_id.upper()
+
+            # In case the xref DB id is not from Uniprot
+            if curr_id not in unp_ids:
+                continue
+
+            if '_struct_ref_seq.pdbx_strand_id' not in struct_d:
+                continue
+
+            curr_chain = struct_d['_struct_ref_seq.pdbx_strand_id'][i].upper()
+
+            d = OrderedDict()
+            curr_chain_xrefs = chain_to_unp_xrefs.setdefault(curr_chain, d)
+            curr_chain_unp_ranges = curr_chain_xrefs.setdefault(curr_id, [])
+
+            if '_struct_ref_seq.seq_align_beg' not in struct_d or \
+                    '_struct_ref_seq.seq_align_end' not in struct_d:
+                continue
+
+            ref_start = int(struct_d['_struct_ref_seq.seq_align_beg'][i])
+            ref_end = int(struct_d['_struct_ref_seq.seq_align_end'][i])
+            curr_chain_unp_ranges.append((ref_start, ref_end))
+
+        return chain_to_unp_xrefs
+
     @classmethod
-    def pdb_id_to_unp_id(cls, pdb_id: str, strict=True, cache=False) -> str:
+    def pdb_id_to_unp_id(cls, pdb_id: str, strict=True, cache=False,
+                         struct_d: dict = None) -> str:
         """
         Given a PDB ID, returns a single Uniprot id for it.
         :param pdb_id: PDB ID, with optional chain. If provided chain will
@@ -415,6 +467,7 @@ class PDB2UNP(object):
         different Uniprot IDs for different chains (e.g. 4HHB); (2) Chain was
         specified but there are multiple Uniprot IDs for the chain
         (chimeric entry, e.g. 3SG4:A).
+        :param struct_d: Optional parsed PDB file.
         :return: A Uniprot ID.
         """
         pdb_id, chain_id = split_id(pdb_id)
