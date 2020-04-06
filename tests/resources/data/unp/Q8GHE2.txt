@@ -1,0 +1,51 @@
+ID   Q8GHE2_AZOVI            Unreviewed;       238 AA.
+AC   Q8GHE2;
+DT   01-MAR-2003, integrated into UniProtKB/TrEMBL.
+DT   01-MAR-2003, sequence version 1.
+DT   11-DEC-2019, entry version 53.
+DE   SubName: Full=Green fluorescence protein {ECO:0000313|EMBL:AAN86140.1};
+GN   Name=2289Gfp {ECO:0000313|EMBL:AAN86140.1};
+OS   Azotobacter vinelandii.
+OC   Bacteria; Proteobacteria; Gammaproteobacteria; Pseudomonadales;
+OC   Pseudomonadaceae; Azotobacter.
+OX   NCBI_TaxID=354 {ECO:0000313|EMBL:AAN86140.1};
+RN   [1] {ECO:0000313|EMBL:AAN86140.1}
+RP   NUCLEOTIDE SEQUENCE.
+RC   STRAIN=DSM2289 {ECO:0000313|EMBL:AAN86140.1};
+RA   Koranyi P., Berenyi M., Burg K.;
+RT   "Occurrence of green fluorescence protein in diazotrophic bacteria Azomonas
+RT   and Azotobacter.";
+RL   Submitted (NOV-2000) to the EMBL/GenBank/DDBJ databases.
+RN   [2] {ECO:0000213|PDB:2QLE}
+RP   X-RAY CRYSTALLOGRAPHY (1.59 ANGSTROMS).
+RX   PubMed=17965188; DOI=10.1110/ps.073112007;
+RA   Shu X., Leiderman P., Gepshtein R., Smith N.R., Kallio K., Huppert D.,
+RA   Remington S.J.;
+RT   "An alternative excited-state proton transfer pathway in green fluorescent
+RT   protein variant S205V.";
+RL   Protein Sci. 16:2703-2710(2007).
+CC   ---------------------------------------------------------------------------
+CC   Copyrighted by the UniProt Consortium, see https://www.uniprot.org/terms
+CC   Distributed under the Creative Commons Attribution (CC BY 4.0) License
+CC   ---------------------------------------------------------------------------
+DR   EMBL; AF324408; AAN86140.1; -; Genomic_DNA.
+DR   PDB; 2QLE; X-ray; 1.59 A; A/B/C/D=1-238.
+DR   PDBsum; 2QLE; -.
+DR   SMR; Q8GHE2; -.
+DR   EvolutionaryTrace; Q8GHE2; -.
+DR   GO; GO:0008218; P:bioluminescence; IEA:InterPro.
+DR   GO; GO:0006091; P:generation of precursor metabolites and energy; IEA:InterPro.
+DR   InterPro; IPR009017; GFP.
+DR   InterPro; IPR011584; GFP-related.
+DR   InterPro; IPR000786; Green_fluorescent_prot.
+DR   Pfam; PF01353; GFP; 1.
+DR   PRINTS; PR01229; GFLUORESCENT.
+DR   SUPFAM; SSF54511; SSF54511; 1.
+PE   1: Evidence at protein level;
+KW   3D-structure {ECO:0000213|PDB:2QLE}.
+SQ   SEQUENCE   238 AA;  26914 MW;  F84840F1F9064018 CRC64;
+     MSKGEELFTG VVPILVELDG DVNGHKFSVS GEGEGDATYG KLTLKFICTT GKLPVPWPTL
+     VTTFSYGVQC FSRYPDHMKR HDFFKSAMPE GYVQERTIFF KDDGNYKTRA EVKFEGDTLV
+     NRIELKGIDF KEDGNILGHK LEYNYNSHNV YIMADKQKNG IKVNFKIRHN IEDGSVQLAD
+     HYQQNTPIGD GPVLLPDNHY LSTQSALSKD PNEKRDHMVL LEFVTAAGIT HGMDELYK
+//
