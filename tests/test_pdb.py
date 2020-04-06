@@ -204,11 +204,10 @@ class TestPDBMetadata:
 
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
-class TestPDBToUNP:
-
+class TestPDB2UNP:
     @staticmethod
     def _check(pdb_id, expected_unp_id):
-        actual_unp_id = pdb.pdbid_to_unpid(pdb_id)
+        actual_unp_id = pdb.PDB2UNP.pdb_id_to_unp_id(pdb_id)
         assert actual_unp_id == expected_unp_id
 
     def test_no_chain_single_unp(self):
@@ -217,10 +216,15 @@ class TestPDBToUNP:
     def test_with_chain_single_unp(self):
         self._check('102L:A', 'P00720')
 
-    def test_no_chain_multi_unp(self):
+    def test_no_chain_multi_unp_strict(self):
+        test_id = '4HHB'
+        with pytest.raises(ValueError, match="Multiple Uniprot IDs"):
+            pdb.PDB2UNP.pdb_id_to_unp_id(test_id)
+
+    def test_no_chain_multi_unp_not_strict(self):
         test_id = '4HHB'
         expected_unp_ids = {'P69905', 'P68871'}
-        actual_unp_id = pdb.pdbid_to_unpid(test_id)
+        actual_unp_id = pdb.PDB2UNP.pdb_id_to_unp_id(test_id, strict=False)
         assert actual_unp_id in expected_unp_ids
 
     @pytest.mark.parametrize('test_id', ['4HHB:A', '4HHB:C'])
@@ -233,7 +237,7 @@ class TestPDBToUNP:
 
     def test_with_invalid_chain(self):
         with pytest.raises(ValueError, match='chain Z'):
-            pdb.pdbid_to_unpid('4HHB:Z')
+            pdb.PDB2UNP.pdb_id_to_unp_id('4HHB:Z')
 
     @pytest.mark.parametrize('test_id', ['5LTR', '5LTR:A'])
     def test_with_no_xref_in_file(self, test_id):
@@ -241,17 +245,23 @@ class TestPDBToUNP:
 
     @pytest.mark.parametrize('test_id', ['5EJU', '4DXP'])
     def test_with_no_xref_in_file_and_pdb(self, test_id):
-        with pytest.raises(ValueError):
-            pdb.pdbid_to_unpid(test_id)
+        with pytest.raises(ValueError, match="No Uniprot entries"):
+            pdb.PDB2UNP.pdb_id_to_unp_id(test_id)
 
     @pytest.mark.parametrize('test_id', ['3G53', '3G53:A'])
     def test_with_no_struct_ref_entry(self, test_id):
         self._check(test_id, 'P02213')
 
     @pytest.mark.parametrize(('test_id', 'unp_id'),
-                             [('3SG4:A', 'P42212'), ('4IK8:A', 'P42212')])
-    def test_multi_unp_for_single_chain(self, test_id, unp_id):
-        self._check(test_id, unp_id)
+                             [('3SG4:A', 'P0DP29'), ('4IK8:A', 'K4DIE3')])
+    def test_multi_unp_for_single_chain_no_strict(self, test_id, unp_id):
+        actual_unp_id = pdb.PDB2UNP.pdb_id_to_unp_id(test_id, strict=False)
+        assert actual_unp_id == unp_id
+
+    @pytest.mark.parametrize('test_id', ['3SG4:A', '4IK8:A'])
+    def test_multi_unp_for_single_chain_strict(self, test_id):
+        with pytest.raises(ValueError, match='chimeric'):
+            pdb.PDB2UNP.pdb_id_to_unp_id(test_id)
 
 
 @pytest.mark.skipif(NO_INTERNET, reason='Needs internet')
