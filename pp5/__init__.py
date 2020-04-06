@@ -57,6 +57,9 @@ ENA_DIR = Path(os.getenv('ENA_DIR', data_subdir('ena')))
 # Directory for ProteinRecords
 PREC_DIR = Path(os.getenv('PREC_DIR', data_subdir('prec')))
 
+# Directory for PDB to UNP mappings
+PDB2UNP_DIR = Path(os.getenv('PDB2UNP_DIR', data_subdir('pdb2unp')))
+
 
 def get_resource_path(data_dir: Path, basename: str):
     """

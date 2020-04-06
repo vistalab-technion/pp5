@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import json
 import re
 import abc
 import math
 import warnings
+from collections import OrderedDict
 from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
-from typing import NamedTuple, Type, Dict, List, Set
+from typing import NamedTuple, Type, Dict, List, Set, Union, Tuple
 from urllib.request import urlopen
 import itertools as it
 
@@ -22,6 +24,7 @@ from Bio.PDB.PDBExceptions import PDBConstructionWarning, \
     PDBConstructionException
 from Bio.PDB.Polypeptide import standard_aa_names
 
+import pp5
 from pp5 import PDB_DIR, get_resource_path
 from pp5.utils import remote_dl
 
@@ -259,6 +262,219 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
     ss_dict = {k: v[1] for k, v in dssp_dict.items()}
 
     return ss_dict, keys
+
+
+class PDB2UNP(object):
+    """
+    Maps PDB IDs (in each chain) to one or more Uniprot IDs which correspond
+    to that chain.
+    """
+
+    def __init__(self, pdb_id: str, struct_d: dict = None):
+        """
+        Initialize a PDB to Uniprot mapping.
+        :param pdb_id: PDB ID, without chain. Chain will be ignored if
+        specified.
+        :param struct_d: Optional parsed PDB file dict.
+        """
+        pdb_id, _ = split_id(pdb_id)
+        struct_d = pdb_dict(pdb_id, struct_d=struct_d)
+
+        # Get all chain Uniprot IDs by querying PDB. This gives us the most
+        # up to date IDs, but it doesn't provide alignment info between the
+        # PDB structure's sequence and the Uniprot xref sequence.
+        chain_to_unp_ids = self.query_all_uniprot_ids(pdb_id)
+
+        # Get Uniprot cross-refs from the PDB file. Map is
+        # chain -> unp -> [ (s1,e1), (s2, e2), ... ]
+        chain_to_unp_xrefs: Dict[str, Dict[str, List[tuple]]] = {}
+        for i, curr_id in enumerate(
+                struct_d['_struct_ref_seq.pdbx_db_accession']):
+            curr_id = curr_id.upper()
+            curr_chain = struct_d['_struct_ref_seq.pdbx_strand_id'][i].upper()
+            curr_chain_xrefs = chain_to_unp_xrefs.setdefault(curr_chain,
+                                                             OrderedDict())
+
+            # In case the xref DB id is not from Uniprot
+            if curr_id not in chain_to_unp_ids[curr_chain]:
+                continue
+
+            ref_start = int(struct_d['_struct_ref_seq.seq_align_beg'][i])
+            ref_end = int(struct_d['_struct_ref_seq.seq_align_end'][i])
+            curr_chain_unp_ranges = curr_chain_xrefs.setdefault(curr_id, [])
+            curr_chain_unp_ranges.append((ref_start, ref_end))
+
+        # Make sure all Unprot IDs we got from the PDB API exist in our
+        # final dict. If not, we need to add them. For now we'll add
+        # these missing Uniprot IDs with an empty list of ranges.
+        # It's possible to query PDB for these ranges, see here:
+        # https://www.rcsb.org/pdb/software/rest.do#dasfeatures
+        for chain, unp_ids in chain_to_unp_ids.items():
+            curr_chain_xrefs = chain_to_unp_xrefs[chain]
+            for unp_id in unp_ids:
+                curr_chain_xrefs.setdefault(unp_id, [])
+                curr_chain_xrefs.move_to_end(unp_id, last=True)
+
+        self.pdb_id = pdb_id
+        self.chain_to_unp_xrefs = chain_to_unp_xrefs
+
+    def get_unp_id(self, chain_id: str, strict=True) -> str:
+        """
+        :param chain_id: A chain in the PDB structure.
+        :param strict: Whether to raise an error (True) or just warn (False)
+        if the chain cannot be uniquely mapped to a single Uniprot ID.
+        :return: the first unp id matching the given chain. Usually there's
+        only one unless the entry is chimeric.
+        """
+        if self.is_chimeric(chain_id):
+            msg = f'{self.pdb_id} is chimeric at chain {chain_id}, ' \
+                  f'possible Uniprot IDs: ' \
+                  f'{self.get_all_chain_unp_ids(chain_id)}.'
+            if strict:
+                raise ValueError(msg)
+            LOGGER.warning(f'{msg} Returning first ID.')
+
+        for unp_id in self.chain_to_unp_xrefs[chain_id.upper()]:
+            return unp_id
+
+    def is_chimeric(self, chain_id: str) -> bool:
+        """
+        :param chain_id: A chain in the PDB structure.
+        :return: Whether the sequence in the given chain is chimerics,
+        i.e. is composed of regions from different proteins.
+        """
+        return len(self.chain_to_unp_xrefs[chain_id.upper()]) > 1
+
+    def get_all_chain_unp_ids(self, chain_id) -> tuple:
+        """
+        :param chain_id: A chain in the PDB structure.
+        :return: All unp ids matching the given chain.
+        """
+        return tuple(self.chain_to_unp_xrefs[chain_id.upper()].keys())
+
+    def get_all_unp_ids(self) -> set:
+        """
+        :return: All Uniprot IDs for all chains in the PDB structure.
+        """
+        all_unp_ids = set()
+        for chain in self.chain_to_unp_xrefs:
+            all_unp_ids.update(self.get_all_chain_unp_ids(chain))
+        return all_unp_ids
+
+    def get_chain_to_unp_ids(self) -> Dict[str, Tuple[str]]:
+        """
+        :return: A mapping from chain it to a sequence of uniprot ids for
+        that chain.
+        """
+        return {c: tuple(u.keys()) for c, u in self.chain_to_unp_xrefs.items()}
+
+    def save(self, out_dir=pp5.PDB2UNP_DIR) -> Path:
+        filename = f'{self.pdb_id}.json'
+        filepath = pp5.get_resource_path(out_dir, filename)
+        with open(str(filepath), 'w', encoding='utf-8') as f:
+            json.dump(self.__dict__, f, indent=2)
+
+        LOGGER.info(f'Wrote {self} to {filepath}')
+        return filepath
+
+    def __repr__(self):
+        return f'PDB2UNP({self.pdb_id})={self.get_chain_to_unp_ids()}'
+
+    @staticmethod
+    def query_all_uniprot_ids(pdb_id: str) -> Dict[str, List[str]]:
+        """
+        Retrieves all Uniprot IDs associated with a PDB structure by querying
+        the PDB database.
+        :param pdb_id: The PDB ID to search for. Can be with or without chain.
+        :return: A list of associated Uniprot IDs.
+        """
+        # In the url of the query, chain is separated with a '.'
+        url_pdb_id = pdb_id.replace(":", ".")
+        url = PDB_TO_UNP_URL_TEMPLATE.format(url_pdb_id)
+        with urlopen(url) as f:
+            df = pd.read_csv(f, header=0, na_filter=False)
+
+        # Split each unp column value by '#' because in cases
+        # where there are multiple Uniprot IDs for a single CHAIN, this is
+        # how they're separated (e.g. 3SG4:A).
+        chains = df['chainId']
+        unp_ids = map(lambda x: x.upper().split("#"), df['uniprotAcc'])
+        chain_to_unp_ids = {k.upper(): v for k, v in zip(chains, unp_ids)}
+        return chain_to_unp_ids
+
+    @classmethod
+    def pdb_id_to_unp_id(cls, pdb_id: str, strict=True, cache=False) -> str:
+        """
+        Given a PDB ID, returns a single Uniprot id for it.
+        :param pdb_id: PDB ID, with optional chain. If provided chain will
+        be used.
+        :param cache: Whether to use cached mapping.
+        :param strict: Whether to raise an error (True) or just warn (False)
+        if the PDB ID cannot be uniquely mapped to a single Uniprot ID.
+        This can happen if: (1) Chain wasn't specified and there are
+        different Uniprot IDs for different chains (e.g. 4HHB); (2) Chain was
+        specified but there are multiple Uniprot IDs for the chain
+        (chimeric entry, e.g. 3SG4:A).
+        :return: A Uniprot ID.
+        """
+        pdb_id, chain_id = split_id(pdb_id)
+        pdb2unp = cls.from_pdb(pdb_id, cache)
+
+        if not chain_id:
+            if len(pdb2unp.get_all_unp_ids()) > 1:
+                msg = f"Multiple Uniprot IDs exists for {pdb_id}, and no " \
+                      f"chain specified."
+                if strict:
+                    raise ValueError(msg)
+                LOGGER.warning(f'{msg} Returning the first Uniprot ID '
+                               f"from the first chain.")
+            for chain_id, unp_ids in pdb2unp.get_chain_to_unp_ids().items():
+                return unp_ids[0]
+
+        return pdb2unp.get_unp_id(chain_id, strict=strict)
+
+    @classmethod
+    def from_pdb(cls, pdb_id: str, cache=False, struct_d: dict = None) \
+            -> PDB2UNP:
+        """
+        Create a PDB2UNP mapping from a given PDB ID.
+        :param pdb_id: The PDB ID to map for. Chain will be ignored if present.
+        :param cache: Whether to load a cached mapping if available.
+        :param struct_d: Optional parsed PDB file.
+        :return: A PDB2UNP mapping object.
+        """
+        pdb_id, _ = split_id(pdb_id)
+
+        if cache:
+            pdb2unp = cls.from_cache(pdb_id)
+            if pdb2unp is not None:
+                return pdb2unp
+
+        pdb2unp = cls(pdb_id, struct_d=struct_d)
+        pdb2unp.save()
+        return pdb2unp
+
+    @classmethod
+    def from_cache(cls, pdb_id, cache_dir: Union[str, Path] = None) -> PDB2UNP:
+        pdb_id, _ = split_id(pdb_id)
+
+        if not isinstance(cache_dir, (str, Path)):
+            cache_dir = pp5.PDB2UNP_DIR
+
+        filename = f'{pdb_id}.json'
+        filepath = pp5.get_resource_path(cache_dir, filename)
+
+        pdb2unp = None
+        if filepath.is_file():
+            try:
+                with open(str(filepath), 'r', encoding='utf=8') as f:
+                    state_dict = json.load(f)
+                    pdb2unp = cls.__new__(cls)
+                    pdb2unp.__dict__.update(state_dict)
+            except Exception as e:
+                LOGGER.warning(
+                    f'Failed to load cached PDB2UNP {filepath}: {e}')
+        return pdb2unp
 
 
 class PDBMetadata(object):
