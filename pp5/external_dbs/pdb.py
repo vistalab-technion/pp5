@@ -314,6 +314,9 @@ class PDB2UNP(object):
         :return: the first unp id matching the given chain. Usually there's
         only one unless the entry is chimeric.
         """
+        if not chain_id or chain_id.upper() not in self.chain_to_unp_xrefs:
+            raise ValueError(f'Invalid chain {chain_id} of {self.pdb_id}')
+
         if self.is_chimeric(chain_id):
             msg = f'{self.pdb_id} is chimeric at chain {chain_id}, ' \
                   f'possible Uniprot IDs: ' \
@@ -393,7 +396,8 @@ class PDB2UNP(object):
         # how they're separated (e.g. 3SG4:A).
         chains = df['chainId']
         unp_ids = map(lambda x: x.upper().split("#"), df['uniprotAcc'])
-        chain_to_unp_ids = {k.upper(): v for k, v in zip(chains, unp_ids)}
+        unp_ids = map(lambda x: list(filter(lambda y: len(y), x)), unp_ids)
+        chain_to_unp_ids = {k.upper(): v for k, v in zip(chains, unp_ids) if v}
         return chain_to_unp_ids
 
     @staticmethod
@@ -471,16 +475,21 @@ class PDB2UNP(object):
         :return: A Uniprot ID.
         """
         pdb_id, chain_id = split_id(pdb_id)
-        pdb2unp = cls.from_pdb(pdb_id, cache)
+        pdb2unp = cls.from_pdb(pdb_id, cache=cache, struct_d=struct_d)
+
+        all_unp_ids = pdb2unp.get_all_unp_ids()
+        if not all_unp_ids:
+            raise ValueError(f"No Uniprot entries exist for {pdb_id}")
 
         if not chain_id:
-            if len(pdb2unp.get_all_unp_ids()) > 1:
+            if len(all_unp_ids) > 1:
                 msg = f"Multiple Uniprot IDs exists for {pdb_id}, and no " \
                       f"chain specified."
                 if strict:
                     raise ValueError(msg)
                 LOGGER.warning(f'{msg} Returning the first Uniprot ID '
                                f"from the first chain.")
+
             for chain_id, unp_ids in pdb2unp.get_chain_to_unp_ids().items():
                 return unp_ids[0]
 
