@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import abc
 import math
@@ -271,6 +272,8 @@ class PDB2UNP(object):
         """
         filename = f'{self.pdb_id}.json'
         filepath = pp5.get_resource_path(out_dir, filename)
+        os.makedirs(str(filepath.parent), exist_ok=True)
+
         with open(str(filepath), 'w', encoding='utf-8') as f:
             json.dump(self.__dict__, f, indent=2)
 
