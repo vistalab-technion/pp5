@@ -189,8 +189,8 @@ class ProteinRecord(object):
     _SKIP_SERIALIZE = ['_unp_rec', '_pdb_rec', '_pdb_dict', '_pp']
 
     @staticmethod
-    def from_cache(pdb_id, cache_dir: Union[bool, str, Path] = None,
-                   tag=None) -> Optional[ProteinRecord]:
+    def from_cache(pdb_id, cache_dir: Union[str, Path] = None, tag=None) \
+            -> Optional[ProteinRecord]:
         """
         Loads a cached ProteinRecord, if it exists.
         :param pdb_id: PDB ID with chain.
@@ -219,7 +219,7 @@ class ProteinRecord(object):
         return prec
 
     @classmethod
-    def from_pdb(cls, pdb_id: str, pdb_dict: dict = None, cache=False,
+    def from_pdb(cls, pdb_id: str, cache=False,
                  cache_dir=pp5.PREC_DIR, **kwargs) -> ProteinRecord:
         """
         Given a PDB id, finds the corresponding Uniprot id, and returns a
@@ -264,7 +264,10 @@ class ProteinRecord(object):
 
             if not pdb_dict:
                 pdb_dict = pdb.pdb_dict(pdb_id, struct_d=pdb_dict)
-            unp_id = pdb.pdbid_to_unpid(pdb_id, struct_d=pdb_dict)
+
+            unp_id = pdb.PDB2UNP.pdb_id_to_unp_id(
+                pdb_id, strict=False, cache=True, struct_d=pdb_dict
+            )
 
             prec = cls(unp_id, pdb_id, pdb_dict=pdb_dict, **kwargs)
             if cache_dir:
