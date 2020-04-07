@@ -7,7 +7,7 @@ from pp5.external_dbs import unp
 from tests import get_tmp_path
 
 
-class TestCreation:
+class TestFromUnp:
     def test_from_unp_default_selector(self):
         unp_id = 'P00720'
         prec = ProteinRecord.from_unp(unp_id)
@@ -24,6 +24,8 @@ class TestCreation:
         assert prec.unp_id == unp_id
         assert prec.pdb_id == '102L:A'
 
+
+class TestFromPDB:
     def test_from_pdb_with_chain(self):
         pdb_id = '102L:A'
         prec = ProteinRecord.from_pdb(pdb_id)
@@ -53,6 +55,24 @@ class TestCreation:
         with pytest.raises(ProteinInitError):
             ProteinRecord.from_pdb('0AAA')
 
+    def test_multiple_unp_ids_for_same_pdb_chain_no_strict_pdb_xref(self):
+        prec = ProteinRecord.from_pdb('3SG4:A', strict_pdb_xref=False, )
+        assert prec.unp_id == 'P0DP29'
+        assert prec.pdb_id == '3SG4:A'
+
+        prec = ProteinRecord.from_pdb('3SG4', strict_pdb_xref=False, )
+        assert prec.unp_id == 'P0DP29'
+        assert prec.pdb_id == '3SG4:A'
+
+    def test_multiple_unp_ids_for_same_pdb_chain(self):
+        with pytest.raises(ProteinInitError):
+            ProteinRecord.from_pdb('3SG4:A')
+
+        with pytest.raises(ProteinInitError):
+            ProteinRecord.from_pdb('3SG4')
+
+
+class TestInit:
     def test_init_no_chain(self):
         unp_id = 'P00720'
         pdb_id = '5JDT'
@@ -75,31 +95,22 @@ class TestCreation:
             ProteinRecord('P00720', '4GY3')
 
     def test_no_strict_xref_with_no_xref_in_pdb(self):
-        prec = ProteinRecord('Q6LDG3', '3SG4:A', strict_xref=False)
+        prec = ProteinRecord('Q6LDG3', '3SG4:A', strict_unp_xref=False)
         assert prec.unp_id == 'Q6LDG3'
         assert prec.pdb_id == '3SG4:A'
 
     def test_no_strict_xref_with_no_xref_in_pdb_and_no_chain(self):
         with pytest.raises(ProteinInitError, match='and no chain provided'):
-            ProteinRecord('Q6LDG3', '3SG4', strict_xref=False)
+            ProteinRecord('Q6LDG3', '3SG4', strict_unp_xref=False)
 
     def test_strict_xref_with_no_matching_xref_in_pdb(self):
         with pytest.raises(ProteinInitError):
             ProteinRecord('P42212', '2QLE:A')
 
     def test_no_strict_xref_with_no_matching_xref_in_pdb(self):
-        prec = ProteinRecord('P42212', '2QLE:A', strict_xref=False)
+        prec = ProteinRecord('P42212', '2QLE:A', strict_unp_xref=False)
         assert prec.unp_id == 'P42212'
         assert prec.pdb_id == '2QLE:A'
-
-    def test_multiple_unp_ids_for_same_pdb_chain(self):
-        prec = ProteinRecord.from_pdb('3SG4:A', strict_xref=False)
-        assert prec.unp_id == 'P0DP29'
-        assert prec.pdb_id == '3SG4:A'
-
-        prec = ProteinRecord.from_pdb('3SG4', strict_xref=False)
-        assert prec.unp_id == 'P0DP29'
-        assert prec.pdb_id == '3SG4:A'
 
 
 class TestSave:
