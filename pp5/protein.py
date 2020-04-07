@@ -219,8 +219,8 @@ class ProteinRecord(object):
         return prec
 
     @classmethod
-    def from_pdb(cls, pdb_id: str, cache=False,
-                 cache_dir=pp5.PREC_DIR, **kwargs) -> ProteinRecord:
+    def from_pdb(cls, pdb_id: str, cache=False, cache_dir=pp5.PREC_DIR,
+                 strict_pdb_xref=True, **kw_for_init) -> ProteinRecord:
         """
         Given a PDB id, finds the corresponding Uniprot id, and returns a
         ProteinRecord object for that protein.
@@ -233,7 +233,9 @@ class ProteinRecord(object):
         :param cache: Whether to load prec from cache if available.
         :param cache_dir: Where the cache dir is. ProteinRecords will be
         written to this folder after creation, unless it's None.
-        :param kwargs: Extra args for the ProteinRecord initializer.
+        :param strict_pdb_xref: Whether to require that the given PDB ID
+        maps uniquely to only one Uniprot ID.
+        :param kw_for_init: Extra kwargs for the ProteinRecord initializer.
         :return: A ProteinRecord.
         """
         try:
@@ -266,22 +268,22 @@ class ProteinRecord(object):
                 pdb_dict = pdb.pdb_dict(pdb_id, struct_d=pdb_dict)
 
             unp_id = pdb.PDB2UNP.pdb_id_to_unp_id(
-                pdb_id, strict=False, cache=True, struct_d=pdb_dict
+                pdb_id, strict=strict_pdb_xref, cache=True, struct_d=pdb_dict
             )
 
-            prec = cls(unp_id, pdb_id, pdb_dict=pdb_dict, **kwargs)
+            prec = cls(unp_id, pdb_id, pdb_dict=pdb_dict, **kw_for_init)
             if cache_dir:
                 prec.save(out_dir=cache_dir)
 
             return prec
         except Exception as e:
-            raise ProteinInitError(f"Failed to created protein record for "
+            raise ProteinInitError(f"Failed to create protein record for "
                                    f"pdb_id={pdb_id}: {e}") from e
 
     @classmethod
     def from_unp(cls, unp_id: str, cache=False, cache_dir=pp5.PREC_DIR,
                  xref_selector: Callable[[unp.UNPPDBXRef], Any] = None,
-                 **kwargs) -> ProteinRecord:
+                 **kw_for_init) -> ProteinRecord:
         """
         Creates a ProteinRecord from a Uniprot ID.
         The PDB structure with best resolution will be used.
@@ -291,7 +293,7 @@ class ProteinRecord(object):
         :param cache: Whether to load prec from cache if available.
         :param cache_dir: Wheere the cache dir is. ProteinRecords will be
         written to this folder after creation, unless it's None.
-        :param kwargs: Extra args for the ProteinRecord initializer.
+        :param kw_for_init: Extra args for the ProteinRecord initializer.
         :return: A ProteinRecord.
         """
         if not xref_selector:
@@ -307,18 +309,18 @@ class ProteinRecord(object):
                 if prec is not None:
                     return prec
 
-            prec = cls(unp_id, pdb_id, **kwargs)
+            prec = cls(unp_id, pdb_id, **kw_for_init)
             if cache_dir:
                 prec.save(out_dir=cache_dir)
 
             return prec
         except Exception as e:
-            raise ProteinInitError(f"Failed to created protein record for "
+            raise ProteinInitError(f"Failed to create protein record for "
                                    f"unp_id={unp_id}") from e
 
     def __init__(self, unp_id: str, pdb_id: str, pdb_dict: dict = None,
                  dihedral_est_name='erp', dihedral_est_args: dict = None,
-                 strict_xref=True):
+                 strict_unp_xref=True):
         """
         Initialize a protein record from both Uniprot and PDB ids.
         To initialize a protein from Uniprot id or PDB id only, use the
@@ -328,7 +330,7 @@ class ProteinRecord(object):
         :param pdb_id: PDB id with or without chain (e.g. '1ABC' or '1ABC:D')
         of the specific structure desired. Note that this structure must match
         the unp_id, i.e. it must exist in the cross-refs of the given unp_id.
-        Otherwise an error will be raised (unless strict_xref=False). If no
+        Otherwise an error will be raised (unless strict_unp_xref=False). If no
         chain is specified, a chain matching the unp_id will be used,
         if it exists.
         :param dihedral_est_name: Method of dihedral angle estimation.
@@ -337,9 +339,8 @@ class ProteinRecord(object):
         'erp' for standard error propagation;
         'mc' for montecarlo error estimation.
         :param dihedral_est_args: Extra arguments for dihedral estimator.
-        :param strict_xref: Whether to require that there be both a PDB
-        cross-ref for the given Uniprot ID and that there be a Uniprot
-        cross-ref for the given PDB ID.
+        :param strict_unp_xref: Whether to require that there exist a PDB
+        cross-ref for the given Uniprot ID.
         """
         if not (unp_id and pdb_id):
             raise ProteinInitError("Must provide both Uniprot and PDB IDs")
@@ -347,10 +348,12 @@ class ProteinRecord(object):
         LOGGER.info(f'{unp_id}: Initializing protein record...')
         self.__setstate__({})
 
-        # First we must find a matching PDB structure and chain for the
-        # Uniprot id. If a proposed_pdb_id is given we'll try to use that.
         self.unp_id = unp_id
-        self.strict_xref = strict_xref
+
+        # First we must find a matching PDB structure and chain for the
+        # Uniprot id. If a pdb_id is given we'll try to use that, depending
+        # on whether there's a Uniprot xref for it and on strict_unp_xref.
+        self.strict_unp_xref = strict_unp_xref
         self.pdb_base_id, self.pdb_chain_id = self._find_pdb_xref(pdb_id)
         self.pdb_id = f'{self.pdb_base_id}:{self.pdb_chain_id}'
         if pdb_dict:
@@ -687,7 +690,7 @@ class ProteinRecord(object):
         xrefs = sorted(xrefs, key=sort_key)
         if not xrefs:
             msg = f"No PDB cross-refs for {self.unp_id}"
-            if self.strict_xref:
+            if self.strict_unp_xref:
                 raise ProteinInitError(msg)
             elif not ref_chain_id:
                 raise ProteinInitError(f"{msg} and no chain provided in ref")
@@ -707,7 +710,7 @@ class ProteinRecord(object):
         if pdb_id != ref_pdb_id:
             msg = f"Reference PDB ID {ref_pdb_id} not found as " \
                   f"cross-reference for protein {self.unp_id}"
-            if self.strict_xref:
+            if self.strict_unp_xref:
                 raise ProteinInitError(msg)
             else:
                 LOGGER.warning(msg)
@@ -717,7 +720,7 @@ class ProteinRecord(object):
             msg = f"Reference chain {ref_chain_id} of PDB ID {ref_pdb_id} not" \
                   f"found as cross-reference for protein {self.unp_id}. " \
                   f"Did you mean chain {chain_id}?"
-            if self.strict_xref:
+            if self.strict_unp_xref:
                 raise ProteinInitError(msg)
             else:
                 LOGGER.warning(msg)
@@ -883,7 +886,7 @@ class ProteinGroup(object):
                  sa_max_all_atom_rmsd: float = 2.,
                  sa_min_aligned_residues: int = 50,
                  angle_aggregation='frechet',
-                 strict_xref=False):
+                 strict_pdb_xref=True, strict_unp_xref=False):
         """
         Creates a ProteinGroup based on a reference PDB ID, and a sequence of
         query PDB IDs. Structural alignment will be performed, and some
@@ -904,8 +907,10 @@ class ProteinGroup(object):
         query residues of each reference residue. Options are
         'frechet' - Frechet centroid;
         'max_res' - No aggregation, take angle of maximal resolution structure
-        :param strict_xref: See strict_xref parameter in the ProteinRecord
-        initializer.
+        :param strict_pdb_xref: Whether to require that the given PDB ID
+        maps uniquely to only one Uniprot ID.
+        :param strict_unp_xref: Whether to require that there exist a PDB
+        cross-ref for the given Uniprot ID.
         """
         self.ref_pdb_id = ref_pdb_id.upper()
         self.ref_pdb_base_id, self.ref_pdb_chain = pdb.split_id(ref_pdb_id)
@@ -961,11 +966,13 @@ class ProteinGroup(object):
         self.sa_max_all_atom_rmsd = sa_max_all_atom_rmsd
         self.sa_min_aligned_residues = sa_min_aligned_residues
         self.prec_cache = prec_cache
-        self.strict_xref = strict_xref
+        self.strict_pdb_xref = strict_pdb_xref
+        self.strict_unp_xref = strict_unp_xref
 
         self.ref_prec = ProteinRecord.from_pdb(
             self.ref_pdb_id, cache=self.prec_cache,
-            strict_xref=self.strict_xref,
+            strict_pdb_xref=self.strict_pdb_xref,
+            strict_unp_xref=self.strict_unp_xref,
         )
 
         # Align all query structure residues to the reference structure
@@ -1144,7 +1151,9 @@ class ProteinGroup(object):
     ]:
         try:
             q_prec = ProteinRecord.from_pdb(
-                q_pdb_id, cache=self.prec_cache, strict_xref=self.strict_xref
+                q_pdb_id, cache=self.prec_cache,
+                strict_pdb_xref=self.strict_pdb_xref,
+                strict_unp_xref=self.strict_unp_xref,
             )
         except ProteinInitError as e:
             LOGGER.error(f'Failed to create prec for query structure: {e}')
