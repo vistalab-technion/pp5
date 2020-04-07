@@ -83,7 +83,8 @@ def _generate_cli_from_function(func: Callable, skip=()):
             args['required'] = True
             args['type'] = None
         else:
-            args['type'] = type(args['default'])
+            args['type'] = type(args['default']) \
+                if args['default'] is not None else None
 
         args['action'] = 'store'
 
