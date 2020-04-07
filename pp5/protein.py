@@ -1252,12 +1252,15 @@ class ProteinGroup(object):
             outlier_rejection_cutoff=self.sa_outlier_cutoff
         )
 
-        if rmse is None or rmse > self.sa_max_all_atom_rmsd:
+        if rmse is None:
+            LOGGER.info(
+                f'Rejecting {q_pdb_id} due to failed structural alignment')
+            return None
+        if rmse > self.sa_max_all_atom_rmsd:
             LOGGER.info(
                 f'Rejecting {q_pdb_id} due to insufficient structural '
                 f'similarity, RMSE={rmse:.3f}')
             return None
-
         if n_stars < self.sa_min_aligned_residues:
             LOGGER.info(f'Rejecting {q_pdb_id} due to insufficient aligned '
                         f'residues, n_stars={n_stars}')
