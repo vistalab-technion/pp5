@@ -3,11 +3,13 @@ import logging
 import multiprocessing as mp
 import time
 from pathlib import Path
-from typing import Callable, Any
+from typing import Callable, Any, Optional, List
+from pprint import pprint
+import pandas as pd
 
 import pp5
 import pp5.parallel
-from pp5.external_dbs import pdb
+from pp5.external_dbs import pdb, unp
 from pp5.external_dbs.pdb import PDBQuery
 from pp5.protein import ProteinRecord, ProteinInitError
 
@@ -93,14 +95,153 @@ class ProteinRecordCollector(ParallelDataCollector):
                     f"{pps:.1f} proteins/sec).")
 
 
+class ProteinGroupCollector(ParallelDataCollector):
+    def __init__(self, query: PDBQuery,
+                 out_dir=pp5.out_subdir('pgroup-collected'), out_tag=None,
+                 **kw):
+        super().__init__(**kw)
+        self.query = query
+        self.out_dir = out_dir
+        self.out_tag = out_tag
+
+    def _collect_with_pool(self, pool: mp.Pool):
+        pdb_ids = self.query.execute()
+        n_structs = len(pdb_ids)
+        LOGGER.info(f"Got {n_structs} structures from PDB")
+
+        async_results = []
+        for i, pdb_id in enumerate(pdb_ids):
+            p = (i, n_structs)
+            r = pool.apply_async(self._collect_pdb_id, args=(pdb_id, p))
+            async_results.append(r)
+
+        pdb_id_data = []
+        start_time, counter, pps = time.time(), 0, 0
+        for async_result in async_results:
+            try:
+                d = async_result.get(self.async_res_timeout_sec)
+                pdb_id_data.extend(d)
+            except TimeoutError as e:
+                LOGGER.error("Timeout getting async result, skipping")
+            except Exception as e:
+                LOGGER.error(f"Unexpected error: {e}", exc_info=e.__cause__)
+
+            counter += 1
+            pps = counter / (time.time() - start_time)
+
+        df = pd.DataFrame(pdb_id_data)
+        df.sort_values(by=['unp_id', 'resolution'], inplace=True,
+                       ignore_index=True)
+
+        timestamp = time.strftime('%Y-%m-%d_%H-%H-%S')
+        tag = f'-{self.out_tag}' if self.out_tag else ''
+        filename = f'{timestamp}-structs{tag}.csv'
+        filepath = self.out_dir.joinpath(filename)
+
+        with open(str(filepath), mode='w', encoding='utf-8') as f:
+            f.write(f'# {self.query}\n')
+            df.to_csv(f, header=True, index=True, float_format='%.2f')
+            LOGGER.info(f'Wrote {filepath}')
+
+        groups = df.groupby('unp_id')
+        group_datas = []
+        for unp_id, df_group in groups:
+            df_group: pd.DataFrame
+
+            try:
+                unp_rec = unp.unp_record(unp_id)
+                unp_seq_len = len(unp_rec.sequence)
+            except ValueError as e:
+                LOGGER.error(f'Failed create Uniprot record for {unp_id}: {e}')
+                continue
+
+            median_res = df_group['resolution'].median()
+            group_size = len(df_group)
+            df_group = df_group.sort_values(by=['resolution'])
+            df_group['percent_seq'] = df_group['seq_len'] / unp_seq_len
+
+            # Keep only structures which have at least 90% of residues as
+            # the Uniprot sequence.
+            df_group = df_group[df_group['percent_seq'] > .9]
+            if len(df_group) == 0:
+                continue
+
+            ref_pdb_id = df_group.iloc[0]['pdb_id']
+            ref_res = df_group.iloc[0]['resolution']
+            ref_percent_seq = df_group.iloc[0]['percent_seq']
+
+            group_datas.append(dict(unp_id=unp_id,
+                                    ref_pdb_id=ref_pdb_id, ref_res=ref_res,
+                                    ref_percent_seq=ref_percent_seq,
+                                    group_median_res=median_res,
+                                    group_size=group_size))
+
+        df_groups = pd.DataFrame(group_datas)
+        filename = f'{timestamp}-refs{tag}.csv'
+        filepath = self.out_dir.joinpath(filename)
+        df_groups.to_csv(filepath, header=True, index=False,
+                         float_format='%.2f')
+        LOGGER.info(f'Wrote {filepath}')
+
+    @staticmethod
+    def _collect_pdb_id(pdb_id: str, idx: tuple) -> List[dict]:
+        pdb_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
+
+        pdb_dict = pdb.pdb_dict(pdb_id)
+        meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
+        pdb2unp = pdb.PDB2UNP.from_pdb(pdb_id, cache=True, struct_d=pdb_dict)
+
+        # If we got an entity id instead of chain, discover the chain.
+        if entity_id:
+            entity_id = int(entity_id)
+            chain_id = meta.get_chain(entity_id)
+
+        if chain_id:
+            all_chains = (chain_id,)
+        else:
+            all_chains = tuple(meta.chain_entities.keys())
+
+        chain_data = []
+        for chain_id in all_chains:
+            pdb_id_full = f'{pdb_id}:{chain_id}'
+
+            # Skip chains with no Uniprot ID
+            if chain_id not in pdb2unp:
+                LOGGER.warning(f"No Uniprot ID for {pdb_id_full}")
+                continue
+
+            # Skip chimeric chains
+            if pdb2unp.is_chimeric(chain_id):
+                LOGGER.warning(f"Discarding chimeric chain {pdb_id_full}")
+                continue
+
+            unp_id = pdb2unp.get_unp_id(chain_id)
+            resolution = meta.resolution
+            seq_len = len(meta.entity_sequence[meta.chain_entities[chain_id]])
+
+            chain_data.append(dict(
+                unp_id=unp_id, pdb_id=pdb_id_full, resolution=resolution,
+                seq_len=seq_len,
+            ))
+
+        LOGGER.info(f'Collected {pdb_id} ({idx[0] + 1}/{idx[1]})')
+        return chain_data
+
+
 if __name__ == '__main__':
     # Query PDB for structures
     query = pdb.PDBCompositeQuery(
         pdb.PDBExpressionSystemQuery('Escherichia Coli'),
-        pdb.PDBResolutionQuery(max_res=0.8)
+        pdb.PDBResolutionQuery(max_res=1.5)
     )
 
-    ProteinRecordCollector(
-        query, prec_init_args={'dihedral_est_name': ''},
-        out_dir=pp5.out_subdir('prec')
-    ).collect()
+    # pdb_ids = query.execute()
+    # pprint(pdb_ids, compact=True)
+    # pprint(f'Total = {len(pdb_ids)}')
+
+    # ProteinRecordCollector(
+    #     query, prec_init_args={'dihedral_est_name': ''},
+    #     out_dir=pp5.out_subdir('prec')
+    # ).collect()
+
+    ProteinGroupCollector(query).collect()

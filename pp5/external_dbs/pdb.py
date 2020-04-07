@@ -280,6 +280,20 @@ class PDB2UNP(object):
         LOGGER.info(f'Wrote {self} to {filepath}')
         return filepath
 
+    def __getitem__(self, chain_id: str):
+        """
+        :param chain_id: The chain.
+        :return: Uniprot xrefs for a given chain
+        """
+        return self.chain_to_unp_xrefs[chain_id.upper()]
+
+    def __contains__(self, chain_id: str):
+        """
+        :param chain_id: The chain.
+        :return: Whether this mapping contains the given chain.
+        """
+        return chain_id.upper() in self.chain_to_unp_xrefs
+
     def __repr__(self):
         return f'PDB2UNP({self.pdb_id})={self.get_chain_to_unp_ids()}'
 
@@ -546,6 +560,9 @@ class PDBMetadata(object):
         if not chains:
             return None
         return chains[0]
+
+    def __repr__(self):
+        return str(self.__dict__)
 
 
 class PDBUnitCell(object):

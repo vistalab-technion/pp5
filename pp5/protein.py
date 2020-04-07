@@ -936,8 +936,8 @@ class ProteinGroup(object):
 
         try:
             query_pdb_ids = list(query_pdb_ids)  # to allow multiple iteration
-            split_ids = [pdb.split_id_with_entity(query_id) for query_id in
-                         query_pdb_ids]
+            split_ids = [pdb.split_id_with_entity(query_id)
+                         for query_id in query_pdb_ids]
 
             # Make sure all query ids have either chain or entity
             if not all(map(lambda x: x[1] or x[2], split_ids)):
