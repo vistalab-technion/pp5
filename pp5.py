@@ -165,4 +165,8 @@ def _parse_cli():
 
 if __name__ == '__main__':
     parsed_args = _parse_cli()
-    parsed_args.handler(**vars(parsed_args))
+
+    try:
+        parsed_args.handler(**vars(parsed_args))
+    except Exception as e:
+        _LOG.error(f'{e}')
