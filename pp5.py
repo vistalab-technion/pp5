@@ -6,12 +6,12 @@ import inspect
 from pathlib import Path
 from typing import Callable, List, Dict, Any
 
-import pp5.datasets
+import pp5
 from pp5.protein import ProteinRecord, ProteinGroup
 
-PROJECT_DIR = pp5.PROJECT_DIR
 
 _LOG = logging.getLogger(__name__)
+_CFG_PREFIX_ = '_CFG_'
 
 
 def _merge_dicts(*dicts: dict) -> dict:
@@ -110,6 +110,12 @@ def _parse_cli():
     p = argparse.ArgumentParser(description='pp5 CLI', formatter_class=hf)
     p.set_defaults(handler=None)
 
+    # Top-level configuration parameters
+    # The _CFG_PREFIX_ is a marker to map from CLI argument to config param
+    p.add_argument('--processes', '-p', type=int, required=False,
+                   dest=f'{_CFG_PREFIX_}MAX_PROCESSES',
+                   help='Maximal number of parallel processes to use.')
+
     # Subcommands
     sp = p.add_subparsers(help='Available actions', dest='action')
 
@@ -167,7 +173,25 @@ def _parse_cli():
 if __name__ == '__main__':
     parsed_args = _parse_cli()
 
+    # Convert to a dict
+    parsed_args = vars(parsed_args)
+
+    # First set top-level configuration
+    for arg in parsed_args:
+        if not arg.startswith(_CFG_PREFIX_):
+            continue
+        cfg_name = arg.replace(_CFG_PREFIX_, '')
+        pp5._CONFIG[cfg_name] = parsed_args[arg]
+
+    # Filter out configuration params
+    parsed_args = {k: v for k, v in parsed_args.items()
+                   if not k.startswith(_CFG_PREFIX_)}
+
     try:
-        parsed_args.handler(**vars(parsed_args))
+        # Get the function to invoke
+        handler_fn = parsed_args.pop('handler')
+
+        # Invoke it with the remaining arguments
+        handler_fn(**parsed_args)
     except Exception as e:
         _LOG.error(f'{e}')
