@@ -7,8 +7,9 @@ from pathlib import Path
 from typing import Callable, List, Dict, Any
 
 import pp5
+import pp5.external_dbs.pdb as pdb
 from pp5.protein import ProteinRecord, ProteinGroup
-
+from pp5.datasets import ProteinRecordCollector, ProteinGroupCollector
 
 _LOG = logging.getLogger(__name__)
 _CFG_PREFIX_ = '_CFG_'
@@ -36,7 +37,7 @@ def _is_file(filename):
         return Path(filename)
 
 
-def _generate_cli_from_function(func: Callable, skip=()):
+def _generate_cli_from_func(func: Callable, skip=()):
     """
     Given some other function, this function generates arguments for pyton's
     argparse so that a CLI for the given function can be created.
@@ -120,13 +121,13 @@ def _parse_cli():
     sp = p.add_subparsers(help='Available actions', dest='action')
 
     # prec
-    desc, args = _generate_cli_from_function(
+    desc, args = _generate_cli_from_func(
         ProteinRecord.from_pdb, skip=['unp_id', 'pdb_dict']
     )
-    _, init_args = _generate_cli_from_function(
+    _, init_args = _generate_cli_from_func(
         ProteinRecord.__init__, skip=['unp_id', 'pdb_dict']
     )
-    _, csv_args = _generate_cli_from_function(ProteinRecord.to_csv)
+    _, csv_args = _generate_cli_from_func(ProteinRecord.to_csv)
 
     def _handle_prec(args=args, init_args=init_args, csv_args=csv_args,
                      **parsed_args):
@@ -139,15 +140,16 @@ def _parse_cli():
     sp_prec = sp.add_parser('prec', help=desc, formatter_class=hf)
     sp_prec.set_defaults(handler=_handle_prec)
     for _, arg_dict in _merge_dicts(args, init_args, csv_args).items():
+        arg_dict = arg_dict.copy()
         names = arg_dict.pop('names')
         sp_prec.add_argument(*names, **arg_dict)
 
     # pgroup
-    desc, args = _generate_cli_from_function(ProteinGroup.from_pdb_ref)
-    _, init_args = _generate_cli_from_function(
+    desc, args = _generate_cli_from_func(ProteinGroup.from_pdb_ref)
+    _, init_args = _generate_cli_from_func(
         ProteinGroup.__init__, skip=['ref_pdb_id', 'query_pdb_ids']
     )
-    _, csv_args = _generate_cli_from_function(ProteinGroup.to_csv)
+    _, csv_args = _generate_cli_from_func(ProteinGroup.to_csv)
 
     def _handle_pgroup(args=args, init_args=init_args, csv_args=csv_args,
                        **parsed_args):
@@ -160,8 +162,58 @@ def _parse_cli():
     sp_pgroup = sp.add_parser('pgroup', help=desc, formatter_class=hf)
     sp_pgroup.set_defaults(handler=_handle_pgroup)
     for _, arg_dict in _merge_dicts(args, init_args, csv_args).items():
+        arg_dict = arg_dict.copy()
         names = arg_dict.pop('names')
         sp_pgroup.add_argument(*names, **arg_dict)
+
+    # Data collectors
+    _, res_query_args = _generate_cli_from_func(
+        pdb.PDBResolutionQuery.__init__)
+    _, expr_query_args = _generate_cli_from_func(
+        pdb.PDBExpressionSystemQuery.__init__)
+    prec_collector_desc, prec_collector_args = _generate_cli_from_func(
+        ProteinRecordCollector.__init__,
+        skip=['query', 'prec_init_args', 'prec_callback'])
+    pgroup_collector_desc, pgroup_collector_args = _generate_cli_from_func(
+        ProteinGroupCollector.__init__, skip=['query'])
+
+    def _handle_collect(collector_cls, collector_args, **parsed_args):
+        res_query = pdb.PDBResolutionQuery(
+            **{k: parsed_args[k] for k in res_query_args}
+        )
+        expr_sys_query = pdb.PDBExpressionSystemQuery(
+            **{k: parsed_args[k] for k in expr_query_args}
+        )
+        query = pdb.PDBCompositeQuery(res_query, expr_sys_query)
+        collector = collector_cls(
+            query, **{k: parsed_args[k] for k in collector_args}
+        )
+        collector.collect()
+
+    sp_collect_prec = sp.add_parser('collect-prec', help=prec_collector_desc,
+                                    formatter_class=hf)
+    sp_collect_prec.set_defaults(
+        handler=lambda **kw: _handle_collect(ProteinRecordCollector,
+                                             prec_collector_args, **kw)
+    )
+    for _, arg_dict in _merge_dicts(prec_collector_args, res_query_args,
+                                    expr_query_args).items():
+        arg_dict = arg_dict.copy()
+        names = arg_dict.pop('names')
+        sp_collect_prec.add_argument(*names, **arg_dict)
+
+    sp_collect_pgroup = sp.add_parser('collect-pgroup',
+                                      help=pgroup_collector_desc,
+                                      formatter_class=hf)
+    sp_collect_pgroup.set_defaults(
+        handler=lambda **kw: _handle_collect(ProteinGroupCollector,
+                                             pgroup_collector_args, **kw)
+    )
+    for _, arg_dict in _merge_dicts(pgroup_collector_args, res_query_args,
+                                    expr_query_args).items():
+        arg_dict = arg_dict.copy()
+        names = arg_dict.pop('names')
+        sp_collect_pgroup.add_argument(*names, **arg_dict)
 
     parsed = p.parse_args()
     if not parsed.action:
