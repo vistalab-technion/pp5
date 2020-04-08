@@ -105,18 +105,20 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.out_tag = out_tag
 
     def _collect_with_pool(self, pool: mp.Pool):
+        timestamp = time.strftime('%Y-%m-%d_%H-%M-%S')
+
+        # Execute PDB query to get a list of PDB IDs
         pdb_ids = self.query.execute()
         n_structs = len(pdb_ids)
-        LOGGER.info(f"Got {n_structs} structures from PDB")
+        LOGGER.info(f"Got {n_structs} structure ids from PDB, collecting...")
 
         async_results = []
         for i, pdb_id in enumerate(pdb_ids):
             p = (i, n_structs)
-            r = pool.apply_async(self._collect_pdb_id, args=(pdb_id, p))
+            r = pool.apply_async(self._collect_from_pdb_id, args=(pdb_id, p))
             async_results.append(r)
 
         pdb_id_data = []
-        start_time, counter, pps = time.time(), 0, 0
         for async_result in async_results:
             try:
                 d = async_result.get(self.async_res_timeout_sec)
@@ -126,65 +128,59 @@ class ProteinGroupCollector(ParallelDataCollector):
             except Exception as e:
                 LOGGER.error(f"Unexpected error: {e}", exc_info=e.__cause__)
 
-            counter += 1
-            pps = counter / (time.time() - start_time)
-
+        # Create a dataframe from the collected data
+        LOGGER.info(f'Collection done, generating structures file...')
         df = pd.DataFrame(pdb_id_data)
-        df.sort_values(by=['unp_id', 'resolution'], inplace=True,
-                       ignore_index=True)
+        if len(df):
+            df.sort_values(by=['unp_id', 'resolution'], inplace=True,
+                           ignore_index=True)
+        self._write_csv(df, timestamp, 'all')
 
-        timestamp = time.strftime('%Y-%m-%d_%H-%H-%S')
+        # Find reference structure
+        LOGGER.info(f'Finding reference structures...')
+        groups = df.groupby('unp_id')
+
+        async_results = []
+        for unp_id, df_group in groups:
+            args = (unp_id, df_group)
+            r = pool.apply_async(self._collect_from_group, args=args)
+            async_results.append(r)
+
+        group_datas = []
+        for async_result in async_results:
+            try:
+                d = async_result.get(self.async_res_timeout_sec)
+                if d is not None:
+                    group_datas.append(d)
+            except TimeoutError as e:
+                LOGGER.error("Timeout getting async result, skipping")
+            except Exception as e:
+                LOGGER.error(f"Unexpected error: {e}", exc_info=e.__cause__)
+
+        df_groups = pd.DataFrame(group_datas)
+        if len(df_groups):
+            df_groups.sort_values(
+                by=['group_size', 'group_median_res'], ascending=[False, True],
+                inplace=True, ignore_index=True
+            )
+        self._write_csv(df_groups, timestamp, 'ref')
+
+    def _write_csv(self, df: pd.DataFrame, timestamp: str,
+                   csv_type: str, include_query=True):
         tag = f'-{self.out_tag}' if self.out_tag else ''
-        filename = f'{timestamp}-structs{tag}.csv'
+        filename = f'pgc-{timestamp}-{csv_type}{tag}.csv'
         filepath = self.out_dir.joinpath(filename)
 
         with open(str(filepath), mode='w', encoding='utf-8') as f:
-            f.write(f'# {self.query}\n')
+            if include_query:
+                f.write(f'# query: {self.query}\n')
             df.to_csv(f, header=True, index=True, float_format='%.2f')
-            LOGGER.info(f'Wrote {filepath}')
 
-        groups = df.groupby('unp_id')
-        group_datas = []
-        for unp_id, df_group in groups:
-            df_group: pd.DataFrame
-
-            try:
-                unp_rec = unp.unp_record(unp_id)
-                unp_seq_len = len(unp_rec.sequence)
-            except ValueError as e:
-                LOGGER.error(f'Failed create Uniprot record for {unp_id}: {e}')
-                continue
-
-            median_res = df_group['resolution'].median()
-            group_size = len(df_group)
-            df_group = df_group.sort_values(by=['resolution'])
-            df_group['percent_seq'] = df_group['seq_len'] / unp_seq_len
-
-            # Keep only structures which have at least 90% of residues as
-            # the Uniprot sequence.
-            df_group = df_group[df_group['percent_seq'] > .9]
-            if len(df_group) == 0:
-                continue
-
-            ref_pdb_id = df_group.iloc[0]['pdb_id']
-            ref_res = df_group.iloc[0]['resolution']
-            ref_percent_seq = df_group.iloc[0]['percent_seq']
-
-            group_datas.append(dict(unp_id=unp_id,
-                                    ref_pdb_id=ref_pdb_id, ref_res=ref_res,
-                                    ref_percent_seq=ref_percent_seq,
-                                    group_median_res=median_res,
-                                    group_size=group_size))
-
-        df_groups = pd.DataFrame(group_datas)
-        filename = f'{timestamp}-refs{tag}.csv'
-        filepath = self.out_dir.joinpath(filename)
-        df_groups.to_csv(filepath, header=True, index=False,
-                         float_format='%.2f')
         LOGGER.info(f'Wrote {filepath}')
+        return filepath
 
     @staticmethod
-    def _collect_pdb_id(pdb_id: str, idx: tuple) -> List[dict]:
+    def _collect_from_pdb_id(pdb_id: str, idx: tuple) -> List[dict]:
         pdb_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
 
         pdb_dict = pdb.pdb_dict(pdb_id)
@@ -221,18 +217,58 @@ class ProteinGroupCollector(ParallelDataCollector):
 
             chain_data.append(dict(
                 unp_id=unp_id, pdb_id=pdb_id_full, resolution=resolution,
-                seq_len=seq_len,
+                seq_len=seq_len, description=meta.description,
+                src_org=meta.src_org, host_org=meta.host_org,
+                ligands=meta.ligands, r_free=meta.r_free, r_work=meta.r_work,
             ))
 
-        LOGGER.info(f'Collected {pdb_id} ({idx[0] + 1}/{idx[1]})')
+        LOGGER.info(f'Collected {pdb_id} {pdb2unp.get_chain_to_unp_ids()} '
+                    f'({idx[0] + 1}/{idx[1]})')
+
         return chain_data
+
+    @staticmethod
+    def _collect_from_group(group_unp_id: str, df_group: pd.DataFrame) \
+            -> Optional[dict]:
+        try:
+            unp_rec = unp.unp_record(group_unp_id)
+            unp_seq_len = len(unp_rec.sequence)
+        except ValueError as e:
+            pdb_ids = tuple(df_group['pdb_id'])
+            LOGGER.error(f'Failed create Uniprot record for {group_unp_id} '
+                         f'{pdb_ids}: {e}')
+            return None
+
+        median_res = df_group['resolution'].median()
+        group_size = len(df_group)
+        df_group = df_group.sort_values(by=['resolution'])
+        df_group['seq_ratio'] = df_group['seq_len'] / unp_seq_len
+
+        # Keep only structures which have at least 90% of residues as
+        # the Uniprot sequence, but no more than 100% (no extras).
+        df_group = df_group[df_group['seq_ratio'] > .9]
+        df_group = df_group[df_group['seq_ratio'] <= 1.]
+        if len(df_group) == 0:
+            return None
+
+        ref_pdb_id = df_group.iloc[0]['pdb_id']
+        ref_res = df_group.iloc[0]['resolution']
+        ref_seq_ratio = df_group.iloc[0]['seq_ratio']
+
+        return dict(
+            unp_id=group_unp_id, unp_name=unp_rec.entry_name,
+            ref_pdb_id=ref_pdb_id, ref_res=ref_res,
+            ref_seq_ratio=ref_seq_ratio,
+            group_median_res=median_res,
+            group_size=group_size
+        )
 
 
 if __name__ == '__main__':
     # Query PDB for structures
     query = pdb.PDBCompositeQuery(
         pdb.PDBExpressionSystemQuery('Escherichia Coli'),
-        pdb.PDBResolutionQuery(max_res=1.5)
+        pdb.PDBResolutionQuery(max_res=1.8)
     )
 
     # pdb_ids = query.execute()
