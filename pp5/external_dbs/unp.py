@@ -159,10 +159,14 @@ def find_pdb_xrefs(unp: Union[UNPRecord, str], method='x-ray') \
 
     res = []
     for _, pdb_id, method, resolution, chains_str in pdb_xrefs:
-        resolution = float(resolution.split()[0])
-        chains = split_xref_chains(chains_str)
-        for chain, seq_len in chains.items():
-            xref = UNPPDBXRef(pdb_id, chain, seq_len, method, resolution)
-            res.append(xref)
+        try:
+            resolution = float(resolution.split()[0])
+            chains = split_xref_chains(chains_str)
+            for chain, seq_len in chains.items():
+                xref = UNPPDBXRef(pdb_id, chain, seq_len, method, resolution)
+                res.append(xref)
+        except ValueError as e:
+            LOGGER.warning(f"Failed to parse PDB xref for {pdb_id} in "
+                           f"{unp_rec.accessions}")
 
     return res
