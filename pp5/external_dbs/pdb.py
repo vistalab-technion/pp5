@@ -766,6 +766,10 @@ class PDBResolutionQuery(PDBQuery):
     TAG_RES_MAX = 'refine.ls_d_res_high.max'
 
     def __init__(self, min_res=0., max_res=2.):
+        """
+        :param min_res: Minimal Xray-diffraction resolution value.
+        :param max_res: Maximal Xray-diffraction resolution value.
+        """
         super().__init__()
         self.min_res = min_res
         self.max_res = max_res
@@ -797,13 +801,19 @@ class PDBExpressionSystemQuery(PDBQuery):
     TAG_COMP = 'entity_src_gen.pdbx_host_org_scientific_name.comparator'
     TAG_NAME = 'entity_src_gen.pdbx_host_org_scientific_name.value'
 
-    def __init__(self, expr_sys: str, comp_type: str = 'contains'):
+    def __init__(self, expr_sys: str = 'Escherichia Coli',
+                 expr_sys_comp_type: str = 'contains'):
+        """
+        :param expr_sys: Name of expression system (organism).
+        :param expr_sys_comp_type: How to compare the specific name to PDB 
+        entries.
+        """
         super().__init__()
         self.expr_sys = expr_sys
-        if comp_type not in self.COMP_TYPES:
-            raise ValueError(f"Unknown comparison type {comp_type}, must be "
-                             f"one of {self.COMP_TYPES}.")
-        self.comp_type = comp_type
+        if expr_sys_comp_type not in self.COMP_TYPES:
+            raise ValueError(f"Unknown comparison type {expr_sys_comp_type}, "
+                             f"must be one of {self.COMP_TYPES}.")
+        self.comp_type = expr_sys_comp_type
 
     def description(self):
         return f'Expression system {self.comp_type} {self.expr_sys}'
