@@ -14,7 +14,6 @@ import pp5
 LOGGER = logging.getLogger(__name__)
 
 __GLOBAL_POOL = None
-MAX_PROCESSES = os.cpu_count()
 BASE_WORKERS_DL_DIR = Path(tempfile.gettempdir()).joinpath('pp5_data')
 GLOBAL_WORKERS_DL_DIR = BASE_WORKERS_DL_DIR.joinpath('_global')
 
@@ -59,10 +58,11 @@ def global_pool() -> ContextManager[mp.pool.Pool]:
     global __GLOBAL_POOL
     base_workers_dl_dir = GLOBAL_WORKERS_DL_DIR
 
+    n_processes = pp5.get_config('MAX_PROCESSES')
     if __GLOBAL_POOL is None:
         mp_ctx = mp.get_context('spawn')
-        LOGGER.info(f'Starting global pool with {MAX_PROCESSES} processes')
-        __GLOBAL_POOL = mp_ctx.Pool(processes=MAX_PROCESSES,
+        LOGGER.info(f'Starting global pool with {n_processes} processes')
+        __GLOBAL_POOL = mp_ctx.Pool(processes=n_processes,
                                     initializer=_worker_process_init,
                                     initargs=(base_workers_dl_dir,))
     try:
@@ -72,9 +72,12 @@ def global_pool() -> ContextManager[mp.pool.Pool]:
 
 
 @contextlib.contextmanager
-def pool(name: str, processes=MAX_PROCESSES) -> ContextManager[mp.pool.Pool]:
+def pool(name: str, processes=None) -> ContextManager[mp.pool.Pool]:
     base_workers_dl_dir = BASE_WORKERS_DL_DIR.joinpath(name)
     mp_ctx = mp.get_context('spawn')
+    processes = processes if processes is not None else \
+        pp5.get_config('MAX_PROCESSES')
+
     try:
         LOGGER.info(f'Starting pool {name} with {processes} processes')
         with mp_ctx.Pool(processes, initializer=_worker_process_init,
