@@ -9,6 +9,14 @@ if str(PROJECT_DIR).startswith(os.getcwd()):
     PROJECT_DIR = PROJECT_DIR.relative_to(os.getcwd())
 
 """
+Dict for storing top-level package configuration option, and their default
+values.
+"""
+_CONFIG = {
+    'MAX_PROCESSES': os.getenv('PP5_MAX_PROCESSES', os.cpu_count()),
+}
+
+"""
 Specify directory paths used for input and output.
 All these directories can be overridden by environment variables with matching 
 names.
@@ -43,6 +51,14 @@ def out_subdir(name):
     :return: An existing sub-directory of the output dir.
     """
     return _get_subdir(OUT_DIR, name)
+
+
+def get_config(name: str):
+    """
+    :param name: A configuration parameter's name
+    :return: The value of that parameter.
+    """
+    return _CONFIG[name]
 
 
 # Directory for PDB files
