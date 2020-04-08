@@ -483,7 +483,10 @@ class PDBMetadata(object):
                 val = val[0]
             if not val or val == '?':
                 return None
-            return convert_to(val)
+            try:
+                return convert_to(val)
+            except ValueError:
+                return None
 
         title = _meta('_struct.title')
         description = _meta('_entity.pdbx_description')
