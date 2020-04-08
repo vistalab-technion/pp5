@@ -114,6 +114,7 @@ def _parse_cli():
     # Top-level configuration parameters
     # The _CFG_PREFIX_ is a marker to map from CLI argument to config param
     p.add_argument('--processes', '-p', type=int, required=False,
+                   default=pp5.get_config('MAX_PROCESSES'),
                    dest=f'{_CFG_PREFIX_}MAX_PROCESSES',
                    help='Maximal number of parallel processes to use.')
 
