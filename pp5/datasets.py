@@ -17,14 +17,12 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ParallelDataCollector(abc.ABC):
-    def __init__(self, max_processes=pp5.parallel.MAX_PROCESSES,
-                 async_res_timeout_sec=30):
-        self.max_processes = max_processes
+    def __init__(self, async_res_timeout_sec=30):
         self.async_res_timeout_sec = async_res_timeout_sec
 
     def collect(self):
         pool_name = self.__class__.__name__
-        with pp5.parallel.pool(pool_name, self.max_processes) as pool:
+        with pp5.parallel.pool(pool_name) as pool:
             self._collect_with_pool(pool)
 
     @abc.abstractmethod
@@ -33,10 +31,6 @@ class ParallelDataCollector(abc.ABC):
 
 
 class ProteinRecordCollector(ParallelDataCollector):
-    """
-    Collects ProteinRecords based on a PDB query results, and invokes a
-    custom callback on each of them.
-    """
     DEFAULT_PREC_INIT_ARGS = dict(dihedral_est_name='erp')
 
     def __init__(self, query: PDBQuery, prec_init_args=None,
@@ -44,10 +38,12 @@ class ProteinRecordCollector(ParallelDataCollector):
                  prec_callback: Callable[
                      [ProteinRecord, Path], Any] = ProteinRecord.to_csv, **kw):
         """
+        Collects ProteinRecords based on a PDB query results, and invokes a
+        custom callback on each of them.
         :param query: A PDBQuery to run. This query must return a list of
         PDB IDs, which can either bbe only structure id, can include chain
         ids or entity ids.
-        :param out_dir: Output folder. Will be passed to callback.
+        :param out_dir: Output folder for prec CSV files.
         :param prec_init_args: Arguments for initializing each ProteinRecord
         :param prec_callback: A callback to invoke for each ProteinRecord.
         Will be invoked in the main process.
@@ -99,6 +95,13 @@ class ProteinGroupCollector(ParallelDataCollector):
     def __init__(self, query: PDBQuery,
                  out_dir=pp5.out_subdir('pgroup-collected'), out_tag=None,
                  **kw):
+        """
+        Collects ProteinGroup reference structures based on a PDB query
+        results.
+        :param query: The PDB query to run.
+        :param out_dir: Output directory for collection CSV files.
+        :param out_tag: Extra tag to add to the output file names.
+        """
         super().__init__(**kw)
         self.query = query
         self.out_dir = out_dir
@@ -263,21 +266,3 @@ class ProteinGroupCollector(ParallelDataCollector):
             group_size=group_size
         )
 
-
-if __name__ == '__main__':
-    # Query PDB for structures
-    query = pdb.PDBCompositeQuery(
-        pdb.PDBExpressionSystemQuery('Escherichia Coli'),
-        pdb.PDBResolutionQuery(max_res=1.8)
-    )
-
-    # pdb_ids = query.execute()
-    # pprint(pdb_ids, compact=True)
-    # pprint(f'Total = {len(pdb_ids)}')
-
-    # ProteinRecordCollector(
-    #     query, prec_init_args={'dihedral_est_name': ''},
-    #     out_dir=pp5.out_subdir('prec')
-    # ).collect()
-
-    ProteinGroupCollector(query).collect()
