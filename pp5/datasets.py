@@ -81,7 +81,7 @@ class ProteinRecordCollector(ParallelDataCollector):
             except ProteinInitError as e:
                 LOGGER.error(f"Failed to create protein: {e}")
             except Exception as e:
-                LOGGER.error("Unexpected error", exc_info=e.__cause__)
+                LOGGER.error("Unexpected error", exc_info=e)
 
             counter += 1
             pps = counter / (time.time() - start_time)
@@ -129,7 +129,7 @@ class ProteinGroupCollector(ParallelDataCollector):
             except TimeoutError as e:
                 LOGGER.error("Timeout getting async result, skipping")
             except Exception as e:
-                LOGGER.error(f"Unexpected error: {e}", exc_info=e.__cause__)
+                LOGGER.error(f"Unexpected error: {e}", exc_info=e)
 
         # Create a dataframe from the collected data
         LOGGER.info(f'Collection done, generating structures file...')
@@ -158,7 +158,7 @@ class ProteinGroupCollector(ParallelDataCollector):
             except TimeoutError as e:
                 LOGGER.error("Timeout getting async result, skipping")
             except Exception as e:
-                LOGGER.error(f"Unexpected error: {e}", exc_info=e.__cause__)
+                LOGGER.error(f"Unexpected error: {e}", exc_info=e)
 
         df_groups = pd.DataFrame(group_datas)
         if len(df_groups):
