@@ -10,6 +10,7 @@ dependencies:
   - ipython>=7.9
   - jupyter
   - jupyterlab
+  - requests
   - nodejs
   - numpy
   - scikit-learn
