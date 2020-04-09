@@ -172,26 +172,15 @@ def _parse_cli():
         sp_pgroup.add_argument(*names, **arg_dict)
 
     # Data collectors
-    _, res_query_args = _generate_cli_from_func(
-        pdb.PDBResolutionQuery.__init__)
-    _, expr_query_args = _generate_cli_from_func(
-        pdb.PDBExpressionSystemQuery.__init__)
     prec_collector_desc, prec_collector_args = _generate_cli_from_func(
         ProteinRecordCollector.__init__,
-        skip=['query', 'prec_init_args', 'prec_callback'])
+        skip=['prec_init_args', 'prec_callback'])
     pgroup_collector_desc, pgroup_collector_args = _generate_cli_from_func(
-        ProteinGroupCollector.__init__, skip=['query'])
+        ProteinGroupCollector.__init__, skip=[])
 
     def _handle_collect(collector_cls, collector_args, **parsed_args):
-        res_query = pdb.PDBResolutionQuery(
-            **{k: parsed_args[k] for k in res_query_args}
-        )
-        expr_sys_query = pdb.PDBExpressionSystemQuery(
-            **{k: parsed_args[k] for k in expr_query_args}
-        )
-        query = pdb.PDBCompositeQuery(res_query, expr_sys_query)
         collector = collector_cls(
-            query, **{k: parsed_args[k] for k in collector_args}
+            **{k: parsed_args[k] for k in collector_args}
         )
         collector.collect()
 
@@ -201,8 +190,7 @@ def _parse_cli():
         handler=lambda **kw: _handle_collect(ProteinRecordCollector,
                                              prec_collector_args, **kw)
     )
-    for _, arg_dict in _merge_dicts(prec_collector_args, res_query_args,
-                                    expr_query_args).items():
+    for _, arg_dict in prec_collector_args.items():
         arg_dict = arg_dict.copy()
         names = arg_dict.pop('names')
         sp_collect_prec.add_argument(*names, **arg_dict)
@@ -214,8 +202,7 @@ def _parse_cli():
         handler=lambda **kw: _handle_collect(ProteinGroupCollector,
                                              pgroup_collector_args, **kw)
     )
-    for _, arg_dict in _merge_dicts(pgroup_collector_args, res_query_args,
-                                    expr_query_args).items():
+    for _, arg_dict in pgroup_collector_args.items():
         arg_dict = arg_dict.copy()
         names = arg_dict.pop('names')
         sp_collect_pgroup.add_argument(*names, **arg_dict)
