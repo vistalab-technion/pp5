@@ -14,19 +14,23 @@ from requests.packages.urllib3.util.retry import Retry
 from IPython import get_ipython
 from requests import HTTPError
 
+import pp5
+
 LOGGER = logging.getLogger(__name__)
 
 
-def requests_retry(retries=8, backoff_factor=0.1,
+def requests_retry(retries: int = None,
+                   backoff_factor: float = 0.1,
                    status_forcelist: tuple = (413, 429, 500, 502, 503, 504),
-                   session=None, ):
+                   session: requests.Session = None, ):
     """
     Creates a requests.Session configured to retry a request in case of
     failure.
     Based on:
     https://www.peterbe.com/plog/best-practice-with-retries-with-requests
 
-    :param retries: Number of times to retry.
+    :param retries: Number of times to retry. Default is taken from pp5
+    config.
     :param backoff_factor: Determines number of seconds to sleep between
     retry requests, using the following formula:
     {backoff factor} * (2 ^ ({number of total retries} - 1))
@@ -34,6 +38,9 @@ def requests_retry(retries=8, backoff_factor=0.1,
     :param session: Existing session object.
     :return: A session object.
     """
+    if retries is None:
+        retries = pp5.get_config('REQUEST_RETRIES')
+
     session = session or requests.Session()
 
     # Docs for Retry are here:
