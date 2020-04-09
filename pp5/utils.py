@@ -78,13 +78,13 @@ def remote_dl(url: str, save_path: str, uncompress=False,
             return Path(save_path)
 
     req_headers = {'Accept-Encoding': 'gzip, identity'}
-    with requests.get(url, stream=True, headers=req_headers) as response:
-        response.raise_for_status()
-        if 300 <= response.status_code < 400:
-            raise HTTPError(f"Redirect {response.status_code} for url{url}",
-                            response=response)
+    with requests_retry().get(url, stream=True, headers=req_headers) as r:
+        r.raise_for_status()
+        if 300 <= r.status_code < 400:
+            raise HTTPError(f"Redirect {r.status_code} for url{url}",
+                            response=r)
 
-        if 'gzip' in response.headers.get('Content-Encoding', ''):
+        if 'gzip' in r.headers.get('Content-Encoding', ''):
             uncompress = True
 
         save_dir = Path().joinpath(*Path(save_path).parts[:-1])
@@ -93,9 +93,9 @@ def remote_dl(url: str, save_path: str, uncompress=False,
         with open(save_path, 'wb') as out_handle:
             try:
                 if uncompress:
-                    in_handle = gzip.GzipFile(fileobj=response.raw)
+                    in_handle = gzip.GzipFile(fileobj=r.raw)
                 else:
-                    in_handle = response.raw
+                    in_handle = r.raw
                 out_handle.write(in_handle.read())
             finally:
                 in_handle.close()
