@@ -17,7 +17,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ParallelDataCollector(abc.ABC):
-    def __init__(self, async_res_timeout_sec=30):
+    def __init__(self, async_res_timeout_sec=120):
         self.async_res_timeout_sec = async_res_timeout_sec
 
     def collect(self):
