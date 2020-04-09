@@ -308,9 +308,9 @@ class PDB2UNP(object):
         url_pdb_id = pdb_id.replace(":", ".")
         url = PDB_TO_UNP_URL_TEMPLATE.format(url_pdb_id)
         try:
-            with requests_retry().get(url, stream=True) as response:
-                response.raise_for_status()
-                df = pd.read_csv(response.raw, header=0, na_filter=False)
+            with requests_retry().get(url, stream=True) as r:
+                r.raise_for_status()
+                df = pd.read_csv(r.raw, header=0, na_filter=False, dtype=str)
         except requests.RequestException as e:
             raise ValueError(
                 f"Failed to run PDB custom query with {pdb_id} for "
