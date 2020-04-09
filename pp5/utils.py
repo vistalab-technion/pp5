@@ -9,10 +9,49 @@ from io import UnsupportedOperation
 from pathlib import Path
 
 import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 from IPython import get_ipython
 from requests import HTTPError
 
 LOGGER = logging.getLogger(__name__)
+
+
+def requests_retry(retries=8, backoff_factor=0.1,
+                   status_forcelist: tuple = (413, 429, 500, 502, 503, 504),
+                   session=None, ):
+    """
+    Creates a requests.Session configured to retry a request in case of
+    failure.
+    Based on:
+    https://www.peterbe.com/plog/best-practice-with-retries-with-requests
+
+    :param retries: Number of times to retry.
+    :param backoff_factor: Determines number of seconds to sleep between
+    retry requests, using the following formula:
+    {backoff factor} * (2 ^ ({number of total retries} - 1))
+    :param status_forcelist: List of HTTP status codes to retry for
+    :param session: Existing session object.
+    :return: A session object.
+    """
+    session = session or requests.Session()
+
+    # Docs for Retry are here:
+    # https://urllib3.readthedocs.io/en/latest/reference/urllib3.util.html
+    retry = Retry(
+        # Number of retries for various error types
+        total=retries, read=retries, connect=retries, redirect=retries,
+        # Retry on any HTTP verb, including POST
+        method_whitelist=False,
+        # List of status codes to retry for
+        status_forcelist=status_forcelist,
+        # See formula above
+        backoff_factor=backoff_factor,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
 
 
 def remote_dl(url: str, save_path: str, uncompress=False,
