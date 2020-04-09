@@ -11,8 +11,6 @@ from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
 from typing import NamedTuple, Type, Dict, List, Set, Union, Tuple
-from urllib.error import URLError, HTTPError
-from urllib.request import urlopen
 import itertools as it
 
 import pandas as pd
@@ -28,7 +26,7 @@ from Bio.PDB.Polypeptide import standard_aa_names
 
 import pp5
 from pp5 import PDB_DIR, get_resource_path
-from pp5.utils import remote_dl
+from pp5.utils import remote_dl, requests_retry
 
 PDB_ID_PATTERN = re.compile(r'^(?P<id>[0-9][\w]{3})(?::(?:'
                             r'(?P<chain>[a-z])|(?P<entity>[0-9])'
@@ -310,12 +308,13 @@ class PDB2UNP(object):
         url_pdb_id = pdb_id.replace(":", ".")
         url = PDB_TO_UNP_URL_TEMPLATE.format(url_pdb_id)
         try:
-            with urlopen(url) as f:
-                df = pd.read_csv(f, header=0, na_filter=False)
-        except HTTPError as e:
+            with requests_retry().get(url, stream=True) as response:
+                response.raise_for_status()
+                df = pd.read_csv(response.raw, header=0, na_filter=False)
+        except requests.RequestException as e:
             raise ValueError(
                 f"Failed to run PDB custom query with {pdb_id} for "
-                f"Uniprot IDs: {e} headers={e.headers}") from None
+                f"Uniprot IDs: {e.__class__.__name__} {e}") from None
 
         # Split each unp column value by '#' because in cases
         # where there are multiple Uniprot IDs for a single CHAIN, this is
