@@ -2,8 +2,6 @@ import os
 import logging.config
 from pathlib import Path
 
-import pint
-
 PROJECT_DIR = Path(Path(__file__).resolve().parents[1])
 if str(PROJECT_DIR).startswith(os.getcwd()):
     PROJECT_DIR = PROJECT_DIR.relative_to(os.getcwd())
@@ -110,5 +108,3 @@ def get_resource_path(data_dir: Path, basename: str):
 # load logger config
 logging.config.fileConfig(PROJECT_DIR.joinpath('logging.ini'),
                           disable_existing_loggers=False)
-
-UNITS = pint.UnitRegistry(system='SI')
