@@ -41,7 +41,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         Collects ProteinRecords based on a PDB query results, and invokes a
         custom callback on each of them.
         :param query: A PDBQuery to run. This query must return a list of
-        PDB IDs, which can either bbe only structure id, can include chain
+        PDB IDs, which can either be only structure id, can include chain
         ids or entity ids.
         :param out_dir: Output folder for prec CSV files.
         :param prec_init_args: Arguments for initializing each ProteinRecord
