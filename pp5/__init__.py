@@ -11,7 +11,10 @@ Dict for storing top-level package configuration option, and their default
 values.
 """
 _CONFIG = {
+    # Number of worker processes in global parallel pool
     'MAX_PROCESSES': os.getenv('PP5_MAX_PROCESSES', os.cpu_count()),
+    # Number of retries to use when fetching/querying data
+    'REQUEST_RETRIES': 5,
 }
 
 """

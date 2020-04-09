@@ -117,6 +117,10 @@ def _parse_cli():
                    default=pp5.get_config('MAX_PROCESSES'),
                    dest=f'{_CFG_PREFIX_}MAX_PROCESSES',
                    help='Maximal number of parallel processes to use.')
+    p.add_argument('--retries', '-r', type=int, required=False,
+                   default=pp5.get_config('REQUEST_RETRIES'),
+                   dest=f'{_CFG_PREFIX_}REQUEST_RETRIES',
+                   help='Number of time to retry failed queries/downloads.')
 
     # Subcommands
     sp = p.add_subparsers(help='Available actions', dest='action')
