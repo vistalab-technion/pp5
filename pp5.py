@@ -7,9 +7,8 @@ from pathlib import Path
 from typing import Callable, List, Dict, Any
 
 import pp5
-import pp5.external_dbs.pdb as pdb
 from pp5.protein import ProteinRecord, ProteinGroup
-from pp5.datasets import ProteinRecordCollector, ProteinGroupCollector
+from pp5.collect import ProteinRecordCollector, ProteinGroupCollector
 
 _LOG = logging.getLogger(__name__)
 _CFG_PREFIX_ = '_CFG_'
