@@ -2,9 +2,14 @@ import os
 
 import gzip
 import filecmp
+import time
+
+import pytest
+import requests
+
 import tests
 import tests.utils
-from pp5.utils import remote_dl
+from pp5.utils import remote_dl, requests_retry
 
 
 class TestRemoteDL:
@@ -75,3 +80,26 @@ class TestRemoteDL:
                 out_handle.write(gz_handle.read())
 
         filecmp.cmp(tmp_out, save_path)
+
+
+@pytest.mark.skipif(not tests.utils.has_internet(), reason='needs internet')
+class TestRequestsRetry:
+    @staticmethod
+    def max_retry_time(retries: int, backoff: float):
+        return sum(backoff * 2 ** i for i in range(retries - 1))
+
+    @pytest.mark.parametrize('status', [429, 500, 503])
+    def test_1(self, status):
+        t0 = time.time()
+        retries = 3
+        backoff = 0.1
+        try:
+            with pytest.raises(requests.exceptions.RetryError) as e:
+                requests_retry(retries=retries, backoff_factor=backoff) \
+                    .get(f'http://httpbin.org/status/{status}')
+        finally:
+            elapsed_sec = time.time() - t0
+
+        expected_elapsed = self.max_retry_time(retries, backoff)
+        print(f'actual={elapsed_sec:.3f}, expected={expected_elapsed:.3f}')
+        assert elapsed_sec >= expected_elapsed
