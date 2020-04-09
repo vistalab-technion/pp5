@@ -11,7 +11,7 @@ from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
 from typing import NamedTuple, Type, Dict, List, Set, Union, Tuple
-from urllib.error import URLError
+from urllib.error import URLError, HTTPError
 from urllib.request import urlopen
 import itertools as it
 
@@ -312,10 +312,10 @@ class PDB2UNP(object):
         try:
             with urlopen(url) as f:
                 df = pd.read_csv(f, header=0, na_filter=False)
-        except URLError as e:
+        except HTTPError as e:
             raise ValueError(
                 f"Failed to run PDB custom query with {pdb_id} for "
-                f"Uniprot IDs: {e}") from None
+                f"Uniprot IDs: {e} headers={e.headers}") from None
 
         # Split each unp column value by '#' because in cases
         # where there are multiple Uniprot IDs for a single CHAIN, this is
