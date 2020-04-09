@@ -15,7 +15,7 @@ LOGGER = logging.getLogger(__name__)
 
 __GLOBAL_POOL = None
 BASE_WORKERS_DL_DIR = Path(tempfile.gettempdir()).joinpath('pp5_data')
-GLOBAL_WORKERS_DL_DIR = BASE_WORKERS_DL_DIR.joinpath('_global')
+GLOBAL_WORKERS_DL_DIR = BASE_WORKERS_DL_DIR.joinpath(f'_global_{os.getpid()}')
 
 
 def _worker_process_init(base_workers_dl_dir, *args):
