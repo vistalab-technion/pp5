@@ -20,13 +20,13 @@ class ParallelDataCollector(abc.ABC):
         self.async_timeout = async_timeout
 
     def collect(self):
-        pool_name = self.__class__.__name__
-        with pp5.parallel.pool(pool_name) as pool:
-            self._collect_with_pool(pool)
+        for collect_function in self._collection_functions():
+            with pp5.parallel.global_pool() as pool:
+                collect_function(pool)
 
     @abc.abstractmethod
-    def _collect_with_pool(self, pool: mp.Pool):
-        pass
+    def _collection_functions(self) -> List[Callable[[mp.pool.Pool], Any]]:
+        return []
 
 
 class ProteinRecordCollector(ParallelDataCollector):
@@ -68,7 +68,10 @@ class ProteinRecordCollector(ParallelDataCollector):
         self.out_dir = out_dir
         self.prec_callback = prec_callback
 
-    def _collect_with_pool(self, pool: mp.Pool):
+    def _collection_functions(self) -> List[Callable[[mp.pool.Pool], Any]]:
+        return [self._collect_precs]
+
+    def _collect_precs(self, pool: mp.Pool):
         pdb_ids = self.query.execute()
         LOGGER.info(f"Got {len(pdb_ids)} structures from PDB")
 
@@ -125,10 +128,17 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.collected_out_dir = collected_out_dir
         self.pgroup_out_dir = pgroup_out_dir
         self.out_tag = out_tag
+        self.timestamp = time.strftime('%Y-%m-%d_%H-%M-%S')
+        self.df_all = None  # All collected structures
+        self.df_ref = None  # Collected reference structures
+        self.ref_to_q_pdb_ids = {}  # Reference structure to query structures
 
-    def _collect_with_pool(self, pool: mp.Pool):
-        timestamp = time.strftime('%Y-%m-%d_%H-%M-%S')
+    def _collection_functions(self) -> List[Callable[[mp.pool.Pool], Any]]:
+        return [self._collect_all_pdb_ids,
+                self._collect_all_groups,
+                self._create_pgroups]
 
+    def _collect_all_pdb_ids(self, pool: mp.Pool):
         # Execute PDB query to get a list of PDB IDs
         pdb_ids = self.query.execute()
         n_structs = len(pdb_ids)
@@ -152,15 +162,16 @@ class ProteinGroupCollector(ParallelDataCollector):
 
         # Create a dataframe from the collected data
         LOGGER.info(f'Collection done, generating structures file...')
-        df = pd.DataFrame(pdb_id_data)
-        if len(df):
-            df.sort_values(by=['unp_id', 'resolution'], inplace=True,
-                           ignore_index=True)
-        self._write_csv(df, timestamp, 'all')
+        self.df_all = pd.DataFrame(pdb_id_data)
+        if len(self.df_all):
+            self.df_all.sort_values(by=['unp_id', 'resolution'], inplace=True,
+                                    ignore_index=True)
+        self._write_csv(self.df_all, 'all')
 
+    def _collect_all_groups(self, pool: mp.Pool):
         # Find reference structure
         LOGGER.info(f'Finding reference structures...')
-        groups = df.groupby('unp_id')
+        groups = self.df_all.groupby('unp_id')
 
         async_results = []
         for unp_id, df_group in groups:
@@ -179,16 +190,17 @@ class ProteinGroupCollector(ParallelDataCollector):
             except Exception as e:
                 LOGGER.error(f"Unexpected error: {e}", exc_info=e)
 
-        df_groups = pd.DataFrame(group_datas)
-        if len(df_groups):
-            df_groups.sort_values(
+        self.df_ref = pd.DataFrame(group_datas)
+        if len(self.df_ref):
+            self.df_ref.sort_values(
                 by=['group_size', 'group_median_res'], ascending=[False, True],
                 inplace=True, ignore_index=True
             )
-        self._write_csv(df_groups, timestamp, 'ref')
+        self._write_csv(self.df_ref, 'ref')
 
+    def _create_pgroups(self, pool: mp.Pool):
         # Create ProteinGroup from each reference structure
-        ref_pdb_ids = df_groups['ref_pdb_id'].values
+        ref_pdb_ids = self.df_ref['ref_pdb_id'].values
         for i, ref_pdb_id in enumerate(ref_pdb_ids):
             LOGGER.info(f'Creating ProteinGroup {i + 1}/{len(ref_pdb_ids)}: '
                         f'{ref_pdb_id}')
@@ -197,10 +209,9 @@ class ProteinGroupCollector(ParallelDataCollector):
             )
             pgroup.to_csv(self.pgroup_out_dir, tag=self.out_tag)
 
-    def _write_csv(self, df: pd.DataFrame, timestamp: str,
-                   csv_type: str, include_query=True):
+    def _write_csv(self, df: pd.DataFrame, csv_type: str, include_query=True):
         tag = f'-{self.out_tag}' if self.out_tag else ''
-        filename = f'pgc-{timestamp}-{csv_type}{tag}.csv'
+        filename = f'pgc-{self.timestamp}-{csv_type}{tag}.csv'
         filepath = self.collected_out_dir.joinpath(filename)
 
         with open(str(filepath), mode='w', encoding='utf-8') as f:
