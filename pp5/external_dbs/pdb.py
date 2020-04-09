@@ -314,7 +314,7 @@ class PDB2UNP(object):
         except requests.RequestException as e:
             raise ValueError(
                 f"Failed to run PDB custom query with {pdb_id} for "
-                f"Uniprot IDs: {e.__class__.__name__} {e}") from None
+                f"Uniprot IDs: {e.__class__.__name__}={e}") from None
 
         # Split each unp column value by '#' because in cases
         # where there are multiple Uniprot IDs for a single CHAIN, this is
@@ -698,7 +698,7 @@ class PDBQuery(abc.ABC):
     def to_xml_pretty(self):
         return yattag.indent(self.to_xml())
 
-    def execute(self, retries=2):
+    def execute(self):
         """
         Executes the query on PDB.
         :return: A list of PDB IDs for proteins matching the query.
@@ -707,18 +707,14 @@ class PDBQuery(abc.ABC):
         query = self.to_xml()
 
         pdb_ids = []
+        LOGGER.info(f'Executing PDB query: {self.description()}')
         try:
-            LOGGER.info(f'Executing PDB query: {self.description()}')
-            response = requests.post(PDB_SEARCH_URL, query, headers=header)
-            while not response.ok and retries > 0:
-                LOGGER.warning(f'PDB query failed: {response.status_code}'
-                               f' {response.text}, retrying ({retries})...')
-                response = requests.post(PDB_SEARCH_URL, query, headers=header)
-                retries -= 1
-            response.raise_for_status()
-            pdb_ids = response.text.split()
-        except requests.exceptions.RequestException as e:
-            LOGGER.error('Failed to query PDB', exc_info=e)
+            with requests_retry().post(PDB_SEARCH_URL, query, headers=header) \
+                    as response:
+                response.raise_for_status()
+                pdb_ids = response.text.split()
+        except requests.RequestException as e:
+            LOGGER.error(f'Failed to query PDB: {e.__class__.__name__}={e}')
 
         return pdb_ids
 
