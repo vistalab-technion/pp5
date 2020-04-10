@@ -22,7 +22,11 @@ class ParallelDataCollector(abc.ABC):
     def collect(self):
         for collect_function in self._collection_functions():
             with pp5.parallel.global_pool() as pool:
-                collect_function(pool)
+                try:
+                    collect_function(pool)
+                except Exception as e:
+                    LOGGER.error(f"Unexpected exception in top-level "
+                                 f"collect", exc_info=e)
 
     @abc.abstractmethod
     def _collection_functions(self) -> List[Callable[[mp.pool.Pool], Any]]:
@@ -202,12 +206,16 @@ class ProteinGroupCollector(ParallelDataCollector):
         # Create ProteinGroup from each reference structure
         ref_pdb_ids = self.df_ref['ref_pdb_id'].values
         for i, ref_pdb_id in enumerate(ref_pdb_ids):
-            LOGGER.info(f'Creating ProteinGroup {i + 1}/{len(ref_pdb_ids)}: '
-                        f'{ref_pdb_id}')
-            pgroup = ProteinGroup.from_pdb_ref(
-                ref_pdb_id, self.expr_sys_query, self.res_query,
-            )
-            pgroup.to_csv(self.pgroup_out_dir, tag=self.out_tag)
+            try:
+                LOGGER.info(f'Creating ProteinGroup for {ref_pdb_id} '
+                            f'({i + 1}/{len(ref_pdb_ids)})')
+                pgroup = ProteinGroup.from_pdb_ref(
+                    ref_pdb_id, self.expr_sys_query, self.res_query,
+                )
+                pgroup.to_csv(self.pgroup_out_dir, tag=self.out_tag)
+            except Exception as e:
+                LOGGER.error(f'Failed to create ProteinGroup from '
+                             f'collected reference {ref_pdb_id}: {e}')
 
     def _write_csv(self, df: pd.DataFrame, csv_type: str, include_query=True):
         tag = f'-{self.out_tag}' if self.out_tag else ''
