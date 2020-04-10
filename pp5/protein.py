@@ -887,7 +887,8 @@ class ProteinGroup(object):
                  sa_max_all_atom_rmsd: float = 2.,
                  sa_min_aligned_residues: int = 50,
                  angle_aggregation='frechet',
-                 strict_pdb_xref=True, strict_unp_xref=False):
+                 strict_pdb_xref=True, strict_unp_xref=False,
+                 parallel=True):
         """
         Creates a ProteinGroup based on a reference PDB ID, and a sequence of
         query PDB IDs. Structural alignment will be performed, and some
@@ -912,6 +913,8 @@ class ProteinGroup(object):
         maps uniquely to only one Uniprot ID.
         :param strict_unp_xref: Whether to require that there exist a PDB
         cross-ref for the given Uniprot ID.
+        :param parallel: Whether to process query structures in parallel using
+        the global worker process pool.
         """
         self.ref_pdb_id = ref_pdb_id.upper()
         self.ref_pdb_base_id, self.ref_pdb_chain = pdb.split_id(ref_pdb_id)
@@ -978,9 +981,12 @@ class ProteinGroup(object):
 
         # Align all query structure residues to the reference structure
         # Process different query structures in parallel
-        with global_pool() as pool:
-            align_fn = self._align_query_residues_to_ref
-            q_aligned = pool.map(align_fn, query_pdb_ids)
+        align_fn = self._align_query_residues_to_ref
+        if parallel:
+            with global_pool() as pool:
+                q_aligned = pool.map(align_fn, query_pdb_ids)
+        else:
+            q_aligned = list(map(align_fn, query_pdb_ids))
 
         self.ref_matches: Dict[int, Dict[str, ResidueMatch]] = OrderedDict()
         self.ref_groups: Dict[int, List[ResidueMatchGroup]] = OrderedDict()
