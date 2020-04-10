@@ -62,7 +62,7 @@ def requests_retry(retries: int = None,
 
 
 def remote_dl(url: str, save_path: str, uncompress=False,
-              skip_existing=False) -> Path:
+              skip_existing=False, retries: int = None) -> Path:
     """
     Downloads contents of a remote file and saves it into a local file.
     :param url: The url to download from.
@@ -70,6 +70,8 @@ def remote_dl(url: str, save_path: str, uncompress=False,
     :param uncompress: Whether to uncompress gzip files.
     :param skip_existing: Whether to skip download if a local file with
     the given path already exists.
+    :param retries: Number of times to retry on failure. None means use
+    default from config.
     :return: A Path object for the downloaded file.
     """
     if skip_existing:
@@ -78,7 +80,8 @@ def remote_dl(url: str, save_path: str, uncompress=False,
             return Path(save_path)
 
     req_headers = {'Accept-Encoding': 'gzip, identity'}
-    with requests_retry().get(url, stream=True, headers=req_headers) as r:
+    with requests_retry(retries=retries) \
+            .get(url, stream=True, headers=req_headers) as r:
         r.raise_for_status()
         if 300 <= r.status_code < 400:
             raise HTTPError(f"Redirect {r.status_code} for url{url}",
