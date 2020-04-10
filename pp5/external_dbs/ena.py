@@ -16,7 +16,7 @@ LOGGER = logging.getLogger(__name__)
 def ena_download(ena_id: str, ena_dir=ENA_DIR) -> Path:
     url = ENA_URL_TEMPLATE.format(ena_id)
     filename = get_resource_path(ena_dir, f'{ena_id}.fa')
-    return remote_dl(url, filename, skip_existing=True)
+    return remote_dl(url, filename, skip_existing=True, retries=1)
 
 
 def ena_seq(ena_id: str, ena_dir=ENA_DIR) -> SeqRecord:
