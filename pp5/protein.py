@@ -850,7 +850,13 @@ class ProteinGroup(object):
         LOGGER.info(f'Initializing ProteinGroup for {ref_pdb_id} with '
                     f'{len(pdb_entities)} query results...')
 
-        return cls.from_query_ids(ref_pdb_id, pdb_entities, **kw_for_init)
+        pgroup = cls.from_query_ids(ref_pdb_id, pdb_entities, **kw_for_init)
+        LOGGER.info(f'{pgroup}: '
+                    f'#unp_ids={pgroup.num_unique_proteins} '
+                    f'#structures={pgroup.num_query_structs} '
+                    f'#matches={pgroup.num_matches}')
+
+        return pgroup
 
     @classmethod
     def from_query_ids(cls, ref_pdb_id: str, query_pdb_ids: Iterable[str],
@@ -921,9 +927,24 @@ class ProteinGroup(object):
             raise ProteinInitError('ProteinGroup reference structure must '
                                    'specify the chain id.')
 
-        # Make sure that the query IDs are valid
-        if not query_pdb_ids:
-            raise ProteinInitError('No query PDB IDs provided')
+        ref_pdb_dict = pdb.pdb_dict(self.ref_pdb_base_id)
+        ref_pdb_meta = pdb.PDBMetadata(self.ref_pdb_base_id,
+                                       struct_d=ref_pdb_dict)
+        if self.ref_pdb_chain not in ref_pdb_meta.chain_entities:
+            raise ProteinInitError(f'Unknown PDB entity for {self.ref_pdb_id}')
+
+        self.ref_pdb_entity = ref_pdb_meta.chain_entities[self.ref_pdb_chain]
+
+        if context_len < 1:
+            raise ProteinInitError("Context size must be > 1")
+
+        self.context_size = context_len
+        self.sa_outlier_cutoff = sa_outlier_cutoff
+        self.sa_max_all_atom_rmsd = sa_max_all_atom_rmsd
+        self.sa_min_aligned_residues = sa_min_aligned_residues
+        self.prec_cache = prec_cache
+        self.strict_pdb_xref = strict_pdb_xref
+        self.strict_unp_xref = strict_unp_xref
 
         angle_aggregation_methods = {
             'frechet': self._aggregate_fn_frechet,
@@ -937,6 +958,9 @@ class ProteinGroup(object):
         self.angle_aggregation = angle_aggregation
         aggregation_fn = angle_aggregation_methods[angle_aggregation]
 
+        # Make sure that the query IDs are valid
+        if not query_pdb_ids:
+            raise ProteinInitError('No query PDB IDs provided')
         try:
             query_pdb_ids = list(query_pdb_ids)  # to allow multiple iteration
             split_ids = [pdb.split_id_with_entity(query_id)
@@ -951,31 +975,40 @@ class ProteinGroup(object):
             if not any(map(lambda x: x[0] == self.ref_pdb_base_id, split_ids)):
                 query_pdb_ids.insert(0, self.ref_pdb_id)
 
-            # Sort query ids so that the reference is first, then by id
-            def sort_key(pdb_id: str):
-                return not pdb_id.startswith(self.ref_pdb_base_id), pdb_id
+            ref_with_entity = f'{self.ref_pdb_base_id}:{self.ref_pdb_entity}'
 
+            def is_ref(q_pdb_id: str):
+                q_pdb_id = q_pdb_id.upper()
+                # Check if query is identical to teh reference structure. We
+                # need to check both with chain and entity.
+                return q_pdb_id == ref_with_entity or \
+                       q_pdb_id == self.ref_pdb_id
+
+            def sort_key(q_pdb_id: str):
+                return not is_ref(q_pdb_id), q_pdb_id
+
+            # Sort query ids so that the reference is first, then by id
             query_pdb_ids = sorted(query_pdb_ids, key=sort_key)
+
+            # Check whether reference structure is in the query list
+            if is_ref(query_pdb_ids[0]):
+                # In case it's specified as an entity, replace it with the
+                # chain id, because we use this PDB IDs with chain later for
+                # comparison to the reference structure.
+                query_pdb_ids[0] = self.ref_pdb_id
+            else:
+                # If the reference is not included, add it.
+                query_pdb_ids.insert(0, self.ref_pdb_id)
 
         except ValueError as e:
             # can also be raised by split, if format invalid
             raise ProteinInitError(str(e)) from None
 
-        if context_len < 1:
-            raise ProteinInitError("Context size must be > 1")
-
-        self.context_size = context_len
-        self.sa_outlier_cutoff = sa_outlier_cutoff
-        self.sa_max_all_atom_rmsd = sa_max_all_atom_rmsd
-        self.sa_min_aligned_residues = sa_min_aligned_residues
-        self.prec_cache = prec_cache
-        self.strict_pdb_xref = strict_pdb_xref
-        self.strict_unp_xref = strict_unp_xref
-
         self.ref_prec = ProteinRecord.from_pdb(
             self.ref_pdb_id, cache=self.prec_cache,
             strict_pdb_xref=self.strict_pdb_xref,
             strict_unp_xref=self.strict_unp_xref,
+            pdb_dict=ref_pdb_dict,
         )
 
         # Align all query structure residues to the reference structure
@@ -1178,7 +1211,8 @@ class ProteinGroup(object):
         for csv_type in types:
             df_func = df_funcs.get(csv_type)
             if not df_func:
-                LOGGER.warning(f'Unknown ProteinGroup CSV type {csv_type}')
+                LOGGER.warning(f'{self}: Unknown ProteinGroup CSV type'
+                               f' {csv_type}')
                 continue
 
             df = df_func()
@@ -1188,9 +1222,9 @@ class ProteinGroup(object):
             df.to_csv(filepath, na_rep='', header=True, index=True,
                       encoding='utf-8', float_format='%.3f')
 
-            LOGGER.info(f'Wrote {self} to {filepath}')
             filepaths.append(filepath)
 
+        LOGGER.info(f'Wrote {self} to {list(map(str, filepaths))}')
         return filepaths
 
     def _align_query_residues_to_ref(self, q_pdb_id: str) -> Optional[
@@ -1203,7 +1237,8 @@ class ProteinGroup(object):
                 strict_unp_xref=self.strict_unp_xref,
             )
         except ProteinInitError as e:
-            LOGGER.error(f'Failed to create prec for query structure: {e}')
+            LOGGER.error(f'{self}: Failed to create prec for query structure:'
+                         f' {e}')
             return None
 
         alignment = self._struct_align_filter(q_prec)
@@ -1310,16 +1345,17 @@ class ProteinGroup(object):
 
         if rmse is None:
             LOGGER.info(
-                f'Rejecting {q_pdb_id} due to failed structural alignment')
+                f'{self}: Rejecting {q_pdb_id} due to failed structural '
+                f'alignment')
             return None
         if rmse > self.sa_max_all_atom_rmsd:
             LOGGER.info(
-                f'Rejecting {q_pdb_id} due to insufficient structural '
+                f'{self}: Rejecting {q_pdb_id} due to insufficient structural '
                 f'similarity, RMSE={rmse:.3f}')
             return None
         if n_stars < self.sa_min_aligned_residues:
-            LOGGER.info(f'Rejecting {q_pdb_id} due to insufficient aligned '
-                        f'residues, n_stars={n_stars}')
+            LOGGER.info(f'{self}: Rejecting {q_pdb_id} due to insufficient '
+                        f'aligned residues, n_stars={n_stars}')
             return None
 
         # Save extra details about the alignment
@@ -1417,6 +1453,7 @@ class ProteinGroup(object):
                 match_group[q_pdb_id] = q_match
 
             # Compute reference group aggregate angles
+            assert ref_group_idx is not None
             ref_group_angles = aggregate_fn(match_groups[ref_group_idx])
 
             # Compute aggregate statistics in each group
@@ -1478,6 +1515,7 @@ class ProteinGroup(object):
         :param match_group: Match group dict, keys are query pdb_ids.
         :return: The dihedral angles frmo the best-resolution structure.
         """
+
         def sort_key(q_pdb_id):
             return self.query_pdb_to_prec[q_pdb_id].pdb_meta.resolution
 
@@ -1498,7 +1536,4 @@ class ProteinGroup(object):
         )
 
     def __repr__(self):
-        return f'{self.__class__.__name__} {self.ref_pdb_id}, ' \
-               f'#unp_ids={self.num_unique_proteins} ' \
-               f'#structures={self.num_query_structs} ' \
-               f'#matches={self.num_matches}'
+        return f'{self.__class__.__name__} {self.ref_pdb_id}'
