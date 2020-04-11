@@ -319,7 +319,7 @@ class ProteinRecord(object):
 
     def __init__(self, unp_id: str, pdb_id: str, pdb_dict: dict = None,
                  dihedral_est_name='erp', dihedral_est_args: dict = None,
-                 strict_unp_xref=True):
+                 max_ena=None, strict_unp_xref=True):
         """
         Initialize a protein record from both Uniprot and PDB ids.
         To initialize a protein from Uniprot id or PDB id only, use the
@@ -338,6 +338,9 @@ class ProteinRecord(object):
         'erp' for standard error propagation;
         'mc' for montecarlo error estimation.
         :param dihedral_est_args: Extra arguments for dihedral estimator.
+        :param max_ena: Number of maximal ENA records (containing protein
+        genetic data) to align to the PDB structure of this protein. None
+        means no limit (all cross-refs from Uniprot will be aligned).
         :param strict_unp_xref: Whether to require that there exist a PDB
         cross-ref for the given Uniprot ID.
         """
@@ -412,7 +415,9 @@ class ProteinRecord(object):
 
         # Find the best matching DNA for our AA sequence via pairwise alignment
         # between the PDB AA sequence and translated DNA sequences.
-        dna_seq_record, idx_to_codons = self._find_dna_alignment(pdb_aa_seq)
+        dna_seq_record, idx_to_codons = self._find_dna_alignment(
+            pdb_aa_seq, max_ena
+        )
         dna_seq = str(dna_seq_record.seq)
         self.ena_id = dna_seq_record.id
 
@@ -572,7 +577,7 @@ class ProteinRecord(object):
         LOGGER.info(f'Wrote {self} to {filepath}')
         return filepath
 
-    def _find_dna_alignment(self, pdb_aa_seq: str) \
+    def _find_dna_alignment(self, pdb_aa_seq: str, max_ena: int) \
             -> Tuple[SeqRecord, Dict[int, str]]:
 
         # Find cross-refs in ENA
@@ -581,14 +586,13 @@ class ProteinRecord(object):
 
         # Map id to sequence by fetching from ENA API
         ena_seqs = []
-        max_enas = 50
         for i, ena_id in enumerate(ena_ids):
             try:
                 ena_seqs.append(ena.ena_seq(ena_id))
             except IOError as e:
                 LOGGER.warning(f"{self}: Invalid ENA id {ena_id}")
-            if i > max_enas:
-                LOGGER.warning(f"{self}: Over {max_enas} ENA ids, "
+            if max_ena is not None and i > max_ena:
+                LOGGER.warning(f"{self}: Over {max_ena} ENA ids, "
                                f"skipping")
                 break
 
