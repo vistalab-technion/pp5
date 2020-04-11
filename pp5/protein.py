@@ -578,8 +578,6 @@ class ProteinRecord(object):
         # Find cross-refs in ENA
         ena_molecule_types = ('mrna', 'genomic_dna')
         ena_ids = unp.find_ena_xrefs(self.unp_rec, ena_molecule_types)
-        if len(ena_ids) == 0:
-            raise ProteinInitError(f"Can't find ENA id for {self.unp_id}")
 
         # Map id to sequence by fetching from ENA API
         ena_seqs = []
@@ -609,6 +607,9 @@ class ProteinRecord(object):
             translated = seq.translate(stop_symbol='')
             alignment = aligner.align(pdb_aa_seq, translated.seq)
             alignments.append((seq, alignment))
+
+        if len(alignments) == 0:
+            raise ProteinInitError(f"Can't find ENA id for {self.unp_id}")
 
         # Sort alignments by negative score (we want the highest first)
         sorted_alignments = sorted(alignments, key=lambda x: -x[1].score)
