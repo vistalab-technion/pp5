@@ -2,8 +2,9 @@ import abc
 import logging
 import multiprocessing as mp
 import time
+from multiprocessing.pool import AsyncResult
 from pathlib import Path
-from typing import Callable, Any, Optional, List
+from typing import Callable, Any, Optional, List, Iterable
 from pprint import pprint
 import pandas as pd
 
@@ -16,7 +17,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ParallelDataCollector(abc.ABC):
-    def __init__(self, async_timeout: float = 30):
+    def __init__(self, async_timeout: float = None):
         self.async_timeout = async_timeout
 
     def collect(self):
@@ -28,8 +29,54 @@ class ParallelDataCollector(abc.ABC):
                     LOGGER.error(f"Unexpected exception in top-level "
                                  f"collect", exc_info=e)
 
+    def _handle_async_results(self, async_results: List[AsyncResult],
+                              collect=False, flatten=False,
+                              result_callback: Callable = None):
+        """
+        Handles a list of AsyncResult objects.
+        :param async_results: List of objects.
+        :param collect: Whether to add all obtained results to a list and
+        return it.
+        :param flatten: Whether to flatten results (useful i.e. if each
+        result is a list or tuple).
+        :param result_callback: Callable to invoke on each result.
+        :return: Number of handled results, time elapsed in seconds, list of
+        collected results (will be empty if collect is False).
+        """
+        count, start_time = 0, time.time()
+        results = []
+        for async_result in async_results:
+            try:
+                res = async_result.get(self.async_timeout)
+                count += 1
+
+                if result_callback is not None:
+                    result_callback(res)
+
+                if not collect:
+                    continue
+
+                if flatten and isinstance(res, Iterable):
+                    results.extend(res)
+                else:
+                    results.append(res)
+
+            except TimeoutError as e:
+                LOGGER.error(f"Timeout getting async result"
+                             f"res={async_result}, skipping: {e}")
+            except ProteinInitError as e:
+                LOGGER.error(f"Failed to create protein: {e}")
+            except Exception as e:
+                LOGGER.error("Unexpected error", exc_info=e)
+
+        elapsed_time = time.time() - start_time
+        return count, elapsed_time, results
+
     @abc.abstractmethod
     def _collection_functions(self) -> List[Callable[[mp.pool.Pool], Any]]:
+        """
+        :return: List of functions to call during collect.
+        """
         return []
 
 
@@ -70,7 +117,7 @@ class ProteinRecordCollector(ParallelDataCollector):
             self.prec_init_args = self.DEFAULT_PREC_INIT_ARGS
 
         self.out_dir = out_dir
-        self.prec_callback = prec_callback
+        self.prec_callback = lambda prec: prec_callback(prec, out_dir)
 
     def _collection_functions(self) -> List[Callable[[mp.pool.Pool], Any]]:
         return [self._collect_precs]
@@ -85,24 +132,13 @@ class ProteinRecordCollector(ParallelDataCollector):
                                  kwds=self.prec_init_args)
             async_results.append(r)
 
-        start_time, counter, pps = time.time(), 0, 0
-        for async_result in async_results:
-            try:
-                prec = async_result.get(self.async_timeout)
-                self.prec_callback(prec, self.out_dir)
-            except TimeoutError as e:
-                LOGGER.error("Timeout getting async result, skipping")
-            except ProteinInitError as e:
-                LOGGER.error(f"Failed to create protein: {e}")
-            except Exception as e:
-                LOGGER.error("Unexpected error", exc_info=e)
+        count, elapsed, _ = self._handle_async_results(
+            async_results, collect=False, result_callback=self.prec_callback
+        )
 
-            counter += 1
-            pps = counter / (time.time() - start_time)
-
-        LOGGER.info(f"Done: {counter}/{len(pdb_ids)} proteins collected "
-                    f"(elapsed={time.time() - start_time:.2f} seconds, "
-                    f"{pps:.1f} proteins/sec).")
+        LOGGER.info(f"Done: {count}/{len(pdb_ids)} proteins collected "
+                    f"(elapsed={elapsed:.2f} seconds, "
+                    f"{count / elapsed:.1f} proteins/sec).")
 
 
 class ProteinGroupCollector(ParallelDataCollector):
@@ -175,15 +211,9 @@ class ProteinGroupCollector(ParallelDataCollector):
             r = pool.apply_async(self._collect_single_structure, args=args)
             async_results.append(r)
 
-        pdb_id_data = []
-        for async_result in async_results:
-            try:
-                d = async_result.get(self.async_timeout)
-                pdb_id_data.extend(d)
-            except TimeoutError as e:
-                LOGGER.error("Timeout getting async result, skipping")
-            except Exception as e:
-                LOGGER.error(f"Unexpected error: {e}", exc_info=e)
+        count, elapsed, pdb_id_data = self._handle_async_results(
+            async_results, collect=True, flatten=True,
+        )
 
         # Create a dataframe from the collected data
         self.df_all = pd.DataFrame(pdb_id_data)
@@ -203,16 +233,10 @@ class ProteinGroupCollector(ParallelDataCollector):
             r = pool.apply_async(self._collect_single_ref, args=args)
             async_results.append(r)
 
-        group_datas = []
-        for async_result in async_results:
-            try:
-                d = async_result.get(self.async_timeout)
-                if d is not None:
-                    group_datas.append(d)
-            except TimeoutError as e:
-                LOGGER.error("Timeout getting async result, skipping")
-            except Exception as e:
-                LOGGER.error(f"Unexpected error: {e}", exc_info=e)
+        count, elapsed, group_datas = self._handle_async_results(
+            async_results, collect=True,
+        )
+        group_datas = filter(None, group_datas)
 
         self.df_ref = pd.DataFrame(group_datas)
         if len(self.df_ref):
@@ -234,16 +258,10 @@ class ProteinGroupCollector(ParallelDataCollector):
             r = pool.apply_async(self._collect_single_pgroup, args=args)
             async_results.append(r)
 
-        pgroup_datas = []
-        for async_result in async_results:
-            try:
-                d = async_result.get(self.async_timeout)
-                if d is not None:
-                    pgroup_datas.append(d)
-            except TimeoutError as e:
-                LOGGER.error("Timeout getting async result, skipping")
-            except Exception as e:
-                LOGGER.error(f"Unexpected error: {e}", exc_info=e)
+        count, elapsed, pgroup_datas = self._handle_async_results(
+            async_results, collect=True, flatten=False,
+        )
+        pgroup_datas = filter(None, pgroup_datas)
 
         self.df_pgroups = pd.DataFrame(pgroup_datas)
         if len(self.df_pgroups):
