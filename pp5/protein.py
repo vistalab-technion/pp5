@@ -219,7 +219,8 @@ class ProteinRecord(object):
         return prec
 
     @classmethod
-    def from_pdb(cls, pdb_id: str, cache=False, cache_dir=pp5.PREC_DIR,
+    def from_pdb(cls, pdb_id: str, pdb_dict=None,
+                 cache=False, cache_dir=pp5.PREC_DIR,
                  strict_pdb_xref=True, **kw_for_init) -> ProteinRecord:
         """
         Given a PDB id, finds the corresponding Uniprot id, and returns a
@@ -239,15 +240,13 @@ class ProteinRecord(object):
         :return: A ProteinRecord.
         """
         try:
-            pdb_dict = None
-
             # Either chain or entity or none can be provided, but not both
             pdb_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
             if entity_id:
                 entity_id = int(entity_id)
 
                 # Discover which chains belong to this entity
-                pdb_dict = pdb.pdb_dict(pdb_id)
+                pdb_dict = pdb.pdb_dict(pdb_id, struct_d=pdb_dict)
                 meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
                 chain_id = meta.get_chain(entity_id)
                 if not chain_id:
