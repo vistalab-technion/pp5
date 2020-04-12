@@ -1,5 +1,6 @@
 import gzip
 import importlib
+import json
 import logging
 import os
 import sys
@@ -7,6 +8,7 @@ from collections.abc import Mapping, Set, Sequence
 import contextlib
 from io import UnsupportedOperation
 from pathlib import Path
+from typing import Union
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -215,3 +217,60 @@ def out_redirected(stdout_stderr='stdout', to=os.devnull,
             finally:
                 _redirect(to_stream=old_stdout)  # restore stdout.
                 # buffering and flags such as CLOEXEC may be different
+
+
+class JSONCacheableMixin(object):
+    """
+    Makes a class cacheable to JSON.
+    """
+
+    def __getstate__(self):
+        return self.__dict__.copy()
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+
+    def to_cache(self,
+                 cache_dir: Union[str, Path],
+                 filename: Union[str, Path],
+                 **json_kws) -> Path:
+        """
+        Write the object to a human-readable text file (json) which
+        can also be loaded later using from_cache.
+        :param cache_dir: Directory of cached files.
+        :param filename: Cached file name (without directory).
+        :return: The path of the written file.
+        """
+        filepath = pp5.get_resource_path(cache_dir, filename)
+        os.makedirs(str(filepath.parent), exist_ok=True)
+
+        with open(str(filepath), 'w', encoding='utf-8') as f:
+            json.dump(self.__getstate__(), f, **json_kws)
+
+        LOGGER.info(f'Wrote {self} to {filepath}')
+        return filepath
+
+    @classmethod
+    def from_cache(cls,
+                   cache_dir: Union[str, Path],
+                   filename: Union[str, Path]):
+        """
+        Load the object from a cached file.
+        :param cache_dir: Directory of cached file.
+        :param filename: Cached file name (without directory).
+        :return: The loaded object, or None if the file doesn't exist.
+        """
+
+        filepath = pp5.get_resource_path(cache_dir, filename)
+
+        obj = None
+        if filepath.is_file():
+            try:
+                with open(str(filepath), 'r', encoding='utf-8') as f:
+                    state_dict = json.load(f)
+                    obj = cls.__new__(cls)
+                    obj.__setstate__(state_dict)
+            except Exception as e:
+                LOGGER.warning(
+                    f'Failed to load cached {cls.__name__} {filepath} {e}')
+        return obj
