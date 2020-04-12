@@ -10,7 +10,7 @@ from collections import OrderedDict
 from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
-from typing import NamedTuple, Type, Dict, List, Set, Union, Tuple
+from typing import NamedTuple, Type, Dict, List, Set, Union, Tuple, Optional
 import itertools as it
 
 import pandas as pd
@@ -26,7 +26,7 @@ from Bio.PDB.Polypeptide import standard_aa_names
 
 import pp5
 from pp5 import PDB_DIR, get_resource_path
-from pp5.utils import remote_dl, requests_retry
+from pp5.utils import remote_dl, requests_retry, JSONCacheableMixin
 
 PDB_ID_PATTERN = re.compile(r'^(?P<id>[0-9][\w]{3})(?::(?:'
                             r'(?P<chain>[a-z])|(?P<entity>[0-9])'
@@ -167,7 +167,7 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
     return ss_dict, keys
 
 
-class PDB2UNP(object):
+class PDB2UNP(JSONCacheableMixin, object):
     """
     Maps PDB IDs (in each chain) to one or more Uniprot IDs which correspond
     to that chain, and their locations in the PDB sequence.
@@ -270,14 +270,7 @@ class PDB2UNP(object):
         :return: The path of the written file.
         """
         filename = f'{self.pdb_id}.json'
-        filepath = pp5.get_resource_path(out_dir, filename)
-        os.makedirs(str(filepath.parent), exist_ok=True)
-
-        with open(str(filepath), 'w', encoding='utf-8') as f:
-            json.dump(self.__dict__, f, indent=None)
-
-        LOGGER.info(f'Wrote {self} to {filepath}')
-        return filepath
+        return self.to_cache(out_dir, filename, indent=None)
 
     def __getitem__(self, chain_id: str):
         """
@@ -442,26 +435,14 @@ class PDB2UNP(object):
         return pdb2unp
 
     @classmethod
-    def from_cache(cls, pdb_id, cache_dir: Union[str, Path] = None) -> PDB2UNP:
+    def from_cache(cls,
+                   pdb_id,
+                   cache_dir: Union[str, Path] = pp5.PDB2UNP_DIR) \
+            -> Optional[PDB2UNP]:
+
         pdb_id, _ = split_id(pdb_id)
-
-        if not isinstance(cache_dir, (str, Path)):
-            cache_dir = pp5.PDB2UNP_DIR
-
         filename = f'{pdb_id}.json'
-        filepath = pp5.get_resource_path(cache_dir, filename)
-
-        pdb2unp = None
-        if filepath.is_file():
-            try:
-                with open(str(filepath), 'r', encoding='utf=8') as f:
-                    state_dict = json.load(f)
-                    pdb2unp = cls.__new__(cls)
-                    pdb2unp.__dict__.update(state_dict)
-            except Exception as e:
-                LOGGER.warning(
-                    f'Failed to load cached PDB2UNP {filepath}: {e}')
-        return pdb2unp
+        return super(PDB2UNP, cls).from_cache(cache_dir, filename)
 
 
 class PDBMetadata(object):
