@@ -1,4 +1,6 @@
+from __future__ import annotations
 import io
+import json
 import logging
 import os
 import re
@@ -7,9 +9,9 @@ import sys
 import tempfile
 import contextlib
 from pathlib import Path
-from typing import Iterable, Tuple, Optional
+from typing import Iterable, Tuple, Optional, Union
 
-from pp5.utils import out_redirected
+from pp5.utils import out_redirected, JSONCacheableMixin
 
 with out_redirected('stderr'), contextlib.redirect_stdout(sys.stderr):
     # Suppress pymol messages about license and about running without GUI
@@ -18,7 +20,7 @@ with out_redirected('stderr'), contextlib.redirect_stdout(sys.stderr):
     pymol.delete('all')
 
 from Bio import AlignIO, SeqIO
-from Bio.AlignIO import MultipleSeqAlignment
+from Bio.AlignIO import MultipleSeqAlignment as MSA
 from Bio.Align.Applications import ClustalOmegaCommandline
 from Bio.Seq import Seq
 
@@ -31,7 +33,7 @@ PYMOL_SA_GAP_SYMBOLS = {'-', '?'}
 
 
 def multiseq_align(seqs: Iterable[Seq] = None, in_file=None, out_file=None,
-                   **clustal_kw) -> MultipleSeqAlignment:
+                   **clustal_kw) -> MSA:
     """
     Aligns multiple Sequences using ClustalOmega.
     Sequences can be given either in-memory or as an input fasta file
@@ -113,9 +115,8 @@ def multiseq_align(seqs: Iterable[Seq] = None, in_file=None, out_file=None,
 
 
 def structural_align(pdb_id1: str, pdb_id2: str,
-                     outlier_rejection_cutoff: float = 2.) \
-        -> Tuple[Optional[float], Optional[int],
-                 Optional[MultipleSeqAlignment]]:
+                     outlier_rejection_cutoff: float = 2.) -> \
+        Tuple[float, int, MSA]:
     """
     Aligns two structures using PyMOL, both in terms of pairwise sequence
     alignment and in terms of structural superposition.
@@ -179,9 +180,9 @@ def structural_align(pdb_id1: str, pdb_id2: str,
                     f'{str(mseq[1].seq)}')
         return rmse, n_stars, mseq
     except pymol.QuietException as e:
-        LOGGER.error(f'Failed to structurally-align {pdb_id1} to {pdb_id2} '
-                     f'with cutoff {outlier_rejection_cutoff}')
-        return None, None, None
+        msg = f'Failed to structurally-align {pdb_id1} to {pdb_id2} ' \
+              f'with cutoff {outlier_rejection_cutoff}'
+        raise ValueError(msg) from None
     finally:
         # Need to clean up the objects we created inside PyMOL
         # Remove PyMOL loaded structures and their chains ('*' is a wildcard)
@@ -196,3 +197,74 @@ def structural_align(pdb_id1: str, pdb_id2: str,
         # Remove temporary file with the sequence alignment
         if tmp_outfile and tmp_outfile.is_file():
             os.remove(str(tmp_outfile))
+
+
+class StructuralAlignment(JSONCacheableMixin, object):
+    def __init__(self, pdb_id_1: str, pdb_id_2: str,
+                 outlier_rejection_cutoff: float = 2.):
+        self.pdb_id_1 = pdb_id_1.upper()
+        self.pdb_id_2 = pdb_id_2.upper()
+        self.outlier_rejection_cutoff = outlier_rejection_cutoff
+
+        self.rmse, self.n_stars, mseq = structural_align(
+            pdb_id_1, pdb_id_2, outlier_rejection_cutoff
+        )
+
+        self.aligned_seq_1 = str(mseq[0].seq)
+        self.aligned_seq_2 = str(mseq[1].seq)
+        self.aligned_stars: str = mseq.column_annotations['clustal_consensus']
+
+    @property
+    def ungapped_seq_1(self):
+        return self._ungap(self.aligned_seq_1)
+
+    @property
+    def ungapped_seq_2(self):
+        return self._ungap(self.aligned_seq_2)
+
+    def save(self, out_dir=pp5.ALIGNMENT_DIR) -> Path:
+        """
+        Write the alignment to a human-readable text file (json) which
+        can also be loaded later using from_cache.
+        :param out_dir: Output directory.
+        :return: The path of the written file.
+        """
+        filename = self._cache_filename(self.pdb_id_1, self.pdb_id_2)
+        return self.to_cache(out_dir, filename, indent=2)
+
+    @staticmethod
+    def _cache_filename(pdb_id_1: str, pdb_id_2: str) -> str:
+        basename = f'{pdb_id_1}-{pdb_id_2}'.replace(":", "_").upper()
+        filename = f'{basename}.json'
+        return filename
+
+    @staticmethod
+    def _ungap(seq: str) -> str:
+        for gap_symbol in PYMOL_SA_GAP_SYMBOLS:
+            seq = seq.replace(gap_symbol, '')
+        return seq
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}' \
+               f'({self.pdb_id_1}, {self.pdb_id_2}): ' \
+               f'rmse={self.rmse:.2f}, ' \
+               f'nstars={self.n_stars}/{len(self.ungapped_seq_1)}'
+
+    @classmethod
+    def from_cache(cls, pdb_id_1: str, pdb_id_2: str,
+                   cache_dir: Union[str, Path] = pp5.ALIGNMENT_DIR) \
+            -> Optional[StructuralAlignment]:
+
+        filename = cls._cache_filename(pdb_id_1, pdb_id_2)
+        return super(StructuralAlignment, cls).from_cache(cache_dir, filename)
+
+    @classmethod
+    def from_pdb(cls, pdb_id1: str, pdb_id2: str, cache=False, **kw_for_init):
+        if cache:
+            sa = cls.from_cache(pdb_id1, pdb_id2)
+            if sa is not None:
+                return sa
+
+        sa = cls(pdb_id1, pdb_id2, **kw_for_init)
+        sa.save()
+        return sa
