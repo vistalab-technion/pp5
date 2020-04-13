@@ -13,7 +13,7 @@ of proteins structure.
 |- pp5/             # Main code package
 |---- __init__.py   # Environment and folders set up
 |---- align.py      # Multisequence and structural alignment
-|---- datasets.py   # Scraping and data collection
+|---- collect.py    # Scraping and data collection
 |---- dihedral.py   # Dihedral angle calculation and error estimation
 |---- protein.py    # ProteinRecord and ProteinGroup, model what we need to know about a protein or group of similar proteins
 |---- parallel.py   # Support for worker sub-processes
