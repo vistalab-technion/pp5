@@ -95,7 +95,7 @@ class TestRequestsRetry:
         backoff = 0.1
         try:
             with pytest.raises(requests.exceptions.RetryError) as e:
-                requests_retry(retries=retries, backoff_factor=backoff) \
+                requests_retry(retries=retries, backoff=backoff) \
                     .get(f'http://httpbin.org/status/{status}')
         finally:
             elapsed_sec = time.time() - t0
