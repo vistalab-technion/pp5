@@ -399,7 +399,7 @@ class ProteinGroupCollector(ParallelDataCollector):
             # to send the multiple initial queries simultaneously
             if idx[0] < pp5.get_config('MAX_PROCESSES'):
                 sleeptime = idx[0]
-                LOGGER.info(f'Sleeing for {sleeptime:.2f}s')
+                LOGGER.info(f'Sleeping for {sleeptime:.2f}s')
                 time.sleep(sleeptime)
 
             pgroup = ProteinGroup.from_pdb_ref(
