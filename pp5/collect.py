@@ -148,7 +148,7 @@ class ProteinGroupCollector(ParallelDataCollector):
                  expr_sys: str = ProteinGroup.DEFAULT_EXPR_SYS,
                  collected_out_dir=pp5.out_subdir('pgroup-collected'),
                  pgroup_out_dir=pp5.out_subdir('pgroup'), out_tag: str = None,
-                 ref_file: Path = None, async_timeout: float = None,
+                 ref_file: Path = None, async_timeout: float = 3600,
                  ):
         """
         Collects ProteinGroup reference structures based on a PDB query
