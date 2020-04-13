@@ -236,5 +236,7 @@ if __name__ == '__main__':
 
         # Invoke it with the remaining arguments
         handler_fn(**parsed_args)
+    except KeyboardInterrupt as e:
+        _LOG.warning(f'Interrupted by user, stopping.')
     except Exception as e:
         _LOG.error(f'{e.__class__.__name__}: {e}')

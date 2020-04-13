@@ -6,6 +6,7 @@ import multiprocessing.pool
 import os
 import shutil
 import tempfile
+import signal
 from pathlib import Path
 from typing import ContextManager
 
@@ -13,12 +14,15 @@ import pp5
 
 LOGGER = logging.getLogger(__name__)
 
-__GLOBAL_POOL = None
+__GLOBAL_POOL: mp.pool.Pool = None
 BASE_WORKERS_DL_DIR = Path(tempfile.gettempdir()).joinpath('pp5_data')
 GLOBAL_WORKERS_DL_DIR = BASE_WORKERS_DL_DIR.joinpath(f'_global_{os.getpid()}')
 
 
 def _worker_process_init(base_workers_dl_dir, *args):
+    # ignore SIGINT in workers, it should only be handled in the main process
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
     os.makedirs(str(base_workers_dl_dir), exist_ok=True)
 
     # Provide each process with a unique download folder.
@@ -92,8 +96,9 @@ def _cleanup():
     global __GLOBAL_POOL
     if __GLOBAL_POOL is not None:
         LOGGER.info(f'Closing global pool...')
-        __GLOBAL_POOL.close()
+        __GLOBAL_POOL.terminate()
         __GLOBAL_POOL.join()
+        _clean_worker_downloads(GLOBAL_WORKERS_DL_DIR)
         _remove_workers_dir(GLOBAL_WORKERS_DL_DIR)
 
 
