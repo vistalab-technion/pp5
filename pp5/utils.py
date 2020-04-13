@@ -3,6 +3,7 @@ import importlib
 import json
 import logging
 import os
+import random
 import sys
 from collections.abc import Mapping, Set, Sequence
 import contextlib
@@ -22,7 +23,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def requests_retry(retries: int = None,
-                   backoff_factor: float = 0.1,
+                   backoff: float = 0.1,
                    status_forcelist: tuple = (413, 429, 500, 502, 503, 504),
                    session: requests.Session = None, ):
     """
@@ -33,9 +34,9 @@ def requests_retry(retries: int = None,
 
     :param retries: Number of times to retry. Default is taken from pp5
     config.
-    :param backoff_factor: Determines number of seconds to sleep between
+    :param backoff: Determines number of seconds to sleep between
     retry requests, using the following formula:
-    {backoff factor} * (2 ^ ({number of total retries} - 1))
+    backoff * (2 ^ ({number of total retries} - 1))
     :param status_forcelist: List of HTTP status codes to retry for
     :param session: Existing session object.
     :return: A session object.
@@ -44,6 +45,10 @@ def requests_retry(retries: int = None,
         retries = pp5.get_config('REQUEST_RETRIES')
 
     session = session or requests.Session()
+
+    # Randomize backoff a bit (20%)
+    delta = random.uniform(-backoff * .2, backoff * .2)
+    backoff += delta
 
     # Docs for Retry are here:
     # https://urllib3.readthedocs.io/en/latest/reference/urllib3.util.html
@@ -55,7 +60,7 @@ def requests_retry(retries: int = None,
         # List of status codes to retry for
         status_forcelist=status_forcelist,
         # See formula above
-        backoff_factor=backoff_factor,
+        backoff_factor=backoff,
     )
     adapter = HTTPAdapter(max_retries=retry)
     session.mount('http://', adapter)
