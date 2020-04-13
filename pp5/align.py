@@ -216,11 +216,17 @@ class StructuralAlignment(JSONCacheableMixin, object):
 
     @property
     def ungapped_seq_1(self):
-        return self._ungap(self.aligned_seq_1)
+        """
+        :return: First sequence, without alignment gap symbols.
+        """
+        return self.ungap(self.aligned_seq_1)
 
     @property
     def ungapped_seq_2(self):
-        return self._ungap(self.aligned_seq_2)
+        """
+        :return: Second sequence, without alignment gap symbols.
+        """
+        return self.ungap(self.aligned_seq_2)
 
     def save(self, out_dir=pp5.ALIGNMENT_DIR) -> Path:
         """
@@ -239,7 +245,13 @@ class StructuralAlignment(JSONCacheableMixin, object):
         return filename
 
     @staticmethod
-    def _ungap(seq: str) -> str:
+    def ungap(seq: str) -> str:
+        """
+        Removed gap symbols from an alignment sequence.
+        :param seq: The sequence with gap symbols, as retuned by structural
+        alignment.
+        :return: The sequence without gap symbols.
+        """
         for gap_symbol in PYMOL_SA_GAP_SYMBOLS:
             seq = seq.replace(gap_symbol, '')
         return seq

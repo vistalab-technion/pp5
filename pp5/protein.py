@@ -13,7 +13,7 @@ from collections import OrderedDict
 import itertools as it
 
 import pandas as pd
-from Bio.Align import PairwiseAligner, MultipleSeqAlignment as MSA
+from Bio.Align import PairwiseAligner
 from Bio.Data import CodonTable
 from Bio.PDB import PPBuilder
 from Bio.PDB.Polypeptide import Polypeptide
@@ -28,7 +28,7 @@ from pp5.dihedral import Dihedral, DihedralAnglesEstimator, \
 from pp5.external_dbs import pdb, unp, ena
 from pp5.external_dbs.pdb import PDBRecord, PDBQuery
 from pp5.external_dbs.unp import UNPRecord
-from pp5.align import structural_align
+from pp5.align import StructuralAlignment
 from pp5.align import PYMOL_SA_GAP_SYMBOLS as PSA_GAP
 from pp5.parallel import global_pool
 
@@ -1029,7 +1029,7 @@ class ProteinGroup(object):
         self.ref_groups: Dict[int, List[ResidueMatchGroup]] = OrderedDict()
         self.query_pdb_ids = []
         self.query_pdb_to_prec: Dict[str, ProteinRecord] = OrderedDict()
-        self.query_pdb_to_alignment: Dict[str, MSA] = OrderedDict()
+        self.query_pdb_to_sa: Dict[str, StructuralAlignment] = OrderedDict()
 
         # Go over aligned queries. Save the matching residues and group them.
         for qa in q_aligned:
@@ -1045,7 +1045,7 @@ class ProteinGroup(object):
 
             self.query_pdb_ids.append(q_prec.pdb_id)
             self.query_pdb_to_prec[q_prec.pdb_id] = q_prec
-            self.query_pdb_to_alignment[q_prec.pdb_id] = q_alignment
+            self.query_pdb_to_sa[q_prec.pdb_id] = q_alignment
 
         LOGGER.info(f'{self}: Grouping matches with angle_aggregation='
                     f'{self.angle_aggregation}')
@@ -1159,13 +1159,13 @@ class ProteinGroup(object):
         data = []
         for q_pdb_id in self.query_pdb_ids:
             q_prec = self.query_pdb_to_prec[q_pdb_id]
-            q_alignment = self.query_pdb_to_alignment[q_pdb_id]
+            q_alignment = self.query_pdb_to_sa[q_pdb_id]
             data.append({
                 'unp_id': q_prec.unp_id, 'pdb_id': q_prec.pdb_id,
                 'resolution': q_prec.pdb_meta.resolution,
-                'struct_rmse': q_alignment.annotations['rmse'],
-                'n_stars': q_alignment.annotations['n_stars'],
-                'seq_len': q_alignment.annotations['seq_len'],
+                'struct_rmse': q_alignment.rmse,
+                'n_stars': q_alignment.n_stars,
+                'seq_len': len(q_alignment.ungapped_seq_2),  # seq2 is query
                 'description': q_prec.pdb_meta.description,
                 'src_org': q_prec.pdb_meta.src_org,
                 'src_org_id': q_prec.pdb_meta.src_org_id,
@@ -1232,9 +1232,9 @@ class ProteinGroup(object):
         LOGGER.info(f'Wrote {self} to {list(map(str, filepaths))}')
         return filepaths
 
-    def _align_query_residues_to_ref(self, q_pdb_id: str) -> Optional[
-        Tuple[ProteinRecord, MSA, Dict[int, Dict[str, ResidueMatch]]]
-    ]:
+    def _align_query_residues_to_ref(self, q_pdb_id: str) \
+            -> Optional[Tuple[ProteinRecord, StructuralAlignment,
+                              Dict[int, Dict[str, ResidueMatch]]]]:
         try:
             q_prec = ProteinRecord.from_pdb(
                 q_pdb_id, cache=self.prec_cache,
@@ -1250,12 +1250,10 @@ class ProteinGroup(object):
         if alignment is None:
             return None
 
-        stars = alignment.column_annotations['clustal_consensus']
-        n = alignment.get_alignment_length()
-        assert n == len(stars)
-
-        r_seq_pymol = alignment[0].seq
-        q_seq_pymol = alignment[1].seq
+        r_seq_pymol = alignment.aligned_seq_1
+        q_seq_pymol = alignment.aligned_seq_2
+        stars = alignment.aligned_stars
+        n = len(stars)
 
         # Map from index in the structural alignment to the index within each
         # sequence we got from pymol
@@ -1334,7 +1332,8 @@ class ProteinGroup(object):
 
         return q_prec, alignment, matches
 
-    def _struct_align_filter(self, q_prec: ProteinRecord) -> Optional[MSA]:
+    def _struct_align_filter(self, q_prec: ProteinRecord) \
+            -> Optional[StructuralAlignment]:
         """
         Performs structural alignment between the query and the reference
         structure. Rejects query structures which do not conform to the
@@ -1343,42 +1342,34 @@ class ProteinGroup(object):
         :return: Alignment object, or None if query was rejected.
         """
         q_pdb_id = q_prec.pdb_id
-        rmse, n_stars, msa = structural_align(
-            self.ref_pdb_id, q_pdb_id,
-            outlier_rejection_cutoff=self.sa_outlier_cutoff
-        )
-
-        if rmse is None:
-            LOGGER.info(
-                f'{self}: Rejecting {q_pdb_id} due to failed structural '
-                f'alignment')
+        try:
+            sa = StructuralAlignment.from_pdb(
+                self.ref_pdb_id, q_pdb_id, cache=True,
+                outlier_rejection_cutoff=self.sa_outlier_cutoff
+            )
+        except Exception as e:
+            LOGGER.warning(f'{self}: Rejecting {q_pdb_id} due to failed '
+                           f'structural alignment: {e.__class__.__name__} {e}')
             return None
-        if rmse > self.sa_max_all_atom_rmsd:
+
+        if sa.rmse > self.sa_max_all_atom_rmsd:
             LOGGER.info(
                 f'{self}: Rejecting {q_pdb_id} due to insufficient structural '
-                f'similarity, RMSE={rmse:.3f}')
+                f'similarity, RMSE={sa.rmse:.3f}')
             return None
-        if n_stars < self.sa_min_aligned_residues:
+
+        if sa.n_stars < self.sa_min_aligned_residues:
             LOGGER.info(f'{self}: Rejecting {q_pdb_id} due to insufficient '
-                        f'aligned residues, n_stars={n_stars}')
+                        f'aligned residues, n_stars={sa.n_stars}')
             return None
 
-        # Save extra details about the alignment
-        meta = q_prec.pdb_meta
-        seq = meta.entity_sequence[meta.chain_entities[q_prec.pdb_chain_id]]
-        msa.annotations['seq_len'] = len(seq)
-        msa.annotations['rmse'] = rmse
-        msa.annotations['n_stars'] = n_stars
-
-        return msa
+        return sa
 
     @staticmethod
-    def _align_pymol_to_prec(prec: ProteinRecord, pymol_seq: Seq) \
+    def _align_pymol_to_prec(prec: ProteinRecord, pymol_seq: str) \
             -> Dict[int, int]:
 
-        sa_r_seq = str(pymol_seq)
-        for gap_symbol in PSA_GAP:
-            sa_r_seq = sa_r_seq.replace(gap_symbol, '')
+        sa_r_seq = StructuralAlignment.ungap(pymol_seq)
 
         aligner = PairwiseAligner(substitution_matrix=BLOSUM80,
                                   open_gap_score=-10, extend_gap_score=-0.5)
