@@ -691,8 +691,9 @@ class PDBQuery(abc.ABC):
         pdb_ids = []
         LOGGER.info(f'Executing PDB query: {self.description()}')
         try:
-            with requests_retry().post(PDB_SEARCH_URL, query, headers=header) \
-                    as response:
+            # Use many retries as this is an unreliable API
+            with requests_retry(retries=10, backoff=0.2).\
+                    post(PDB_SEARCH_URL, query, headers=header) as response:
                 response.raise_for_status()
                 pdb_ids = response.text.split()
         except requests.RequestException as e:
