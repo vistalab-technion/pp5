@@ -218,7 +218,8 @@ class PDB2UNP(JSONCacheableMixin, object):
         only one unless the entry is chimeric.
         """
         if not chain_id or chain_id.upper() not in self.chain_to_unp_xrefs:
-            raise ValueError(f'Invalid chain {chain_id} of {self.pdb_id}')
+            raise ValueError(f'No Uniprot ID for chain {chain_id} of'
+                             f' {self.pdb_id}')
 
         if self.is_chimeric(chain_id):
             msg = f'{self.pdb_id} is chimeric at chain {chain_id}, ' \
