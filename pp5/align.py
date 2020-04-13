@@ -12,11 +12,17 @@ from typing import Iterable, Tuple, Optional, Union
 
 from pp5.utils import out_redirected, JSONCacheableMixin
 
+import signal
+_prev_sigint_handler = signal.getsignal(signal.SIGINT)
+
 with out_redirected('stderr'), contextlib.redirect_stdout(sys.stderr):
     # Suppress pymol messages about license and about running without GUI
     from pymol import cmd as pymol
 
     pymol.delete('all')
+
+# pymol messes up the SIGINT handler (Ctrl-C), so restore it to what is was
+signal.signal(signal.SIGINT, _prev_sigint_handler)
 
 from Bio import AlignIO, SeqIO
 from Bio.AlignIO import MultipleSeqAlignment as MSA
