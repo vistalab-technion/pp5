@@ -80,5 +80,5 @@ python pp5.py prec --pdb-id 2WUR:A
 
 To run a protein group collection with some custom options:
 ```shell script
-python pp5.py pgroup --ref-pdb-id 1nkd:a --resolution-query 2.5 --out-dir out/testcli --tag test1 --context-len 1
+python pp5.py pgroup --ref-pdb-id 1nkd:a --resolution 2.5 --out-dir out/testcli --tag test1 --context-len 1
 ```
