@@ -394,11 +394,13 @@ class ProteinGroupCollector(ParallelDataCollector):
             LOGGER.info(f'Creating ProteinGroup for {ref_pdb_id} '
                         f'({idx[0] + 1}/{idx[1]})')
 
-            # Hack: Sleep a small random time before building pgroup.
+            # Hack: Sleep a random time before building pgroup.
             # Currently we need to query PDB for the groups, and we don't want
             # to send the multiple initial queries simultaneously
             if idx[0] < pp5.get_config('MAX_PROCESSES'):
-                time.sleep(random.uniform(0, 10))
+                sleeptime = idx[0]
+                LOGGER.info(f'Sleeing for {sleeptime:.2f}s')
+                time.sleep(sleeptime)
 
             pgroup = ProteinGroup.from_pdb_ref(
                 ref_pdb_id, expr_sys_query, res_query,
