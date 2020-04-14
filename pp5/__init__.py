@@ -80,6 +80,9 @@ PDB2UNP_DIR = Path(os.getenv('PDB2UNP_DIR', data_subdir('pdb2unp')))
 # Directory for Structural Alignments
 ALIGNMENT_DIR = Path(os.getenv('ALIGNMENT_DIR', data_subdir('align')))
 
+# Directory for local BLAST DB
+BLASTDB_DIR = Path(os.getenv('BLASTDB_DIR', data_subdir('blast')))
+
 
 def get_resource_path(data_dir: Path, basename: str):
     """

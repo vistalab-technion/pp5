@@ -1,20 +1,34 @@
 from __future__ import annotations
 import io
 import logging
+import signal
 import os
 import re
 import subprocess
 import sys
+import tarfile
 import tempfile
 import contextlib
+import ftplib
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable, Tuple, Optional, Union
 
+import pandas as pd
+from Bio.Alphabet import generic_protein
+from Bio.SeqRecord import SeqRecord
+from Bio import AlignIO, SeqIO
+from Bio.AlignIO import MultipleSeqAlignment as MSA
+from Bio.Align.Applications import ClustalOmegaCommandline
+from Bio.Seq import Seq
+from tqdm import tqdm
+
+import pp5
+from pp5.external_dbs import pdb
 from pp5.utils import out_redirected, JSONCacheableMixin
 
-import signal
+# Suppress messages from pymol upon import
 _prev_sigint_handler = signal.getsignal(signal.SIGINT)
-
 with out_redirected('stderr'), contextlib.redirect_stdout(sys.stderr):
     # Suppress pymol messages about license and about running without GUI
     from pymol import cmd as pymol
@@ -23,14 +37,6 @@ with out_redirected('stderr'), contextlib.redirect_stdout(sys.stderr):
 
 # pymol messes up the SIGINT handler (Ctrl-C), so restore it to what is was
 signal.signal(signal.SIGINT, _prev_sigint_handler)
-
-from Bio import AlignIO, SeqIO
-from Bio.AlignIO import MultipleSeqAlignment as MSA
-from Bio.Align.Applications import ClustalOmegaCommandline
-from Bio.Seq import Seq
-
-import pp5
-from pp5.external_dbs import pdb
 
 LOGGER = logging.getLogger(__name__)
 
@@ -286,3 +292,199 @@ class StructuralAlignment(JSONCacheableMixin, object):
             # Remove temporary file with the sequence alignment
             if tmp_outfile and tmp_outfile.is_file():
                 os.remove(str(tmp_outfile))
+
+
+class ProteinBLAST(object):
+    """
+    Runs BLAST queries of protein sequences against a local PDB database.
+    """
+
+    BLAST_FTP_URL = 'ftp.ncbi.nlm.nih.gov'
+    BLAST_DB_FILENAME = 'pdbaa.tar.gz'
+    BLAST_DB_FILE_PATH = f'/blast/db/{BLAST_DB_FILENAME}'
+
+    BLAST_OUTPUT_FIELDS = {
+        'query_pdb_id': 'qacc',
+        'target_pdb_id': 'sacc',
+        'alignment_length': 'length',
+        'query_start': 'qstart',
+        'query_end': 'qend',
+        'target_start': 'sstart',
+        'target_end': 'send',
+        'score': 'score',
+        'e_value': 'evalue',
+        'percent_identity': 'pident',
+    }
+
+    BLAST_OUTPUT_CONVERTERS = {
+        'target_pdb_id': lambda x: x.replace("_", ":")
+    }
+
+    BLAST_MATRIX_NAMES = {
+        'BLOSUM80', 'BLOSUM62', 'BLOSUM50', 'BLOSUM45', 'BLOSUM90',
+        'PAM250', 'PAM30', 'PAM70',
+        'IDENTITY',
+    }
+
+    def __init__(self, evalue_cutoff: float = 1.,
+                 matrix_name: str = 'BLOSUM80',
+                 max_alignments=None,
+                 ):
+
+        if evalue_cutoff <= 0:
+            raise ValueError(f'Invalid evalue cutoff: {evalue_cutoff}, '
+                             f'must be >= 0.')
+
+        if matrix_name not in self.BLAST_MATRIX_NAMES:
+            raise ValueError(f'Invalid matrix name {matrix_name}, must be '
+                             f'one of {self.BLAST_MATRIX_NAMES}.')
+
+        self.evalue_cutoff = evalue_cutoff
+        self.matrix_name = matrix_name
+        self.max_alignments = max_alignments
+
+    def pdb(self, query_pdb_id: str, pdb_dict=None,
+            blastdb_dir=pp5.BLASTDB_DIR) -> pd.DataFrame:
+        """
+        BLAST against a protein specified by a PDB ID.
+        :param query_pdb_id: The PDB ID to BLAST against. Must include chain.
+        :param pdb_dict: Optional parsed PDB file dict.
+        :param blastdb_dir: Optional BLASTDB directory.
+        :return: A dataframe with the BLAST results. Column names are the
+        keys in BLAST_OUTPUT_FIELDS.
+        """
+        pdb_id, chain_id = pdb.split_id(query_pdb_id)
+        if not chain_id:
+            raise ValueError(f'Must specify a chain for BLAST alignment, '
+                             f'got {query_pdb_id}')
+
+        meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
+
+        if chain_id not in meta.chain_entities:
+            raise ValueError(f"Can't find chain {chain_id} in {pdb_id}")
+
+        seq_str = meta.entity_sequence[meta.chain_entities[chain_id]]
+        return self.seq(seq_str, query_pdb_id, blastdb_dir)
+
+    def seq(self, seq: str, seq_id: str = "", blastdb_dir=pp5.BLASTDB_DIR):
+        """
+        BLAST against a protein AA sequence specified as a string.
+        :param seq: A sequence of single-letter AA codes.
+        :param seq_id: Optional identifier of the sequence.
+        :param blastdb_dir: Optional BLASTDB directory.
+        :return: A dataframe with the BLAST results. Column names are the
+        keys in BLAST_OUTPUT_FIELDS.
+        """
+        seqrec = SeqRecord(Seq(seq, alphabet=generic_protein), id=seq_id)
+        return self._run_blastp(seqrec, blastdb_dir=blastdb_dir)
+
+    def _run_blastp(self, seqrec: SeqRecord, blastdb_dir=pp5.BLASTDB_DIR):
+        # Construct the command-line for the blastp executable
+        fields = str.join(" ", self.BLAST_OUTPUT_FIELDS.values())
+        cline = [
+            f'blastp', f'-db={blastdb_dir}/pdbaa', f'-query=-',
+            f'-outfmt=7 delim=, {fields}',
+            f'-evalue={self.evalue_cutoff}',
+            f'-matrix={self.matrix_name}'
+        ]
+        if self.max_alignments:
+            cline.append(f'-num_alignments={self.max_alignments}')
+
+        # Execute
+        child_proc = subprocess.Popen(
+            args=cline, stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8'
+        )
+
+        # Write the query sequence directly to subprocess' stdin, and close it
+        with child_proc.stdin as child_in_handle:
+            SeqIO.write(seqrec, child_in_handle, 'fasta')
+
+        # Parse results from blastp into a dataframe
+        df = pd.read_csv(
+            child_proc.stdout, header=None, engine='c', comment='#',
+            names=self.BLAST_OUTPUT_FIELDS.keys(),
+            converters=self.BLAST_OUTPUT_CONVERTERS,
+        )
+
+        # Handle errors
+        with child_proc.stderr as child_err_handle:
+            err = child_err_handle.read()
+            if err:
+                raise ValueError(f'BLAST error: {err}')
+
+        return df
+
+    @classmethod
+    def blastdb_remote_timedelta(cls, blastdb_dir=pp5.BLASTDB_DIR) \
+            -> timedelta:
+        """
+        :param blastdb_dir: Directory of local BLAST database.
+        :return: Delta-time between the latest remote BLAST DB and the
+        current local one.
+        """
+
+        local_db = blastdb_dir.joinpath(cls.BLAST_DB_FILENAME)
+
+        try:
+            with ftplib.FTP(cls.BLAST_FTP_URL) as ftp:
+                ftp.login()
+                mdtm = ftp.voidcmd(f'MDTM {cls.BLAST_DB_FILE_PATH}')
+                mdtm = mdtm[4:].strip()
+                remote_db_timestamp = datetime.strptime(mdtm, '%Y%m%d%H%M%S')
+
+            if local_db.is_file():
+                local_db_timestamp = os.path.getmtime(str(local_db))
+                local_db_timestamp = datetime.fromtimestamp(local_db_timestamp)
+            else:
+                local_db_timestamp = datetime.fromtimestamp(0)
+
+            delta_time = remote_db_timestamp - local_db_timestamp
+            return delta_time
+        except ftplib.all_errors as e:
+            raise IOError(f"FTP error while retrieving remote DB timestamp: "
+                          f"{e}") from None
+
+    @classmethod
+    def blastdb_download(cls, blastdb_dir=pp5.BLASTDB_DIR) -> Path:
+        """
+        Downloads the latest BLAST DB (of AA sequences from PDB) to the
+        local BLAST DB directory.
+        :param blastdb_dir: Directory of local BLAST database.
+        :return: Path of downloaded archive.
+        """
+        local_db = blastdb_dir.joinpath(cls.BLAST_DB_FILENAME)
+
+        try:
+            with ftplib.FTP(cls.BLAST_FTP_URL) as ftp:
+                ftp.login()
+                remote_db_size = ftp.size(cls.BLAST_DB_FILE_PATH)
+                mdtm = ftp.voidcmd(f'MDTM {cls.BLAST_DB_FILE_PATH}')
+                mdtm = mdtm[4:].strip()
+                remote_db_timestamp = datetime.strptime(mdtm, '%Y%m%d%H%M%S')
+
+                with tqdm(total=remote_db_size, file=sys.stdout,
+                          unit_scale=True, unit_divisor=1024, unit='B',
+                          desc=f'Downloading {local_db} from '
+                               f'{cls.BLAST_FTP_URL}...') as pbar:
+                    with open(str(local_db), 'wb') as f:
+                        def callback(b):
+                            pbar.update(len(b))
+                            f.write(b)
+
+                        ftp.retrbinary(f'RETR {cls.BLAST_DB_FILE_PATH}',
+                                       callback=callback, blocksize=1024 * 1)
+
+        except ftplib.all_errors as e:
+            raise IOError(f"Failed to download BLAST DB file: {e}") from None
+
+        # Set modified-time of the file to be identical to the server file.
+        t = remote_db_timestamp.timestamp()
+        os.utime(str(local_db), times=(t, t))
+
+        # Extract
+        with tarfile.open(str(local_db), "r:gz") as f:
+            f.extractall(path=str(blastdb_dir))
+
+        return local_db

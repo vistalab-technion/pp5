@@ -3,7 +3,7 @@ channels:
   - defaults
   - conda-forge
   - schrodinger # pymol
-  - bioconda    # clustal, muscle
+  - bioconda    # clustal, muscle, blast
   - salilab     # dssp
 dependencies:
   - python=3.7.6
@@ -24,11 +24,11 @@ dependencies:
   - hdf5
   - h5py>=2.10
   - yattag
-  - pint
   - uncertainties
   - pymol
   - muscle
   - clustalo
+  - blast
   - dssp
   - pip
   - pip:
