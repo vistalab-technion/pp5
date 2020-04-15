@@ -1,18 +1,19 @@
 import abc
 import logging
 import multiprocessing as mp
-import random
 import time
 from multiprocessing.pool import AsyncResult
 from pathlib import Path
 from typing import Callable, Any, Optional, List, Iterable
-from pprint import pprint
+from datetime import datetime, timedelta
+
 import pandas as pd
 
 import pp5
 import pp5.parallel
 from pp5.external_dbs import pdb, unp
 from pp5.protein import ProteinRecord, ProteinInitError, ProteinGroup
+from pp5.align import ProteinBLAST
 
 LOGGER = logging.getLogger(__name__)
 
@@ -22,6 +23,8 @@ class ParallelDataCollector(abc.ABC):
         self.async_timeout = async_timeout
 
     def collect(self):
+        start_time = time.time()
+
         for collect_function in self._collection_functions():
             with pp5.parallel.global_pool() as pool:
                 try:
@@ -29,6 +32,13 @@ class ParallelDataCollector(abc.ABC):
                 except Exception as e:
                     LOGGER.error(f"Unexpected exception in top-level "
                                  f"collect", exc_info=e)
+
+        end_time = time.time()
+        dt = datetime(1, 1, 1) + timedelta(seconds=end_time - start_time)
+        time_str = "%02d:%02d:%02d:%02d" % (dt.day - 1, dt.hour, dt.minute,
+                                            dt.second)
+
+        LOGGER.info(f'Completed collection for {self} in {time_str}')
 
     def _handle_async_results(self, async_results: List[AsyncResult],
                               collect=False, flatten=False,
@@ -46,7 +56,7 @@ class ParallelDataCollector(abc.ABC):
         """
         count, start_time = 0, time.time()
         results = []
-        for async_result in async_results:
+        for i, async_result in enumerate(async_results):
             try:
                 res = async_result.get(self.async_timeout)
                 count += 1
@@ -62,8 +72,8 @@ class ParallelDataCollector(abc.ABC):
                 else:
                     results.append(res)
 
-            except TimeoutError as e:
-                LOGGER.error(f"Timeout getting async result"
+            except mp.TimeoutError as e:
+                LOGGER.error(f"Timeout getting async result #{i}"
                              f"res={async_result}, skipping: {e}")
             except ProteinInitError as e:
                 LOGGER.error(f"Failed to create protein: {e}")
@@ -79,6 +89,9 @@ class ParallelDataCollector(abc.ABC):
         :return: List of functions to call during collect.
         """
         return []
+
+    def __repr__(self):
+        return f'{self.__class__.__name__}'
 
 
 class ProteinRecordCollector(ParallelDataCollector):
@@ -119,6 +132,9 @@ class ProteinRecordCollector(ParallelDataCollector):
 
         self.out_dir = out_dir
         self.prec_callback = lambda prec: prec_callback(prec, out_dir)
+
+    def __repr__(self):
+        return f'{self.__class__.__name__} query={self.query}'
 
     def _collection_functions(self) -> List[Callable[[mp.pool.Pool], Any]]:
         return [self._collect_precs]
@@ -176,18 +192,27 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.out_tag = out_tag
         self.timestamp = time.strftime('%Y-%m-%d_%H-%M-%S')
 
-        if ref_file is not None:
-            # Collected reference structures
-            read_csv_args = dict(comment='#', index_col=0, header=0)
-            self.df_ref = pd.read_csv(ref_file, **read_csv_args)
+        if ref_file is None:
+            self.df_ref = None  # Collected reference structures
+            self.df_all = None  # Stats per structure
         else:
-            self.df_ref = None
+            all_file = Path(str(ref_file).replace('ref', 'all', 1))
+            ref_file = Path(ref_file)
+            if not all_file.is_file() or not ref_file.is_file():
+                raise ValueError(f"To skip the first two collection steps "
+                                 f"both collection files must exist:"
+                                 f"{all_file}, {ref_file}")
 
-        # Stats per structure
-        self.df_all = None
+            read_csv_args = dict(comment='#', index_col=0, header=0)
+            self.df_all = pd.read_csv(all_file, **read_csv_args)
+            self.df_ref = pd.read_csv(ref_file, **read_csv_args)
 
         # Stats for each pgroup
         self.df_pgroups = None
+
+    def __repr__(self):
+        return f'{self.__class__.__name__} timestamp={self.timestamp}, ' \
+               f'tag={self.out_tag}, query={self.query}'
 
     def _collection_functions(self) -> List[Callable[[mp.pool.Pool], Any]]:
         fns = []
@@ -250,13 +275,19 @@ class ProteinGroupCollector(ParallelDataCollector):
                         comment="Selected reference structures")
 
     def _collect_all_pgroups(self, pool: mp.Pool):
-        LOGGER.info(f'Creating ProteinGroup for each reference...')
 
+        # Create a local BLAST DB containing all collected PDB IDs.
+        all_pdb_ids = self.df_all['pdb_id']
+        alias_name = f'pgc-{self.out_tag}'
+        blast_db = ProteinBLAST.create_db_subset_alias(all_pdb_ids, alias_name)
+        blast = ProteinBLAST(db_name=blast_db)
+
+        LOGGER.info(f'Creating ProteinGroup for each reference...')
         ref_pdb_ids = self.df_ref['ref_pdb_id'].values
         async_results = []
         for i, ref_pdb_id in enumerate(ref_pdb_ids):
             idx = (i, len(ref_pdb_ids))
-            args = (ref_pdb_id, self.expr_sys_query, self.res_query,
+            args = (ref_pdb_id, blast,
                     self.pgroup_out_dir, self.out_tag, idx)
             r = pool.apply_async(self._collect_single_pgroup, args=args)
             async_results.append(r)
@@ -274,6 +305,8 @@ class ProteinGroupCollector(ParallelDataCollector):
             )
         self._write_csv(self.df_pgroups, 'pgroups',
                         comment="Collected ProteinGroups")
+
+        # TODO: Delete the created BLAST DB alias?
 
     def _write_csv(self, df: pd.DataFrame, csv_type: str,
                    comment: str = None, include_query=True):
@@ -388,22 +421,20 @@ class ProteinGroupCollector(ParallelDataCollector):
         )
 
     @staticmethod
-    def _collect_single_pgroup(ref_pdb_id, expr_sys_query, res_query,
-                               out_dir, out_tag, idx) -> Optional[dict]:
+    def _collect_single_pgroup(ref_pdb_id: str, blast: ProteinBLAST,
+                               out_dir: Path, out_tag: str, idx) \
+            -> Optional[dict]:
         try:
             LOGGER.info(f'Creating ProteinGroup for {ref_pdb_id} '
                         f'({idx[0] + 1}/{idx[1]})')
 
-            # Hack: Sleep a random time before building pgroup.
-            # Currently we need to query PDB for the groups, and we don't want
-            # to send the multiple initial queries simultaneously
-            if idx[0] < pp5.get_config('MAX_PROCESSES'):
-                sleeptime = idx[0]
-                LOGGER.info(f'Sleeping for {sleeptime:.2f}s')
-                time.sleep(sleeptime)
+            # Run BLAST to find query structures for the pgroup
+            df_blast = blast.pdb(ref_pdb_id)
+            LOGGER.info(f"Got {len(df_blast)} BLAST hits for {ref_pdb_id}")
 
-            pgroup = ProteinGroup.from_pdb_ref(
-                ref_pdb_id, expr_sys_query, res_query,
+            pgroup = ProteinGroup.from_query_ids(
+                # TODO: Prevent parsing ref PDB file second time here
+                ref_pdb_id, query_pdb_ids=df_blast.index,
                 parallel=False, prec_cache=True,
             )
             pgroup.to_csv(out_dir, tag=out_tag)
