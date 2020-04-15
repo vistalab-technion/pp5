@@ -500,7 +500,7 @@ class ProteinBLAST(object):
         Creates a BLAST database which is a subset of the main (full) database.
         Useful for running multiple BLAST queries against a smalled subset
         of the entire PDB.
-        :param pdb_ids: List of PDB IDs (with chain) to include.
+        :param pdb_ids: List of PDB IDs (with or without chain) to include.
         :param alias_name: Name of generated alias database.
         :param source_name: Name of source database.
         :param blastdb_dir: Directory of local BLAST database.
@@ -513,21 +513,59 @@ class ProteinBLAST(object):
         os.makedirs(aliases_dir, exist_ok=True)
         seqid_file = aliases_dir.joinpath(f'{alias_name}.ids')
 
-        # Create a simple text file with the PDB IDs
-        with open(seqid_file, mode='w', encoding='utf-8') as f:
-            pdb_ids = map(lambda x: x.replace(":", "_") + "\n", pdb_ids)
-            f.writelines(pdb_ids)
+        dbcmd_cline = [
+            'blastdbcmd', f'-db={blastdb_dir.joinpath(source_name)}',
+            '-outfmt=%a', '-entry_batch=-'
+        ]
 
-        cline = [
+        # First we must create a simple text file with the PDB IDs.
+        # We need to use blastdbcmd to convert the given PDB IDs (which may
+        # not contain a chain) into the accession IDs which exist in the
+        # source BLAST database (which must contain a chain).
+        with open(seqid_file, mode='w', encoding='utf-8') as pdb_id_file:
+            # Run the dbcmd tool
+            LOGGER.info(str.join(" ", dbcmd_cline))
+            sproc = subprocess.Popen(
+                args=dbcmd_cline, stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, encoding='utf-8'
+            )
+
+            # Pass the given PDB IDs to the dbcmd's stdin
+            with sproc.stdin as sin:
+                # Replace ":" in case PDB IDs have a chain, but it's not
+                # necessary for them to have one here.
+                pdb_ids = map(lambda x: x.replace(":", "_") + "\n", pdb_ids)
+                sin.writelines(pdb_ids)
+
+            # Write dbcmd's output into the PDB ID text file
+            with sproc.stdout as sout:
+                pdb_id_file.write(sout.read())
+
+            with sproc.stderr as serr:
+                err = serr.read().strip()
+                # Only warn on errors, since it's possible some of the IDs
+                # don't exist in the blast database and it's safe to ignore.
+                if len(err) > 0:
+                    if 'Skipped' in err:
+                        LOGGER.warning(err)
+                    else:
+                        raise ValueError(f'blastdbcmd: {err}')
+
+        # Now we run the blastdb_aliastool to create a db alias which only
+        # contains the given PDB IDs.
+        # Note that the text file containing the PDB IDs and chains must
+        # continue to exists even after the alias is created, otherwise
+        # running BLAST won't work.
+        aliastool_cline = [
             'blastdb_aliastool',
             f'-db={source_rel_alias}', f'-out={alias_name}',
             f'-seqidlist={seqid_file.name}',
         ]
 
-        # Run the alias tool
-        LOGGER.info(str.join(" ", cline))
+        LOGGER.info(str.join(" ", aliastool_cline))
         sproc = subprocess.Popen(
-            args=cline, cwd=aliases_dir, stdin=None,
+            args=aliastool_cline, cwd=aliases_dir, stdin=None,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8'
         )
@@ -539,7 +577,7 @@ class ProteinBLAST(object):
         with sproc.stderr as serr, sproc.stdout as sout:
             out = str.strip(sout.read() + serr.read())
             if sproc.returncode > 0:
-                raise ValueError(out)
+                raise ValueError(f'blastdb_aliastool: {out}')
             LOGGER.info(out)
 
         return str(aliases_dir.relative_to(blastdb_dir).joinpath(alias_name))
