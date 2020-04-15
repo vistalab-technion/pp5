@@ -964,10 +964,10 @@ class ProteinGroup(object):
         aggregation_fn = angle_aggregation_methods[angle_aggregation]
 
         # Make sure that the query IDs are valid
+        query_pdb_ids = list(query_pdb_ids)  # to allow multiple iteration
         if not query_pdb_ids:
             raise ProteinInitError('No query PDB IDs provided')
         try:
-            query_pdb_ids = list(query_pdb_ids)  # to allow multiple iteration
             split_ids = [pdb.split_id_with_entity(query_id)
                          for query_id in query_pdb_ids]
 
