@@ -385,7 +385,7 @@ class ProteinBLAST(object):
         :param query_pdb_id: The PDB ID to BLAST against. Must include chain.
         :param pdb_dict: Optional parsed PDB file dict.
         :return: A dataframe with the BLAST results. Column names are the
-        keys in BLAST_OUTPUT_FIELDS.
+        non-id keys in BLAST_OUTPUT_FIELDS, and the index is the target_pdb_id.
         """
         pdb_id, chain_id = pdb.split_id(query_pdb_id)
         if not chain_id:
@@ -406,7 +406,7 @@ class ProteinBLAST(object):
         :param seq: A sequence of single-letter AA codes.
         :param seq_id: Optional identifier of the sequence.
         :return: A dataframe with the BLAST results. Column names are the
-        keys in BLAST_OUTPUT_FIELDS.
+        non-id keys in BLAST_OUTPUT_FIELDS, and the index is the target_pdb_id.
         """
         seqrec = SeqRecord(Seq(seq, alphabet=generic_protein), id=seq_id)
         return self._run_blastp(seqrec)
@@ -440,6 +440,8 @@ class ProteinBLAST(object):
             child_proc.stdout, header=None, engine='c', comment='#',
             names=self.BLAST_OUTPUT_FIELDS.keys(),
             converters=self.BLAST_OUTPUT_CONVERTERS,
+            # Drop the query id column and make target id the index
+            index_col='target_pdb_id', usecols=lambda c: c != 'query_pdb_id'
         )
 
         # Handle errors
