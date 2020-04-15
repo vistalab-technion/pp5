@@ -298,10 +298,11 @@ class ProteinBLAST(object):
     """
     Runs BLAST queries of protein sequences against a local PDB database.
     """
+    BLAST_DB_NAME = 'pdbaa'
 
     BLAST_FTP_URL = 'ftp.ncbi.nlm.nih.gov'
-    BLAST_DB_FILENAME = 'pdbaa.tar.gz'
-    BLAST_DB_FILE_PATH = f'/blast/db/{BLAST_DB_FILENAME}'
+    BLAST_FTP_DB_FILENAME = f'{BLAST_DB_NAME}.tar.gz'
+    BLAST_FTP_DB_FILE_PATH = f'/blast/db/{BLAST_FTP_DB_FILENAME}'
 
     BLAST_OUTPUT_FIELDS = {
         'query_pdb_id': 'qacc',
@@ -329,6 +330,8 @@ class ProteinBLAST(object):
     def __init__(self, evalue_cutoff: float = 1.,
                  matrix_name: str = 'BLOSUM80',
                  max_alignments=None,
+                 db_name: str = BLAST_DB_NAME,
+                 db_dir: Path = pp5.BLASTDB_DIR,
                  ):
 
         if evalue_cutoff <= 0:
@@ -342,14 +345,14 @@ class ProteinBLAST(object):
         self.evalue_cutoff = evalue_cutoff
         self.matrix_name = matrix_name
         self.max_alignments = max_alignments
+        self.db_name = db_name
+        self.db_dir = db_dir
 
-    def pdb(self, query_pdb_id: str, pdb_dict=None,
-            blastdb_dir=pp5.BLASTDB_DIR) -> pd.DataFrame:
+    def pdb(self, query_pdb_id: str, pdb_dict=None) -> pd.DataFrame:
         """
         BLAST against a protein specified by a PDB ID.
         :param query_pdb_id: The PDB ID to BLAST against. Must include chain.
         :param pdb_dict: Optional parsed PDB file dict.
-        :param blastdb_dir: Optional BLASTDB directory.
         :return: A dataframe with the BLAST results. Column names are the
         keys in BLAST_OUTPUT_FIELDS.
         """
@@ -364,26 +367,26 @@ class ProteinBLAST(object):
             raise ValueError(f"Can't find chain {chain_id} in {pdb_id}")
 
         seq_str = meta.entity_sequence[meta.chain_entities[chain_id]]
-        return self.seq(seq_str, query_pdb_id, blastdb_dir)
+        return self.seq(seq_str, query_pdb_id)
 
-    def seq(self, seq: str, seq_id: str = "", blastdb_dir=pp5.BLASTDB_DIR):
+    def seq(self, seq: str, seq_id: str = ""):
         """
         BLAST against a protein AA sequence specified as a string.
         :param seq: A sequence of single-letter AA codes.
         :param seq_id: Optional identifier of the sequence.
-        :param blastdb_dir: Optional BLASTDB directory.
         :return: A dataframe with the BLAST results. Column names are the
         keys in BLAST_OUTPUT_FIELDS.
         """
         seqrec = SeqRecord(Seq(seq, alphabet=generic_protein), id=seq_id)
-        return self._run_blastp(seqrec, blastdb_dir=blastdb_dir)
+        return self._run_blastp(seqrec)
 
-    def _run_blastp(self, seqrec: SeqRecord, blastdb_dir=pp5.BLASTDB_DIR):
+    def _run_blastp(self, seqrec: SeqRecord):
         # Construct the command-line for the blastp executable
-        fields = str.join(" ", self.BLAST_OUTPUT_FIELDS.values())
+        out_fields = str.join(" ", self.BLAST_OUTPUT_FIELDS.values())
         cline = [
-            f'blastp', f'-db={blastdb_dir}/pdbaa', f'-query=-',
-            f'-outfmt=7 delim=, {fields}',
+            f'blastp', f'-db={self.db_dir.joinpath(self.db_name)}',
+            f'-query=-',
+            f'-outfmt=7 delim=, {out_fields}',
             f'-evalue={self.evalue_cutoff}',
             f'-matrix={self.matrix_name}'
         ]
@@ -425,12 +428,12 @@ class ProteinBLAST(object):
         current local one.
         """
 
-        local_db = blastdb_dir.joinpath(cls.BLAST_DB_FILENAME)
+        local_db = blastdb_dir.joinpath(cls.BLAST_FTP_DB_FILENAME)
 
         try:
             with ftplib.FTP(cls.BLAST_FTP_URL) as ftp:
                 ftp.login()
-                mdtm = ftp.voidcmd(f'MDTM {cls.BLAST_DB_FILE_PATH}')
+                mdtm = ftp.voidcmd(f'MDTM {cls.BLAST_FTP_DB_FILE_PATH}')
                 mdtm = mdtm[4:].strip()
                 remote_db_timestamp = datetime.strptime(mdtm, '%Y%m%d%H%M%S')
 
@@ -454,13 +457,13 @@ class ProteinBLAST(object):
         :param blastdb_dir: Directory of local BLAST database.
         :return: Path of downloaded archive.
         """
-        local_db = blastdb_dir.joinpath(cls.BLAST_DB_FILENAME)
+        local_db = blastdb_dir.joinpath(cls.BLAST_FTP_DB_FILENAME)
 
         try:
             with ftplib.FTP(cls.BLAST_FTP_URL) as ftp:
                 ftp.login()
-                remote_db_size = ftp.size(cls.BLAST_DB_FILE_PATH)
-                mdtm = ftp.voidcmd(f'MDTM {cls.BLAST_DB_FILE_PATH}')
+                remote_db_size = ftp.size(cls.BLAST_FTP_DB_FILE_PATH)
+                mdtm = ftp.voidcmd(f'MDTM {cls.BLAST_FTP_DB_FILE_PATH}')
                 mdtm = mdtm[4:].strip()
                 remote_db_timestamp = datetime.strptime(mdtm, '%Y%m%d%H%M%S')
 
@@ -473,7 +476,7 @@ class ProteinBLAST(object):
                             pbar.update(len(b))
                             f.write(b)
 
-                        ftp.retrbinary(f'RETR {cls.BLAST_DB_FILE_PATH}',
+                        ftp.retrbinary(f'RETR {cls.BLAST_FTP_DB_FILE_PATH}',
                                        callback=callback, blocksize=1024 * 1)
 
         except ftplib.all_errors as e:
@@ -488,3 +491,55 @@ class ProteinBLAST(object):
             f.extractall(path=str(blastdb_dir))
 
         return local_db
+
+    @classmethod
+    def create_db_subset_alias(cls, pdb_ids: Iterable[str],
+                               alias_name: str, source_name=BLAST_DB_NAME,
+                               blastdb_dir=pp5.BLASTDB_DIR):
+        """
+        Creates a BLAST database which is a subset of the main (full) database.
+        Useful for running multiple BLAST queries against a smalled subset
+        of the entire PDB.
+        :param pdb_ids: List of PDB IDs (with chain) to include.
+        :param alias_name: Name of generated alias database.
+        :param source_name: Name of source database.
+        :param blastdb_dir: Directory of local BLAST database.
+        :return: Name of generated database (relative to the blastdb_dir),
+        which can be used as the dbb_name of a new ProteinBLAST instance.
+        """
+
+        aliases_dir = blastdb_dir.joinpath('aliases')
+        source_rel_alias = Path('..').joinpath(source_name)
+        os.makedirs(aliases_dir, exist_ok=True)
+        seqid_file = aliases_dir.joinpath(f'{alias_name}.ids')
+
+        # Create a simple text file with the PDB IDs
+        with open(seqid_file, mode='w', encoding='utf-8') as f:
+            pdb_ids = map(lambda x: x.replace(":", "_") + "\n", pdb_ids)
+            f.writelines(pdb_ids)
+
+        cline = [
+            'blastdb_aliastool',
+            f'-db={source_rel_alias}', f'-out={alias_name}',
+            f'-seqidlist={seqid_file.name}',
+        ]
+
+        # Run the alias tool
+        LOGGER.info(str.join(" ", cline))
+        sproc = subprocess.Popen(
+            args=cline, cwd=aliases_dir, stdin=None,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8'
+        )
+
+        # Should complete immediately
+        sproc.wait(timeout=5)
+
+        # Check for errors
+        with sproc.stderr as serr, sproc.stdout as sout:
+            out = str.strip(sout.read() + serr.read())
+            if sproc.returncode > 0:
+                raise ValueError(out)
+            LOGGER.info(out)
+
+        return str(aliases_dir.relative_to(blastdb_dir).joinpath(alias_name))
