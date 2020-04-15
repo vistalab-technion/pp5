@@ -327,8 +327,10 @@ class ProteinBLAST(object):
         'IDENTITY',
     }
 
-    def __init__(self, evalue_cutoff: float = 1.,
-                 matrix_name: str = 'BLOSUM80',
+    def __init__(self,
+                 evalue_cutoff: float = 1.,
+                 identity_cutoff: float = 30.,
+                 matrix_name: str = 'BLOSUM62',
                  max_alignments=None,
                  db_name: str = BLAST_DB_NAME,
                  db_dir: Path = pp5.BLASTDB_DIR,
@@ -338,7 +340,9 @@ class ProteinBLAST(object):
         Initializes a ProteinBLAST instance. This instance is meant to be
         used for multiple BLAST queries with the same parameters and against a
         single DB.
-        :param evalue_cutoff: Maximal expectation value allows for matches.
+        :param evalue_cutoff: Maximal expectation value allowed for matches.
+        :param identity_cutoff: Minimal identity (in %) between query and
+        target sequences allowed for matches.
         :param matrix_name: Name of scoring matrix.
         :param max_alignments: Maximum number of alignments to return. None
         means no limit.
@@ -355,6 +359,10 @@ class ProteinBLAST(object):
             raise ValueError(f'Invalid evalue cutoff: {evalue_cutoff}, '
                              f'must be >= 0.')
 
+        if not 0 <= evalue_cutoff < 100:
+            raise ValueError(f'Invalid identity cutoff: {identity_cutoff}, '
+                             f'must be in [0,100).')
+
         if matrix_name not in self.BLAST_MATRIX_NAMES:
             raise ValueError(f'Invalid matrix name {matrix_name}, must be '
                              f'one of {self.BLAST_MATRIX_NAMES}.')
@@ -367,13 +375,14 @@ class ProteinBLAST(object):
             self.blastdb_download(blastdb_dir=db_dir)
         elif db_autoupdate_days is not None:
             delta_days = self.blastdb_remote_timedelta(blastdb_dir=db_dir).days
-            if delta_days > db_autoupdate_days:
+            if delta_days >= db_autoupdate_days:
                 LOGGER.info(f'Local BLAST DB {self.BLAST_DB_NAME} is out of '
-                            f'date by {timedelta.days} days compared to '
+                            f'date by {delta_days} days compared to '
                             f'latest version, downloading...')
                 self.blastdb_download(blastdb_dir=db_dir)
 
         self.evalue_cutoff = evalue_cutoff
+        self.identity_cutoff = identity_cutoff
         self.matrix_name = matrix_name
         self.max_alignments = max_alignments
         self.db_name = db_name
@@ -443,6 +452,11 @@ class ProteinBLAST(object):
             # Drop the query id column and make target id the index
             index_col='target_pdb_id', usecols=lambda c: c != 'query_pdb_id'
         )
+
+        # Filter by identity
+        idx = df['percent_identity'] >= self.identity_cutoff
+        df = df[idx]
+        df.sort_values(by='percent_identity', ascending=False, inplace=True)
 
         # Handle errors
         with child_proc.stderr as child_err_handle:
@@ -572,18 +586,25 @@ class ProteinBLAST(object):
                 sin.writelines(pdb_ids)
 
             # Write dbcmd's output into the PDB ID text file
+            converted_pdb_ids = set()
             with sproc.stdout as sout:
-                pdb_id_file.write(sout.read())
+                for curr_id in sout:
+                    if curr_id not in converted_pdb_ids:
+                        converted_pdb_ids.add(curr_id)
+                        pdb_id_file.write(curr_id)
 
+            skipped_ids = set()
             with sproc.stderr as serr:
-                err = serr.read().strip()
                 # Only warn on errors, since it's possible some of the IDs
                 # don't exist in the blast database and it's safe to ignore.
-                if len(err) > 0:
+                for err in serr:
                     if 'Skipped' in err:
-                        LOGGER.warning(err)
+                        skipped_ids.add(err.split()[-1])
                     else:
                         raise ValueError(f'blastdbcmd: {err}')
+            if skipped_ids:
+                logging.warning(f'blastdbcmd skipped {len(skipped_ids)} IDs '
+                                f'for alias DB {alias_name}: {skipped_ids}')
 
         # Now we run the blastdb_aliastool to create a db alias which only
         # contains the given PDB IDs.
