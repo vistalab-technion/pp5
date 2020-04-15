@@ -332,7 +332,24 @@ class ProteinBLAST(object):
                  max_alignments=None,
                  db_name: str = BLAST_DB_NAME,
                  db_dir: Path = pp5.BLASTDB_DIR,
+                 db_autoupdate_days=None,
                  ):
+        """
+        Initializes a ProteinBLAST instance. This instance is meant to be
+        used for multiple BLAST queries with the same parameters and against a
+        single DB.
+        :param evalue_cutoff: Maximal expectation value allows for matches.
+        :param matrix_name: Name of scoring matrix.
+        :param max_alignments: Maximum number of alignments to return. None
+        means no limit.
+        :param db_name: Name of database (no file extension). Can be an alias.
+        :param db_dir: Database folder. If the base PDB BLAST database is
+        not found in this folder, it will be downloaded automatically.
+        :param db_autoupdate_days: Automatically download a new base BLAST
+        DB if the local one exists but is out of date by this number of days
+        compared to the latest remote version. None means don't check whether
+        local is out of date.
+        """
 
         if evalue_cutoff <= 0:
             raise ValueError(f'Invalid evalue cutoff: {evalue_cutoff}, '
@@ -341,6 +358,20 @@ class ProteinBLAST(object):
         if matrix_name not in self.BLAST_MATRIX_NAMES:
             raise ValueError(f'Invalid matrix name {matrix_name}, must be '
                              f'one of {self.BLAST_MATRIX_NAMES}.')
+
+        # Check that the base database was downloaded (we expect that the
+        # archive is not deleted after download)
+        if not db_dir.joinpath(self.BLAST_FTP_DB_FILENAME).is_file():
+            LOGGER.info(f'Local BLAST DB {self.BLAST_DB_NAME} not found, '
+                        f'downloading...')
+            self.blastdb_download(blastdb_dir=db_dir)
+        elif db_autoupdate_days is not None:
+            delta_days = self.blastdb_remote_timedelta(blastdb_dir=db_dir).days
+            if delta_days > db_autoupdate_days:
+                LOGGER.info(f'Local BLAST DB {self.BLAST_DB_NAME} is out of '
+                            f'date by {timedelta.days} days compared to '
+                            f'latest version, downloading...')
+                self.blastdb_download(blastdb_dir=db_dir)
 
         self.evalue_cutoff = evalue_cutoff
         self.matrix_name = matrix_name
