@@ -359,7 +359,7 @@ class ProteinBLAST(object):
             raise ValueError(f'Invalid evalue cutoff: {evalue_cutoff}, '
                              f'must be >= 0.')
 
-        if not 0 <= evalue_cutoff < 100:
+        if not 0 <= identity_cutoff < 100:
             raise ValueError(f'Invalid identity cutoff: {identity_cutoff}, '
                              f'must be in [0,100).')
 
