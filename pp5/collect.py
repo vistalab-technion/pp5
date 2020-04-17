@@ -163,6 +163,7 @@ class ProteinGroupCollector(ParallelDataCollector):
     def __init__(self,
                  resolution: float,
                  expr_sys: str = ProteinGroup.DEFAULT_EXPR_SYS,
+                 evalue_cutoff: float = 1., identity_cutoff: float = 30,
                  collected_out_dir=pp5.out_subdir('pgroup-collected'),
                  pgroup_out_dir=pp5.out_subdir('pgroup'), out_tag: str = None,
                  ref_file: Path = None, async_timeout: float = 3600,
@@ -172,6 +173,11 @@ class ProteinGroupCollector(ParallelDataCollector):
         results.
         :param resolution: Resolution cutoff value in Angstorms.
         :param expr_sys: Expression system name.
+        :param evalue_cutoff: Maximal expectation value allowed for BLAST
+        matches when searching for proteins to include in pgroups.
+        :param identity_cutoff: Minimal percent sequence identity
+        allowed for BLAST matches when searching for proteins to include in
+        pgroups.
         :param collected_out_dir: Output directory for collection CSV files.
         :param pgroup_out_dir: Output directory for pgroup CSV files.
         :param out_tag: Extra tag to add to the output file names.
@@ -187,6 +193,8 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.res_query = pdb.PDBResolutionQuery(max_res=resolution)
         self.expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys=expr_sys)
         self.query = pdb.PDBCompositeQuery(self.res_query, self.expr_sys_query)
+        self.evalue_cutoff = evalue_cutoff
+        self.identity_cutoff = identity_cutoff
         self.collected_out_dir = collected_out_dir
         self.pgroup_out_dir = pgroup_out_dir
         self.out_tag = out_tag
@@ -280,7 +288,10 @@ class ProteinGroupCollector(ParallelDataCollector):
         all_pdb_ids = self.df_all['pdb_id']
         alias_name = f'pgc-{self.out_tag}'
         blast_db = ProteinBLAST.create_db_subset_alias(all_pdb_ids, alias_name)
-        blast = ProteinBLAST(db_name=blast_db)
+        blast = ProteinBLAST(db_name=blast_db,
+                             evalue_cutoff=self.evalue_cutoff,
+                             identity_cutoff=self.identity_cutoff,
+                             db_autoupdate_days=7)
 
         LOGGER.info(f'Creating ProteinGroup for each reference...')
         ref_pdb_ids = self.df_ref['ref_pdb_id'].values
