@@ -552,8 +552,14 @@ class ProteinBLAST(object):
         :param source_name: Name of source database.
         :param blastdb_dir: Directory of local BLAST database.
         :return: Name of generated database (relative to the blastdb_dir),
-        which can be used as the dbb_name of a new ProteinBLAST instance.
+        which can be used as the db_name of a new ProteinBLAST instance.
         """
+
+        # Check that the base database was downloaded.
+        if not blastdb_dir.joinpath(cls.BLAST_FTP_DB_FILENAME).is_file():
+            LOGGER.info(f'Local BLAST DB {cls.BLAST_DB_NAME} not found, '
+                        f'downloading...')
+            cls.blastdb_download(blastdb_dir=blastdb_dir)
 
         aliases_dir = blastdb_dir.joinpath('aliases')
         source_rel_alias = Path('..').joinpath(source_name)
