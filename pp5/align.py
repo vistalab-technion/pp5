@@ -464,6 +464,10 @@ class ProteinBLAST(object):
             if err:
                 raise ValueError(f'BLAST error: {err}')
 
+        # Wait to prevent zombificaition: should return immediately
+        # TODO: Maybe use Popen.communicate instead of this and the above.
+        child_proc.wait(timeout=5)
+
         return df
 
     @classmethod
@@ -611,6 +615,9 @@ class ProteinBLAST(object):
             if skipped_ids:
                 logging.warning(f'blastdbcmd skipped {len(skipped_ids)} IDs '
                                 f'for alias DB {alias_name}: {skipped_ids}')
+
+            # It already compleated, perform wait to reap the process
+            sproc.wait(timeout=5)
 
         # Now we run the blastdb_aliastool to create a db alias which only
         # contains the given PDB IDs.
