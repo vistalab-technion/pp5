@@ -2,6 +2,7 @@ import abc
 import logging
 import multiprocessing as mp
 import time
+import socket
 from multiprocessing.pool import AsyncResult
 from pathlib import Path
 from typing import Callable, Any, Optional, List, Iterable
@@ -21,6 +22,12 @@ LOGGER = logging.getLogger(__name__)
 class ParallelDataCollector(abc.ABC):
     def __init__(self, async_timeout: float = None):
         self.async_timeout = async_timeout
+        hostname = socket.gethostname()
+        if hostname:
+            hostname = hostname.split(".")[0].strip()
+        else:
+            hostname = 'localhost'
+        self.timestamp = time.strftime(f'{hostname}_%Y-%m-%d_%H-%M-%S')
 
     def collect(self):
         start_time = time.time()
@@ -198,7 +205,6 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.collected_out_dir = collected_out_dir
         self.pgroup_out_dir = pgroup_out_dir
         self.out_tag = out_tag
-        self.timestamp = time.strftime('%Y-%m-%d_%H-%M-%S')
 
         if ref_file is None:
             self.df_ref = None  # Collected reference structures
