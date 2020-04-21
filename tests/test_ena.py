@@ -18,5 +18,5 @@ class TestENA:
 
     def test_ena_non_existing(self):
         with pytest.raises(IOError):
-            test_enaid = 'OOC18122.1'
+            test_enaid = 'ABC12345.1'
             seq = ena.ena_seq(test_enaid)
