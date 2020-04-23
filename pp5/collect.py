@@ -5,7 +5,7 @@ import time
 import socket
 from multiprocessing.pool import AsyncResult
 from pathlib import Path
-from typing import Callable, Any, Optional, List, Iterable
+from typing import Callable, Any, Optional, List, Iterable, NamedTuple
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -15,8 +15,21 @@ import pp5.parallel
 from pp5.external_dbs import pdb, unp
 from pp5.protein import ProteinRecord, ProteinInitError, ProteinGroup
 from pp5.align import ProteinBLAST
+from pp5.utils import elapsed_seconds_to_dhms
 
 LOGGER = logging.getLogger(__name__)
+
+
+class CollectorStep(NamedTuple):
+    name: str
+    elapsed: str
+    result: str
+    message: str
+
+    def __repr__(self):
+        return f'CollectorStep {self.name} completed in {self.elapsed} ' \
+               f'result={self.result}' \
+               f'{f": {self.message}" if self.message else ""}'
 
 
 class ParallelDataCollector(abc.ABC):
@@ -31,21 +44,35 @@ class ParallelDataCollector(abc.ABC):
 
     def collect(self):
         start_time = time.time()
+        collection_steps = []
 
         for collect_function in self._collection_functions():
+            step_name = collect_function.__name__
+            step_start_time = time.time()
+
             with pp5.parallel.global_pool() as pool:
                 try:
                     collect_function(pool)
+                    step_status = 'SUCCESS'
+                    step_message = None
                 except Exception as e:
                     LOGGER.error(f"Unexpected exception in top-level "
                                  f"collect", exc_info=e)
+                    step_status = 'FAIL'
+                    step_message = f'{e}'
+                finally:
+                    step_elapsed = time.time() - step_start_time
+                    step_elapsed = elapsed_seconds_to_dhms(step_elapsed)
+                    collection_steps.append(CollectorStep(
+                        step_name, step_elapsed, step_status, step_message
+                    ))
 
         end_time = time.time()
-        dt = datetime(1, 1, 1) + timedelta(seconds=end_time - start_time)
-        time_str = "%02d:%02d:%02d:%02d" % (dt.day - 1, dt.hour, dt.minute,
-                                            dt.second)
+        time_str = elapsed_seconds_to_dhms(end_time - start_time)
 
         LOGGER.info(f'Completed collection for {self} in {time_str}')
+        for step in collection_steps:
+            LOGGER.info(step)
 
     def _handle_async_results(self, async_results: List[AsyncResult],
                               collect=False, flatten=False,
@@ -324,6 +351,9 @@ class ProteinGroupCollector(ParallelDataCollector):
                         comment="Collected ProteinGroups")
 
         # TODO: Delete the created BLAST DB alias?
+
+    def _collect_samples(self, pool: mp.Pool):
+        pass
 
     def _write_csv(self, df: pd.DataFrame, csv_type: str,
                    comment: str = None, include_query=True):

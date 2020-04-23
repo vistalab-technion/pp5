@@ -7,6 +7,7 @@ import random
 import sys
 from collections.abc import Mapping, Set, Sequence
 import contextlib
+from datetime import datetime, timedelta
 from io import UnsupportedOperation
 from pathlib import Path
 from typing import Union
@@ -222,6 +223,19 @@ def out_redirected(stdout_stderr='stdout', to=os.devnull,
             finally:
                 _redirect(to_stream=old_stdout)  # restore stdout.
                 # buffering and flags such as CLOEXEC may be different
+
+
+def elapsed_seconds_to_dhms(elapsed_sec: float):
+    """
+    Converts elapsed time in seconds to a string containing days, hours,
+    minutes, seconds.
+    :param elapsed_sec: Elapsed time to convert, in seconds.
+    :return: A string.
+    """
+    dt = datetime(1, 1, 1) + timedelta(seconds=elapsed_sec)
+    d, h, m, s = dt.day - 1, dt.hour, dt.minute, dt.second
+
+    return f'{d:02d}+{h:02d}:{m:02d}:{s:02d}'
 
 
 class JSONCacheableMixin(object):
