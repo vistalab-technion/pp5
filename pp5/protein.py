@@ -1188,7 +1188,7 @@ class ProteinGroup(object):
         return df
 
     def to_csv(self, out_dir=pp5.out_subdir('pgroup'), types=('all',),
-               tag=None):
+               tag=None) -> Dict[str, Path]:
         """
         Writes one or more CSV files describing this protein group.
         :param out_dir: Output directory.
@@ -1198,7 +1198,8 @@ class ProteinGroup(object):
         residues - write the per-residue alignment data
         groups - write the per-residue grouped alignment data
         :param tag: Optional tag to add to the output filenames.
-        :return: A list of file paths written.
+        :return: A dict from type to the path of the file written.
+        Keys can be one of the types specified above.
         """
 
         df_funcs = {'structs': self.to_struct_dataframe,
@@ -1212,7 +1213,7 @@ class ProteinGroup(object):
         if not types or types[0] == 'all':
             types = df_funcs.keys()
 
-        filepaths = []
+        filepaths = {}
         for csv_type in types:
             df_func = df_funcs.get(csv_type)
             if not df_func:
@@ -1227,9 +1228,9 @@ class ProteinGroup(object):
             df.to_csv(filepath, na_rep='', header=True, index=True,
                       encoding='utf-8', float_format='%.3f')
 
-            filepaths.append(filepath)
+            filepaths[csv_type] = filepath
 
-        LOGGER.info(f'Wrote {self} to {list(map(str, filepaths))}')
+        LOGGER.info(f'Wrote {self} to {list(map(str, filepaths.values()))}')
         return filepaths
 
     def _align_query_residues_to_ref(self, q_pdb_id: str) \
