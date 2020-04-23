@@ -1,5 +1,6 @@
 import abc
 import logging
+import math
 import multiprocessing as mp
 import time
 import socket
@@ -13,6 +14,7 @@ import pandas as pd
 import pp5
 import pp5.parallel
 from pp5.external_dbs import pdb, unp
+from pp5.external_dbs.pdb import DSSP_TO_SS_TYPE
 from pp5.protein import ProteinRecord, ProteinInitError, ProteinGroup
 from pp5.align import ProteinBLAST
 from pp5.utils import elapsed_seconds_to_dhms
@@ -244,7 +246,7 @@ class ProteinGroupCollector(ParallelDataCollector):
                                  f"both collection files must exist:"
                                  f"{all_file}, {ref_file}")
 
-            read_csv_args = dict(comment='#', index_col=0, header=0)
+            read_csv_args = dict(comment='#', index_col=None, header=0)
             self.df_all = pd.read_csv(all_file, **read_csv_args)
             self.df_ref = pd.read_csv(ref_file, **read_csv_args)
 
@@ -264,6 +266,7 @@ class ProteinGroupCollector(ParallelDataCollector):
             fns.append(self._collect_all_structures)
             fns.append(self._collect_all_refs)
         fns.append(self._collect_all_pgroups)
+        fns.append(self._collect_matches)
         return fns
 
     def _collect_all_structures(self, pool: mp.Pool):
@@ -316,7 +319,6 @@ class ProteinGroupCollector(ParallelDataCollector):
                         comment="Selected reference structures")
 
     def _collect_all_pgroups(self, pool: mp.Pool):
-
         # Create a local BLAST DB containing all collected PDB IDs.
         all_pdb_ids = self.df_all['pdb_id']
         alias_name = f'pgc-{self.out_tag}'
@@ -352,8 +354,33 @@ class ProteinGroupCollector(ParallelDataCollector):
 
         # TODO: Delete the created BLAST DB alias?
 
-    def _collect_samples(self, pool: mp.Pool):
-        pass
+    def _collect_matches(self, pool: mp.Pool):
+        pgroup_filepaths = self.df_pgroups[['ref_pdb_id', 'pgroup_filepath']]
+        LOGGER.info(f'Collecting residue-match samples from '
+                    f'{len(pgroup_filepaths)} pgroups...')
+
+        async_results = []
+        for i, (ref_pdb_id, pgroup_filepath) in \
+                enumerate(pgroup_filepaths.values):
+            idx = (i, len(pgroup_filepaths))
+            args = (ref_pdb_id, pgroup_filepath, self.pgroup_out_dir,
+                    self.out_tag, idx)
+            r = pool.apply_async(self._collect_single_pgroup_matches,
+                                 args=args)
+            async_results.append(r)
+
+        count, elapsed, match_datas = self._handle_async_results(
+            async_results, collect=True, flatten=True,
+        )
+
+        self.df_matches = pd.DataFrame(match_datas)
+        if len(self.df_matches):
+            self.df_matches.sort_values(
+                by=['type', 'ang_dist'], ascending=False,
+                inplace=True, ignore_index=True
+            )
+        self._write_csv(self.df_matches, 'matches',
+                        comment='Collected matches')
 
     def _write_csv(self, df: pd.DataFrame, csv_type: str,
                    comment: str = None, include_query=True):
@@ -366,7 +393,7 @@ class ProteinGroupCollector(ParallelDataCollector):
                 f.write(f'# {comment}\n')
             if include_query:
                 f.write(f'# query: {self.query}\n')
-            df.to_csv(f, header=True, index=True, float_format='%.2f')
+            df.to_csv(f, header=True, index=False, float_format='%.2f')
 
         LOGGER.info(f'Wrote {filepath}')
         return filepath
@@ -484,7 +511,8 @@ class ProteinGroupCollector(ParallelDataCollector):
                 ref_pdb_id, query_pdb_ids=df_blast.index,
                 parallel=False, prec_cache=True,
             )
-            pgroup.to_csv(out_dir, tag=out_tag)
+            csv_filepaths = pgroup.to_csv(out_dir, tag=out_tag)
+            pgroup_filepath = str(csv_filepaths['groups'])
         except Exception as e:
             LOGGER.error(f'Failed to create ProteinGroup from '
                          f'collected reference {ref_pdb_id}: {e}')
@@ -498,4 +526,64 @@ class ProteinGroupCollector(ParallelDataCollector):
             n_pdb_ids=pgroup.num_query_structs,
             n_total_matches=pgroup.num_matches,
             **match_counts,
+            pgroup_filepath=pgroup_filepath
         )
+
+    @staticmethod
+    def _collect_single_pgroup_matches(ref_pdb_id, pgroup_filepath,
+                                       pgroup_out_dir, out_tag, idx) \
+            -> Optional[List[dict]]:
+        LOGGER.info(f'Collecting residue matches from ProteinGroup'
+                    f' {ref_pdb_id} '
+                    f'({idx[0] + 1}/{idx[1]})')
+
+        # Load match-groups from pgroup file and process them according to
+        # the reference match index.
+        df = pd.read_csv(pgroup_filepath, comment='#', na_filter=False)
+        df_groups = df.groupby('ref_idx')
+
+        matches = []
+        for ref_idx, df_group in df_groups:
+            if len(df_group) == 1:
+                # This is a variant-only group, nothing to see here...
+                continue
+
+            # Find the variant match group
+            variant_idx = df_group.type == 'VARIANT'
+            var_match = df_group[variant_idx].squeeze()
+            ref_codon = var_match.codon
+            ref_phi_std = var_match.phi_std if var_match.phi_std else 0
+            ref_psi_std = var_match.psi_std if var_match.psi_std else 0
+
+            # Iterate over the other match groups and save them
+            other_matches = df_group[~variant_idx]
+            for _, other_match in other_matches.iterrows():
+                # Calculate angle distance normalization factor
+                phi_std = other_match.phi_std if other_match.phi_std else 0
+                psi_std = other_match.psi_std if other_match.psi_std else 0
+                norm_factor = math.sqrt(
+                    (float(ref_phi_std) + float(phi_std)) ** 2 +
+                    (float(ref_psi_std) + float(psi_std)) ** 2
+                )
+
+                # If secondary structure was the same for all residues in
+                # the match group, use it
+                ss = {DSSP_TO_SS_TYPE.get(s)
+                      for s in other_match.secondary.split('/')}
+                if len(ss) == 1:
+                    secondary = ss.pop()
+                else:
+                    secondary = None
+
+                matches.append({
+                    'ref_idx': ref_idx,
+                    'ref_codon': ref_codon,
+                    'codon': other_match.codon,
+                    'secondary': secondary,
+                    'group_size': other_match.group_size,
+                    'type': other_match.type,
+                    'ang_dist': other_match.ang_dist,
+                    'ang_norm_factor': norm_factor,
+                })
+
+        return matches
