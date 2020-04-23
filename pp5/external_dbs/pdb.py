@@ -35,6 +35,14 @@ PDB_ID_PATTERN = re.compile(r'^(?P<id>[0-9][\w]{3})(?::(?:'
 
 STANDARD_ACID_NAMES = set(standard_aa_names)
 
+DSSP_TO_SS_TYPE = {
+    'E': 'SHEET',
+    'H': 'HELIX',
+    'G': 'HELIX',
+    'I': 'HELIX',
+    'T': 'TURN'
+}
+
 PDB_SEARCH_URL = 'https://www.rcsb.org/pdb/rest/search'
 PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
 PDB_TO_UNP_URL_TEMPLATE = r"https://www.rcsb.org/pdb/rest/customReport" \
@@ -139,7 +147,7 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
      I        Pi helix
      T        Turn
      S        Bend
-     -       None
+     -        None
     :param pdb_id: The PDB id of the structure.
     :param pdb_dir: Directory to download PDB file to.
     :return: A tuple of
@@ -692,7 +700,7 @@ class PDBQuery(abc.ABC):
         LOGGER.info(f'Executing PDB query: {self.description()}')
         try:
             # Use many retries as this is an unreliable API
-            with requests_retry(retries=10, backoff=0.2).\
+            with requests_retry(retries=10, backoff=0.2). \
                     post(PDB_SEARCH_URL, query, headers=header) as response:
                 response.raise_for_status()
                 pdb_ids = response.text.split()
