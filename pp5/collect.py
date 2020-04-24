@@ -4,6 +4,7 @@ import math
 import multiprocessing as mp
 import time
 import socket
+import zipfile
 from multiprocessing.pool import AsyncResult
 from pathlib import Path
 from typing import Callable, Any, Optional, List, Iterable, NamedTuple
@@ -234,10 +235,15 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.collected_out_dir = collected_out_dir
         self.pgroup_out_dir = pgroup_out_dir
         self.out_tag = out_tag
+        self.out_filepaths: List[Path] = []
+        self.df_ref = None  # Collected reference structures
+        self.df_all = None  # Stats per structure
+        self.df_pgroups = None  # Stats for each pgroup
+        self.df_matches = None  # Matches from all pgroups
 
         if ref_file is None:
-            self.df_ref = None  # Collected reference structures
-            self.df_all = None  # Stats per structure
+            self._all_file = None
+            self._ref_file = None
         else:
             all_file = Path(str(ref_file).replace('ref', 'all', 1))
             ref_file = Path(ref_file)
@@ -246,77 +252,93 @@ class ProteinGroupCollector(ParallelDataCollector):
                                  f"both collection files must exist:"
                                  f"{all_file}, {ref_file}")
 
-            read_csv_args = dict(comment='#', index_col=None, header=0)
-            self.df_all = pd.read_csv(all_file, **read_csv_args)
-            self.df_ref = pd.read_csv(ref_file, **read_csv_args)
-
-        # Stats for each pgroup
-        self.df_pgroups = None
+            # Save path to skip first two collection steps
+            self._all_file = all_file
+            self._ref_file = ref_file
 
     def __repr__(self):
         return f'{self.__class__.__name__} timestamp={self.timestamp}, ' \
                f'tag={self.out_tag}, query={self.query}'
 
     def _collection_functions(self) -> List[Callable[[mp.pool.Pool], Any]]:
-        fns = []
-
-        # If we were not initialized with a reference file, we add the first
-        # two steps. Otherwise we skip them.
-        if self.df_ref is None:
-            fns.append(self._collect_all_structures)
-            fns.append(self._collect_all_refs)
-        fns.append(self._collect_all_pgroups)
-        fns.append(self._collect_matches)
-        return fns
+        return [
+            self._collect_all_structures,
+            self._collect_all_refs,
+            self._collect_all_pgroups,
+            self._collect_matches,
+            self._zip_results
+        ]
 
     def _collect_all_structures(self, pool: mp.Pool):
-        # Execute PDB query to get a list of PDB IDs
-        pdb_ids = self.query.execute()
-        n_structs = len(pdb_ids)
-        LOGGER.info(f"Got {n_structs} structure ids from PDB, collecting...")
 
-        async_results = []
-        for i, pdb_id in enumerate(pdb_ids):
-            args = (pdb_id, (i, n_structs))
-            r = pool.apply_async(self._collect_single_structure, args=args)
-            async_results.append(r)
+        if self._all_file:
+            LOGGER.info(f'Skipping all-structure collection step: '
+                        f'loading {self._all_file}')
+            read_csv_args = dict(comment='#', index_col=None, header=0)
+            self.df_all = pd.read_csv(self._all_file, **read_csv_args)
+        else:
+            # Execute PDB query to get a list of PDB IDs
+            pdb_ids = self.query.execute()
+            n_structs = len(pdb_ids)
+            LOGGER.info(
+                f"Got {n_structs} structure ids from PDB, collecting...")
 
-        count, elapsed, pdb_id_data = self._handle_async_results(
-            async_results, collect=True, flatten=True,
-        )
+            async_results = []
+            for i, pdb_id in enumerate(pdb_ids):
+                args = (pdb_id, (i, n_structs))
+                r = pool.apply_async(self._collect_single_structure, args=args)
+                async_results.append(r)
 
-        # Create a dataframe from the collected data
-        self.df_all = pd.DataFrame(pdb_id_data)
-        if len(self.df_all):
-            self.df_all.sort_values(by=['unp_id', 'resolution'], inplace=True,
-                                    ignore_index=True)
-        self._write_csv(self.df_all, 'all',
-                        comment="Structures for reference selection")
+            count, elapsed, pdb_id_data = self._handle_async_results(
+                async_results, collect=True, flatten=True,
+            )
+
+            # Create a dataframe from the collected data
+            self.df_all = pd.DataFrame(pdb_id_data)
+            if len(self.df_all):
+                self.df_all.sort_values(
+                    by=['unp_id', 'resolution'], inplace=True,
+                    ignore_index=True
+                )
+
+        comment = "Structures for reference selection"
+        filepath = self._write_csv(self.df_all, 'all', comment=comment)
+        self.out_filepaths.append(filepath)
 
     def _collect_all_refs(self, pool: mp.Pool):
-        # Find reference structure
-        LOGGER.info(f'Finding reference structures...')
-        groups = self.df_all.groupby('unp_id')
 
-        async_results = []
-        for unp_id, df_group in groups:
-            args = (unp_id, df_group)
-            r = pool.apply_async(self._collect_single_ref, args=args)
-            async_results.append(r)
+        if self._ref_file:
+            LOGGER.info(f'Skipping reference-structure collection step: '
+                        f'loading {self._ref_file}')
+            read_csv_args = dict(comment='#', index_col=None, header=0)
+            self.df_ref = pd.read_csv(self._ref_file, **read_csv_args)
+        else:
+            # Find reference structure
+            LOGGER.info(f'Finding reference structures...')
+            groups = self.df_all.groupby('unp_id')
 
-        count, elapsed, group_datas = self._handle_async_results(
-            async_results, collect=True,
-        )
-        group_datas = filter(None, group_datas)
+            async_results = []
+            for unp_id, df_group in groups:
+                args = (unp_id, df_group)
+                r = pool.apply_async(self._collect_single_ref, args=args)
+                async_results.append(r)
 
-        self.df_ref = pd.DataFrame(group_datas)
-        if len(self.df_ref):
-            self.df_ref.sort_values(
-                by=['group_size', 'group_median_res'], ascending=[False, True],
-                inplace=True, ignore_index=True
+            count, elapsed, group_datas = self._handle_async_results(
+                async_results, collect=True,
             )
-        self._write_csv(self.df_ref, 'ref',
-                        comment="Selected reference structures")
+            group_datas = filter(None, group_datas)
+
+            self.df_ref = pd.DataFrame(group_datas)
+            if len(self.df_ref):
+                self.df_ref.sort_values(
+                    by=['group_size', 'group_median_res'],
+                    ascending=[False, True],
+                    inplace=True, ignore_index=True
+                )
+
+        comment = "Selected reference structures"
+        filepath = self._write_csv(self.df_ref, 'ref', comment=comment)
+        self.out_filepaths.append(filepath)
 
     def _collect_all_pgroups(self, pool: mp.Pool):
         # Create a local BLAST DB containing all collected PDB IDs.
@@ -349,10 +371,10 @@ class ProteinGroupCollector(ParallelDataCollector):
                 by=['n_unp_ids', 'n_total_matches'], ascending=False,
                 inplace=True, ignore_index=True
             )
-        self._write_csv(self.df_pgroups, 'pgroups',
-                        comment="Collected ProteinGroups")
 
-        # TODO: Delete the created BLAST DB alias?
+        comment = "Collected ProteinGroups"
+        filepath = self._write_csv(self.df_pgroups, 'pgroups', comment=comment)
+        self.out_filepaths.append(filepath)
 
     def _collect_matches(self, pool: mp.Pool):
         pgroup_filepaths = self.df_pgroups[['ref_pdb_id', 'pgroup_filepath']]
@@ -379,11 +401,29 @@ class ProteinGroupCollector(ParallelDataCollector):
                 by=['type', 'ang_dist'], ascending=False,
                 inplace=True, ignore_index=True
             )
-        self._write_csv(self.df_matches, 'matches',
-                        comment='Collected matches')
+
+        comment = 'Collected matches'
+        filepath = self._write_csv(self.df_matches, 'matches', comment=comment)
+        self.out_filepaths.append(filepath)
+
+    def _zip_results(self, pool: mp.Pool):
+        tag = f'-{self.out_tag}' if self.out_tag else ''
+        zip_filename = Path(f'pgc-{self.timestamp}{tag}.zip')
+        zip_filepath = self.collected_out_dir.joinpath(zip_filename)
+
+        with zipfile.ZipFile(
+                zip_filepath, 'w', compression=zipfile.ZIP_DEFLATED,
+                compresslevel=9
+        ) as z:
+            for out_filepath in self.out_filepaths:
+                LOGGER.info(f'Compressing {out_filepath}')
+                arcpath = f'{zip_filename.stem}/{out_filepath.name}'
+                z.write(str(out_filepath), arcpath)
+
+        LOGGER.info(f'Wrote archive {zip_filepath}')
 
     def _write_csv(self, df: pd.DataFrame, csv_type: str,
-                   comment: str = None, include_query=True):
+                   comment: str = None, include_query=True) -> Path:
         tag = f'-{self.out_tag}' if self.out_tag else ''
         filename = f'pgc-{self.timestamp}-{csv_type}{tag}.csv'
         filepath = self.collected_out_dir.joinpath(filename)
