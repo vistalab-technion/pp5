@@ -362,6 +362,9 @@ class ProteinRecord(object):
             self._pdb_dict = pdb_dict
 
         self.pdb_meta = pdb.PDBMetadata(self.pdb_id, struct_d=self.pdb_dict)
+        if not self.pdb_meta.resolution:
+            raise ProteinInitError(f'Unknown resolution for {pdb_id}')
+
         LOGGER.info(
             f'{self}: {self.pdb_meta.description}, '
             f'org={self.pdb_meta.src_org} ({self.pdb_meta.src_org_id}), '
