@@ -310,10 +310,11 @@ class PDB2UNP(JSONCacheableMixin, object):
         url_pdb_id = pdb_id.replace(":", ".")
         url = PDB_TO_UNP_URL_TEMPLATE.format(url_pdb_id)
         try:
-            with requests_retry().get(url, stream=True) as r:
+            headers = {'Accept-Encoding': 'identity'}
+            with requests_retry().get(url, stream=True, headers=headers) as r:
                 r.raise_for_status()
                 df = pd.read_csv(r.raw, header=0, na_filter=False, dtype=str)
-        except requests.RequestException as e:
+        except (requests.RequestException, ValueError) as e:
             raise ValueError(
                 f"Failed to run PDB custom query with {pdb_id} for "
                 f"Uniprot IDs: {e.__class__.__name__}={e}") from None
@@ -470,18 +471,18 @@ class PDBMetadata(object):
         pdb_id, chain_id = split_id(pdb_id)
         struct_d = pdb_dict(pdb_id, struct_d=struct_d)
 
-        def _meta(key: str, convert_to: Type = str):
+        def _meta(key: str, convert_to: Type = str, default=None):
             val = struct_d.get(key, None)
             if not val:
-                return None
+                return default
             if isinstance(val, list):
                 val = val[0]
             if not val or val == '?':
-                return None
+                return default
             try:
                 return convert_to(val)
             except ValueError:
-                return None
+                return default
 
         title = _meta('_struct.title')
         description = _meta('_entity.pdbx_description')
