@@ -542,6 +542,8 @@ class ProteinGroupCollector(ParallelDataCollector):
         df = pd.read_csv(pgroup_filepath, comment='#', na_filter=False)
         df_groups = df.groupby('ref_idx')
 
+        ref_seq_len = df['ref_idx'].max()
+
         matches = []
         for ref_idx, df_group in df_groups:
             if len(df_group) == 1:
@@ -552,38 +554,50 @@ class ProteinGroupCollector(ParallelDataCollector):
             variant_idx = df_group.type == 'VARIANT'
             var_match = df_group[variant_idx].squeeze()
             ref_codon = var_match.codon
-            ref_phi_std = var_match.phi_std if var_match.phi_std else 0
-            ref_psi_std = var_match.psi_std if var_match.psi_std else 0
+            ref_codon_opts = var_match.codon_opts
+            ref_group_size = var_match.group_size
+            ref_phi = var_match.phi
+            ref_psi = var_match.psi
+            ref_phi_std = var_match.phi_std if var_match.phi_std else 0.
+            ref_psi_std = var_match.psi_std if var_match.psi_std else 0.
+            ref_norm_factor = math.sqrt(
+                float(ref_phi_std) ** 2 + float(ref_psi_std) ** 2
+            )
 
             # Iterate over the other match groups and save them
             other_matches = df_group[~variant_idx]
             for _, other_match in other_matches.iterrows():
                 # Calculate angle distance normalization factor
-                phi_std = other_match.phi_std if other_match.phi_std else 0
-                psi_std = other_match.psi_std if other_match.psi_std else 0
+                phi_std = other_match.phi_std if other_match.phi_std else 0.
+                psi_std = other_match.psi_std if other_match.psi_std else 0.
                 norm_factor = math.sqrt(
-                    (float(ref_phi_std) + float(phi_std)) ** 2 +
-                    (float(ref_psi_std) + float(psi_std)) ** 2
+                    float(phi_std) ** 2 + float(psi_std) ** 2
                 )
 
-                # If secondary structure was the same for all residues in
-                # the match group, use it
-                ss = {DSSP_TO_SS_TYPE.get(s)
-                      for s in other_match.secondary.split('/')}
-                if len(ss) == 1:
-                    secondary = ss.pop()
-                else:
-                    secondary = None
-
                 matches.append({
+                    'ref_pdb_id': ref_pdb_id,
                     'ref_idx': ref_idx,
+                    'ref_seq_len': ref_seq_len,
+                    'ref_group_size': ref_group_size,
                     'ref_codon': ref_codon,
+                    'ref_codon_opts': ref_codon_opts,
+                    'ref_phi': ref_phi,
+                    'ref_psi': ref_psi,
+                    'ref_phi_std': ref_phi_std,
+                    'ref_psi_std': ref_psi_std,
+                    'ref_norm_factor': ref_norm_factor,
+
                     'codon': other_match.codon,
-                    'secondary': secondary,
+                    'codon_opts': other_match.codon_opts,
+                    'secondary': other_match.secondary,
                     'group_size': other_match.group_size,
                     'type': other_match.type,
                     'ang_dist': other_match.ang_dist,
-                    'ang_norm_factor': norm_factor,
+                    'phi': other_match.phi,
+                    'psi': other_match.psi,
+                    'phi_std': phi_std,
+                    'psi_std': psi_std,
+                    'norm_factor': norm_factor,
                 })
 
         return matches
