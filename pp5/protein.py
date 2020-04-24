@@ -1236,9 +1236,20 @@ class ProteinGroup(object):
         LOGGER.info(f'Wrote {self} to {list(map(str, filepaths.values()))}')
         return filepaths
 
-    def _align_query_residues_to_ref(self, q_pdb_id: str) \
-            -> Optional[Tuple[ProteinRecord, StructuralAlignment,
-                              Dict[int, Dict[str, ResidueMatch]]]]:
+    def _align_query_residues_to_ref(self, q_pdb_id: str):
+        try:
+            return self._align_query_residues_to_ref_inner(q_pdb_id)
+        except Exception as e:
+            LOGGER.error(f"Failed to align pgroup reference "
+                         f"{self.ref_pdb_id} to query {q_pdb_id}: "
+                         f"{e.__class__.__name__}: {e}", exc_info=e)
+            return None
+
+    def _align_query_residues_to_ref_inner(
+            self, q_pdb_id: str
+    ) -> Optional[Tuple[ProteinRecord, StructuralAlignment,
+                        Dict[int, Dict[str, ResidueMatch]]]
+    ]:
         try:
             q_prec = ProteinRecord.from_pdb(
                 q_pdb_id, cache=self.prec_cache,
