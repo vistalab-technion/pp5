@@ -1318,8 +1318,13 @@ class ProteinGroup(object):
             # Now we need to convert i into the index in the prec of each
             # structure
             r_idx_pymol, q_idx_pymol = stars_to_pymol_idx[i]
-            r_idx_prec = r_pymol_to_prec[r_idx_pymol]
-            q_idx_prec = q_pymol_to_prec[q_idx_pymol]
+            r_idx_prec = r_pymol_to_prec.get(r_idx_pymol)
+            q_idx_prec = q_pymol_to_prec.get(q_idx_pymol)
+
+            # The pymol seq index might be inside a gap in the alignment
+            # between pymol and prec seq. Skip these gaps.
+            if r_idx_prec is None or q_idx_prec is None:
+                continue
 
             # Get the matching residues, make sure they are usable
             r_res, q_res = self.ref_prec[r_idx_prec], q_prec[q_idx_prec]
@@ -1391,9 +1396,14 @@ class ProteinGroup(object):
 
         sa_r_seq = StructuralAlignment.ungap(pymol_seq)
 
+        # Align prec and pymol sequences
         aligner = PairwiseAligner(substitution_matrix=BLOSUM80,
                                   open_gap_score=-10, extend_gap_score=-0.5)
-        rr_alignment = aligner.align(prec.protein_seq, sa_r_seq)[0]
+        rr_alignments = aligner.align(prec.protein_seq, sa_r_seq)
+
+        # Take the alignment with shortest path (fewer gap openings)
+        rr_alignments = sorted(rr_alignments, key=lambda a: len(a.path))
+        rr_alignment = rr_alignments[0]
         rr_idx_prec, rr_idx_pymol = rr_alignment.aligned
         assert len(rr_idx_prec) == len(rr_idx_pymol)
 
@@ -1403,7 +1413,8 @@ class ProteinGroup(object):
             prec_start, prec_end = rr_idx_prec[j]
             pymol_start, pymol_end = rr_idx_pymol[j]
             pymol_to_prec.update(zip(
-                range(pymol_start, pymol_end), range(prec_start, prec_end)
+                range(pymol_start, pymol_end + 1),
+                range(prec_start, prec_end + 1)
             ))
 
         return pymol_to_prec
