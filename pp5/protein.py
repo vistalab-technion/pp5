@@ -525,7 +525,12 @@ class ProteinRecord(object):
         if not self._pp:
             chain = self.pdb_rec[0][self.pdb_chain_id]
             pp_chains = PPBuilder().build_peptides(chain, aa_only=True)
+
+            # Sort chain by sequence ID of first residue in the chain,
+            # in case the chains are not returned in order.
+            pp_chains = sorted(pp_chains, key=lambda ch: ch[0].get_id()[1])
             self._pp = pp_chains
+
         return self._pp
 
     def to_dataframe(self):
