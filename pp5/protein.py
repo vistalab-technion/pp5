@@ -1095,8 +1095,12 @@ class ProteinGroup(object):
                 counts[match.type.name] += 1
         return counts
 
-    def to_pairwise_dataframe(self):
+    def to_pairwise_dataframe(self, with_ref_id=False):
         """
+        :param with_ref_id: Whether to include a column with the reference
+        structure ids (pdb and unp). This is generally redundant as it will
+        have the same value for all rows. However may be useful when
+        creating multiple pairwise dataframes from different pgroups.
         :return: A dataframe containing the aligned residue match groups (i.e.,
         grouped by Uniprot ID and codon), but compared to the VARIANT group at
         that reference index.
@@ -1109,6 +1113,11 @@ class ProteinGroup(object):
         """
         df_index = []
         df_data = []
+
+        ref_data_base = {}
+        if with_ref_id:
+            ref_data_base['ref_pdb_id'] = self.ref_pdb_id
+            ref_data_base['ref_unp_id'] = self.ref_prec.unp_id
 
         for ref_idx, grouped_matches in self.ref_groups.items():
             grouped_matches: List[ResidueMatchGroup]
@@ -1136,15 +1145,15 @@ class ProteinGroup(object):
                 ref_group.angles.psi_std_deg ** 2
             )
 
-            ref_data = {
-                'ref_unp_id': ref_group.unp_id,
+            ref_data = ref_data_base.copy()
+            ref_data.update({
                 'ref_codon': ref_group.codon,
                 'ref_name': ref_group.name,
                 'ref_codon_opts': str.join('/', ref_group.codon_opts),
                 'ref_secondary': str.join('/', ref_group.secondary),
                 'ref_group_size': ref_group.group_size,
                 'ref_norm_factor': ref_norm_factor,
-            }
+            })
             ref_data.update(ref_angles)
 
             for match_group in other_groups:
