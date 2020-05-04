@@ -210,7 +210,6 @@ class ProteinRecord(object):
             try:
                 with open(str(path), 'rb') as f:
                     prec = pickle.load(f)
-                    LOGGER.info(f'Loaded cached ProteinRecord: {path}')
             except Exception as e:
                 # If we can't unpickle, probably the code changed since
                 # saving this object. We'll just return None, so that a new
@@ -1096,10 +1095,92 @@ class ProteinGroup(object):
                 counts[match.type.name] += 1
         return counts
 
+    def to_pairwise_dataframe(self):
+        """
+        :return: A dataframe containing the aligned residue match groups (i.e.,
+        grouped by Uniprot ID and codon), but compared to the VARIANT group at
+        that reference index.
+        This is very similar to the 'groups' dataframe, but here each line
+        is a *pair* of ResidueMatchGroups at an index: the first is the
+        VARIANT group, and the second is another type of group (e.g. SILENT).
+
+        A crucial difference between this and the groups dataframe is that
+        this will not include residues where only a VARIANT group exists.
+        """
+        df_index = []
+        df_data = []
+
+        for ref_idx, grouped_matches in self.ref_groups.items():
+            grouped_matches: List[ResidueMatchGroup]
+
+            # Separate the VARIANT group from the others as the reference group
+            ref_group: Optional[ResidueMatchGroup] = None
+            other_groups: List[ResidueMatchGroup] = []
+            for group in grouped_matches:
+                if group.match_type == ResidueMatchType.VARIANT:
+                    ref_group = group
+                else:
+                    other_groups.append(group)
+            assert ref_group is not None
+
+            # Get angles of variant group
+            ref_angles = ref_group.angles.as_dict(
+                degrees=True, skip_omega=True, with_std=True
+            )
+            ref_angles = {
+                f'ref_{k}': v
+                for k, v in ref_angles.items()
+            }
+            ref_norm_factor = math.sqrt(
+                ref_group.angles.phi_std_deg ** 2 +
+                ref_group.angles.psi_std_deg ** 2
+            )
+
+            ref_data = {
+                'ref_unp_id': ref_group.unp_id,
+                'ref_codon': ref_group.codon,
+                'ref_name': ref_group.name,
+                'ref_codon_opts': str.join('/', ref_group.codon_opts),
+                'ref_secondary': str.join('/', ref_group.secondary),
+                'ref_group_size': ref_group.group_size,
+                'ref_norm_factor': ref_norm_factor,
+            }
+            ref_data.update(ref_angles)
+
+            for match_group in other_groups:
+                norm_factor = math.sqrt(match_group.angles.phi_std_deg ** 2 +
+                                        match_group.angles.psi_std_deg ** 2)
+
+                data = ref_data.copy()
+                data.update({
+                    'type': match_group.match_type.name,
+                    'unp_id': match_group.unp_id,
+                    'codon': match_group.codon,
+                    'name': match_group.name,
+                    'codon_opts': str.join('/', match_group.codon_opts),
+                    'secondary': str.join('/', match_group.secondary),
+                    'group_size': match_group.group_size,
+                    'ang_dist': match_group.ang_dist,
+                    'norm_factor': norm_factor,
+                })
+                data.update(match_group.angles.as_dict(
+                    degrees=True, skip_omega=True, with_std=True)
+                )
+
+                df_data.append(data)
+                df_index.append(ref_idx)
+
+        df_index = pd.Index(data=df_index, name='ref_idx')
+        df = pd.DataFrame(data=df_data, index=df_index)
+        return df
+
     def to_groups_dataframe(self) -> pd.DataFrame:
         """
-        :return: A DataFrame containing the aligned residues matches grouped
+        :return: A DataFrame containing the aligned residue matches, grouped
         by Uniprot ID and codon for each residue in the reference structure.
+        For each reference residues index, there will be one or more
+        lines containing the information from the corresponding
+        ResidueMatchGroups.
         """
         df_index = []
         df_data = []
@@ -1202,17 +1283,21 @@ class ProteinGroup(object):
         :param out_dir: Output directory.
         :param types: What CSV types to write. Can be either 'all',
         or a list containing a combination of:
-        structs - write the structure metadata
-        residues - write the per-residue alignment data
-        groups - write the per-residue grouped alignment data
+        'structs' - metadata about each structure in the pgroup
+        'residues' - per-residue alignment between ref structure and queries
+        'groups' - per-residue alignment data grouped by unp_id and codon
+        'pairwise' - like groups but each group is compared to VARIANT group
         :param tag: Optional tag to add to the output filenames.
         :return: A dict from type to the path of the file written.
         Keys can be one of the types specified above.
         """
 
-        df_funcs = {'structs': self.to_struct_dataframe,
-                    'residues': self.to_residue_dataframe,
-                    'groups': self.to_groups_dataframe}
+        df_funcs = {
+            'structs': self.to_struct_dataframe,
+            'residues': self.to_residue_dataframe,
+            'groups': self.to_groups_dataframe,
+            'pairwise': self.to_pairwise_dataframe
+        }
 
         os.makedirs(str(out_dir), exist_ok=True)
         if isinstance(types, str):
@@ -1445,7 +1530,7 @@ class ProteinGroup(object):
     def _group_matches(self, aggregate_fn: Callable[[Dict], Dihedral]) \
             -> Dict[int, List[ResidueMatchGroup]]:
         """
-        Grops the matches of each reference residue into subgroups by their
+        Groups the matches of each reference residue into subgroups by their
         unp_id and codon, and computes an aggregate angle statistic based on
         the structures in each subgroup.
         :param aggregate_fn: Function for angle aggregation.
