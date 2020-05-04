@@ -1,14 +1,15 @@
 import abc
+import json
 import logging
 import math
 import multiprocessing as mp
+import os
 import time
 import socket
 import zipfile
 from multiprocessing.pool import AsyncResult
 from pathlib import Path
-from typing import Callable, Any, Optional, List, Iterable, NamedTuple
-from datetime import datetime, timedelta
+from typing import Callable, Any, Optional, List, Iterable, NamedTuple, Dict
 
 import pandas as pd
 
@@ -36,26 +37,54 @@ class CollectorStep(NamedTuple):
 
 
 class ParallelDataCollector(abc.ABC):
-    def __init__(self, async_timeout: float = None):
-        self.async_timeout = async_timeout
+    def __init__(
+            self, out_dir: Path = None, tag: str = None,
+            async_timeout: float = None, create_zip=True,
+    ):
+        """
+        :param out_dir: Output directory, if necessary. A subdirectory with
+        a unique id will be created within foe this collection.
+        :param tag: Tag (postfix) for unique id of output subdir.
+        :param async_timeout: Timeout for async results.
+        :param create_zip: Whether to create a zip file with all the result
+        files.
+        """
         hostname = socket.gethostname()
         if hostname:
             hostname = hostname.split(".")[0].strip()
         else:
             hostname = 'localhost'
-        self.timestamp = time.strftime(f'{hostname}_%Y-%m-%d_%H-%M-%S')
+
+        self.hostname = hostname
+        self.out_tag = tag
+        self.async_timeout = async_timeout
+        self.create_zip = create_zip
+
+        tag = f'-{self.out_tag}' if self.out_tag else ''
+        timestamp = time.strftime(f'%Y%m%d_%H%M%S')
+        self.id = time.strftime(f'{timestamp}-{hostname}{tag}')
+        if out_dir is not None:
+            out_dir = out_dir.joinpath(self.id)
+            os.makedirs(str(out_dir), exist_ok=True)
+        self.out_dir = out_dir
+        self.collection_steps = []
+        self.collection_meta = {'id': self.id}
+        self.out_filepaths: List[Path] = []
 
     def collect(self):
         start_time = time.time()
-        collection_steps = []
+        # Note: in python 3.7+ dict order is guaranteed to be insertion order
+        collection_functions = self._collection_functions()
+        collection_functions['Finalize'] = self._finalize_collection
 
-        for collect_function in self._collection_functions():
-            step_name = collect_function.__name__
+        for step_name, collect_fn in collection_functions.items():
             step_start_time = time.time()
 
             with pp5.parallel.global_pool() as pool:
                 try:
-                    collect_function(pool)
+                    step_meta = collect_fn(pool)
+                    if step_meta:
+                        self.collection_meta.update(step_meta)
                     step_status = 'SUCCESS'
                     step_message = None
                 except Exception as e:
@@ -66,7 +95,7 @@ class ParallelDataCollector(abc.ABC):
                 finally:
                     step_elapsed = time.time() - step_start_time
                     step_elapsed = elapsed_seconds_to_dhms(step_elapsed)
-                    collection_steps.append(CollectorStep(
+                    self.collection_steps.append(CollectorStep(
                         step_name, step_elapsed, step_status, step_message
                     ))
 
@@ -74,8 +103,41 @@ class ParallelDataCollector(abc.ABC):
         time_str = elapsed_seconds_to_dhms(end_time - start_time)
 
         LOGGER.info(f'Completed collection for {self} in {time_str}')
-        for step in collection_steps:
+        for step in self.collection_steps:
             LOGGER.info(step)
+
+    def _finalize_collection(self, pool):
+        LOGGER.info(f"Finalizing collection for {self.id}...")
+        if self.out_dir is None:
+            return
+
+        # Create a metadata file in the output dir based on the step results
+        meta_filepath = self.out_dir.joinpath('meta.json')
+        meta = self.collection_meta
+        meta['steps'] = [str(s) for s in self.collection_steps]
+        with open(str(meta_filepath), 'w', encoding='utf-8') as f:
+            json.dump(meta, f, indent=2)
+
+        self.out_filepaths.append(meta_filepath)
+
+        # Create a zip of the results
+        if not self.create_zip:
+            return
+
+        zip_filename = Path(f'{self.id}.zip')
+        zip_filepath = self.out_dir.joinpath(zip_filename)
+
+        with zipfile.ZipFile(
+                zip_filepath, 'w', compression=zipfile.ZIP_DEFLATED,
+                compresslevel=9
+        ) as z:
+            for out_filepath in self.out_filepaths:
+                LOGGER.info(f'Compressing {out_filepath}')
+                arcpath = f'{zip_filename.stem}/{out_filepath.name}'
+                z.write(str(out_filepath), arcpath)
+
+        zipsize_mb = os.path.getsize(str(zip_filepath)) / 1024 / 1024
+        LOGGER.info(f'Wrote archive {zip_filepath} ({zipsize_mb:.2f}MB)')
 
     def _handle_async_results(self, async_results: List[AsyncResult],
                               collect=False, flatten=False,
@@ -121,14 +183,19 @@ class ParallelDataCollector(abc.ABC):
         return count, elapsed_time, results
 
     @abc.abstractmethod
-    def _collection_functions(self) -> List[Callable[[mp.pool.Pool], Any]]:
+    def _collection_functions(self) \
+            -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         """
-        :return: List of functions to call during collect.
+        Defines the steps of the collection as a sequence of functions to
+        call in order.
+        Each collection function can return a dict with metadata about the
+        collection. This metadata will be saved at the end of collection.
+        :return: Dict mapping step name to a functions to call during collect.
         """
-        return []
+        return {}
 
     def __repr__(self):
-        return f'{self.__class__.__name__}'
+        return f'{self.__class__.__name__} id={self.id}'
 
 
 class ProteinRecordCollector(ParallelDataCollector):
