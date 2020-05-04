@@ -274,7 +274,8 @@ class ProteinGroupCollector(ParallelDataCollector):
                  expr_sys: str = ProteinGroup.DEFAULT_EXPR_SYS,
                  evalue_cutoff: float = 1., identity_cutoff: float = 30,
                  out_dir=pp5.out_subdir('pgroup-collected'),
-                 pgroup_out_dir=pp5.out_subdir('pgroup'), out_tag: str = None,
+                 pgroup_out_dir=pp5.out_subdir('pgroup'),
+                 write_pgroup_csvs=True, out_tag: str = None,
                  ref_file: Path = None, async_timeout: float = 3600,
                  create_zip=True,
                  ):
@@ -289,7 +290,10 @@ class ProteinGroupCollector(ParallelDataCollector):
         allowed for BLAST matches when searching for proteins to include in
         pgroups.
         :param out_dir: Output directory for collection CSV files.
-        :param pgroup_out_dir: Output directory for pgroup CSV files.
+        :param pgroup_out_dir: Output directory for pgroup CSV files. Only
+        relevant if write_pgroup_csvs is True.
+        :param write_pgroup_csvs: Whether to write each pgroup's CSV files.
+        Even if false, the collection files will still be writen.
         :param out_tag: Extra tag to add to the output file names.
         :param  ref_file: Path of collector CSV file with references.
         Allows to skip the first and second collection steps (finding PDB
@@ -308,11 +312,12 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
         self.pgroup_out_dir = pgroup_out_dir
+        self.write_pgroup_csvs = write_pgroup_csvs
         self.out_tag = out_tag
-        self.df_ref = None  # Collected reference structures
-        self.df_all = None  # Stats per structure
-        self.df_pgroups = None  # Stats for each pgroup
-        self.df_matches = None  # Matches from all pgroups
+        self.df_all = None  # Metadata about all structures
+        self.df_ref = None  # Metadata about collected reference structures
+        self.df_pgroups = None  # Metadata for each pgroup
+        self.df_pairwise = None  # Pairwise matches from all pgroups
 
         if ref_file is None:
             self._all_file = None
@@ -334,7 +339,6 @@ class ProteinGroupCollector(ParallelDataCollector):
             'Collect precs': self._collect_all_structures,
             'Find references': self._collect_all_refs,
             'Collect pgroups': self._collect_all_pgroups,
-            'Collect pairwise': self._collect_matches,
         }
 
     def _collect_all_structures(self, pool: mp.Pool):
@@ -374,7 +378,7 @@ class ProteinGroupCollector(ParallelDataCollector):
                     ignore_index=True
                 )
 
-        filepath = self._write_csv(self.df_all, 'all_structs')
+        filepath = self._write_csv(self.df_all, 'meta-structs_all')
         self.out_filepaths.append(filepath)
 
         meta['n_all_structures'] = len(self.df_all)
@@ -414,7 +418,7 @@ class ProteinGroupCollector(ParallelDataCollector):
                 )
 
         meta['n_ref_structures'] = len(self.df_ref)
-        filepath = self._write_csv(self.df_ref, 'ref_structs')
+        filepath = self._write_csv(self.df_ref, 'meta-structs_ref')
         self.out_filepaths.append(filepath)
         return meta
 
@@ -435,16 +439,28 @@ class ProteinGroupCollector(ParallelDataCollector):
         async_results = []
         for i, ref_pdb_id in enumerate(ref_pdb_ids):
             idx = (i, len(ref_pdb_ids))
-            args = (ref_pdb_id, blast,
-                    self.pgroup_out_dir, self.out_tag, idx)
+            pgroup_out_dir = self.pgroup_out_dir \
+                if self.write_pgroup_csvs else None
+            args = (ref_pdb_id, blast, pgroup_out_dir, self.out_tag, idx)
             r = pool.apply_async(self._collect_single_pgroup, args=args)
             async_results.append(r)
 
-        count, elapsed, pgroup_datas = self._handle_async_results(
+        count, elapsed, collected_data = self._handle_async_results(
             async_results, collect=True, flatten=False,
         )
-        pgroup_datas = filter(None, pgroup_datas)
 
+        # The pgroup_datas contains both metadata and also pairwise matches.
+        # We need to write these things to different output files.
+        pgroup_datas = []
+        pairwise_dfs: List[pd.DataFrame] = []
+        for pgroup_data in collected_data:
+            if pgroup_data is None:
+                continue
+            df_pairwise = pgroup_data.pop('pgroup_pairwise')
+            pairwise_dfs.append(df_pairwise)
+            pgroup_datas.append(pgroup_data)
+
+        # Create pgroup metadata dataframe
         self.df_pgroups = pd.DataFrame(pgroup_datas)
         if len(self.df_pgroups):
             self.df_pgroups.sort_values(
@@ -452,42 +468,24 @@ class ProteinGroupCollector(ParallelDataCollector):
                 inplace=True, ignore_index=True
             )
 
+        # Sum the counter columns into the collection step metadata
         meta['n_pgroups'] = len(self.df_pgroups)
-        # Sum the counter columns
         for c in [c for c in self.df_pgroups.columns if c.startswith('n_')]:
-            meta[c] = int(self.df_pgroups[c].sum())  # convert np.int64
-        filepath = self._write_csv(self.df_pgroups, 'pgroups')
+            meta[c] = int(self.df_pgroups[c].sum())  # converts from np.int64
+
+        filepath = self._write_csv(self.df_pgroups, 'meta-pgroups')
+        self.out_filepaths.append(filepath)
+
+        # Create the pairwise matches dataframe
+        self.df_pairwise = pd.concat(pairwise_dfs, axis=0).reset_index()
+        if len(self.df_pairwise):
+            self.df_pairwise.sort_values(
+                by=['ref_pdb_id', 'ref_idx', 'type'], inplace=True,
+                ignore_index=True
+            )
+        filepath = self._write_csv(self.df_pairwise, 'data-pairwise')
         self.out_filepaths.append(filepath)
         return meta
-
-    def _collect_matches(self, pool: mp.Pool):
-        pgroup_filepaths = self.df_pgroups[['ref_pdb_id', 'pgroup_filepath']]
-        LOGGER.info(f'Collecting residue-match samples from '
-                    f'{len(pgroup_filepaths)} pgroups...')
-
-        async_results = []
-        for i, (ref_pdb_id, pgroup_filepath) in \
-                enumerate(pgroup_filepaths.values):
-            idx = (i, len(pgroup_filepaths))
-            args = (ref_pdb_id, pgroup_filepath, self.pgroup_out_dir,
-                    self.out_tag, idx)
-            r = pool.apply_async(self._collect_single_pgroup_matches,
-                                 args=args)
-            async_results.append(r)
-
-        count, elapsed, match_datas = self._handle_async_results(
-            async_results, collect=True, flatten=True,
-        )
-
-        self.df_matches = pd.DataFrame(match_datas)
-        if len(self.df_matches):
-            self.df_matches.sort_values(
-                by=['type', 'ang_dist'], ascending=False,
-                inplace=True, ignore_index=True
-            )
-
-        filepath = self._write_csv(self.df_matches, 'dataset_pairwise')
-        self.out_filepaths.append(filepath)
 
     def _write_csv(self, df: pd.DataFrame, filename: str) -> Path:
         filename = f'{filename}.csv'
@@ -560,8 +558,9 @@ class ProteinGroupCollector(ParallelDataCollector):
         return chain_data
 
     @staticmethod
-    def _collect_single_ref(group_unp_id: str, df_group: pd.DataFrame) \
-            -> Optional[dict]:
+    def _collect_single_ref(
+            group_unp_id: str, df_group: pd.DataFrame
+    ) -> Optional[dict]:
         try:
             unp_rec = unp.unp_record(group_unp_id)
             unp_seq_len = len(unp_rec.sequence)
@@ -596,9 +595,10 @@ class ProteinGroupCollector(ParallelDataCollector):
         )
 
     @staticmethod
-    def _collect_single_pgroup(ref_pdb_id: str, blast: ProteinBLAST,
-                               out_dir: Path, out_tag: str, idx) \
-            -> Optional[dict]:
+    def _collect_single_pgroup(
+            ref_pdb_id: str, blast: ProteinBLAST,
+            out_dir: Optional[Path], out_tag: str, idx
+    ) -> Optional[dict]:
         try:
             LOGGER.info(f'Creating ProteinGroup for {ref_pdb_id} '
                         f'({idx[0] + 1}/{idx[1]})')
@@ -607,13 +607,21 @@ class ProteinGroupCollector(ParallelDataCollector):
             df_blast = blast.pdb(ref_pdb_id)
             LOGGER.info(f"Got {len(df_blast)} BLAST hits for {ref_pdb_id}")
 
+            # Create a pgroup without an additional query, by specifying the
+            # exact ids of the query structures.
             pgroup = ProteinGroup.from_query_ids(
                 # TODO: Prevent parsing ref PDB file second time here
                 ref_pdb_id, query_pdb_ids=df_blast.index,
                 parallel=False, prec_cache=True,
             )
-            csv_filepaths = pgroup.to_csv(out_dir, tag=out_tag)
-            pgroup_filepath = str(csv_filepaths['groups'])
+
+            # Get the pairwise matches from the pgroup
+            pgroup_pairwise = pgroup.to_pairwise_dataframe(with_ref_id=True)
+
+            # If necessary, also write the pgroup to CSV files
+            if out_dir is not None:
+                csv_filepaths = pgroup.to_csv(out_dir, tag=out_tag)
+
         except Exception as e:
             LOGGER.error(f'Failed to create ProteinGroup from '
                          f'collected reference {ref_pdb_id}: {e}')
@@ -627,78 +635,5 @@ class ProteinGroupCollector(ParallelDataCollector):
             n_pdb_ids=pgroup.num_query_structs,
             n_total_matches=pgroup.num_matches,
             **match_counts,
-            pgroup_filepath=pgroup_filepath
+            pgroup_pairwise=pgroup_pairwise,
         )
-
-    @staticmethod
-    def _collect_single_pgroup_matches(ref_pdb_id, pgroup_filepath,
-                                       pgroup_out_dir, out_tag, idx) \
-            -> Optional[List[dict]]:
-        LOGGER.info(f'Collecting residue matches from ProteinGroup'
-                    f' {ref_pdb_id} '
-                    f'({idx[0] + 1}/{idx[1]})')
-
-        # Load match-groups from pgroup file and process them according to
-        # the reference match index.
-        df = pd.read_csv(pgroup_filepath, comment='#', na_filter=False)
-        df_groups = df.groupby('ref_idx')
-
-        ref_seq_len = df['ref_idx'].max()
-
-        matches = []
-        for ref_idx, df_group in df_groups:
-            if len(df_group) == 1:
-                # This is a variant-only group, nothing to see here...
-                continue
-
-            # Find the variant match group
-            variant_idx = df_group.type == 'VARIANT'
-            var_match = df_group[variant_idx].squeeze()
-            ref_codon = var_match.codon
-            ref_codon_opts = var_match.codon_opts
-            ref_group_size = var_match.group_size
-            ref_phi = var_match.phi
-            ref_psi = var_match.psi
-            ref_phi_std = var_match.phi_std if var_match.phi_std else 0.
-            ref_psi_std = var_match.psi_std if var_match.psi_std else 0.
-            ref_norm_factor = math.sqrt(
-                float(ref_phi_std) ** 2 + float(ref_psi_std) ** 2
-            )
-
-            # Iterate over the other match groups and save them
-            other_matches = df_group[~variant_idx]
-            for _, other_match in other_matches.iterrows():
-                # Calculate angle distance normalization factor
-                phi_std = other_match.phi_std if other_match.phi_std else 0.
-                psi_std = other_match.psi_std if other_match.psi_std else 0.
-                norm_factor = math.sqrt(
-                    float(phi_std) ** 2 + float(psi_std) ** 2
-                )
-
-                matches.append({
-                    'ref_pdb_id': ref_pdb_id,
-                    'ref_idx': ref_idx,
-                    'ref_seq_len': ref_seq_len,
-                    'ref_group_size': ref_group_size,
-                    'ref_codon': ref_codon,
-                    'ref_codon_opts': ref_codon_opts,
-                    'ref_phi': ref_phi,
-                    'ref_psi': ref_psi,
-                    'ref_phi_std': ref_phi_std,
-                    'ref_psi_std': ref_psi_std,
-                    'ref_norm_factor': ref_norm_factor,
-
-                    'codon': other_match.codon,
-                    'codon_opts': other_match.codon_opts,
-                    'secondary': other_match.secondary,
-                    'group_size': other_match.group_size,
-                    'type': other_match.type,
-                    'ang_dist': other_match.ang_dist,
-                    'phi': other_match.phi,
-                    'psi': other_match.psi,
-                    'phi_std': phi_std,
-                    'psi_std': psi_std,
-                    'norm_factor': norm_factor,
-                })
-
-        return matches
