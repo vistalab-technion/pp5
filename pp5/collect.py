@@ -16,7 +16,6 @@ import pandas as pd
 import pp5
 import pp5.parallel
 from pp5.external_dbs import pdb, unp
-from pp5.external_dbs.pdb import DSSP_TO_SS_TYPE
 from pp5.protein import ProteinRecord, ProteinInitError, ProteinGroup
 from pp5.align import ProteinBLAST
 from pp5.utils import elapsed_seconds_to_dhms
@@ -274,9 +273,10 @@ class ProteinGroupCollector(ParallelDataCollector):
                  resolution: float,
                  expr_sys: str = ProteinGroup.DEFAULT_EXPR_SYS,
                  evalue_cutoff: float = 1., identity_cutoff: float = 30,
-                 collected_out_dir=pp5.out_subdir('pgroup-collected'),
+                 out_dir=pp5.out_subdir('pgroup-collected'),
                  pgroup_out_dir=pp5.out_subdir('pgroup'), out_tag: str = None,
                  ref_file: Path = None, async_timeout: float = 3600,
+                 create_zip=True,
                  ):
         """
         Collects ProteinGroup reference structures based on a PDB query
@@ -288,7 +288,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         :param identity_cutoff: Minimal percent sequence identity
         allowed for BLAST matches when searching for proteins to include in
         pgroups.
-        :param collected_out_dir: Output directory for collection CSV files.
+        :param out_dir: Output directory for collection CSV files.
         :param pgroup_out_dir: Output directory for pgroup CSV files.
         :param out_tag: Extra tag to add to the output file names.
         :param  ref_file: Path of collector CSV file with references.
@@ -297,18 +297,18 @@ class ProteinGroupCollector(ParallelDataCollector):
         ProteinGroups for the references in the file.
         :param async_timeout: Timeout in seconds for each worker
         process result, or None for no timeout.
+        :param create_zip: Whether to create a zip file with all output files.
         """
-        super().__init__(async_timeout=async_timeout)
+        super().__init__(out_dir=out_dir, tag=out_tag,
+                         async_timeout=async_timeout, create_zip=create_zip)
 
         self.res_query = pdb.PDBResolutionQuery(max_res=resolution)
         self.expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys=expr_sys)
         self.query = pdb.PDBCompositeQuery(self.res_query, self.expr_sys_query)
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
-        self.collected_out_dir = collected_out_dir
         self.pgroup_out_dir = pgroup_out_dir
         self.out_tag = out_tag
-        self.out_filepaths: List[Path] = []
         self.df_ref = None  # Collected reference structures
         self.df_all = None  # Stats per structure
         self.df_pgroups = None  # Stats for each pgroup
@@ -329,32 +329,32 @@ class ProteinGroupCollector(ParallelDataCollector):
             self._all_file = all_file
             self._ref_file = ref_file
 
-    def __repr__(self):
-        return f'{self.__class__.__name__} timestamp={self.timestamp}, ' \
-               f'tag={self.out_tag}, query={self.query}'
-
-    def _collection_functions(self) -> List[Callable[[mp.pool.Pool], Any]]:
-        return [
-            self._collect_all_structures,
-            self._collect_all_refs,
-            self._collect_all_pgroups,
-            self._collect_matches,
-            self._zip_results
-        ]
+    def _collection_functions(self):
+        return {
+            'Collect precs': self._collect_all_structures,
+            'Find references': self._collect_all_refs,
+            'Collect pgroups': self._collect_all_pgroups,
+            'Collect pairwise': self._collect_matches,
+        }
 
     def _collect_all_structures(self, pool: mp.Pool):
+        meta = {}
 
         if self._all_file:
             LOGGER.info(f'Skipping all-structure collection step: '
                         f'loading {self._all_file}')
             read_csv_args = dict(comment='#', index_col=None, header=0)
             self.df_all = pd.read_csv(self._all_file, **read_csv_args)
+            meta['init_from_all_file'] = str(self._all_file)
         else:
             # Execute PDB query to get a list of PDB IDs
             pdb_ids = self.query.execute()
             n_structs = len(pdb_ids)
             LOGGER.info(
                 f"Got {n_structs} structure ids from PDB, collecting...")
+
+            meta['query'] = str(self.query)
+            meta['n_query_results'] = len(pdb_ids)
 
             async_results = []
             for i, pdb_id in enumerate(pdb_ids):
@@ -374,17 +374,21 @@ class ProteinGroupCollector(ParallelDataCollector):
                     ignore_index=True
                 )
 
-        comment = "Structures for reference selection"
-        filepath = self._write_csv(self.df_all, 'all', comment=comment)
+        filepath = self._write_csv(self.df_all, 'all_structs')
         self.out_filepaths.append(filepath)
 
+        meta['n_all_structures'] = len(self.df_all)
+        return meta
+
     def _collect_all_refs(self, pool: mp.Pool):
+        meta = {}
 
         if self._ref_file:
             LOGGER.info(f'Skipping reference-structure collection step: '
                         f'loading {self._ref_file}')
             read_csv_args = dict(comment='#', index_col=None, header=0)
             self.df_ref = pd.read_csv(self._ref_file, **read_csv_args)
+            meta['init_from_ref_file'] = str(self._all_file)
         else:
             # Find reference structure
             LOGGER.info(f'Finding reference structures...')
@@ -409,11 +413,14 @@ class ProteinGroupCollector(ParallelDataCollector):
                     inplace=True, ignore_index=True
                 )
 
-        comment = "Selected reference structures"
-        filepath = self._write_csv(self.df_ref, 'ref', comment=comment)
+        meta['n_ref_structures'] = len(self.df_ref)
+        filepath = self._write_csv(self.df_ref, 'ref_structs')
         self.out_filepaths.append(filepath)
+        return meta
 
     def _collect_all_pgroups(self, pool: mp.Pool):
+        meta = {}
+
         # Create a local BLAST DB containing all collected PDB IDs.
         all_pdb_ids = self.df_all['pdb_id']
         alias_name = f'pgc-{self.out_tag}'
@@ -445,9 +452,13 @@ class ProteinGroupCollector(ParallelDataCollector):
                 inplace=True, ignore_index=True
             )
 
-        comment = "Collected ProteinGroups"
-        filepath = self._write_csv(self.df_pgroups, 'pgroups', comment=comment)
+        meta['n_pgroups'] = len(self.df_pgroups)
+        # Sum the counter columns
+        for c in [c for c in self.df_pgroups.columns if c.startswith('n_')]:
+            meta[c] = int(self.df_pgroups[c].sum())  # convert np.int64
+        filepath = self._write_csv(self.df_pgroups, 'pgroups')
         self.out_filepaths.append(filepath)
+        return meta
 
     def _collect_matches(self, pool: mp.Pool):
         pgroup_filepaths = self.df_pgroups[['ref_pdb_id', 'pgroup_filepath']]
@@ -475,37 +486,14 @@ class ProteinGroupCollector(ParallelDataCollector):
                 inplace=True, ignore_index=True
             )
 
-        comment = 'Collected matches'
-        filepath = self._write_csv(self.df_matches, 'matches', comment=comment)
+        filepath = self._write_csv(self.df_matches, 'dataset_pairwise')
         self.out_filepaths.append(filepath)
 
-    def _zip_results(self, pool: mp.Pool):
-        tag = f'-{self.out_tag}' if self.out_tag else ''
-        zip_filename = Path(f'pgc-{self.timestamp}{tag}.zip')
-        zip_filepath = self.collected_out_dir.joinpath(zip_filename)
-
-        with zipfile.ZipFile(
-                zip_filepath, 'w', compression=zipfile.ZIP_DEFLATED,
-                compresslevel=9
-        ) as z:
-            for out_filepath in self.out_filepaths:
-                LOGGER.info(f'Compressing {out_filepath}')
-                arcpath = f'{zip_filename.stem}/{out_filepath.name}'
-                z.write(str(out_filepath), arcpath)
-
-        LOGGER.info(f'Wrote archive {zip_filepath}')
-
-    def _write_csv(self, df: pd.DataFrame, csv_type: str,
-                   comment: str = None, include_query=True) -> Path:
-        tag = f'-{self.out_tag}' if self.out_tag else ''
-        filename = f'pgc-{self.timestamp}-{csv_type}{tag}.csv'
-        filepath = self.collected_out_dir.joinpath(filename)
+    def _write_csv(self, df: pd.DataFrame, filename: str) -> Path:
+        filename = f'{filename}.csv'
+        filepath = self.out_dir.joinpath(filename)
 
         with open(str(filepath), mode='w', encoding='utf-8') as f:
-            if comment:
-                f.write(f'# {comment}\n')
-            if include_query:
-                f.write(f'# query: {self.query}\n')
             df.to_csv(f, header=True, index=False, float_format='%.2f')
 
         LOGGER.info(f'Wrote {filepath}')
