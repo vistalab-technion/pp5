@@ -267,6 +267,40 @@ class TestDihedralEq:
         assert d1 == d2
 
 
+class TestAsDict:
+
+    def test_1(self):
+        a = dihedral.Dihedral.from_deg(30, 45, 90)
+        d = a.as_dict(degrees=False, skip_omega=False, with_std=False)
+
+        assert len(d) == 3
+        assert d['phi'] == radians(30)
+        assert d['psi'] == radians(45)
+        assert d['omega'] == radians(90)
+
+    def test_2(self):
+        a = dihedral.Dihedral.from_deg((30, 0.1), (45, 0.2), 90)
+        d = a.as_dict(degrees=False, skip_omega=False, with_std=True)
+
+        assert len(d) == 6
+        assert d['phi'] == radians(30)
+        assert d['phi_std'] == radians(0.1)
+        assert d['psi'] == radians(45)
+        assert d['psi_std'] == radians(0.2)
+        assert d['omega'] == radians(90)
+        assert d['omega_std'] is None
+
+    def test_3(self):
+        a = dihedral.Dihedral.from_deg((30, 0.1), (45, 0.2), (90, 0.3))
+        d = a.as_dict(degrees=True, skip_omega=True, with_std=True)
+
+        assert len(d) == 4
+        assert d['phi'] == approx(30)
+        assert d['phi_std'] == approx(0.1)
+        assert d['psi'] == approx(45)
+        assert d['psi_std'] == approx(0.2)
+
+
 class TestWraparoundDiff(object):
     TEST_CASES = [
         ((170, -170), 20), ((180, -180), 0), ((-20, 30), 50), ((30, 30), 0),

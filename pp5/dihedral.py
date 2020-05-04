@@ -56,7 +56,7 @@ class Dihedral(object):
             setattr(self, name, val)
             setattr(self, name_std, std)
             val_deg = math.degrees(val)
-            std_deg = math.degrees(std) if std else None
+            std_deg = math.degrees(std) if std is not None else None
             setattr(self, f'{name}_deg', val_deg)
             setattr(self, f'{name_std}_deg', std_deg)
 
@@ -65,6 +65,7 @@ class Dihedral(object):
         Convert this instance into a dict.
         :param degrees: Whether to output as degrees.
         :param skip_omega: Whether to discard omega from output.
+        :param with_std: Whether to include std values in the output.
         :return: A dict with keys phi, psi and possibly omega.
         """
         names = Dihedral.NAMES
@@ -79,8 +80,7 @@ class Dihedral(object):
         else:
             attrs = names
 
-        return {name: getattr(self, attr)
-                for name, attr in zip(names, attrs)}
+        return {name: getattr(self, attr) for name, attr in zip(names, attrs)}
 
     @classmethod
     def from_deg(cls, phi, psi, omega):
@@ -191,7 +191,8 @@ class Dihedral(object):
             std_attr = f'{name}_std_deg' if deg else f'{name}_std'
             val = getattr(self, val_attr)
             std = getattr(self, std_attr)
-            std_str = f'{self.SYMBOLS["pm"]}{std:.1f}' if std else ''
+            std_str = f'{self.SYMBOLS["pm"]}{std:.1f}' if std is not None \
+                else ''
             reprs.append(f'{self.SYMBOLS[name]}={val:.1f}{std_str}{unit_sym}')
         return f'({str.join(",", reprs)})'
 
