@@ -205,26 +205,24 @@ class ProteinRecordCollector(ParallelDataCollector):
                  resolution: float,
                  expr_sys: str = ProteinGroup.DEFAULT_EXPR_SYS,
                  prec_init_args=None,
-                 out_dir: Path = pp5.data_subdir('prec'),
-                 prec_callback: Callable[
-                     [ProteinRecord, Path], Any] = ProteinRecord.to_csv,
-                 async_timeout=60):
+                 out_dir: Path = pp5.out_subdir('prec-collected'),
+                 prec_out_dir: Path = pp5.out_subdir('prec'),
+                 write_csv=True, async_timeout=60):
         """
-        Collects ProteinRecords based on a PDB query results, and invokes a
-        custom callback on each of them.
+        Collects ProteinRecords based on a PDB query results, and saves them
+        in the local cache folder. Optionally also writes them to CSV.
         :param resolution: Resolution cutoff value in Angstorms.
         :param expr_sys: Expression system name.
-        :param out_dir: Output folder for prec CSV files.
+        :param out_dir: Output folder for collected metadata.
+        :param prec_out_dir: Output folder for prec CSV files.
         :param prec_init_args: Arguments for initializing each ProteinRecord
-        :param prec_callback: A callback to invoke for each ProteinRecord.
-        Will be invoked in the main process.
-        Should be a function accepting a ProteinRecord and a path which is
-        the output folder. The default callback will write the ProteinRecord to
-        the output folder as a CSV file.
+        :param write_csv: Whether to write the ProteinRecords to
+        the prec_out_dir as CSV files.
         :param async_timeout: Timeout in seconds for each worker
         process result.
         """
-        super().__init__(async_timeout=async_timeout)
+        super().__init__(async_timeout=async_timeout, out_dir=out_dir,
+                         create_zip=False)
         res_query = pdb.PDBResolutionQuery(max_res=resolution)
         expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys=expr_sys)
         self.query = pdb.PDBCompositeQuery(res_query, expr_sys_query)
@@ -234,17 +232,20 @@ class ProteinRecordCollector(ParallelDataCollector):
         else:
             self.prec_init_args = self.DEFAULT_PREC_INIT_ARGS
 
-        self.out_dir = out_dir
-        self.prec_callback = lambda prec: prec_callback(prec, out_dir)
+        self.prec_out_dir = prec_out_dir
+        self.write_csv = write_csv
 
     def __repr__(self):
         return f'{self.__class__.__name__} query={self.query}'
 
-    def _collection_functions(self) -> List[Callable[[mp.pool.Pool], Any]]:
-        return [self._collect_precs]
+    def _collection_functions(self):
+        return {'Collect ProteinRecords': self._collect_precs}
 
     def _collect_precs(self, pool: mp.Pool):
+        meta = {}
         pdb_ids = self.query.execute()
+        meta['query'] = str(self.query)
+        meta['n_query_results'] = len(pdb_ids)
         LOGGER.info(f"Got {len(pdb_ids)} structures from PDB")
 
         async_results = []
@@ -253,10 +254,15 @@ class ProteinRecordCollector(ParallelDataCollector):
                                  kwds=self.prec_init_args)
             async_results.append(r)
 
+        prec_callback = None
+        if self.write_csv:
+            prec_callback = lambda prec: prec.to_csv(self.prec_out_dir)
+
         count, elapsed, _ = self._handle_async_results(
-            async_results, collect=False, result_callback=self.prec_callback
+            async_results, collect=False, result_callback=prec_callback
         )
 
+        meta['n_collected'] = count
         LOGGER.info(f"Done: {count}/{len(pdb_ids)} proteins collected "
                     f"(elapsed={elapsed:.2f} seconds, "
                     f"{count / elapsed:.1f} proteins/sec).")
