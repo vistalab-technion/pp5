@@ -172,8 +172,7 @@ def _parse_cli():
 
     # Data collectors
     prec_collector_desc, prec_collector_args = _generate_cli_from_func(
-        ProteinRecordCollector.__init__,
-        skip=['prec_init_args', 'prec_callback'])
+        ProteinRecordCollector.__init__, skip=['prec_init_args'])
     pgroup_collector_desc, pgroup_collector_args = _generate_cli_from_func(
         ProteinGroupCollector.__init__, skip=[])
 
