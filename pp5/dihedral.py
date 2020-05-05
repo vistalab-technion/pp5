@@ -31,6 +31,15 @@ class Dihedral(object):
     NAMES = ('phi', 'psi', 'omega')
     SYMBOLS = dict(phi='ɸ', psi='ψ', omega='ω', deg='°', rad='ʳ', pm='±')
 
+    # Define attribute names, since it reduces memory usage and also allows
+    # autocompletion of attribute names even though we create them
+    # dynamically in __init__
+    __slots__ = [
+        'phi', 'psi', 'omega', 'phi_std', 'psi_std', 'omega_std',
+        'phi_deg', 'psi_deg', 'omega_deg', 'phi_std_deg', 'psi_std_deg',
+        'omega_std_deg',
+    ]
+
     def __init__(self, phi, psi, omega):
         """
         All angles should be specified in radians.
@@ -84,6 +93,15 @@ class Dihedral(object):
             attrs = names
 
         return {name: getattr(self, attr) for name, attr in zip(names, attrs)}
+
+    def __getstate__(self):
+        return self.as_dict(degrees=False, skip_omega=False, with_std=True)
+
+    def __setstate__(self, state: dict):
+        init_args = {}
+        for n in self.NAMES:
+            init_args[n] = (state[n], state[f'{n}_std'])
+        self.__init__(**init_args)
 
     @classmethod
     def from_deg(cls, phi, psi, omega):
