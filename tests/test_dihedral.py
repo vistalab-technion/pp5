@@ -229,6 +229,29 @@ class TestDihedralAnglesEstimators(object):
         self._compare_with_estimator(pdb_id, estimator, abs=math.inf)
 
 
+class TestInit:
+    def test_out_of_range_degrees(self):
+        d1 = dihedral.Dihedral.from_deg(400, -1000, 182)
+        p = d1.phi_std_deg
+
+        assert d1.phi == approx(math.radians(40))
+        assert d1.phi_deg == approx(40)
+        assert d1.psi == approx(math.radians(80))
+        assert d1.psi_deg == approx(80)
+        assert d1.omega == approx(math.radians(-178))
+        assert d1.omega_deg == approx(-178)
+
+    def test_out_of_range_radians(self):
+        d1 = dihedral.Dihedral.from_rad(math.pi*1.25, math.pi*30, -9*math.pi)
+
+        assert d1.phi == approx(math.radians(-135))
+        assert d1.phi_deg == approx(-135)
+        assert d1.psi == approx(math.radians(0))
+        assert d1.psi_deg == approx(0)
+        assert d1.omega == approx(math.radians(-180))
+        assert d1.omega_deg == approx(-180)
+
+
 class TestDihedralEq:
     def test_eq_deg(self):
         d1 = dihedral.Dihedral.from_deg(1, 2, 3)

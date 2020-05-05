@@ -35,9 +35,9 @@ class Dihedral(object):
 
     def __init__(self, phi, psi, omega):
         """
-        All angles should be specified in radians between (-pi, pi].
-        They ir type can be either a float, or an tuple (val,
-        std) containing a nominal value and standard deviation.
+        All angles should be specified in radians.
+        Their type can be either a float, or a tuple (val, std) containing a
+        nominal value and standard deviation.
         """
 
         loc = locals()
@@ -52,6 +52,10 @@ class Dihedral(object):
             else:
                 raise ValueError('Input angles must be either a float or a '
                                  'tuple (value, std)')
+
+            # Shift to [-pi, pi]
+            if val < -math.pi or val > math.pi:
+                val = math.atan2(math.sin(val), math.cos(val))
 
             setattr(self, name, val)
             setattr(self, name_std, std)
