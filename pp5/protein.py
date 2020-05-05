@@ -86,16 +86,13 @@ class ResidueRecord(object):
             self.codon_opts = str.join('/', codon_opts)
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
 
-    def __getstate__(self):
+    def as_dict(self, skip_omega=False):
         d = self.__dict__.copy()
-        d['angles'] = self.angles.__dict__
+        # Replace angles object with the angles themselves
+        d.pop('angles')
+        a = self.angles
+        d.update(a.as_dict(degrees=True, with_std=True, skip_omega=skip_omega))
         return d
-
-    def __setstate__(self, state):
-        angles = Dihedral.empty()
-        angles.__dict__.update(state['angles'])
-        state['angles'] = angles
-        self.__dict__.update(state)
 
     def __repr__(self):
         return f'{self.name}{self.res_id:<4s} [{self.codon}]' \
@@ -538,13 +535,7 @@ class ProteinRecord(object):
         this ProteinRecord.
         """
         # use the iterator of this class to get the residue recs
-        data = []
-        for rec in self:
-            rec_dict = rec.__dict__.copy()
-            del rec_dict['angles']
-            angles_dict = rec.angles.as_dict(degrees=True, with_std=True)
-            rec_dict.update(angles_dict)
-            data.append(rec_dict)
+        data = [res_rec.as_dict(skip_omega=True) for res_rec in self]
         return pd.DataFrame(data)
 
     def to_csv(self, out_dir=pp5.out_subdir('prec'), tag=None):
