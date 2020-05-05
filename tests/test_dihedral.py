@@ -230,9 +230,52 @@ class TestDihedralAnglesEstimators(object):
 
 
 class TestInit:
+    def test_from_deg(self):
+        d = dihedral.Dihedral.from_deg(12, (-34, 5.6), 78)
+
+        assert d.phi_deg == approx(12)
+        assert d.phi_std_deg is None
+        assert d.psi_deg == approx(-34)
+        assert d.psi_std_deg == approx(5.6)
+        assert d.omega_deg == approx(78)
+        assert d.omega_std_deg is None
+
+        assert d.phi == approx(radians(12))
+        assert d.phi_std is None
+        assert d.psi == approx(radians(-34))
+        assert d.psi_std == approx(radians(5.6))
+        assert d.omega == approx(radians(78))
+        assert d.omega_std is None
+
+    def test_from_rad(self):
+        d = dihedral.Dihedral.from_rad(.12, (-.34, -.056), .78)
+
+        assert d.phi == approx(.12)
+        assert d.phi_std is None
+        assert d.psi == approx(-.34)
+        assert d.psi_std == approx(-.056)
+        assert d.omega == approx(.78)
+        assert d.omega_std is None
+
+        assert d.phi_deg == approx(degrees(.12))
+        assert d.phi_std_deg is None
+        assert d.psi_deg == approx(degrees(-.34))
+        assert d.psi_std_deg == approx(degrees(-.056))
+        assert d.omega_deg == approx(degrees(.78))
+        assert d.omega_std_deg is None
+
+    def test_without_std(self):
+        d1 = dihedral.Dihedral.from_deg(1, 1, 1)
+        d2 = dihedral.Dihedral.from_rad(1, 1, 1)
+
+        # Make sure _std properties return None
+        for d in (d1, d2):
+            for n in ('phi', 'psi', 'omega'):
+                assert getattr(d, f'{n}_std') is None
+                assert getattr(d, f'{n}_std_deg') is None
+
     def test_out_of_range_degrees(self):
         d1 = dihedral.Dihedral.from_deg(400, -1000, 182)
-        p = d1.phi_std_deg
 
         assert d1.phi == approx(math.radians(40))
         assert d1.phi_deg == approx(40)
@@ -242,7 +285,8 @@ class TestInit:
         assert d1.omega_deg == approx(-178)
 
     def test_out_of_range_radians(self):
-        d1 = dihedral.Dihedral.from_rad(math.pi*1.25, math.pi*30, -9*math.pi)
+        d1 = dihedral.Dihedral.from_rad(math.pi * 1.25, math.pi * 30,
+                                        -9 * math.pi)
 
         assert d1.phi == approx(math.radians(-135))
         assert d1.phi_deg == approx(-135)

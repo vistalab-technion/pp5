@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from math import nan
-from typing import List
+from typing import List, Optional
 
 import Bio.PDB as PDB
 import numba
@@ -31,15 +31,6 @@ class Dihedral(object):
     NAMES = ('phi', 'psi', 'omega')
     SYMBOLS = dict(phi='ɸ', psi='ψ', omega='ω', deg='°', rad='ʳ', pm='±')
 
-    # Define attribute names, since it reduces memory usage and also allows
-    # autocompletion of attribute names even though we create them
-    # dynamically in __init__
-    __slots__ = [
-        'phi', 'psi', 'omega', 'phi_std', 'psi_std', 'omega_std',
-        'phi_deg', 'psi_deg', 'omega_deg', 'phi_std_deg', 'psi_std_deg',
-        'omega_std_deg',
-    ]
-
     def __init__(self, phi, psi, omega):
         """
         All angles should be specified in radians.
@@ -50,10 +41,9 @@ class Dihedral(object):
         loc = locals()
         for name in self.NAMES:
             a = loc[name]
-            name_std = f'{name}_std'
 
-            if isinstance(a, float):
-                val, std = a, None
+            if isinstance(a, (float, int)):
+                val, std = float(a), None
             elif hasattr(a, '__len__') and len(a) == 2:
                 val = float(a[0])
                 std = float(a[1]) if a[1] is not None else None
@@ -65,12 +55,44 @@ class Dihedral(object):
             if val < -math.pi or val > math.pi:
                 val = math.atan2(math.sin(val), math.cos(val))
 
-            setattr(self, name, val)
-            setattr(self, name_std, std)
-            val_deg = math.degrees(val)
-            std_deg = math.degrees(std) if std is not None else None
-            setattr(self, f'{name}_deg', val_deg)
-            setattr(self, f'{name_std}_deg', std_deg)
+            setattr(self, f'_{name}', val)
+            setattr(self, f'_{name}_std', std)
+
+    @property
+    def phi(self): return self._phi
+
+    @property
+    def psi(self): return self._psi
+
+    @property
+    def omega(self): return self._omega
+
+    @property
+    def phi_std(self): return self._phi_std
+
+    @property
+    def psi_std(self): return self._psi_std
+
+    @property
+    def omega_std(self): return self._omega_std
+
+    @property
+    def phi_deg(self): return self._deg(self._phi)
+
+    @property
+    def psi_deg(self): return self._deg(self._psi)
+
+    @property
+    def omega_deg(self): return self._deg(self._omega)
+
+    @property
+    def phi_std_deg(self): return self._deg(self._phi_std)
+
+    @property
+    def psi_std_deg(self): return self._deg(self._psi_std)
+
+    @property
+    def omega_std_deg(self): return self._deg(self._omega_std)
 
     def as_dict(self, degrees=False, skip_omega=False, with_std=False):
         """
@@ -114,6 +136,12 @@ class Dihedral(object):
     @classmethod
     def empty(cls):
         return cls(nan, nan, nan)
+
+    @staticmethod
+    def _deg(rad: Optional[float]):
+        if rad is None:
+            return None
+        return math.degrees(rad)
 
     @staticmethod
     def flat_torus_distance(a1: Dihedral, a2: Dihedral, degrees=False) \
