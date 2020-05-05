@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import math
-from functools import partial
 from math import nan
 from typing import List
 
 import Bio.PDB as PDB
 import numba
 import numpy as np
-import uncertainties
 import uncertainties.unumpy as unumpy
 import uncertainties.umath as umath
 from Bio.PDB.Atom import Atom
@@ -48,7 +46,8 @@ class Dihedral(object):
             if isinstance(a, float):
                 val, std = a, None
             elif hasattr(a, '__len__') and len(a) == 2:
-                val, std = float(a[0]), float(a[1])
+                val = float(a[0])
+                std = float(a[1]) if a[1] is not None else None
             else:
                 raise ValueError('Input angles must be either a float or a '
                                  'tuple (value, std)')
