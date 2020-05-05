@@ -192,11 +192,11 @@ class Dihedral(object):
         return np.degrees(dist) if degrees else dist
 
     @staticmethod
-    def frechet_torus_centroid(*angles: Dihedral, metric_fn=None):
+    def frechet_centroid(*angles: Dihedral, metric_fn=None):
         """
         Calculates the centroid point of a set of points on a torus.
         Finds the Frechet mean of a simple distance metric on S1 (circle)
-        for every angle separately.
+        for each angle separately.
         :param angles: Sequence of Dihedral angles. Only phi, psi will be used.
         :return: A Dihedral object with phi, psi representing the centroid
         location.
@@ -217,6 +217,28 @@ class Dihedral(object):
         m_phi = frechet_mean_s1(phi_psi[:, 0])
         m_psi = frechet_mean_s1(phi_psi[:, 1])
 
+        return Dihedral.from_rad(m_phi, m_psi, math.pi)
+
+    @staticmethod
+    def circular_centroid(*angles: Dihedral):
+        """
+        Calculates the centroid point of a set of points on a torus.
+        :param angles: Sequence of Dihedral angles. Only phi, psi will be used.
+        :return: A Dihedral object with phi, psi representing the centroid
+        location.
+        """
+        # Create (N,2) array of phi,psi pairs
+        phi_psi = np.array([(a.phi, a.psi) for a in angles], dtype=np.float32)
+        n = len(phi_psi)
+
+        sigma_sin = np.sin(phi_psi).sum(axis=0)  # (2, )
+        sigma_cos = np.cos(phi_psi).sum(axis=0)  # (2, )
+        circmean = np.arctan2(sigma_sin, sigma_cos)  # output is in [-pi, pi]
+
+        r = np.hypot(sigma_sin / n, sigma_cos / n)
+        circstd = np.sqrt(-2 * np.log(r))
+        m_phi = (circmean[0], circstd[0])
+        m_psi = (circmean[1], circstd[1])
         return Dihedral.from_rad(m_phi, m_psi, math.pi)
 
     @staticmethod

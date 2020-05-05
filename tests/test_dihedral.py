@@ -410,36 +410,129 @@ class TestFlatTorusDistance:
         assert max(diffs) == approx(0.)
 
 
-class TestFrechetMean:
-    TEST_CASES = [
+class TestCentroids:
+    MEAN_TESTS = [
         # phi, psi, phi_expected, psi_expected
         ([-45, 45], [-30, 30], 0, 0),
         ([-45, -30, 30, 45], [75, 80, 100, 105], 0, 90),
         ([-140, -145, -155, -160], [-75, -80, -100, -105], -150, -90),
         ([-170, -175, 175, 170], [0, 0, 0, 0], -180, 0),
-        ([-90, 90], [0, 180], 0, -90),
+        ([-92, 86], [-2, 176], -3, 87),
         ([12.34], [56.78], 12.34, 56.78),
     ]
 
-    @pytest.mark.parametrize(('phi', 'psi', 'phi_exp', 'psi_exp'), TEST_CASES)
-    def test_1(self, phi, psi, phi_exp, psi_exp):
+    MEAN_TESTS_FRECHET = MEAN_TESTS + [
+        # Failure cases for circmean: when difference is exactly 180 degrees
+        ([-92, 88], [-2, 178], -2, 88),
+        ([-90, 90], [0, 180], 0, -90),
+    ]
+
+    MEAN_TESTS_CIRC = MEAN_TESTS + [
+        # Failure case for frechet: when difference is close to 180,
+        # sometimes it chooses the wrong side
+        ([-155, 75], [150, -66], 140, -138),
+    ]
+
+    STD_TESTS = [
+        # phi, psi, phi_std_expected, psi_std_expected
+        ([-5, 5], [-3, 3], 5, 3),
+        ([-3, -2, 2, 3], [88, 89, 91, 92], 2.5, 1.5),
+        ([12.34], [56.78], 0, 0),
+    ]
+
+    @staticmethod
+    def _compre_centroid(phi, psi, phi_expected, psi_expected,
+                         centroid_fn, compare_type='mean', tol=1e-2):
         assert len(phi) == len(psi), 'test case error'
 
         angs = [Dihedral.from_deg(phi[i], psi[i], 0) for i in range(len(psi))]
-        actual = Dihedral.frechet_torus_centroid(*angs)
+        res: Dihedral = centroid_fn(*angs)
 
-        assert actual.phi_deg == approx(phi_exp, abs=1e-2)
-        assert actual.psi_deg == approx(psi_exp, abs=1e-2)
+        if compare_type == 'mean':
+            phi_actual = res.phi_deg
+            psi_actual = res.psi_deg
+        elif compare_type == 'std':
+            phi_actual = res.phi_std_deg
+            psi_actual = res.psi_std_deg
+        else:
+            raise ValueError(f'unexpected type {compare_type}')
+
+        phis = f'phis={[a.phi_deg for a in angs]}, ' \
+               f'e={phi_expected}, a={phi_actual}'
+        psis = f'psis={[a.psi_deg for a in angs]}, ' \
+               f'e={psi_expected}, a={psi_actual}'
+
+        def diff_ang(a1, a2):
+            return np.degrees(np.arccos(np.cos(np.radians(a1 - a2))))
+
+        assert diff_ang(phi_expected, phi_actual) == approx(0, abs=tol), phis
+        assert diff_ang(psi_expected, psi_actual) == approx(0, abs=tol), psis
+
+    @pytest.mark.parametrize(('phi', 'psi', 'phi_exp', 'psi_exp'),
+                             MEAN_TESTS_FRECHET)
+    def test_frechet_mean(self, phi, psi, phi_exp, psi_exp):
+        self._compre_centroid(
+            phi, psi, phi_exp, psi_exp,
+            Dihedral.frechet_centroid, 'mean', tol=1e-2)
+
+    @pytest.mark.parametrize(('phi', 'psi', 'phi_exp', 'psi_exp'), STD_TESTS)
+    def test_frechet_std(self, phi, psi, phi_exp, psi_exp):
+        self._compre_centroid(
+            phi, psi, phi_exp, psi_exp,
+            Dihedral.frechet_centroid, 'std', tol=1e-1)
+
+    @pytest.mark.parametrize(('phi', 'psi', 'phi_exp', 'psi_exp'),
+                             MEAN_TESTS_CIRC)
+    def test_circ_mean(self, phi, psi, phi_exp, psi_exp):
+        self._compre_centroid(
+            phi, psi, phi_exp, psi_exp,
+            Dihedral.circular_centroid, 'mean', tol=1e-2)
+
+    @pytest.mark.parametrize(('phi', 'psi', 'phi_exp', 'psi_exp'), STD_TESTS)
+    def test_circ_std(self, phi, psi, phi_exp, psi_exp):
+        self._compre_centroid(
+            phi, psi, phi_exp, psi_exp,
+            Dihedral.circular_centroid, 'std', tol=1e-1)
+
+    @pytest.mark.skip
+    @pytest.mark.parametrize('n', [1, 2, 4, 8, 16, 32, ])
+    def test_compare_frechet_circ(self, n):
+        angles = random_angles(n)
+        tol_ang, tol_std = 1e-1, 2e0
+
+        cf = Dihedral.frechet_centroid(*angles)
+        cc = Dihedral.circular_centroid(*angles)
+
+        phis = f'phis={[a.phi_deg for a in angles]}, ' \
+               f'f={cf.phi_deg:.2f}±{cf.phi_std_deg:.2f}, ' \
+               f'c={cc.phi_deg:.2f}±{cc.phi_std_deg:.2f}'
+        psis = f'psis={[a.psi_deg for a in angles]}, ' \
+               f'f={cf.psi_deg:.2f}±{cf.psi_std_deg:.2f}, ' \
+               f'c={cc.psi_deg:.2f}±{cc.psi_std_deg:.2f}'
+
+        def diff_ang(a1, a2):
+            return np.degrees(np.arccos(np.cos(np.radians(a1 - a2))))
+
+        assert diff_ang(cf.phi_deg, cc.phi_deg) == approx(0, abs=tol_ang), phis
+        assert diff_ang(cf.psi_deg, cc.psi_deg) == approx(0, abs=tol_ang), psis
+        assert cf.phi_std_deg == approx(cc.phi_std_deg, abs=tol_std), phis
+        assert cf.psi_std_deg == approx(cc.psi_std_deg, abs=tol_std), psis
 
     def test_benchmark_frechet_controid_numba(self, benchmark):
         benchmark.pedantic(
-            Dihedral.frechet_torus_centroid, args=random_angles(1000),
+            Dihedral.frechet_centroid, args=random_angles(1000),
             rounds=10, iterations=50, warmup_rounds=1,
         )
 
     def test_benchmark_frechet_centroid_python(self, benchmark):
         benchmark.pedantic(
-            Dihedral.frechet_torus_centroid, args=random_angles(1000),
+            Dihedral.frechet_centroid, args=random_angles(1000),
             kwargs=dict(metric_fn=Dihedral._mean_sq_metric_s1.py_func),
+            rounds=10, iterations=50, warmup_rounds=1,
+        )
+
+    def test_benchmark_circular_controid(self, benchmark):
+        benchmark.pedantic(
+            Dihedral.circular_centroid, args=random_angles(1000),
             rounds=10, iterations=50, warmup_rounds=1,
         )
