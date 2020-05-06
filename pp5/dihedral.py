@@ -233,14 +233,25 @@ class Dihedral(object):
         # Create (N,2) array of phi,psi pairs
         phi_psi = np.array([(a.phi, a.psi) for a in angles], dtype=np.float32)
         n = len(phi_psi)
+        if n == 1:
+            phi, psi = phi_psi[0]
+            return Dihedral.from_rad((phi, 0), (psi, 0), math.pi)
 
         sigma_sin = np.nansum(np.sin(phi_psi), axis=0)  # (2, )
         sigma_cos = np.nansum(np.cos(phi_psi), axis=0)  # (2, )
         circmean = np.arctan2(sigma_sin, sigma_cos)  # output is in [-pi, pi]
 
         r = np.hypot(sigma_sin / n, sigma_cos / n)
-        r = np.round(r, decimals=6)  # ensure sin^2 + cos^2 = 1 for one angle
         circstd = np.sqrt(-2 * np.log(r))
+
+        # Handle missing data: If all phi/psi angles were NaN then
+        # sigma_sin/cos for them will be zero due to nansum.
+        # This causes r to be zero for this angle, and then -log(0) = inf.
+        # replace mean=0, std=inf with mean=nan, std=nan to mark missing data.
+        inf_idx = np.isinf(circstd)
+        circmean[inf_idx] = np.nan
+        circstd[inf_idx] = np.nan
+
         m_phi = (circmean[0], circstd[0])
         m_psi = (circmean[1], circstd[1])
         return Dihedral.from_rad(m_phi, m_psi, math.pi)
