@@ -20,8 +20,8 @@ from pytest import approx
 calc_dihedral2 = DihedralAnglesEstimator.calc_dihedral2
 
 
-def random_angles(n=100):
-    phi_psi = np.random.uniform(-np.pi, np.pi, size=(n, 2))
+def random_angles(n=100, low=-np.pi, high=np.pi):
+    phi_psi = np.random.uniform(low, high, size=(n, 2))
     angles = [Dihedral.from_rad(phi, psi, 0.) for phi, psi in phi_psi]
     return angles
 
@@ -437,7 +437,8 @@ class TestCentroids:
         # phi, psi, phi_std_expected, psi_std_expected
         ([-5, 5], [-3, 3], 5, 3),
         ([-3, -2, 2, 3], [88, 89, 91, 92], 2.5, 1.5),
-        ([12.34], [56.78], 0, 0),
+        ([12.34], [-56.78], 0, 0),
+        ([-134], [141.65], 0, 0),
     ]
 
     @staticmethod
@@ -494,21 +495,30 @@ class TestCentroids:
             phi, psi, phi_exp, psi_exp,
             Dihedral.circular_centroid, 'std', tol=1e-1)
 
-    @pytest.mark.skip
-    @pytest.mark.parametrize('n', [1, 2, 4, 8, 16, 32, ])
+    @pytest.mark.repeat(10)
+    @pytest.mark.parametrize('n', [1, 2, 4, 8, 16, 32, 64])
     def test_compare_frechet_circ(self, n):
-        angles = random_angles(n)
-        tol_ang, tol_std = 1e-1, 2e0
+        # These methods are only roughly equivalent for angles in a small
+        # angular section. Can either reduce width of section or increase
+        # tolerance
+        half_width = 0.1 * 180
+        tol_ang, tol_std = 2e-1, 2e-1
+
+        offset = np.random.uniform(-180, 180)
+        low, high = offset - half_width, offset + half_width
+        angles = random_angles(n, low=radians(low), high=radians(high))
 
         cf = Dihedral.frechet_centroid(*angles)
         cc = Dihedral.circular_centroid(*angles)
 
-        phis = f'phis={[a.phi_deg for a in angles]}, ' \
+        phis = f'phis={[f"{a.phi_deg:.2f}" for a in angles]}, ' \
                f'f={cf.phi_deg:.2f}±{cf.phi_std_deg:.2f}, ' \
-               f'c={cc.phi_deg:.2f}±{cc.phi_std_deg:.2f}'
-        psis = f'psis={[a.psi_deg for a in angles]}, ' \
+               f'c={cc.phi_deg:.2f}±{cc.phi_std_deg:.2f} ' \
+               f'low={low:.2f}, high={high:.2f}'
+        psis = f'psis={[f"{a.psi_deg:.2f}" for a in angles]}, ' \
                f'f={cf.psi_deg:.2f}±{cf.psi_std_deg:.2f}, ' \
-               f'c={cc.psi_deg:.2f}±{cc.psi_std_deg:.2f}'
+               f'c={cc.psi_deg:.2f}±{cc.psi_std_deg:.2f}, ' \
+               f'low={low:.2f}, high={high:.2f}'
 
         def diff_ang(a1, a2):
             return np.degrees(np.arccos(np.cos(np.radians(a1 - a2))))
@@ -517,6 +527,12 @@ class TestCentroids:
         assert diff_ang(cf.psi_deg, cc.psi_deg) == approx(0, abs=tol_ang), psis
         assert cf.phi_std_deg == approx(cc.phi_std_deg, abs=tol_std), phis
         assert cf.psi_std_deg == approx(cc.psi_std_deg, abs=tol_std), psis
+
+        if n == 1:  # Should be exactly zero
+            assert cf.phi_std_deg == 0, phis
+            assert cc.phi_std_deg == 0, phis
+            assert cf.psi_std_deg == 0, psis
+            assert cc.psi_std_deg == 0, psis
 
     def test_benchmark_frechet_controid_numba(self, benchmark):
         benchmark.pedantic(
