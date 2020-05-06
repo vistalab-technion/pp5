@@ -194,10 +194,11 @@ class Dihedral(object):
     @staticmethod
     def frechet_centroid(*angles: Dihedral, metric_fn=None):
         """
-        Calculates the centroid point of a set of points on a torus.
+        Calculates the approximate centroid point of a set of points on a
+        torus.
         Finds the Frechet mean of a simple distance metric on S1 (circle)
         for each angle separately.
-        :param angles: Sequence of Dihedral angles. Only phi, psi will be used.
+        :param angles: Sequence of angles. Only phi, psi will be used.
         :return: A Dihedral object with phi, psi representing the centroid
         location.
         """
@@ -222,8 +223,10 @@ class Dihedral(object):
     @staticmethod
     def circular_centroid(*angles: Dihedral):
         """
-        Calculates the centroid point of a set of points on a torus.
-        :param angles: Sequence of Dihedral angles. Only phi, psi will be used.
+        Calculates the approximate centroid point of a set of points on a
+        torus. Calculates the average angle with circular-wrapping for each
+        direction (phi, psi) separately.
+        :param angles: Sequence of angles. Only phi, psi will be used.
         :return: A Dihedral object with phi, psi representing the centroid
         location.
         """
@@ -231,11 +234,12 @@ class Dihedral(object):
         phi_psi = np.array([(a.phi, a.psi) for a in angles], dtype=np.float32)
         n = len(phi_psi)
 
-        sigma_sin = np.sin(phi_psi).sum(axis=0)  # (2, )
-        sigma_cos = np.cos(phi_psi).sum(axis=0)  # (2, )
+        sigma_sin = np.nansum(np.sin(phi_psi), axis=0)  # (2, )
+        sigma_cos = np.nansum(np.cos(phi_psi), axis=0)  # (2, )
         circmean = np.arctan2(sigma_sin, sigma_cos)  # output is in [-pi, pi]
 
         r = np.hypot(sigma_sin / n, sigma_cos / n)
+        r = np.round(r, decimals=6)  # ensure sin^2 + cos^2 = 1 for one angle
         circstd = np.sqrt(-2 * np.log(r))
         m_phi = (circmean[0], circstd[0])
         m_psi = (circmean[1], circstd[1])
