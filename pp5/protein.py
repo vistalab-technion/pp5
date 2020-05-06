@@ -77,7 +77,6 @@ class ResidueRecord(object):
                  codon: str, codon_score: float,
                  codon_opts: Union[Iterable[str], str],
                  angles: Dihedral, bfactor: float, secondary: str):
-
         self.res_id, self.name = str(res_id).strip(), name
         self.codon, self.codon_score = codon, codon_score
         if isinstance(codon_opts, str):
@@ -577,7 +576,6 @@ class ProteinRecord(object):
 
     def _find_dna_alignment(self, pdb_aa_seq: str, max_ena: int) \
             -> Tuple[SeqRecord, Dict[int, str]]:
-
         # Find cross-refs in ENA
         ena_molecule_types = ('mrna', 'genomic_dna')
         ena_ids = unp.find_ena_xrefs(self.unp_rec, ena_molecule_types)
@@ -894,7 +892,7 @@ class ProteinGroup(object):
                  sa_outlier_cutoff: float = 2.,
                  sa_max_all_atom_rmsd: float = 2.,
                  sa_min_aligned_residues: int = 50,
-                 angle_aggregation='frechet',
+                 angle_aggregation='circ',
                  strict_pdb_xref=True, strict_unp_xref=False,
                  parallel=True):
         """
@@ -915,6 +913,7 @@ class ProteinGroup(object):
         required to include a structure in a group.
         :param angle_aggregation: Method for angle-aggregation of matching
         query residues of each reference residue. Options are
+        'circ' - Circular mean;
         'frechet' - Frechet centroid;
         'max_res' - No aggregation, take angle of maximal resolution structure
         :param strict_pdb_xref: Whether to require that the given PDB ID
@@ -950,6 +949,7 @@ class ProteinGroup(object):
         self.strict_unp_xref = strict_unp_xref
 
         angle_aggregation_methods = {
+            'circ': self._aggregate_fn_circ,
             'frechet': self._aggregate_fn_frechet,
             'max_res': self._aggregate_fn_best_res
         }
@@ -1478,7 +1478,6 @@ class ProteinGroup(object):
     @staticmethod
     def _align_pymol_to_prec(prec: ProteinRecord, pymol_seq: str) \
             -> Dict[int, int]:
-
         sa_r_seq = StructuralAlignment.ungap(pymol_seq)
 
         # Align prec and pymol sequences
@@ -1549,7 +1548,6 @@ class ProteinGroup(object):
             match_groups: Dict[Tuple[str, str], Dict[str, ResidueMatch]] = {}
             ref_group_idx = None
             for q_pdb_id, q_match in matches.items():
-
                 q_prec = self.query_pdb_to_prec[q_pdb_id]
                 unp_id = q_prec.unp_id
                 codon = q_match.codon
@@ -1634,8 +1632,9 @@ class ProteinGroup(object):
         q_pdb_id_best_res = sorted(match_group, key=sort_key)[0]
         return match_group[q_pdb_id_best_res].angles
 
-    def _aggregate_fn_frechet(self, match_group: Dict[str, ResidueMatch]) \
-            -> Dihedral:
+    @staticmethod
+    def _aggregate_fn_frechet(
+            match_group: Dict[str, ResidueMatch]) -> Dihedral:
         """
         Aggregator which computes the Frechet mean of the dihedral angles in
         the group.
@@ -1643,7 +1642,19 @@ class ProteinGroup(object):
         :return: The Frechet mean of the dihedral angles in
         the group.
         """
-        return Dihedral.frechet_torus_centroid(
+        return Dihedral.frechet_centroid(
+            *[m.angles for m in match_group.values()]
+        )
+
+    @staticmethod
+    def _aggregate_fn_circ(match_group: Dict[str, ResidueMatch]) -> Dihedral:
+        """
+        Aggregator which computes the circular mean of the dihedral angles in
+        the group.
+        :param match_group: Match group dict, keys are query pdb_ids.
+        :return: The mean of the dihedral angles in the group.
+        """
+        return Dihedral.circular_centroid(
             *[m.angles for m in match_group.values()]
         )
 
