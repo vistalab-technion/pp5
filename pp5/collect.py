@@ -1,12 +1,12 @@
 import abc
 import json
 import logging
-import math
 import multiprocessing as mp
 import os
 import time
 import socket
 import zipfile
+from pprint import pformat
 from multiprocessing.pool import AsyncResult
 from pathlib import Path
 from typing import Callable, Any, Optional, List, Iterable, NamedTuple, Dict
@@ -30,7 +30,7 @@ class CollectorStep(NamedTuple):
     message: str
 
     def __repr__(self):
-        return f'CollectorStep {self.name} completed in {self.elapsed} ' \
+        return f'{self.name}: completed in {self.elapsed} ' \
                f'result={self.result}' \
                f'{f": {self.message}" if self.message else ""}'
 
@@ -102,8 +102,7 @@ class ParallelDataCollector(abc.ABC):
         time_str = elapsed_seconds_to_dhms(end_time - start_time)
 
         LOGGER.info(f'Completed collection for {self} in {time_str}')
-        for step in self.collection_steps:
-            LOGGER.info(step)
+        LOGGER.info(f'Collection metadata:\n{pformat(self.collection_meta)}')
 
     def _finalize_collection(self, pool):
         LOGGER.info(f"Finalizing collection for {self.id}...")
