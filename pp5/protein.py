@@ -8,7 +8,7 @@ import enum
 import pickle
 from pathlib import Path
 from typing import List, Tuple, Dict, Iterator, Callable, Any, Union, \
-    Iterable, Optional
+    Iterable, Optional, Set
 from collections import OrderedDict
 import itertools as it
 
@@ -1085,6 +1085,25 @@ class ProteinGroup(object):
             for match in matches.values():
                 counts[match.type.name] += 1
         return counts
+
+    @property
+    def unp_to_pdb(self) -> Dict[str, Set[str]]:
+        """
+        :return: A mapping from Uniprot ID to a the set of structures
+        which represent it within this pgroup.
+        """
+
+        # Make sure to include reference...
+        res = {
+            self.ref_prec.unp_id: {self.ref_pdb_id}
+        }
+
+        for q_pdb_id, q_prec in self.query_pdb_to_prec.items():
+            q_unp_id = q_prec.unp_id
+            pdb_id_set: set = res.setdefault(q_unp_id, set())
+            pdb_id_set.add(q_pdb_id)
+
+        return res
 
     def to_pairwise_dataframe(self, with_ref_id=False):
         """
