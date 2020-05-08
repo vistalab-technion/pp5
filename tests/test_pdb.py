@@ -300,3 +300,13 @@ class TestPDBQueries:
         pdb_ids = query.execute()
 
         assert len(pdb_ids) >= 3
+
+    def test_unp_query_single(self):
+        query = pdb.PDBUniprotIdQuery('p00720')
+        pdb_ids = query.execute()
+        assert len(pdb_ids) >= 3
+
+    def test_unp_query_multi(self):
+        query = pdb.PDBUniprotIdQuery(['p00720', 'P00921'])
+        pdb_ids = query.execute()
+        assert len(pdb_ids) >= 3 + 9

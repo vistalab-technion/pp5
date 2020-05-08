@@ -10,7 +10,8 @@ from collections import OrderedDict
 from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
-from typing import NamedTuple, Type, Dict, List, Set, Union, Tuple, Optional
+from typing import NamedTuple, Type, Dict, List, Set, Union, Tuple, Optional, \
+    Iterable
 import itertools as it
 
 import pandas as pd
@@ -359,7 +360,6 @@ class PDB2UNP(JSONCacheableMixin, object):
 
         for i, curr_id in enumerate(
                 struct_d['_struct_ref_seq.pdbx_db_accession']):
-
             curr_id = curr_id.upper()
 
             # In case the xref DB id is not from Uniprot
@@ -449,7 +449,6 @@ class PDB2UNP(JSONCacheableMixin, object):
                    pdb_id,
                    cache_dir: Union[str, Path] = pp5.PDB2UNP_DIR) \
             -> Optional[PDB2UNP]:
-
         pdb_id, _ = split_id(pdb_id)
         filename = f'{pdb_id}.json'
         return super(PDB2UNP, cls).from_cache(cache_dir, filename)
@@ -798,7 +797,7 @@ class PDBExpressionSystemQuery(PDBQuery):
                  expr_sys_comp_type: str = 'contains'):
         """
         :param expr_sys: Name of expression system (organism).
-        :param expr_sys_comp_type: How to compare the specific name to PDB 
+        :param expr_sys_comp_type: How to compare the specific name to PDB
         entries.
         """
         super().__init__()
@@ -821,6 +820,31 @@ class PDBExpressionSystemQuery(PDBQuery):
             line(self.TAG_NAME, self.expr_sys)
 
         return doc.getvalue()
+
+
+class PDBUniprotIdQuery(PDBQuery):
+    UNP_QUERY_TYPE = 'org.pdb.query.simple.UpAccessionIdQuery'
+    TAG_ACCESSION_ID_LIST = 'accessionIdList'
+
+    def __init__(self, unp_ids: Union[str, Iterable[str]]):
+        super().__init__()
+        if isinstance(unp_ids, str):
+            unp_ids = unp_ids.split(',')
+
+        self.unp_ids = [u.strip().upper() for u in unp_ids]
+
+    def to_xml(self):
+        doc, tag, text, line = yattag.Doc().ttl()
+
+        with tag(self.TAG_QUERY):
+            line(self.TAG_QUERY_TYPE, self.UNP_QUERY_TYPE)
+            line(self.TAG_DESCRIPTION, self.description())
+            line(self.TAG_ACCESSION_ID_LIST, str.join(',', self.unp_ids))
+
+        return doc.getvalue()
+
+    def description(self):
+        return f'Uniprot id in {self.unp_ids}'
 
 
 class PDBSequenceQuery(PDBQuery):
