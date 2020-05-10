@@ -793,12 +793,16 @@ class ProteinRecord(object):
 class ProteinGroup(object):
     """
     A ProteinGroup represents a group of protein structures which are
-    similar in terms of sequence and structure.
+    similar in terms of sequence and structure, but may belong to different
+    proteins (Uniprot IDs).
 
     A group is defined by a reference structure.
     All proteins in the group are aligned to the reference and different
     residue pairs are created. The pairs have different types based on the
     properties of the alignment (variant/same/silent/mutation/alteration).
+
+    This class allows creation of Pairwise and Pointwise datasets for the
+    structures in the group.
     """
     DEFAULT_EXPR_SYS = 'Escherichia Coli'
     DEFAULT_RES = 1.8
@@ -889,7 +893,7 @@ class ProteinGroup(object):
         return cls.from_query_ids(ref_pdb_id, query_pdb_ids, **kw_for_init)
 
     def __init__(self, ref_pdb_id: str, query_pdb_ids: Iterable[str],
-                 context_len: int = 1, prec_cache=True,
+                 context_len: int = 1, prec_cache=False,
                  sa_outlier_cutoff: float = 2.,
                  sa_max_all_atom_rmsd: float = 2.,
                  sa_min_aligned_residues: int = 50,
@@ -901,7 +905,7 @@ class ProteinGroup(object):
         query PDB IDs. Structural alignment will be performed, and some
         query structures may be rejected.
         :param ref_pdb_id: Reference structure PDB ID.
-        :param query_pdb_ids: List of PDB ODs of query structures.
+        :param query_pdb_ids: List of PDB IDs of query structures.
         :param context_len: Number of stars required around an aligmed AA
         pair to consider that pair for a match.
         :param prec_cache:  Whether to load ProteinRecords from cache if
@@ -1106,6 +1110,87 @@ class ProteinGroup(object):
 
         return res
 
+    def to_pointwise_dataframe(self, with_ref_id=False, with_neighbors=False):
+        """
+        :param with_ref_id: Whether to include a column with the reference
+        structure Uniprot id. This is generally redundant as it
+        will have the same value for all rows. However may be useful when
+        creating multiple pointwise dataframes from different pgroups.
+        :param with_neighbors: Whether to include the neighbors of each
+        location (one before and one after) in each row. This will also add
+        redundancy to the output, since this can be calculated from the
+        regular version.
+        :return: A dataframe containing the aligned residue VARIANT match
+        groups at each reference index.
+        This is very similar to the 'groups' dataframe, but with only
+        VARIANT groups, and optionally with a comparison to the previous and
+        next aligned residues.
+        """
+        df_index = []
+        df_data = []
+
+        # Get the VARIANT match group at each reference index
+        variant_groups: Dict[int, ResidueMatchGroup] = {
+            i: g[0] for i, g in self.ref_groups.items()
+        }
+
+        # Number of reference structure residues
+        n_ref = len(self.ref_prec)
+
+        # Create consecutive indices of residues.
+        if with_neighbors:
+            # Currently we use a default context of 1 residue before and after.
+            # We can change this index later on if more/less context is needed.
+            idx = zip(range(0, n_ref - 2), range(1, n_ref - 1),
+                      range(2, n_ref))
+        else:
+            idx = zip(range(n_ref))  # produces [(0,), (1,) ...]
+
+        if with_ref_id:
+            curr_index_base = (self.ref_prec.unp_id,)
+            df_index_names = ['unp_id', 'ref_idx', 'names']
+        else:
+            curr_index_base = tuple()
+            df_index_names = ['ref_idx', 'names']
+
+        for iii in idx:
+            # Get VARIANTS at these indices
+            # Make sure we have all consecutive residues for these indices
+            vgroups = [variant_groups.get(i) for i in iii]
+            if not all(vgroups):
+                continue
+
+            # We index the resulting dataframe by (unp_id, location, AA names)
+            ref_idx = iii[0] + len(iii) // 2  # use central index
+            names = str.join('', [v.name for v in vgroups])
+            curr_index = curr_index_base + (ref_idx, names)
+
+            # Get match group data from consecutive variant groups
+            curr_data = {}
+            for j, vgroup in enumerate(vgroups):
+                # Relative idx is e.g. -1/+0/+1, relative to ref_idx
+                rel_idx = f'{j - len(iii) // 2:+0d}' if len(iii) > 1 else ''
+                angles = {
+                    f'{k}{rel_idx}': v for k, v in
+                    vgroup.angles.as_dict(
+                        degrees=True, skip_omega=True, with_std=True
+                    ).items()
+                }
+                curr_data.update({
+                    f'codon{rel_idx}': vgroup.codon,
+                    f'codon_opts{rel_idx}': str.join('/', vgroup.codon_opts),
+                    f'secondary{rel_idx}': str.join('/', vgroup.secondary),
+                    f'group_size{rel_idx}': vgroup.group_size,
+                    **angles
+                })
+
+            df_index.append(curr_index)
+            df_data.append(curr_data)
+
+        df_index = pd.MultiIndex.from_tuples(df_index, names=df_index_names)
+        df = pd.DataFrame(data=df_data, index=df_index)
+        return df
+
     def to_pairwise_dataframe(self, with_ref_id=False):
         """
         :param with_ref_id: Whether to include a column with the reference
@@ -1113,8 +1198,8 @@ class ProteinGroup(object):
         have the same value for all rows. However may be useful when
         creating multiple pairwise dataframes from different pgroups.
         :return: A dataframe containing the aligned residue match groups (i.e.,
-        grouped by Uniprot ID and codon), but compared to the VARIANT group at
-        that reference index.
+        matches grouped by Uniprot ID and codon), but compared to the VARIANT
+        group at that reference index.
         This is very similar to the 'groups' dataframe, but here each line
         is a *pair* of ResidueMatchGroups at an index: the first is the
         VARIANT group, and the second is another type of group (e.g. SILENT).
@@ -1606,7 +1691,7 @@ class ProteinGroup(object):
 
                 # Make sure all members of group have the same match type,
                 # except the VARIANT group which should have one REFERENCE.
-                # Alsp AA name should be the same since codon is the same
+                # Also, AA name should be the same since codon is the same.
                 if ResidueMatchType.REFERENCE in types:
                     types.remove(ResidueMatchType.REFERENCE)
                     types.add(ResidueMatchType.VARIANT)
@@ -1617,7 +1702,7 @@ class ProteinGroup(object):
 
                 # Get alternative possible codon options. Remove the
                 # group codon to prevent redundancy.  Note that
-                # UNKNOWN_CODON is a possiblity, we leave it in.
+                # UNKNOWN_CODON is a possibility, we leave it in.
                 group_codon_opts = set(it.chain(*[o.split('/') for o in opts]))
                 group_codon_opts.remove(codon)
 
@@ -1677,6 +1762,13 @@ class ProteinGroup(object):
         return Dihedral.circular_centroid(
             *[m.angles for m in match_group.values()]
         )
+
+    def __getitem__(self, ref_idx: int):
+        """
+        :param ref_idx: A residue index in the reference structure.
+        :return: The match groups matching at that reference.
+        """
+        return self.ref_groups.get(ref_idx)
 
     def __repr__(self):
         return f'{self.__class__.__name__} {self.ref_pdb_id}'
