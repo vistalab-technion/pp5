@@ -3,21 +3,21 @@ import json
 import logging
 import multiprocessing as mp
 import os
-import time
 import socket
+import time
 import zipfile
-from pprint import pformat
 from multiprocessing.pool import AsyncResult
 from pathlib import Path
-from typing import Callable, Any, Optional, List, Iterable, NamedTuple, Dict
+from pprint import pformat
+from typing import Callable, Optional, List, Iterable, NamedTuple, Dict
 
 import pandas as pd
 
 import pp5
 import pp5.parallel
+from pp5.align import ProteinBLAST
 from pp5.external_dbs import pdb, unp
 from pp5.protein import ProteinRecord, ProteinInitError, ProteinGroup
-from pp5.align import ProteinBLAST
 from pp5.utils import elapsed_seconds_to_dhms
 
 LOGGER = logging.getLogger(__name__)
@@ -317,6 +317,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.df_ref = None  # Metadata about collected reference structures
         self.df_pgroups = None  # Metadata for each pgroup
         self.df_pairwise = None  # Pairwise matches from all pgroups
+        self.df_pointwise = None  # Pointwise matches from all pgroups
 
         if ref_file is None:
             self._all_file = None
@@ -452,11 +453,17 @@ class ProteinGroupCollector(ParallelDataCollector):
         # We need to write these things to different output files.
         pgroup_datas = []
         pairwise_dfs: List[pd.DataFrame] = []
+        pointwise_dfs: List[pd.DataFrame] = []
         for pgroup_data in collected_data:
             if pgroup_data is None:
                 continue
+
+            # Save the pairwise and pointwise data from each pgroup.
             df_pairwise = pgroup_data.pop('pgroup_pairwise')
             pairwise_dfs.append(df_pairwise)
+            df_pointwise = pgroup_data.pop('pgroup_pointwise')
+            pointwise_dfs.append(df_pointwise)
+
             pgroup_datas.append(pgroup_data)
 
         # Create pgroup metadata dataframe
@@ -484,6 +491,16 @@ class ProteinGroupCollector(ParallelDataCollector):
             )
         filepath = self._write_csv(self.df_pairwise, 'data-pairwise')
         self.out_filepaths.append(filepath)
+
+        # Create the pointwise matches dataframe
+        self.df_pointwise = pd.concat(pointwise_dfs, axis=0).reset_index()
+        if len(self.df_pointwise):
+            self.df_pointwise.sort_values(
+                by=['unp_id', 'ref_idx'], inplace=True, ignore_index=True
+            )
+        filepath = self._write_csv(self.df_pointwise, 'data-pointwise')
+        self.out_filepaths.append(filepath)
+
         return meta
 
     def _write_csv(self, df: pd.DataFrame, filename: str) -> Path:
@@ -609,13 +626,15 @@ class ProteinGroupCollector(ParallelDataCollector):
             # Create a pgroup without an additional query, by specifying the
             # exact ids of the query structures.
             pgroup = ProteinGroup.from_query_ids(
-                # TODO: Prevent parsing ref PDB file second time here
                 ref_pdb_id, query_pdb_ids=df_blast.index,
                 parallel=False, prec_cache=True,
             )
 
-            # Get the pairwise matches from the pgroup
+            # Get the pairwise and pointwise matches from the pgroup
             pgroup_pairwise = pgroup.to_pairwise_dataframe(with_ref_id=True)
+            pgroup_pointwise = pgroup.to_pointwise_dataframe(
+                with_ref_id=True, with_neighbors=True
+            )
 
             # If necessary, also write the pgroup to CSV files
             if out_dir is not None:
@@ -635,4 +654,5 @@ class ProteinGroupCollector(ParallelDataCollector):
             n_total_matches=pgroup.num_matches,
             **match_counts,
             pgroup_pairwise=pgroup_pairwise,
+            pgroup_pointwise=pgroup_pointwise
         )
