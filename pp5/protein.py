@@ -804,8 +804,8 @@ class ProteinGroup(object):
     This class allows creation of Pairwise and Pointwise datasets for the
     structures in the group.
     """
-    DEFAULT_EXPR_SYS = 'Escherichia Coli'
-    DEFAULT_RES = 1.8
+    DEFAULT_EXPR_SYS = pp5.get_config('DEFAULT_EXPR_SYS')
+    DEFAULT_RES = pp5.get_config('DEFAULT_RES')
 
     @classmethod
     def from_pdb_ref(cls, ref_pdb_id: str,

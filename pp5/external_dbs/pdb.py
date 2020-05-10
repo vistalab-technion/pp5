@@ -757,7 +757,7 @@ class PDBResolutionQuery(PDBQuery):
     TAG_RES_MIN = 'refine.ls_d_res_high.min'
     TAG_RES_MAX = 'refine.ls_d_res_high.max'
 
-    def __init__(self, min_res=0., max_res=2.):
+    def __init__(self, min_res=0., max_res=pp5.get_config('DEFAULT_RES')):
         """
         :param min_res: Minimal Xray-diffraction resolution value.
         :param max_res: Maximal Xray-diffraction resolution value.
@@ -793,7 +793,7 @@ class PDBExpressionSystemQuery(PDBQuery):
     TAG_COMP = 'entity_src_gen.pdbx_host_org_scientific_name.comparator'
     TAG_NAME = 'entity_src_gen.pdbx_host_org_scientific_name.value'
 
-    def __init__(self, expr_sys: str = 'Escherichia Coli',
+    def __init__(self, expr_sys: str = pp5.get_config('DEFAULT_EXPR_SYS'),
                  expr_sys_comp_type: str = 'contains'):
         """
         :param expr_sys: Name of expression system (organism).

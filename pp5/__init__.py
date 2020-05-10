@@ -7,7 +7,7 @@ if str(PROJECT_DIR).startswith(os.getcwd()):
     PROJECT_DIR = PROJECT_DIR.relative_to(os.getcwd())
 
 """
-Dict for storing top-level package configuration option, and their default
+Dict for storing top-level package configuration options, and their default
 values.
 """
 _CONFIG = {
@@ -15,6 +15,10 @@ _CONFIG = {
     'MAX_PROCESSES': os.getenv('PP5_MAX_PROCESSES', os.cpu_count()),
     # Number of retries to use when fetching/querying data
     'REQUEST_RETRIES': 5,
+    # Default expression system for PDB queries
+    'DEFAULT_EXPR_SYS': 'Escherichia Coli',
+    # Default resolution for PDB queries
+    'DEFAULT_RES': 1.8,
 }
 
 """
