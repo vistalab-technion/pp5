@@ -285,7 +285,7 @@ class ProteinRecord(object):
         :param xref_selector: Sort key for PDB cross refs. If None,
         resolution will be used.
         :param cache: Whether to load prec from cache if available.
-        :param cache_dir: Wheere the cache dir is. ProteinRecords will be
+        :param cache_dir: Where the cache dir is. ProteinRecords will be
         written to this folder after creation, unless it's None.
         :param kw_for_init: Extra args for the ProteinRecord initializer.
         :return: A ProteinRecord.
@@ -342,6 +342,7 @@ class ProteinRecord(object):
         if not (unp_id and pdb_id):
             raise ProteinInitError("Must provide both Uniprot and PDB IDs")
 
+        unp_id = unp_id.upper()
         LOGGER.info(f'{unp_id}: Initializing protein record...')
         self.__setstate__({})
 
@@ -476,15 +477,15 @@ class ProteinRecord(object):
         return self._pdb_rec
 
     @property
-    def dna_seq(self) -> Seq:
+    def dna_seq(self) -> SeqRecord:
         """
         :return: DNA nucleotide sequence. This is the full DNA sequence which,
-        after translatoin, best-matches to the PDB AA sequence.
+        after translation, best-matches to the PDB AA sequence.
         """
-        return Seq(self._dna_seq)
+        return SeqRecord(Seq(self._dna_seq), self.ena_id, '', '')
 
     @property
-    def protein_seq(self) -> Seq:
+    def protein_seq(self) -> SeqRecord:
         """
         :return: Protein sequence as 1-letter AA names. Based on the
         residues found in the associated PDB structure.
@@ -492,7 +493,7 @@ class ProteinRecord(object):
         unknown AA. This happens if the PDB entry contains non-standard AAs
         and we chose to ignore such AAs.
         """
-        return Seq(self._protein_seq)
+        return SeqRecord(Seq(self._protein_seq), self.pdb_id, '', '')
 
     @property
     def codons(self) -> List[str]:
@@ -1502,7 +1503,7 @@ class ProteinGroup(object):
         # Align prec and pymol sequences
         aligner = PairwiseAligner(substitution_matrix=BLOSUM80,
                                   open_gap_score=-10, extend_gap_score=-0.5)
-        rr_alignments = aligner.align(prec.protein_seq, sa_r_seq)
+        rr_alignments = aligner.align(prec.protein_seq.seq, sa_r_seq)
 
         # Take the alignment with shortest path (fewer gap openings)
         rr_alignments = sorted(rr_alignments, key=lambda a: len(a.path))
