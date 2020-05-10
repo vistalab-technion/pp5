@@ -43,8 +43,10 @@ LOGGER = logging.getLogger(__name__)
 PYMOL_SA_GAP_SYMBOLS = {'-', '?'}
 
 
-def multiseq_align(seqs: Iterable[Seq] = None, in_file=None, out_file=None,
-                   **clustal_kw) -> MSA:
+def multiseq_align(
+        seqs: Iterable[SeqRecord] = None, in_file=None, out_file=None,
+        **clustal_kw
+) -> MSA:
     """
     Aligns multiple Sequences using ClustalOmega.
     Sequences can be given either in-memory or as an input fasta file
@@ -73,12 +75,16 @@ def multiseq_align(seqs: Iterable[Seq] = None, in_file=None, out_file=None,
             raise ValueError(f"If not providing seqs, in_file={in_file} "
                              f"must exist.")
 
-    default_args = dict(verbose=False, force=True, auto=True)
+    default_args = {
+        'verbose': False, 'force': True, 'auto': True,
+        'outfmt': 'clustal', # 'output-order': 'input-order'
+    }
+    if out_file is not None:
+        default_args['outfile'] = out_file
+
+    # Override defaults with user customizations
     default_args.update(clustal_kw)
-    cline = ClustalOmegaCommandline(
-        outfile='-' if not out_file else out_file,  # '-' is stdout
-        **default_args
-    )
+    cline = ClustalOmegaCommandline(**default_args)
 
     if seqs and in_file:
         # Convert seqs to single fasta
@@ -111,11 +117,11 @@ def multiseq_align(seqs: Iterable[Seq] = None, in_file=None, out_file=None,
     # Read from the subprocess stdout or output file.
     with child_proc.stdout as child_out_handle:
         if not out_file:
-            msa_result = AlignIO.read(child_out_handle, 'fasta')
+            msa_result = AlignIO.read(child_out_handle, 'clustal')
         else:
             child_proc.wait(timeout=1 * 60)
             with open(out_file, 'r') as out_handle:
-                msa_result = AlignIO.read(out_handle, 'fasta')
+                msa_result = AlignIO.read(out_handle, 'clustal')
 
     with child_proc.stderr as child_err_handle:
         err = child_err_handle.read()
@@ -192,7 +198,6 @@ class StructuralAlignment(JSONCacheableMixin, object):
     def from_cache(cls, pdb_id_1: str, pdb_id_2: str,
                    cache_dir: Union[str, Path] = pp5.ALIGNMENT_DIR) \
             -> Optional[StructuralAlignment]:
-
         filename = cls._cache_filename(pdb_id_1, pdb_id_2)
         return super(StructuralAlignment, cls).from_cache(cache_dir, filename)
 
