@@ -237,22 +237,23 @@ class Dihedral(object):
             phi, psi = phi_psi[0]
             return Dihedral.from_rad((phi, 0), (psi, 0), math.pi)
 
-        sigma_sin = np.nansum(np.sin(phi_psi), axis=0)  # (2, )
-        sigma_cos = np.nansum(np.cos(phi_psi), axis=0)  # (2, )
+        sin, cos = np.sin(phi_psi), np.cos(phi_psi)
+
+        sigma_sin = np.nansum(sin, axis=0)  # (2, )
+        sigma_cos = np.nansum(cos, axis=0)  # (2, )
         circmean = np.arctan2(sigma_sin, sigma_cos)  # output is in [-pi, pi]
 
-        r = np.hypot(sigma_sin / n, sigma_cos / n)
-        circstd = np.sqrt(-2 * np.log(r + 1e-100))  # prevent log(0)
+        mu_sin = np.nanmean(sin, axis=0)
+        mu_cos = np.nanmean(cos, axis=0)
+        r = np.hypot(mu_sin, mu_cos)
 
         # Handle missing data: If all phi/psi angles were NaN then
         # sigma_sin/cos for them will be zero due to nansum.
         # This causes r to be zero for this angle, and then -log(0) = inf.
-        # We added a very small const to prevent log(0), which causes the
-        # result to be finite but very large (compared to usual results).
-        # Replace mean=0, std=inf with mean=nan, std=nan to mark missing data.
-        inf_idx = circstd > 20  # because -2 * log(1e-100) > 20
-        circmean[inf_idx] = np.nan
-        circstd[inf_idx] = np.nan
+        # Replace mean=0, with mean=nan mark missing data, then log(nan)=nan,
+        # and the std will also be nan.
+        r[r < 1e-12] = np.nan
+        circstd = np.sqrt(-2 * np.log(r))
 
         m_phi = (circmean[0], circstd[0])
         m_psi = (circmean[1], circstd[1])
