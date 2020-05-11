@@ -243,16 +243,14 @@ class Dihedral(object):
         sigma_cos = np.nansum(cos, axis=0)  # (2, )
         circmean = np.arctan2(sigma_sin, sigma_cos)  # output is in [-pi, pi]
 
-        mu_sin = np.nanmean(sin, axis=0)
-        mu_cos = np.nanmean(cos, axis=0)
-        r = np.hypot(mu_sin, mu_cos)
-
         # Handle missing data: If all phi/psi angles were NaN then
         # sigma_sin/cos for them will be zero due to nansum.
         # This causes r to be zero for this angle, and then -log(0) = inf.
         # Replace mean=0, with mean=nan mark missing data, then log(nan)=nan,
         # and the std will also be nan.
-        r[r < 1e-12] = np.nan
+        n = np.sum(~np.isnan(phi_psi), axis=0, dtype=np.float32)
+        n[n == 0.] = np.nan  # prevent 0/0 runtime warning
+        r = np.hypot(sigma_sin / n, sigma_cos / n)  # will be nan for missing
         circstd = np.sqrt(-2 * np.log(r))
 
         m_phi = (circmean[0], circstd[0])
