@@ -5,6 +5,7 @@ from pathlib import Path
 PROJECT_DIR = Path(Path(__file__).resolve().parents[1])
 if str(PROJECT_DIR).startswith(os.getcwd()):
     PROJECT_DIR = PROJECT_DIR.relative_to(os.getcwd())
+CFG_DIR = PROJECT_DIR.joinpath('cfg')
 
 """
 Dict for storing top-level package configuration options, and their default
@@ -34,7 +35,7 @@ BASE_DOWNLOAD_DIR = BASE_DATA_DIR
 # Directory for writing output files
 OUT_DIR = Path(os.getenv('OUT_DIR', PROJECT_DIR.joinpath('out')))
 
-for d in [BASE_DATA_DIR, OUT_DIR]:
+for d in [CFG_DIR, BASE_DATA_DIR, OUT_DIR]:
     os.makedirs(d, exist_ok=True)
 
 
