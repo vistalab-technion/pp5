@@ -552,3 +552,16 @@ class TestCentroids:
             Dihedral.circular_centroid, args=random_angles(1000),
             rounds=10, iterations=50, warmup_rounds=1,
         )
+
+
+class TestDihedralKDE(object):
+
+    def setup(self):
+        self.kde = dihedral.DihedralKDE()
+
+    def test_1(self):
+        phi_psi = np.random.uniform(-np.pi, np.pi, size=(1000, 2))
+        p = self.kde.estimate(phi_psi[:, 0], phi_psi[:, 1])
+
+        assert p.shape == (self.kde.n_bins, self.kde.n_bins)
+        assert p.dtype == self.kde.dtype
