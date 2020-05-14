@@ -32,6 +32,7 @@ def ramachandran(
     case they will be plotted one over the other.
     :param legend_label: Label for legend. Can be a list with the same
     number of elements as pdist.
+    :param title: Optional title for axes.
     :param ax: Axes to plot onto. If None, a new figure will be created.
     :param style: Matplotlib style to apply (name or filename).
     :param colormesh_kw: Extra keyword args for matplotlib's pcolormesh()
