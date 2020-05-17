@@ -279,22 +279,64 @@ class PointwiseCodonDistance(ParallelDataCollector):
             out_dir: Path, angle_pairs: list, kde_args: dict,
             kde_dist_metric: Callable
     ):
-        # Initialize to obtain consistent order of codons
+        # Initialize in advance to obtain consistent order of codons
         codon_dkdes = {c: None for c in CODONS}
 
         LOGGER.info(f'Calculating dihedral distributions per codon in '
                     f'subgroup {group_idx}...')
 
-        # df_codon_group is grouped by SS and prev codon. Now we also group by
-        # the current codon so we can compute a distance matrix between the
-        # distribution of each pair of current codons.
-        df_subgroups = df_codon_group.groupby(curr_codon)
-        for subgroup_idx, df_subgroup in df_subgroups:
-            _, dkdes = PointwiseCodonDistance._dihedral_kde_single_group(
-                subgroup_idx, df_subgroup, angle_pairs, kde_args
+        n_bootstraps = 2
+        rand_state = 42
+
+        for bootstrap_idx in range(n_bootstraps):
+            # Sample from dataset with replacement, the same number of
+            # elements as it's size. This is our bootstrap sample.
+            df_codon_group_sampled = df_codon_group.sample(
+                axis=0, frac=1, replace=True, random_state=rand_state
             )
 
-            codon_dkdes[subgroup_idx] = dkdes
+            LOGGER.info(f'Starting bootstrap iteration '
+                        f'{bootstrap_idx + 1}/{n_bootstraps} in {group_idx}...')
+
+            # df_codon_group is grouped by SS and prev codon.
+            # Now we also group by the current codon so we can compute a
+            # distance matrix between the distribution of each pair of current
+            # codons.
+            df_subgroups = df_codon_group_sampled.groupby(curr_codon)
+            for subgroup_idx, df_subgroup in df_subgroups:
+                # dkdes contains one KDE for each pair in angle_pairs
+                _, dkdes = PointwiseCodonDistance._dihedral_kde_single_group(
+                    subgroup_idx, df_subgroup, angle_pairs, kde_args
+                )
+
+                if codon_dkdes[subgroup_idx] is None:
+                    codon_dkdes[subgroup_idx] = [dkdes]
+                else:
+                    codon_dkdes[subgroup_idx].append(dkdes)
+
+        LOGGER.info(f'Bootstrap completed for {group_idx}...')
+        # Now we have the bootstrap results, we must consolidate them.
+        # For each current codon, we'll create a 3D tensor containing
+        # n_bootstraps 2D KDEs.
+        for (codon, codon_dkdes_list) in codon_dkdes.items():
+            if codon_dkdes_list is None:
+                # Will happen if we didn't see this codon in the current group
+                continue
+
+            # We will replace the contents of this map with a list of
+            # arrays, one for each angle pair, each array will contain all
+            # bootstrapped KDEs
+            codon_dkdes[codon] = []
+
+            # codon_dkdes_list is e.g.
+            # [(kde1_1, kde2_1), (kde1_2, kde2_2), ... (kde1_B, kde2_B)]
+            # (when we have two angle pairs).
+            # Convert it to [(kde1_1, kde1_2, ..., kde1_B), ...]
+            for codon_angle_pair_dkdes in zip(*codon_dkdes_list):
+                # stacked will be of shape (B, N, N) and contain all the
+                # bootstrapped KDEs for this codon and current angle pair
+                stacked = np.stack(codon_angle_pair_dkdes, axis=0)
+                codon_dkdes[codon].append(stacked)
 
         LOGGER.info(f'Calculating codon-codon distance matrix in subgroup '
                     f'{group_idx}...')
@@ -303,7 +345,9 @@ class PointwiseCodonDistance(ParallelDataCollector):
         for pair_idx in range(len(angle_pairs)):
             # For each angle pair we have N_CODONS dkde matrices,
             # so we compute the distance between each such pair.
-            d2_mat = np.full((N_CODONS, N_CODONS), np.nan, dtype=np.float32)
+            # We use a complex array to store mu as the real part and sigma
+            # as the imaginary part in a single array.
+            d2_mat = np.full((N_CODONS, N_CODONS), np.nan, dtype=np.complex64)
 
             all_codon_pairs = it.product(enumerate(CODONS), enumerate(CODONS))
             for (i, ci), (j, cj) in all_codon_pairs:
@@ -313,11 +357,23 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 if j < i or codon_dkdes[cj] is None:
                     continue
 
-                # Get the two dihedral distributions to compare
+                # Get the two dihedral KDEs arrays to compare, each is of
+                # shape (B, N, N) due to bootstrapping B times
                 dkde1 = codon_dkdes[ci][pair_idx]
                 dkde2 = codon_dkdes[cj][pair_idx]
+
+                # If ci is cj, randomize the order of the KDEs when
+                # comparing, so that different bootstrapped KDEs are compared
+                if i == j:
+                    # This permutes the order along the first axis
+                    dkde2 = np.random.permutation(dkde2)
+
+                # Compute the distances, of shape (B,)
                 d2 = kde_dist_metric(dkde1, dkde2)
-                d2_mat[i, j] = d2_mat[j, i] = d2
+                d2_mu = np.nanmean(d2)
+                d2_sigma = np.nanstd(d2)
+
+                d2_mat[i, j] = d2_mat[j, i] = d2_mu + 1j * d2_sigma
 
             d2_matrices.append(d2_mat)
 
@@ -343,18 +399,29 @@ class PointwiseCodonDistance(ParallelDataCollector):
         #     LOGGER.info(f'Wrote {fig_filename}')
 
         LOGGER.info(f'Plotting codon distances for {group_idx}')
-        fig_filename = out_dir.joinpath('codon-dist') \
-            .joinpath(f'{str.join("_", group_idx)}.pdf')
-        pp5.plot.multi_heatmap(
-            d2_matrices, CODONS, CODONS,
-            titles=legend_labels, figsize=20, outfile=fig_filename
-        )
+
+        # Split the mu and sigma from the complex d2 matrices
+        d2_mu_sigma = [(np.real(d2), np.imag(d2)) for d2 in d2_matrices]
+        d2_mu, d2_sigma = list(zip(*d2_mu_sigma))
+
+        for name, d2 in zip(('mu', 'sigma'), (d2_mu, d2_sigma)):
+            fig_filename = out_dir.joinpath('codon-dist') \
+                .joinpath(f'{str.join("_", group_idx)}_{name}.pdf')
+
+            pp5.plot.multi_heatmap(
+                d2, CODONS, CODONS, titles=legend_labels, fig_size=20,
+                fig_rows=1, outfile=fig_filename
+            )
 
         return group_idx, d2_matrices
 
     @staticmethod
-    def _kde_dist_metric_l2(kde1, kde2):
-        return np.nansum((kde1 - kde2) ** 2)
+    def _kde_dist_metric_l2(kde1: np.ndarray, kde2: np.ndarray):
+        # We expect kde1 and kde2 to be of shape (B, N, N)
+        # We calculate distance between each 2D NxN plane and return B
+        # distances
+        assert kde1.ndim == 3 and kde2.ndim == 3
+        return np.nansum((kde1 - kde2) ** 2, axis=(1, 2))
 
     @staticmethod
     def _cols2label(phi_col: str, psi_col: str):
