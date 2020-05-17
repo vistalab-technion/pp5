@@ -1,6 +1,6 @@
 import itertools as it
 import os
-from typing import Union, List, Tuple, Callable, Optional
+from typing import Union, List, Tuple, Callable, Optional, Iterable
 from pathlib import Path
 import logging
 
@@ -118,10 +118,10 @@ def multi_heatmap(
         datas: Union[np.ndarray, List[np.ndarray]],
         row_labels: List[str] = None, col_labels: List[str] = None,
         titles: List[str] = None,
-        figsize=None,
+        fig_size=None, fig_rows=1,
         data_annotation_fn: Callable[[int, int, int], str] = None,
         style=PP5_MPL_STYLE, outfile: Union[Path, str] = None,
-) -> Optional[Tuple[Figure, Axes]]:
+) -> Optional[Tuple[Figure, Iterable[Axes]]]:
     """
     Plots multiple 2D heatmaps horizontally next to each other while
     normalizing them to the same scale.
@@ -130,9 +130,10 @@ def multi_heatmap(
     :param row_labels: Labels for the heatmap rows.
     :param col_labels: Labels for the heatmap columns.
     :param titles: Title for each axes.
-    :param figsize: Size of figure. If scalar it will be the height, and the
-    width will be N*figsize where N is the number of heatmaps. Otherwise it
-    should be a tuple of (width, height).
+    :param fig_size: Size of figure. If scalar it will be used as a base
+    size and scaled by the number of rows and columns in the figure.
+    Otherwise it should be a tuple of (width, height).
+    :param fig_rows: How many rows of heatmaps to create in the figure.
     :param data_annotation_fn: An optional callable accepting three indices
     (i,j, k) into the given datas. It should return a string which will be
     used as an annotation (drawn inside the corresponding location in the
@@ -150,26 +151,29 @@ def multi_heatmap(
         if col_labels:
             assert d.shape[1] == len(col_labels), "Inconsistent label number"
     if titles:
-        assert len(datas) == len(titles)
+        assert len(datas) == len(titles), "Inconsistent number of titles"
+    assert fig_rows >= 1, "Invalid number of rows"
 
     vmin = min(np.min(d) for d in datas)
     vmax = max(np.max(d) for d in datas)
     norm = mpl.colors.Normalize(vmin, vmax)
-    n = len(datas)
 
-    if figsize is None:
-        figsize = 10
-    if isinstance(figsize, (int, float)):
-        figsize = (n * figsize, figsize)
-    elif isinstance(figsize, (list, tuple)):
-        assert len(figsize) == 2, 'Invalid figsize'
-        assert all(isinstance(x, (int, float)) for x in figsize)
+    n = len(datas)
+    fig_cols = int(np.ceil(n / fig_rows))
+
+    if fig_size is None:
+        fig_size = 10
+    if isinstance(fig_size, (int, float)):
+        fig_size = (fig_cols * fig_size, fig_rows * fig_size)
+    elif isinstance(fig_size, (list, tuple)):
+        assert len(fig_size) == 2, 'Invalid figsize'
+        assert all(isinstance(x, (int, float)) for x in fig_size)
     else:
-        raise ValueError(f'Invalid figsize: {figsize}')
+        raise ValueError(f'Invalid fig_size: {fig_size}')
 
     with mpl.style.context(style, after_reset=False):
-        fig, ax = plt.subplots(1, len(datas), figsize=figsize)
-        ax: List[plt.Axes]
+        fig, ax = plt.subplots(fig_rows, fig_cols, figsize=fig_size)
+        ax: np.ndarray[plt.Axes] = np.reshape(ax, -1)
 
         for i in range(n):
             data = datas[i]
@@ -202,8 +206,7 @@ def multi_heatmap(
                     ax[i].text(c, r, annotation, ha="center", va="center",
                                color="w")
 
-        cbar = fig.colorbar(im, ax=ax, orientation='vertical', pad=0.05,
-                            shrink=0.7)
+        fig.colorbar(im, ax=ax, orientation='vertical', pad=0.05, shrink=0.7)
 
     if outfile is not None:
         savefig(fig, outfile, style=style)
