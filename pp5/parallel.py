@@ -76,9 +76,10 @@ def global_pool() -> ContextManager[mp.pool.Pool]:
 
 
 @contextlib.contextmanager
-def pool(name: str, processes=None) -> ContextManager[mp.pool.Pool]:
+def pool(name: str, processes=None, context='spawn') \
+        -> ContextManager[mp.pool.Pool]:
     base_workers_dl_dir = BASE_WORKERS_DL_DIR.joinpath(name)
-    mp_ctx = mp.get_context('spawn')
+    mp_ctx = mp.get_context(context)
     processes = processes if processes is not None else \
         pp5.get_config('MAX_PROCESSES')
 
