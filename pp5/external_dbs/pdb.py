@@ -36,14 +36,6 @@ PDB_ID_PATTERN = re.compile(r'^(?P<id>[0-9][\w]{3})(?::(?:'
 
 STANDARD_ACID_NAMES = set(standard_aa_names)
 
-DSSP_TO_SS_TYPE = {
-    'E': 'SHEET',
-    'H': 'HELIX',
-    'G': 'HELIX',
-    'I': 'HELIX',
-    'T': 'TURN'
-}
-
 PDB_SEARCH_URL = 'https://www.rcsb.org/pdb/rest/search'
 PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
 PDB_TO_UNP_URL_TEMPLATE = r"https://www.rcsb.org/pdb/rest/customReport" \
