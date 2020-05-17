@@ -1,5 +1,5 @@
 import itertools as it
-from typing import Union, List, Tuple
+from typing import Union, List, Tuple, Callable
 
 import numpy as np
 from numpy import ndarray
@@ -8,11 +8,12 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.style
+import matplotlib.colors
 from matplotlib.pyplot import Axes, Figure, cm
 
 import pp5
 
-DEFAULT_STYLE = str(pp5.CFG_DIR.joinpath('pp5_plotstyle.rc.ini'))
+PP5_MPL_STYLE = str(pp5.CFG_DIR.joinpath('pp5_plotstyle.rc.ini'))
 
 
 def ramachandran(
@@ -20,7 +21,7 @@ def ramachandran(
         legend_label: Union[str, List[str]],
         title: str = None,
         ax: Axes = None,
-        style: str = DEFAULT_STYLE,
+        style: str = PP5_MPL_STYLE,
         **colormesh_kw
 ) -> Tuple[Figure, Axes]:
     """
@@ -99,3 +100,84 @@ def ramachandran(
             ax.set_title(title)
 
     return fig, ax
+
+
+def multi_heatmap(
+        datas: Union[np.ndarray, List[np.ndarray]],
+        row_labels: List[str], col_labels: List[str],
+        figsize=None, style=PP5_MPL_STYLE,
+        data_annotation_fn: Callable[[int, int, int], str] = None,
+):
+    """
+    Plots multiple 2D heatmaps horizontally next to each other while
+    normalizing them to the same scale.
+    :param datas: List of 2D arrays, or a single 3D array (the first
+    dimension will be treated as a list).
+    :param row_labels: Labels for the heatmap rows.
+    :param col_labels: Labels for the heatmap columns.
+    :param figsize: Size of figure. If scalar it will be the height, and the
+    width will be N*figsize where N is the number of heatmaps. Otherwise it
+    should be a tuple of (width, height).
+    :param style: Style name or stylefile path.
+    :param data_annotation_fn: An optional callable accepting three indices
+    (i,j, k) into the given datas. It should return a string which will be
+    used as an annotation (drawn inside the corresponding location in the
+    heatmap).
+    :return: Tuple of figure, axes and  colorbar objects.
+    """
+
+    for d in datas:
+        assert d.ndim == 2, "Invalid data shape"
+        assert d.shape[0] == len(row_labels), "Inconsistent number of labels"
+        assert d.shape[1] == len(col_labels), "Inconsistent number of labels"
+
+    vmin = min(np.min(d) for d in datas)
+    vmax = max(np.max(d) for d in datas)
+    norm = mpl.colors.Normalize(vmin, vmax)
+    n = len(datas)
+
+    if figsize is None:
+        figsize = 10
+    if isinstance(figsize, (int, float)):
+        figsize = (n * figsize, figsize)
+    elif isinstance(figsize, (list, tuple)):
+        assert len(figsize) == 2, 'Invalid figsize'
+        assert all(isinstance(x, (int, float)) for x in figsize)
+    else:
+        raise ValueError(f'Invalid figsize: {figsize}')
+
+    with mpl.style.context(style, after_reset=False):
+        fig, ax = plt.subplots(1, len(datas), figsize=figsize)
+        ax: List[plt.Axes]
+
+        for i in range(n):
+            data = datas[i]
+            im = ax[i].imshow(data, interpolation=None, norm=norm)
+
+            for edge, spine in ax[i].spines.items():
+                spine.set_visible(False)
+
+            ax[i].set_xticks(np.arange(data.shape[1]))
+            ax[i].set_yticks(np.arange(data.shape[0]))
+            ax[i].set_xticklabels(col_labels)
+            ax[i].set_yticklabels(row_labels)
+            ax[i].tick_params(top=True, bottom=False, labeltop=True,
+                              labelbottom=False)
+            plt.setp(ax[i].get_xticklabels(), rotation=45)
+
+            ax[i].set_xticks(np.arange(data.shape[1] + 1) - .5, minor=True)
+            ax[i].set_yticks(np.arange(data.shape[0] + 1) - .5, minor=True)
+            ax[i].grid(which="minor", color="w", linestyle='-', linewidth=1.)
+            ax[i].tick_params(which="minor", bottom=False, left=False)
+
+            if data_annotation_fn is not None:
+                rc_ind = it.product(range(data.shape[0]), range(data.shape[1]))
+                for r, c in rc_ind:
+                    annotation = str(data_annotation_fn(i, r, c))
+                    ax[i].text(c, r, annotation, ha="center", va="center",
+                               color="w")
+
+        cbar = fig.colorbar(im, ax=ax, orientation='vertical', pad=0.05,
+                            shrink=0.7)
+
+    return fig, ax, cbar
