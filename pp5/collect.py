@@ -37,10 +37,12 @@ class CollectorStep(NamedTuple):
 
 class ParallelDataCollector(abc.ABC):
     def __init__(
-            self, out_dir: Path = None, tag: str = None,
+            self, id: str = None, out_dir: Path = None, tag: str = None,
             async_timeout: float = None, create_zip=True,
     ):
         """
+        :param id: Unique id of this collection. If None, will be generated
+        from timestamp and hostname.
         :param out_dir: Output directory, if necessary. A subdirectory with
         a unique id will be created within foe this collection.
         :param tag: Tag (postfix) for unique id of output subdir.
@@ -59,12 +61,17 @@ class ParallelDataCollector(abc.ABC):
         self.async_timeout = async_timeout
         self.create_zip = create_zip
 
-        tag = f'-{self.out_tag}' if self.out_tag else ''
-        timestamp = time.strftime(f'%Y%m%d_%H%M%S')
-        self.id = time.strftime(f'{timestamp}-{hostname}{tag}')
+        if id:
+            self.id = id
+        else:
+            tag = f'-{self.out_tag}' if self.out_tag else ''
+            timestamp = time.strftime(f'%Y%m%d_%H%M%S')
+            self.id = time.strftime(f'{timestamp}-{hostname}{tag}')
+
         if out_dir is not None:
             out_dir = out_dir.joinpath(self.id)
             os.makedirs(str(out_dir), exist_ok=True)
+
         self.out_dir = out_dir
         self.collection_steps = []
         self.collection_meta = {'id': self.id}
