@@ -1,5 +1,8 @@
 import itertools as it
-from typing import Union, List, Tuple, Callable
+import os
+from typing import Union, List, Tuple, Callable, Optional
+from pathlib import Path
+import logging
 
 import numpy as np
 from numpy import ndarray
@@ -9,9 +12,11 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.style
 import matplotlib.colors
-from matplotlib.pyplot import Axes, Figure, cm
+from matplotlib.pyplot import Axes, Figure
 
 import pp5
+
+LOGGER = logging.getLogger(__name__)
 
 PP5_MPL_STYLE = str(pp5.CFG_DIR.joinpath('pp5_plotstyle.rc.ini'))
 
@@ -22,8 +27,9 @@ def ramachandran(
         title: str = None,
         ax: Axes = None,
         style: str = PP5_MPL_STYLE,
+        outfile: Union[Path, str] = None,
         **colormesh_kw
-) -> Tuple[Figure, Axes]:
+) -> Optional[Tuple[Figure, Axes]]:
     """
     Creates a Ramachandran plot from dihedral angle probabilities.
     :param pdist: A matrix of shape (M, M) containing the estimated
@@ -38,7 +44,9 @@ def ramachandran(
     :param style: Matplotlib style to apply (name or filename).
     :param colormesh_kw: Extra keyword args for matplotlib's pcolormesh()
     function.
-    :return: (fig, ax) the figure and axes containing the plot.
+    :param outfile: Optional path to write output figure to.
+    :return: Nothing if outfile was specified; otherwise (fig, ax) the figure
+    and axes containing the plot.
     """
     if isinstance(pdist, ndarray):
         pdist = [pdist]
@@ -99,15 +107,21 @@ def ramachandran(
         if title is not None:
             ax.set_title(title)
 
+    if outfile is not None:
+        savefig(fig, outfile, style=style)
+        return None
+
     return fig, ax
 
 
 def multi_heatmap(
         datas: Union[np.ndarray, List[np.ndarray]],
-        row_labels: List[str], col_labels: List[str],
-        figsize=None, style=PP5_MPL_STYLE,
+        row_labels: List[str] = None, col_labels: List[str] = None,
+        titles: List[str] = None,
+        figsize=None,
         data_annotation_fn: Callable[[int, int, int], str] = None,
-):
+        style=PP5_MPL_STYLE, outfile: Union[Path, str] = None,
+) -> Optional[Tuple[Figure, Axes]]:
     """
     Plots multiple 2D heatmaps horizontally next to each other while
     normalizing them to the same scale.
@@ -115,21 +129,28 @@ def multi_heatmap(
     dimension will be treated as a list).
     :param row_labels: Labels for the heatmap rows.
     :param col_labels: Labels for the heatmap columns.
+    :param titles: Title for each axes.
     :param figsize: Size of figure. If scalar it will be the height, and the
     width will be N*figsize where N is the number of heatmaps. Otherwise it
     should be a tuple of (width, height).
-    :param style: Style name or stylefile path.
     :param data_annotation_fn: An optional callable accepting three indices
     (i,j, k) into the given datas. It should return a string which will be
     used as an annotation (drawn inside the corresponding location in the
     heatmap).
-    :return: Tuple of figure, axes and  colorbar objects.
+    :param style: Style name or stylefile path.
+    :param outfile: Optional path to write output figure to.
+    :return: If figure was written to file, return nothing. Otherwise
+    returns Tuple of figure, axes objects.
     """
 
     for d in datas:
         assert d.ndim == 2, "Invalid data shape"
-        assert d.shape[0] == len(row_labels), "Inconsistent number of labels"
-        assert d.shape[1] == len(col_labels), "Inconsistent number of labels"
+        if row_labels:
+            assert d.shape[0] == len(row_labels), "Inconsistent label number"
+        if col_labels:
+            assert d.shape[1] == len(col_labels), "Inconsistent label number"
+    if titles:
+        assert len(datas) == len(titles)
 
     vmin = min(np.min(d) for d in datas)
     vmax = max(np.max(d) for d in datas)
@@ -159,15 +180,19 @@ def multi_heatmap(
 
             ax[i].set_xticks(np.arange(data.shape[1]))
             ax[i].set_yticks(np.arange(data.shape[0]))
-            ax[i].set_xticklabels(col_labels)
-            ax[i].set_yticklabels(row_labels)
+            if col_labels:
+                ax[i].set_xticklabels(col_labels)
+            if row_labels:
+                ax[i].set_yticklabels(row_labels)
+            if titles:
+                ax[i].set_title(titles[i])
+
             ax[i].tick_params(top=True, bottom=False, labeltop=True,
                               labelbottom=False)
             plt.setp(ax[i].get_xticklabels(), rotation=45)
-
             ax[i].set_xticks(np.arange(data.shape[1] + 1) - .5, minor=True)
             ax[i].set_yticks(np.arange(data.shape[0] + 1) - .5, minor=True)
-            ax[i].grid(which="minor", color="w", linestyle='-', linewidth=1.)
+            ax[i].grid(which="minor", color="w", linestyle='-', linewidth=.5)
             ax[i].tick_params(which="minor", bottom=False, left=False)
 
             if data_annotation_fn is not None:
@@ -180,4 +205,39 @@ def multi_heatmap(
         cbar = fig.colorbar(im, ax=ax, orientation='vertical', pad=0.05,
                             shrink=0.7)
 
-    return fig, ax, cbar
+    if outfile is not None:
+        savefig(fig, outfile, style=style)
+        return None
+
+    return fig, ax
+
+
+def savefig(fig: plt.Figure, outfile: Union[Path, str],
+            close=True, style=PP5_MPL_STYLE) -> Path:
+    """
+    Saves a figure to file.
+    :param fig: Figure to save
+    :param outfile: Path to save to. Suffix, if present, determines format.
+    :param close: Whether to close the figure. When generating many plots
+    and writing them it's crucial to close, otherwise matplotlib keeps
+    referencing them and they consume memory.
+    :param style: Style name or filename.
+    :returns: Path of written file.
+    """
+
+    outfile = Path(outfile)
+    fmt = outfile.suffix[1:]
+    if not fmt:
+        # Will be take from our default style
+        fmt = None
+
+    os.makedirs(str(outfile.parent), exist_ok=True)
+
+    with mpl.style.context(style, after_reset=False):
+        fig.savefig(str(outfile), format=fmt)
+
+    LOGGER.info(f'Wrote {outfile}')
+    if close:
+        plt.close(fig)
+
+    return outfile
