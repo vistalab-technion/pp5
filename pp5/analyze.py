@@ -282,31 +282,32 @@ class PointwiseCodonDistance(ParallelDataCollector):
         # Initialize in advance to obtain consistent order of codons
         codon_dkdes = {c: None for c in CODONS}
 
-        LOGGER.info(f'Calculating dihedral distributions per codon in '
-                    f'subgroup {group_idx}...')
+        bs_n = 3
+        bs_randstate = 42
+        bs_replace = bs_n > 1
 
-        n_bootstraps = 2
-        rand_state = 42
+        LOGGER.info(f'Calculating dihedral distributions in '
+                    f'subgroup {group_idx} with {bs_n} bootstraps per '
+                    f'codon...')
 
-        for bootstrap_idx in range(n_bootstraps):
-            # Sample from dataset with replacement, the same number of
-            # elements as it's size. This is our bootstrap sample.
-            df_codon_group_sampled = df_codon_group.sample(
-                axis=0, frac=1, replace=True, random_state=rand_state
-            )
+        # df_codon_group is grouped by SS and prev codon.
+        # Now we also group by the current codon so we can compute a
+        # distance matrix between the distribution of each pair of current
+        # codons.
+        df_subgroups = df_codon_group.groupby(curr_codon)
+        for subgroup_idx, df_subgroup in df_subgroups:
 
-            LOGGER.info(f'Starting bootstrap iteration '
-                        f'{bootstrap_idx + 1}/{n_bootstraps} in {group_idx}...')
+            for bootstrap_idx in range(bs_n):
+                # Sample from dataset with replacement, the same number of
+                # elements as it's size. This is our bootstrap sample.
+                df_subgroup_sampled = df_subgroup.sample(
+                    axis=0, frac=1., replace=bs_replace,
+                    random_state=bs_randstate
+                )
 
-            # df_codon_group is grouped by SS and prev codon.
-            # Now we also group by the current codon so we can compute a
-            # distance matrix between the distribution of each pair of current
-            # codons.
-            df_subgroups = df_codon_group_sampled.groupby(curr_codon)
-            for subgroup_idx, df_subgroup in df_subgroups:
                 # dkdes contains one KDE for each pair in angle_pairs
                 _, dkdes = PointwiseCodonDistance._dihedral_kde_single_group(
-                    subgroup_idx, df_subgroup, angle_pairs, kde_args
+                    subgroup_idx, df_subgroup_sampled, angle_pairs, kde_args
                 )
 
                 if codon_dkdes[subgroup_idx] is None:
@@ -315,6 +316,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
                     codon_dkdes[subgroup_idx].append(dkdes)
 
         LOGGER.info(f'Bootstrap completed for {group_idx}...')
+
         # Now we have the bootstrap results, we must consolidate them.
         # For each current codon, we'll create a 3D tensor containing
         # n_bootstraps 2D KDEs.
