@@ -5,6 +5,7 @@ import itertools as it
 import logging
 import multiprocessing as mp
 import shutil
+import time
 from pathlib import Path
 from typing import Union, Dict, Callable, Optional, List
 
@@ -68,6 +69,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             consolidate_ss=DSSP_TO_SS_TYPE.copy(),
             strict_ss=True, angle_pairs=None,
             kde_nbins=128, kde_k1=30., kde_k2=30., kde_k3=0.,
+            bs_niter=1, bs_randstate=None,
             clear_intermediate=False,
     ):
         self.dataset_dir = Path(dataset_dir)
@@ -100,6 +102,9 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
         self.kde_args = dict(n_bins=kde_nbins, k1=kde_k1, k2=kde_k2, k3=kde_k3)
         self.kde_dist_metric = self._kde_dist_metric_l2
+
+        self.bs_niter = bs_niter
+        self.bs_randstate = bs_randstate
 
         # Create clean directory for intermediate results between steps
         self.intermediate_dir = self.out_dir.joinpath('_intermediate_')
@@ -260,8 +265,9 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
         args = (
             (
-                group_idx, df_group, curr_codon, self.out_dir,
+                group_idx, df_group, curr_codon,
                 self.angle_pairs, self.kde_args, self.kde_dist_metric,
+                self.bs_niter, self.bs_randstate,
             )
             for group_idx, df_group in df_groups
         )
@@ -366,8 +372,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
         fig_filenames = []
         for mu_sigma, d2 in zip(('mu', 'sigma'), (d2_mu, d2_sigma)):
-            fig_filename = out_dir.joinpath('codon-dist') \
-                .joinpath(f'{fig_basename}-{mu_sigma}.png')
+            fig_filename = out_dir.joinpath(f'{fig_basename}-{mu_sigma}.png')
 
             pp5.plot.multi_heatmap(
                 d2, CODONS, CODONS, titles=angle_pair_labels, fig_size=20,
@@ -425,19 +430,20 @@ class PointwiseCodonDistance(ParallelDataCollector):
     @staticmethod
     def _codon_dists_single_group(
             group_idx: tuple, df_codon_group: pd.DataFrame, curr_codon: str,
-            out_dir: Path, angle_pairs: list, kde_args: dict,
-            kde_dist_metric: Callable
+            angle_pairs: list, kde_args: dict, kde_dist_metric: Callable,
+            bs_niter: int, bs_randstate: Optional[int],
     ):
         # Initialize in advance to obtain consistent order of codons
         codon_dkdes = {c: None for c in CODONS}
 
-        bs_n = 2
-        bs_randstate = 42
-        bs_replace = bs_n > 1
+        # We want a different random state in each group, but still
+        # shoud be reproducible
+        if bs_randstate is not None:
+            seed = (hash(group_idx) + bs_randstate) % (2 ** 31)
+            np.random.seed(seed)
 
-        LOGGER.info(f'Calculating dihedral distributions in '
-                    f'subgroup {group_idx} with {bs_n} bootstraps per '
-                    f'codon...')
+        group_size = len(df_codon_group)
+        start_time = time.time()
 
         # df_codon_group is grouped by SS and prev codon.
         # Now we also group by the current codon so we can compute a
@@ -445,14 +451,11 @@ class PointwiseCodonDistance(ParallelDataCollector):
         # codons.
         df_subgroups = df_codon_group.groupby(curr_codon)
         for subgroup_idx, df_subgroup in df_subgroups:
-            for bootstrap_idx in range(bs_n):
-                bs_randstate += 1
-
+            for bootstrap_idx in range(bs_niter):
                 # Sample from dataset with replacement, the same number of
                 # elements as it's size. This is our bootstrap sample.
                 df_subgroup_sampled = df_subgroup.sample(
-                    axis=0, frac=1., replace=bs_replace,
-                    random_state=bs_randstate
+                    axis=0, frac=1., replace=bs_niter > 1,
                 )
 
                 # dkdes contains one KDE for each pair in angle_pairs
@@ -465,7 +468,12 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 else:
                     codon_dkdes[subgroup_idx].append(dkdes)
 
-        LOGGER.info(f'Bootstrap completed for {group_idx}...')
+        bs_rate_iter = bs_niter / (time.time() - start_time)
+        bs_rate_samples = group_size / (time.time() - start_time)
+        LOGGER.info(f'Completed {bs_niter} bootstrap iterations for '
+                    f'{group_idx}, size={group_size}, '
+                    f'rate={bs_rate_iter:.1f} iter/sec '
+                    f'({bs_rate_samples} samples/sec)')
 
         # Now we have the bootstrap results, we must consolidate them.
         # For each current codon, we'll create a 3D tensor containing
