@@ -348,21 +348,32 @@ class PointwiseCodonDistance(ParallelDataCollector):
     def _plot_results(self, pool: mp.pool.Pool):
         LOGGER.info(f'Plotting results...')
 
-        angle_pair_labels = [self._cols2label(phi_col, psi_col)
-                             for phi_col, psi_col in self.angle_pairs]
-
-        plot_fn_kwargs = {
-            'angle_pair_labels': angle_pair_labels,
-            'out_dir': self.out_dir,
-        }
+        ap_labels = [self._cols2label(phi_col, psi_col)
+                     for phi_col, psi_col in self.angle_pairs]
 
         async_results = []
+
+        # Expected codon dists
+        codon_dists_exp = self._load_intermediate_result('codon-dists-exp')
+        try:
+            for ss_type, d2_matrices in codon_dists_exp.items():
+                args = ((ss_type,), d2_matrices)
+                async_results.append(pool.apply_async(
+                    self._plot_codon_distances, args=args,
+                    kwds=dict(out_dir=self.out_dir.joinpath('codon-dists-exp'),
+                              angle_pair_labels=ap_labels)
+                ))
+            del codon_dists_exp, d2_matrices
+        except ValueError as e:
+            LOGGER.warning(f'Not plotting codon-dists-exp: {e}')
 
         # Dihedral KDEs of full dataset
         try:
             full_dkde: dict = self._load_intermediate_result('full-dkde')
             async_results.append(pool.apply_async(
-                self._plot_full_dkde, args=(full_dkde,), kwds=plot_fn_kwargs
+                self._plot_full_dkdes,
+                args=(full_dkde,),
+                kwds=dict(out_dir=self.out_dir, angle_pair_labels=ap_labels)
             ))
             del full_dkde
         except ValueError as e:
@@ -374,7 +385,9 @@ class PointwiseCodonDistance(ParallelDataCollector):
             for group_idx, d2_matrices in codon_dists.items():
                 args = (group_idx, d2_matrices)
                 async_results.append(pool.apply_async(
-                    self._plot_codon_distances, args=args, kwds=plot_fn_kwargs
+                    self._plot_codon_distances, args=args,
+                    kwds=dict(out_dir=self.out_dir.joinpath('codon-dists'),
+                              angle_pair_labels=ap_labels)
                 ))
             del codon_dists, d2_matrices
         except ValueError as e:
@@ -386,7 +399,9 @@ class PointwiseCodonDistance(ParallelDataCollector):
             for group_idx, dkdes in codon_dkdes.items():
                 args = (group_idx, dkdes)
                 async_results.append(pool.apply_async(
-                    self._plot_codon_dkdes, args=args, kwds=plot_fn_kwargs
+                    self._plot_codon_dkdes, args=args,
+                    kwds=dict(out_dir=self.out_dir.joinpath('codon-dkdes'),
+                              angle_pair_labels=ap_labels)
                 ))
             del codon_dkdes, dkdes
         except ValueError as e:
@@ -400,11 +415,11 @@ class PointwiseCodonDistance(ParallelDataCollector):
         }
 
     @staticmethod
-    def _plot_full_dkde(
+    def _plot_full_dkdes(
             full_dkde: dict,
             angle_pair_labels: List[str], out_dir: Path
     ):
-        fig_filename = out_dir.joinpath('full-dkde.pdf')
+        fig_filename = out_dir.joinpath('full-dkdes.pdf')
         with mpl.style.context(PP5_MPL_STYLE):
             fig_rows, fig_cols = len(full_dkde) // 2, 2
             fig, ax = mpl.pyplot.subplots(
@@ -423,7 +438,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
             pp5.plot.savefig(fig, fig_filename, close=True)
 
-        return fig_filename
+        return str(fig_filename)
 
     @staticmethod
     def _plot_codon_distances(
@@ -437,7 +452,6 @@ class PointwiseCodonDistance(ParallelDataCollector):
         d2_mu_sigma = [(np.real(d2), np.imag(d2)) for d2 in d2_matrices]
         d2_mu, d2_sigma = list(zip(*d2_mu_sigma))
 
-        out_dir = out_dir.joinpath('codon-dist')
         fig_basename = f'{str.join("_", reversed(group_idx))}'
 
         fig_filenames = []
@@ -448,7 +462,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 d2, CODONS, CODONS, titles=angle_pair_labels, fig_size=20,
                 fig_rows=1, outfile=fig_filename
             )
-            fig_filenames.append(fig_filename)
+            fig_filenames.append(str(fig_filename))
 
         return fig_filenames
 
@@ -460,17 +474,17 @@ class PointwiseCodonDistance(ParallelDataCollector):
         # Plot the kdes and distance matrices
         LOGGER.info(f'Plotting KDEs for {group_idx}')
 
-        out_dir = out_dir.joinpath('codon-dkde')
         fig_basename = f'{str.join("_", reversed(group_idx))}'
 
         with mpl.style.context(PP5_MPL_STYLE):
             vmin, vmax = 0., 5e-4
             fig, ax = mpl.pyplot.subplots(8, 8, figsize=(40, 40),
                                           sharex='all', sharey='all')
-            ax = np.reshape(ax, -1)
+            ax: np.ndarray[mpl.pyplot.Axes] = np.reshape(ax, -1)
 
             for i, (codon, dkdes) in enumerate(codon_dkdes.items()):
                 if dkdes is None:
+                    ax[i].set_title(codon)
                     continue
 
                 pp5.plot.ramachandran(
@@ -481,7 +495,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             fig_filename = out_dir.joinpath(f'{fig_basename}.png')
             pp5.plot.savefig(fig, fig_filename, close=True)
 
-        return fig_filename
+        return str(fig_filename)
 
     @staticmethod
     def _dihedral_kde_single_group(group_idx, df_group, angle_pairs, kde_args):
