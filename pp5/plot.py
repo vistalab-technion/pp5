@@ -56,7 +56,7 @@ def ramachandran(
         assert isinstance(legend_label, (list, tuple))
         assert len(pdist) == len(legend_label)
     else:
-        raise ValueError("Invalid pdist type")
+        raise ValueError(f"Invalid pdist type: {type(pdist)}")
     for p in pdist:
         assert p.ndim == 2
         assert p.shape[0] == p.shape[1]
@@ -154,8 +154,8 @@ def multi_heatmap(
         assert len(datas) == len(titles), "Inconsistent number of titles"
     assert fig_rows >= 1, "Invalid number of rows"
 
-    vmin = min(np.min(d) for d in datas)
-    vmax = max(np.max(d) for d in datas)
+    vmin = min(np.nanmin(d) for d in datas)
+    vmax = max(np.nanmax(d) for d in datas)
     norm = mpl.colors.Normalize(vmin, vmax)
 
     n = len(datas)
