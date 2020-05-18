@@ -23,9 +23,6 @@ from pp5.plot import PP5_MPL_STYLE
 
 LOGGER = logging.getLogger(__name__)
 
-CODONS = sorted(standard_dna_table.forward_table)
-N_CODONS = len(CODONS)
-
 SS_TYPE_HELIX = 'HELIX'
 SS_TYPE_SHEET = 'SHEET'
 SS_TYPE_TURN = 'TURN'
@@ -50,6 +47,21 @@ DSSP_TO_SS_TYPE = {
     '-': SS_TYPE_OTHER,
     '': SS_TYPE_OTHER,
 }
+
+
+def codon2aac(codon: str):
+    """
+    Converts codon to AA-CODON, which we will use as codon identifiers.
+    :param codon: a codon string.
+    :return: a string formatted AA-CODON where AA is the
+    corresponding amino acid.
+    """
+    aa = dna_table.forward_table[codon]
+    return f'{aa}-{codon}'.upper()
+
+
+CODONS = sorted(codon2aac(c) for c in dna_table.forward_table)
+N_CODONS = len(CODONS)
 
 
 class PointwiseCodonDistance(ParallelDataCollector):
@@ -121,6 +133,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             'preprocess-dataset': self._preprocess_dataset,
             'dihedral-kde-full': self._dihedral_kde_full,
             'codon-dists': self._codons_dists,
+            # 'codon-dists-expected': self._codon_dists_expected,
             'plot-results': self._plot_results,
         }
 
@@ -138,7 +151,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
     def _load_intermediate_result(self, name):
         path = self.intermediate_dir.joinpath(f'{name}.pkl')
         if not path.is_file():
-            raise ValueError(f"Can't file intermediate file {path}")
+            raise ValueError(f"Can't find intermediate file {path}")
         if name not in self.intermediate_files:
             # This is not a problem, might be from a previous run we wish to
             # resume
@@ -227,6 +240,10 @@ class PointwiseCodonDistance(ParallelDataCollector):
         dtype = {col: np.float32 for col in self.angle_cols}
         df_pointwise = df_pointwise.astype(dtype)
 
+        # Convert codon columns to AA-CODON
+        aac = df_pointwise[self.codon_cols].applymap(codon2aac)
+        df_pointwise[self.codon_cols] = aac
+
         return df_pointwise
 
     def _dihedral_kde_full(self, pool: mp.pool.Pool) -> dict:
@@ -251,9 +268,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
         map_result = {group_idx: dkdes for group_idx, dkdes in map_result}
         self._dump_intermediate_result('full-dkde', map_result)
 
-        return {
-            **ss_counts,
-        }
+        return {**ss_counts}
 
     def _codons_dists(self, pool: mp.pool.Pool) -> dict:
         prev_codon, curr_codon = self.codon_cols
@@ -298,29 +313,38 @@ class PointwiseCodonDistance(ParallelDataCollector):
         async_results = []
 
         # Dihedral KDEs of full dataset
-        full_dkde: dict = self._load_intermediate_result('full-dkde')
-        async_results.append(pool.apply_async(
-            self._plot_full_dkde, args=(full_dkde,), kwds=plot_fn_kwargs
-        ))
-        del full_dkde
+        try:
+            full_dkde: dict = self._load_intermediate_result('full-dkde')
+            async_results.append(pool.apply_async(
+                self._plot_full_dkde, args=(full_dkde,), kwds=plot_fn_kwargs
+            ))
+            del full_dkde
+        except ValueError as e:
+            LOGGER.warning(f'Not plotting full-dkde: {e}')
 
         # Codon distance matrices
-        codon_dists: dict = self._load_intermediate_result('codon-dists')
-        for group_idx, d2_matrices in codon_dists.items():
-            args = (group_idx, d2_matrices)
-            async_results.append(pool.apply_async(
-                self._plot_codon_distances, args=args, kwds=plot_fn_kwargs
-            ))
-        del codon_dists, d2_matrices
+        try:
+            codon_dists: dict = self._load_intermediate_result('codon-dists')
+            for group_idx, d2_matrices in codon_dists.items():
+                args = (group_idx, d2_matrices)
+                async_results.append(pool.apply_async(
+                    self._plot_codon_distances, args=args, kwds=plot_fn_kwargs
+                ))
+            del codon_dists, d2_matrices
+        except ValueError as e:
+            LOGGER.warning(f'Not plotting codon-dists: {e}')
 
         # Dihedral KDEs of each codon in each group
-        codon_dkdes: dict = self._load_intermediate_result('codon-dkdes')
-        for group_idx, dkdes in codon_dkdes.items():
-            args = (group_idx, dkdes)
-            async_results.append(pool.apply_async(
-                self._plot_codon_dkdes, args=args, kwds=plot_fn_kwargs
-            ))
-        del codon_dkdes, dkdes
+        try:
+            codon_dkdes: dict = self._load_intermediate_result('codon-dkdes')
+            for group_idx, dkdes in codon_dkdes.items():
+                args = (group_idx, dkdes)
+                async_results.append(pool.apply_async(
+                    self._plot_codon_dkdes, args=args, kwds=plot_fn_kwargs
+                ))
+            del codon_dkdes, dkdes
+        except ValueError as e:
+            LOGGER.warning(f'Not plotting codon-dkdes: {e}')
 
         # Wait for plotting to complete. Each function returns a path
         fig_paths = self._handle_async_results(async_results, collect=True)
@@ -469,11 +493,11 @@ class PointwiseCodonDistance(ParallelDataCollector):
                     codon_dkdes[subgroup_idx].append(dkdes)
 
         bs_rate_iter = bs_niter / (time.time() - start_time)
-        bs_rate_samples = group_size / (time.time() - start_time)
+        bs_rate_samples = group_size * bs_rate_iter
         LOGGER.info(f'Completed {bs_niter} bootstrap iterations for '
                     f'{group_idx}, size={group_size}, '
                     f'rate={bs_rate_iter:.1f} iter/sec '
-                    f'({bs_rate_samples} samples/sec)')
+                    f'({bs_rate_samples:.1f} samples/sec)')
 
         # Now we have the bootstrap results, we must consolidate them.
         # For each current codon, we'll create a 3D tensor containing
@@ -537,11 +561,6 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 d2_mat[i, j] = d2_mat[j, i] = d2_mu + 1j * d2_sigma
 
             d2_matrices.append(d2_mat)
-
-        angle_pair_labels = [
-            PointwiseCodonDistance._cols2label(phi_col, psi_col)
-            for phi_col, psi_col in angle_pairs
-        ]
 
         # Average the codon KDEs from all bootstraps for each codon, so that we
         # can return a simple KDE per codon
