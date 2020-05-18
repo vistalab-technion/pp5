@@ -340,6 +340,8 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
             for i, d2 in enumerate(d2_matrices):
                 p = codon_likelihoods[ss_type][codon]
+                # Don't sum nan's because they kill the entire cell
+                d2 = np.nan_to_num(d2, copy=False, nan=0.)
                 codon_dists_exp[ss_type][i] += p * d2
 
         self._dump_intermediate_result('codon-likelihoods', codon_likelihoods)
