@@ -14,7 +14,7 @@ import pandas as pd
 import matplotlib as mpl
 import matplotlib.style
 import matplotlib.pyplot
-from Bio.Data.CodonTable import standard_dna_table
+from Bio.Data.CodonTable import standard_dna_table as dna_table
 
 from pp5.collect import ParallelDataCollector
 from pp5.dihedral import DihedralKDE
@@ -133,7 +133,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             'preprocess-dataset': self._preprocess_dataset,
             'dihedral-kde-full': self._dihedral_kde_full,
             'codon-dists': self._codons_dists,
-            # 'codon-dists-expected': self._codon_dists_expected,
+            'codon-dists-expected': self._codon_dists_expected,
             'plot-results': self._plot_results,
         }
 
@@ -198,7 +198,8 @@ class PointwiseCodonDistance(ParallelDataCollector):
             ss_p0 = row[self.secondary_cols[1]]
 
             # In strict mode we require that all group members had the same SS,
-            # i.e. we don't allow groups with more than one type.
+            # i.e. we don't allow groups with more than one type (ambiguous
+            # codons).
             if self.strict_ss and (len(ss_p0) != 1 or len(ss_m1) != 1):
                 return None
 
@@ -298,6 +299,51 @@ class PointwiseCodonDistance(ParallelDataCollector):
         self._dump_intermediate_result('codon-dkdes', codon_dkdes)
 
         return {}
+
+    def _codon_dists_expected(self, pool: mp.pool.Pool) -> dict:
+        # Calculate likelihood distribution of prev codon, separated by SS
+        codon_likelihoods = {}
+        prev_codon, curr_codon = self.codon_cols
+        df_processed: pd.DataFrame = self._load_intermediate_result('dataset')
+
+        df_ss_groups = df_processed.groupby(self.secondary_col)
+        for ss_type, df_ss_group in df_ss_groups:
+            n_ss = len(df_ss_group)
+            df_codon_groups = df_ss_group.groupby(prev_codon)
+
+            codon_likelihood = np.array([
+                len(df_codon_groups.get_group(codon)) / n_ss
+                for codon in CODONS  # for consistent order in the likelihood
+            ], dtype=np.float32)
+            assert np.isclose(np.sum(codon_likelihood), 1.)
+
+            # Save a map from codon name to it's likelihood
+            codon_likelihoods[ss_type] = {
+                c: codon_likelihood[i] for i, c in enumerate(CODONS)
+            }
+
+        # Load the calculated codon-dists matrices. The loaded dict
+        # maps from  (SS, prev_codon) to a list of distance matrices
+        codon_dists: dict = self._load_intermediate_result('codon-dists')
+
+        # This dict will hold the final expected distance matrices (i.e. we
+        # calculate the expectation using the likelihood of the prev codon).
+        # Note that we actually have one matrix per angle pair.
+        codon_dists_exp = {}
+        for group_idx, d2_matrices in codon_dists.items():
+            assert len(d2_matrices) == len(self.angle_pairs)
+            ss_type, codon = group_idx
+
+            if ss_type not in codon_dists_exp:
+                defaults = [np.zeros_like(d2) for d2 in d2_matrices]
+                codon_dists_exp[ss_type] = defaults
+
+            for i, d2 in enumerate(d2_matrices):
+                p = codon_likelihoods[ss_type][codon]
+                codon_dists_exp[ss_type][i] += p * d2
+
+        self._dump_intermediate_result('codon-likelihoods', codon_likelihoods)
+        self._dump_intermediate_result('codon-dists-exp', codon_dists_exp)
 
     def _plot_results(self, pool: mp.pool.Pool):
         LOGGER.info(f'Plotting results...')
