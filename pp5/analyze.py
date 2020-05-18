@@ -154,19 +154,17 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 return True
             return False
 
-        dtype = {col: np.float32 for col in self.angle_cols}
         df_pointwise_reader = pd.read_csv(
             str(self.input_file), usecols=col_filter, chunksize=10_000,
-            dtype=dtype,
         )
 
         # Parallelize loading and preprocessing
-        sub_dfs = pool.map(self._preprocess_dataset_subframe,
-                           df_pointwise_reader)
-        df_preproc = pd.concat(sub_dfs, axis=0, ignore_index=True)
+        sub_dfs = pool.map(self._preprocess_subframe, df_pointwise_reader)
 
+        # Dump processed dataset
+        df_preproc = pd.concat(sub_dfs, axis=0, ignore_index=True)
         LOGGER.info(f'Loaded {self.input_file}: {len(df_preproc)} rows\n'
-                    f'{df_preproc}')
+                    f'{df_preproc}\n{df_preproc.dtypes}')
 
         self._dump_intermediate_result('dataset', df_preproc)
         return {
@@ -174,7 +172,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             'n_rows': len(df_preproc)
         }
 
-    def _preprocess_dataset_subframe(self, df_sub: pd.DataFrame):
+    def _preprocess_subframe(self, df_sub: pd.DataFrame):
         # Logic for consolidating secondary structure between a pair of curr
         # and prev residues
         def ss_consolidator(row: pd.Series):
@@ -217,8 +215,12 @@ class PointwiseCodonDistance(ParallelDataCollector):
         df_pointwise = df_pointwise[has_ss]
 
         # Convert angles to radians
-        df_pointwise[self.angle_cols] = \
-            df_pointwise[self.angle_cols].applymap(np.deg2rad)
+        angles_rad = df_pointwise[self.angle_cols].applymap(np.deg2rad)
+        df_pointwise[self.angle_cols] = angles_rad
+
+        # Convert angle columns to float32
+        dtype = {col: np.float32 for col in self.angle_cols}
+        df_pointwise = df_pointwise.astype(dtype)
 
         return df_pointwise
 
@@ -268,18 +270,65 @@ class PointwiseCodonDistance(ParallelDataCollector):
         # maps from group (codon, SS) to a list, containing a codon-distance
         # matrix for each angle-pair. The codon distance matrix is complex,
         # where real is mu and imag is sigma
-        map_result = {group_idx: d2 for group_idx, d2 in map_result}
-        self._dump_intermediate_result('codon-dists', map_result)
+        codon_dists = {group_idx: d2 for group_idx, d2, _ in map_result}
+        self._dump_intermediate_result('codon-dists', codon_dists)
 
-        return {
+        codon_dkdes = {group_idx: dkdes for group_idx, _, dkdes in map_result}
+        self._dump_intermediate_result('codon-dkdes', codon_dkdes)
 
-        }
+        return {}
 
     def _plot_results(self, pool: mp.pool.Pool):
-        LOGGER.info(f'Plotting dihedral distributions...')
-        full_dkde: dict = self._load_intermediate_result('full-dkde')
+        LOGGER.info(f'Plotting results...')
 
-        # Plot the results
+        angle_pair_labels = [self._cols2label(phi_col, psi_col)
+                             for phi_col, psi_col in self.angle_pairs]
+
+        plot_fn_kwargs = {
+            'angle_pair_labels': angle_pair_labels,
+            'out_dir': self.out_dir,
+        }
+
+        async_results = []
+
+        # Dihedral KDEs of full dataset
+        full_dkde: dict = self._load_intermediate_result('full-dkde')
+        async_results.append(pool.apply_async(
+            self._plot_full_dkde, args=(full_dkde,), kwds=plot_fn_kwargs
+        ))
+        del full_dkde
+
+        # Codon distance matrices
+        codon_dists: dict = self._load_intermediate_result('codon-dists')
+        for group_idx, d2_matrices in codon_dists.items():
+            args = (group_idx, d2_matrices)
+            async_results.append(pool.apply_async(
+                self._plot_codon_distances, args=args, kwds=plot_fn_kwargs
+            ))
+        del codon_dists, d2_matrices
+
+        # Dihedral KDEs of each codon in each group
+        codon_dkdes: dict = self._load_intermediate_result('codon-dkdes')
+        for group_idx, dkdes in codon_dkdes.items():
+            args = (group_idx, dkdes)
+            async_results.append(pool.apply_async(
+                self._plot_codon_dkdes, args=args, kwds=plot_fn_kwargs
+            ))
+        del codon_dkdes, dkdes
+
+        # Wait for plotting to complete. Each function returns a path
+        fig_paths = self._handle_async_results(async_results, collect=True)
+
+        return {
+            'figure_paths': fig_paths
+        }
+
+    @staticmethod
+    def _plot_full_dkde(
+            full_dkde: dict,
+            angle_pair_labels: List[str], out_dir: Path
+    ):
+        fig_filename = out_dir.joinpath('full-dkde.pdf')
         with mpl.style.context(PP5_MPL_STYLE):
             fig_rows, fig_cols = len(full_dkde) // 2, 2
             fig, ax = mpl.pyplot.subplots(
@@ -289,20 +338,75 @@ class PointwiseCodonDistance(ParallelDataCollector):
             fig: mpl.pyplot.Figure
             ax: np.ndarray[mpl.pyplot.Axes] = ax.reshape(-1)
 
-            legend_labels = [self._cols2label(phi_col, psi_col)
-                             for phi_col, psi_col in self.angle_pairs]
-
             vmin, vmax = 0., 5e-4
             for i, (group_idx, dkdes) in enumerate(full_dkde.items()):
                 pp5.plot.ramachandran(
-                    dkdes, legend_labels, title=group_idx, ax=ax[i],
+                    dkdes, angle_pair_labels, title=group_idx, ax=ax[i],
                     vmin=vmin, vmax=vmax
                 )
 
-            fig_filename = self.out_dir.joinpath('dihedral-kde_full.pdf')
-            pp5.plot.savefig(fig, fig_filename)
+            pp5.plot.savefig(fig, fig_filename, close=True)
 
-        return {}
+        return fig_filename
+
+    @staticmethod
+    def _plot_codon_distances(
+            group_idx: tuple, d2_matrices: List[np.ndarray],
+            angle_pair_labels: List[str], out_dir: Path
+    ):
+        LOGGER.info(f'Plotting codon distances for {group_idx}')
+
+        # d2_matrices contains a matrix for each analyzed angle pair.
+        # Split the mu and sigma from the complex d2 matrices
+        d2_mu_sigma = [(np.real(d2), np.imag(d2)) for d2 in d2_matrices]
+        d2_mu, d2_sigma = list(zip(*d2_mu_sigma))
+
+        out_dir = out_dir.joinpath('codon-dist')
+        fig_basename = f'{str.join("_", reversed(group_idx))}'
+
+        fig_filenames = []
+        for mu_sigma, d2 in zip(('mu', 'sigma'), (d2_mu, d2_sigma)):
+            fig_filename = out_dir.joinpath('codon-dist') \
+                .joinpath(f'{fig_basename}-{mu_sigma}.png')
+
+            pp5.plot.multi_heatmap(
+                d2, CODONS, CODONS, titles=angle_pair_labels, fig_size=20,
+                fig_rows=1, outfile=fig_filename
+            )
+            fig_filenames.append(fig_filename)
+
+        return fig_filenames
+
+    @staticmethod
+    def _plot_codon_dkdes(
+            group_idx: tuple, codon_dkdes: Dict[str, List[np.ndarray]],
+            angle_pair_labels: List[str], out_dir: Path
+    ):
+        # Plot the kdes and distance matrices
+        LOGGER.info(f'Plotting KDEs for {group_idx}')
+
+        out_dir = out_dir.joinpath('codon-dkde')
+        fig_basename = f'{str.join("_", reversed(group_idx))}'
+
+        with mpl.style.context(PP5_MPL_STYLE):
+            vmin, vmax = 0., 5e-4
+            fig, ax = mpl.pyplot.subplots(8, 8, figsize=(40, 40),
+                                          sharex='all', sharey='all')
+            ax = np.reshape(ax, -1)
+
+            for i, (codon, dkdes) in enumerate(codon_dkdes.items()):
+                if dkdes is None:
+                    continue
+
+                pp5.plot.ramachandran(
+                    dkdes, angle_pair_labels, title=codon, ax=ax[i],
+                    vmin=vmin, vmax=vmax
+                )
+
+            fig_filename = out_dir.joinpath(f'{fig_basename}.png')
+            pp5.plot.savefig(fig, fig_filename, close=True)
+
+        return fig_filename
 
     @staticmethod
     def _dihedral_kde_single_group(group_idx, df_group, angle_pairs, kde_args):
@@ -327,7 +431,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
         # Initialize in advance to obtain consistent order of codons
         codon_dkdes = {c: None for c in CODONS}
 
-        bs_n = 3
+        bs_n = 2
         bs_randstate = 42
         bs_replace = bs_n > 1
 
@@ -342,6 +446,8 @@ class PointwiseCodonDistance(ParallelDataCollector):
         df_subgroups = df_codon_group.groupby(curr_codon)
         for subgroup_idx, df_subgroup in df_subgroups:
             for bootstrap_idx in range(bs_n):
+                bs_randstate += 1
+
                 # Sample from dataset with replacement, the same number of
                 # elements as it's size. This is our bootstrap sample.
                 df_subgroup_sampled = df_subgroup.sample(
@@ -424,43 +530,24 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
             d2_matrices.append(d2_mat)
 
-        # legend_labels = [
-        #     PointwiseCodonDistance._cols2label(phi_col, psi_col)
-        #     for phi_col, psi_col in angle_pairs
-        # ]
-        # Plot the kdes and distance matrices
-        # LOGGER.info(f'Plotting KDEs for {group_idx}')
-        # with mpl.style.context(PP5_MPL_STYLE):
-        #     vmin, vmax = 0., 5e-4
-        #     fig, ax = mpl.pyplot.subplots(8, 8, figsize=(64, 64))
-        #     ax = np.reshape(ax, -1)
-        #     for i, (codon, dkdes) in enumerate(codon_dkdes.items()):
-        #         ramachandran(dkdes, legend_labels, title=codon, ax=ax[i],
-        #                      vmin=vmin, vmax=vmax)
-        #
-        #     fig_filename = out_dir.joinpath('dihedral-kde') \
-        #         .joinpath(group_idx[1]).joinpath(f'{group_idx[0]}.pdf')
-        #     os.makedirs(str(fig_filename.parent), exist_ok=True)
-        #     fig.savefig(str(fig_filename), format='pdf')
-        #     mpl.pyplot.close(fig)
-        #     LOGGER.info(f'Wrote {fig_filename}')
-        #
-        # LOGGER.info(f'Plotting codon distances for {group_idx}')
-        #
-        # # Split the mu and sigma from the complex d2 matrices
-        # d2_mu_sigma = [(np.real(d2), np.imag(d2)) for d2 in d2_matrices]
-        # d2_mu, d2_sigma = list(zip(*d2_mu_sigma))
-        #
-        # for name, d2 in zip(('mu', 'sigma'), (d2_mu, d2_sigma)):
-        #     fig_filename = out_dir.joinpath('codon-dist') \
-        #         .joinpath(f'{str.join("_", group_idx)}_{name}.pdf')
-        #
-        #     pp5.plot.multi_heatmap(
-        #         d2, CODONS, CODONS, titles=legend_labels, fig_size=20,
-        #         fig_rows=1, outfile=fig_filename
-        #     )
+        angle_pair_labels = [
+            PointwiseCodonDistance._cols2label(phi_col, psi_col)
+            for phi_col, psi_col in angle_pairs
+        ]
 
-        return group_idx, d2_matrices
+        # Average the codon KDEs from all bootstraps for each codon, so that we
+        # can return a simple KDE per codon
+        for codon, dkde in codon_dkdes.items():
+            if codon_dkdes[codon] is None:
+                continue
+            for pair_idx in range(len(angle_pairs)):
+                # kde here is of shape (B, N, N) due to bootstrapping
+                # Average it over the bootstrap dimension
+                kde = codon_dkdes[codon][pair_idx]
+                mean_kde = np.nanmean(kde, axis=0)
+                codon_dkdes[codon][pair_idx] = mean_kde
+
+        return group_idx, d2_matrices, codon_dkdes
 
     @staticmethod
     def _kde_dist_metric_l2(kde1: np.ndarray, kde2: np.ndarray):
