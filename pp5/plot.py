@@ -1,6 +1,6 @@
 import itertools as it
 import os
-from typing import Union, List, Tuple, Callable, Optional, Iterable
+from typing import Union, List, Tuple, Callable, Optional, Iterable, Dict
 from pathlib import Path
 import logging
 
@@ -161,14 +161,13 @@ def multi_heatmap(
     n = len(datas)
     fig_cols = int(np.ceil(n / fig_rows))
 
-    if fig_size is None:
-        fig_size = 10
     if isinstance(fig_size, (int, float)):
         fig_size = (fig_cols * fig_size, fig_rows * fig_size)
     elif isinstance(fig_size, (list, tuple)):
         assert len(fig_size) == 2, 'Invalid figsize'
         assert all(isinstance(x, (int, float)) for x in fig_size)
-    else:
+    elif fig_size is not None:
+        # None will use default from style
         raise ValueError(f'Invalid fig_size: {fig_size}')
 
     with mpl.style.context(style, after_reset=False):
@@ -207,6 +206,104 @@ def multi_heatmap(
                                color="w")
 
         fig.colorbar(im, ax=ax, orientation='vertical', pad=0.05, shrink=0.7)
+
+    if outfile is not None:
+        savefig(fig, outfile, style=style)
+        return None
+
+    return fig, ax
+
+
+def multi_bar(
+        data: Dict[str, np.ndarray],
+        xticklabels: List[str] = None,
+        xlabel: str = None, ylabel: str = None,
+        cmap: Union[str, mpl.colors.Colormap] = None,
+        total_width=0.9, single_width=1.,
+        ax: Axes = None,
+        fig_size: Tuple[int, int] = None,
+        style=PP5_MPL_STYLE, outfile: Union[Path, str] = None,
+) -> Optional[Tuple[Figure, Axes]]:
+    """
+    Plots multiple bar-plots with grouping of each data point.
+    :param data: A mapping from series name to an array of points. All
+    arrays must have the same length.
+    :param xticklabels: Label of the individual datapoints.
+    :param xlabel: Label of x axis.
+    :param ylabel: Label of y axis.
+    :param cmap: Colormap to use. Can be either a string (the name of a
+    colormap) or a colormap object.
+    :param total_width: The width of a bar group. For example, 0.8 means that
+    80% of the x-axis is covered by bars and 20% will be spaces
+    between the bars.
+    :param single_width: The relative width of a single bar within a group.
+    For example, 1 means the bars will touch each other within a group, and
+    values less than 1 will make these bars thinner.
+    :param ax: Axes to plot into. If not provided a new figure will be created.
+    :param fig_size: If axes was not provided, this specifies the size of
+    figure to create (width, height).
+    :param style: Style name or stylefile path.
+    :param outfile: Optional path to write output figure to.
+    :return: If figure was written to file, return nothing. Otherwise
+    returns Tuple of figure, axes objects.
+    """
+
+    n_points = None
+    assert len(data) > 0
+    for d in data.values():
+        assert d.ndim == 1, "data must contain 1D arrays"
+        assert xticklabels is None or len(xticklabels) == len(d)
+        if n_points is None:
+            n_points = len(d)
+        else:
+            assert n_points == len(d), "Data has inconsistent length"
+
+    with mpl.style.context(style, after_reset=False):
+        if ax is None:
+            fig, ax = plt.subplots(1, 1, figsize=fig_size)
+        else:
+            fig, ax = ax.figure, ax
+
+        # Number of bars per group
+        n_bars = len(data)
+
+        # The width of a single bar
+        bar_width = total_width / n_bars
+
+        # List containing handles for the drawn bars, used for the legend
+        bars = []
+
+        # Get a list of colors so that we give each data series it's own
+        # color when plotting the bars.
+        if cmap is None:
+            colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        else:
+            colors = plt.cm.get_cmap(cmap).colors
+
+        # Iterate over all data
+        for i, (name, values) in enumerate(data.items()):
+            # The offset in x direction of that bar
+            x_offset = (i - n_bars / 2) * bar_width + bar_width / 2
+            color = colors[i % len(colors)]
+
+            for x, y in enumerate(values):
+                barcontainer = ax.bar(
+                    [x + x_offset], [y],
+                    width=bar_width * single_width,
+                    color=color
+                )
+
+            # Add a handle to the last drawn bar, which we'll need for the
+            # legend
+            bars.append(barcontainer[0])
+
+        ax.set_xticks(range(n_points))
+        if xticklabels:
+            ax.set_xticklabels(xticklabels, rotation=45)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.grid(axis='y')
+        ax.legend(bars, data.keys())
 
     if outfile is not None:
         savefig(fig, outfile, style=style)
