@@ -187,7 +187,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
         self._dump_intermediate_result('dataset', df_preproc)
         return {
             'input_file': str(self.input_file),
-            'n_rows': len(df_preproc)
+            'n_rows': len(df_preproc),
         }
 
     def _preprocess_subframe(self, df_sub: pd.DataFrame):
@@ -363,7 +363,8 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 async_results.append(pool.apply_async(
                     self._plot_codon_distances, args=args,
                     kwds=dict(out_dir=self.out_dir.joinpath('codon-dists-exp'),
-                              angle_pair_labels=ap_labels)
+                              angle_pair_labels=ap_labels,
+                              annotate_mu=True, plot_std=True)
                 ))
             del codon_dists_exp, d2_matrices
         except ValueError as e:
@@ -400,7 +401,8 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 async_results.append(pool.apply_async(
                     self._plot_codon_distances, args=args,
                     kwds=dict(out_dir=self.out_dir.joinpath('codon-dists'),
-                              angle_pair_labels=ap_labels)
+                              angle_pair_labels=ap_labels,
+                              annotate_mu=True, plot_std=False)
                 ))
             del codon_dists, d2_matrices
         except ValueError as e:
@@ -472,24 +474,45 @@ class PointwiseCodonDistance(ParallelDataCollector):
     @staticmethod
     def _plot_codon_distances(
             group_idx: tuple, d2_matrices: List[np.ndarray],
-            angle_pair_labels: List[str], out_dir: Path
+            angle_pair_labels: List[str], out_dir: Path,
+            annotate_mu=True, plot_std=False,
     ):
         LOGGER.info(f'Plotting codon distances for {group_idx}')
+
+        fig_basename = f'{str.join("_", reversed(group_idx))}'
 
         # d2_matrices contains a matrix for each analyzed angle pair.
         # Split the mu and sigma from the complex d2 matrices
         d2_mu_sigma = [(np.real(d2), np.imag(d2)) for d2 in d2_matrices]
         d2_mu, d2_sigma = list(zip(*d2_mu_sigma))
 
-        fig_basename = f'{str.join("_", reversed(group_idx))}'
+        # Instead of plotting the std matrix separately, we can also use
+        # annotations to denote the value of the std in each cell.
+        # We'll annotate according to the quartiles of the std.
+        pct = [np.nanpercentile(s, [25, 50, 75]) for s in d2_sigma]
 
+        def quartile_ann_fn(ap_idx, j, k):
+            std = d2_sigma[ap_idx][j, k]
+            p25, p50, p75 = pct[ap_idx]
+            if std < p25: return '*'
+            elif std < p50: return ':'
+            elif std < p75: return '.'
+            return ''
+
+        # Here we plot a separate distance matrix for mu and for sigma.
         fig_filenames = []
-        for mu_sigma, d2 in zip(('mu', 'sigma'), (d2_mu, d2_sigma)):
-            fig_filename = out_dir.joinpath(f'{fig_basename}-{mu_sigma}.png')
+        for avg_std, d2 in zip(('avg', 'std'), (d2_mu, d2_sigma)):
+            if avg_std == 'std':
+                ann_fn = None
+                if not plot_std: continue
+            else:
+                ann_fn = quartile_ann_fn if annotate_mu else None
+
+            fig_filename = out_dir.joinpath(f'{fig_basename}-{avg_std}.png')
 
             pp5.plot.multi_heatmap(
                 d2, CODONS, CODONS, titles=angle_pair_labels, fig_size=20,
-                fig_rows=1, outfile=fig_filename
+                fig_rows=1, outfile=fig_filename, data_annotation_fn=ann_fn
             )
             fig_filenames.append(str(fig_filename))
 
