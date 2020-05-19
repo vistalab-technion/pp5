@@ -367,7 +367,18 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 ))
             del codon_dists_exp, d2_matrices
         except ValueError as e:
-            LOGGER.warning(f'Not plotting codon-dists-exp: {e}')
+            LOGGER.warning(f'Not plotting: {e}')
+
+        # Codon likelihoods
+        codon_likelihoods = self._load_intermediate_result('codon-likelihoods')
+        try:
+            async_results.append(pool.apply_async(
+                self._plot_codon_likelihoods, args=(codon_likelihoods,),
+                kwds=dict(out_dir=self.out_dir, )
+            ))
+            del codon_likelihoods
+        except ValueError as e:
+            LOGGER.warning(f'Not plottings: {e}')
 
         # Dihedral KDEs of full dataset
         try:
@@ -379,7 +390,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             ))
             del full_dkde
         except ValueError as e:
-            LOGGER.warning(f'Not plotting full-dkde: {e}')
+            LOGGER.warning(f'Not plotting: {e}')
 
         # Codon distance matrices
         try:
@@ -412,9 +423,25 @@ class PointwiseCodonDistance(ParallelDataCollector):
         # Wait for plotting to complete. Each function returns a path
         fig_paths = self._handle_async_results(async_results, collect=True)
 
-        return {
-            'figure_paths': fig_paths
-        }
+    @staticmethod
+    def _plot_codon_likelihoods(
+            codon_likelihoods: dict, out_dir: Path
+    ):
+        fig_filename = out_dir.joinpath('codon-likelihoods.pdf')
+
+        # Convert from ss_type -> codon -> p, ss_type -> array
+        for ss_type in codon_likelihoods.keys():
+            a = np.array([p for p in codon_likelihoods[ss_type].values()],
+                         dtype=np.float32)
+            codon_likelihoods[ss_type] = a
+
+        pp5.plot.multi_bar(
+            codon_likelihoods, CODONS,
+            ylabel=r'$\Pr(C=c)$', xlabel='$c$', fig_size=(20, 5),
+            single_width=1., total_width=0.7, outfile=fig_filename,
+        )
+
+        return str(fig_filename)
 
     @staticmethod
     def _plot_full_dkdes(
