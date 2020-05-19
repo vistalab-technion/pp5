@@ -65,38 +65,53 @@ N_CODONS = len(CODONS)
 
 
 class PointwiseCodonDistance(ParallelDataCollector):
-    """
-    Analyzes a pointwise dataset (dihedral angles with residue information)
-    to produce a matrix of distances between codons Dij.
-    Each entry ij in Dij corresponds to codons i and j, and teh value is a
-    distance metric between the distributions of dihedral angles coming from
-    these codons.
-    """
 
     def __init__(
             self, dataset_dir: Union[str, Path],
             pointwise_filename: str = 'data-pointwise.csv',
-            condition_on_prev_codon=True,
-            condition_on_ss=True,
             consolidate_ss=DSSP_TO_SS_TYPE.copy(),
             strict_ss=True, angle_pairs=None,
             kde_nbins=128, kde_k1=30., kde_k2=30., kde_k3=0.,
             bs_niter=1, bs_randstate=None,
+            out_tag: str = None,
             clear_intermediate=False,
     ):
+        """
+        Analyzes a pointwise dataset (dihedral angles with residue information)
+        to produce a matrix of distances between codons Dij.
+        Each entry ij in Dij corresponds to codons i and j, and teh value is a
+        distance metric between the distributions of dihedral angles coming
+        from these codons.
+
+        :param dataset_dir: Path to directory with the pointwise collector
+        output.
+        :param pointwise_filename: Filename of the pointwise daataset.
+        :param consolidate_ss: Dict mapping from DSSP secondary structure to the
+        consolidated SS types used in this analysis.
+        :param strict_ss: Enforce no ambiguous codons in any residue.
+        :param angle_pairs: Pairs of angle columns for which to calculate KDEs.
+        :param kde_nbins: Number of angle binds for KDE estimation.
+        :param kde_k1: KDE concentration parameter for phi.
+        :param kde_k2: KDE concentration parameter for psi.
+        :param kde_k3: KDE joint concentration parameter.
+        :param bs_niter: Number of bootstrap iterations.
+        :param bs_randstate: Random state for bootstrap.
+        :param out_tag: Tag for output.
+        :param clear_intermediate: Whether to clear intermediate folder.
+        """
         self.dataset_dir = Path(dataset_dir)
+        self.out_tag = out_tag
         self.input_file = self.dataset_dir.joinpath(pointwise_filename)
         if not self.dataset_dir.is_dir():
             raise ValueError(f'Dataset dir {self.dataset_dir} not found')
         if not self.input_file.is_file():
             raise ValueError(f'Dataset file {self.input_file} not found')
 
+        tag = f'-{self.out_tag}' if self.out_tag else ''
         out_dir = self.dataset_dir.joinpath('results')
-        super().__init__(id='pointwise-cdist', out_dir=out_dir,
-                         create_zip=False)
+        super().__init__(id=f'pointwise_cdist{tag}', out_dir=out_dir,
+                         tag=out_tag, create_zip=False, )
 
-        self.condition_on_prev_codon = condition_on_prev_codon
-        self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
         self.strict_ss = strict_ss
 
