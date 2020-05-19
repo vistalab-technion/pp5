@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable, List, Dict, Any
 
 import pp5
+from pp5.analyze import PointwiseCodonDistance
 from pp5.protein import ProteinRecord, ProteinGroup
 from pp5.collect import ProteinRecordCollector, ProteinGroupCollector
 
@@ -204,6 +205,24 @@ def _parse_cli():
         arg_dict = arg_dict.copy()
         names = arg_dict.pop('names')
         sp_collect_pgroup.add_argument(*names, **arg_dict)
+
+
+    # Analysis
+    pointwise_cdist_desc, pointwise_cdist_args = _generate_cli_from_func(
+        PointwiseCodonDistance.__init__, skip=['consoildate_ss','angle_pairs'])
+
+    def _handle_pointwise_cdist(args=pointwise_cdist_args, **parsed_args):
+        pcd = PointwiseCodonDistance(**{k: parsed_args[k] for k in args})
+        pcd.collect()
+
+    sp_pointwise_cdist = sp.add_parser(
+        'pointwise-cdist', help=pointwise_cdist_desc, formatter_class=hf)
+
+    sp_pointwise_cdist.set_defaults(handler=_handle_pointwise_cdist)
+    for _, arg_dict in pointwise_cdist_args.items():
+        arg_dict = arg_dict.copy()
+        names = arg_dict.pop('names')
+        sp_pointwise_cdist.add_argument(*names, **arg_dict)
 
     parsed = p.parse_args()
     if not parsed.action:
