@@ -192,7 +192,8 @@ def multi_heatmap(
 
             ax[i].tick_params(top=True, bottom=False, labeltop=True,
                               labelbottom=False)
-            plt.setp(ax[i].get_xticklabels(), rotation=45)
+            plt.setp(ax[i].get_xticklabels(),
+                     rotation=45, ha='left', rotation_mode='anchor')
             ax[i].set_xticks(np.arange(data.shape[1] + 1) - .5, minor=True)
             ax[i].set_yticks(np.arange(data.shape[0] + 1) - .5, minor=True)
             ax[i].grid(which="minor", color="w", linestyle='-', linewidth=.5)
@@ -203,7 +204,7 @@ def multi_heatmap(
                 for r, c in rc_ind:
                     annotation = str(data_annotation_fn(i, r, c))
                     ax[i].text(c, r, annotation, ha="center", va="center",
-                               color="w")
+                               color="w", fontdict={'size': 'xx-small'})
 
         fig.colorbar(im, ax=ax, orientation='vertical', pad=0.05, shrink=0.7)
 
