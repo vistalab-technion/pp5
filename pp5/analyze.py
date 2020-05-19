@@ -39,13 +39,13 @@ DSSP_TO_SS_TYPE = {
     # -        None
     'E': SS_TYPE_SHEET,
     'H': SS_TYPE_HELIX,
-    'G': SS_TYPE_HELIX,
-    'I': SS_TYPE_HELIX,
+    'G': SS_TYPE_OTHER,  # maybe also helix?
+    'I': SS_TYPE_OTHER,  # maybe also helix?
     'T': SS_TYPE_TURN,
     'S': SS_TYPE_OTHER,  # maybe also turn?
     'B': SS_TYPE_OTHER,  # maybe also sheet?
-    '-': SS_TYPE_OTHER,
-    '': SS_TYPE_OTHER,
+    '-': None,
+    '': None,
 }
 
 
@@ -113,10 +113,15 @@ class PointwiseCodonDistance(ParallelDataCollector):
         self.secondary_col = 'secondary'
 
         self.kde_args = dict(n_bins=kde_nbins, k1=kde_k1, k2=kde_k2, k3=kde_k3)
-        self.kde_dist_metric = self._kde_dist_metric_l2
+        self.kde_dist_metric = 'l2'
 
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
+
+        # Update metadata with current configuration
+        state_dict = self.__getstate__()
+        state_dict.pop('collection_meta')
+        self.collection_meta.update(state_dict)
 
         # Create clean directory for intermediate results between steps
         self.intermediate_dir = self.out_dir.joinpath('_intermediate_')
@@ -126,6 +131,13 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
         # Create dict for storing paths of intermediate results
         self.intermediate_files: Dict[str, Path] = {}
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        for k, v in state.items():
+            if isinstance(v, (Path,)):
+                state[k] = str(v)
+        return state
 
     def _collection_functions(self) \
             -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
@@ -186,8 +198,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
         self._dump_intermediate_result('dataset', df_preproc)
         return {
-            'input_file': str(self.input_file),
-            'n_rows': len(df_preproc),
+            'n_TOTAL': len(df_preproc),
         }
 
     def _preprocess_subframe(self, df_sub: pd.DataFrame):
@@ -279,26 +290,42 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
         LOGGER.info(f'Calculating codon-pair distance matrices...')
 
+        # We currently only support one type of metric
+        dist_metrics = {
+            'l2': self._kde_dist_metric_l2
+        }
+
         args = (
             (
                 group_idx, df_group, curr_codon,
-                self.angle_pairs, self.kde_args, self.kde_dist_metric,
+                self.angle_pairs, self.kde_args,
+                dist_metrics[self.kde_dist_metric.lower()],
                 self.bs_niter, self.bs_randstate,
             )
             for group_idx, df_group in df_groups
         )
+
         map_result = pool.starmap(self._codon_dists_single_group, args)
 
-        # maps from group (codon, SS) to a list, containing a codon-distance
-        # matrix for each angle-pair. The codon distance matrix is complex,
-        # where real is mu and imag is sigma
-        codon_dists = {group_idx: d2 for group_idx, d2, _ in map_result}
+        codon_dists, codon_dkdes, group_sizes = {}, {}, {}
+        for group_idx, group_size, d2_matrices, dkdes in map_result:
+            codon_dists[group_idx] = d2_matrices
+            codon_dkdes[group_idx] = dkdes
+
+            # Need a string key here due to json serialization
+            group_sizes[str.join('_', group_idx)] = group_size
+
+        # codon_dists: maps from group (codon, SS) to a list, containing a
+        # codon-distance matrix for each angle-pair.
+        # The codon distance matrix is complex, where real is mu
+        # and imag is sigma
         self._dump_intermediate_result('codon-dists', codon_dists)
 
-        codon_dkdes = {group_idx: dkdes for group_idx, _, dkdes in map_result}
+        # codon_dkdes: maps from group to a dict where keys are codons.
+        # For each codon we have a list of KDEs, one for each angle pair.
         self._dump_intermediate_result('codon-dkdes', codon_dkdes)
 
-        return {}
+        return {'groups': group_sizes}
 
     def _codon_dists_expected(self, pool: mp.pool.Pool) -> dict:
         # Calculate likelihood distribution of prev codon, separated by SS
@@ -514,6 +541,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 d2, CODONS, CODONS, titles=angle_pair_labels, fig_size=20,
                 fig_rows=1, outfile=fig_filename, data_annotation_fn=ann_fn
             )
+
             fig_filenames.append(str(fig_filename))
 
         return fig_filenames
@@ -686,7 +714,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 mean_kde = np.nanmean(kde, axis=0)
                 codon_dkdes[codon][pair_idx] = mean_kde
 
-        return group_idx, d2_matrices, codon_dkdes
+        return group_idx, group_size, d2_matrices, codon_dkdes
 
     @staticmethod
     def _kde_dist_metric_l2(kde1: np.ndarray, kde2: np.ndarray):
