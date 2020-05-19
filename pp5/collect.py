@@ -121,7 +121,10 @@ class ParallelDataCollector(abc.ABC):
         meta = self.collection_meta
         meta['steps'] = [str(s) for s in self.collection_steps]
         with open(str(meta_filepath), 'w', encoding='utf-8') as f:
-            json.dump(meta, f, indent=2)
+            try:
+                json.dump(meta, f, indent=2)
+            except Exception as e:
+                LOGGER.error(f"Failed to serialize metadata", exc_info=e)
 
         self.out_filepaths.append(meta_filepath)
 
