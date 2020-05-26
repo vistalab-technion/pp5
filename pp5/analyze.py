@@ -23,6 +23,7 @@ from pp5.plot import PP5_MPL_STYLE
 
 LOGGER = logging.getLogger(__name__)
 
+SS_TYPE_ANY = 'ANY'
 SS_TYPE_HELIX = 'HELIX'
 SS_TYPE_SHEET = 'SHEET'
 SS_TYPE_TURN = 'TURN'
@@ -61,7 +62,9 @@ def codon2aac(codon: str):
 
 
 CODONS = sorted(codon2aac(c) for c in dna_table.forward_table)
+ACIDS = sorted(set([aac[0] for aac in CODONS]))
 N_CODONS = len(CODONS)
+CODON_TYPE_ANY = 'ANY'
 
 
 class PointwiseCodonDistance(ParallelDataCollector):
@@ -69,8 +72,8 @@ class PointwiseCodonDistance(ParallelDataCollector):
     def __init__(
             self, dataset_dir: Union[str, Path],
             pointwise_filename: str = 'data-pointwise.csv',
-            consolidate_ss=DSSP_TO_SS_TYPE.copy(),
-            strict_ss=True, angle_pairs=None,
+            condition_on_prev='codon', condition_on_ss=True,
+            consolidate_ss=DSSP_TO_SS_TYPE.copy(), strict_ss=True,
             kde_nbins=128, kde_k1=30., kde_k2=30., kde_k3=0.,
             bs_niter=1, bs_randstate=None,
             out_tag: str = None,
@@ -86,10 +89,13 @@ class PointwiseCodonDistance(ParallelDataCollector):
         :param dataset_dir: Path to directory with the pointwise collector
         output.
         :param pointwise_filename: Filename of the pointwise daataset.
-        :param consolidate_ss: Dict mapping from DSSP secondary structure to the
-        consolidated SS types used in this analysis.
+        :param consolidate_ss: Dict mapping from DSSP secondary structure to
+        the consolidated SS types used in this analysis.
+        :param condition_on_prev: What to condition on from previous residue of
+        each sample. Options are 'codon', 'aa', or None/''.
+        :param condition_on_ss: Whether to condition on secondary structure
+        (of two consecutive residues, after consolidation).
         :param strict_ss: Enforce no ambiguous codons in any residue.
-        :param angle_pairs: Pairs of angle columns for which to calculate KDEs.
         :param kde_nbins: Number of angle binds for KDE estimation.
         :param kde_k1: KDE concentration parameter for phi.
         :param kde_k2: KDE concentration parameter for psi.
@@ -106,26 +112,27 @@ class PointwiseCodonDistance(ParallelDataCollector):
             raise ValueError(f'Dataset dir {self.dataset_dir} not found')
         if not self.input_file.is_file():
             raise ValueError(f'Dataset file {self.input_file} not found')
+        condition_on_prev = '' if condition_on_prev is None \
+            else condition_on_prev.lower()
+        if condition_on_prev not in {'codon', 'aa', ''}:
+            raise ValueError(f'invalid condition_on_prev: {condition_on_prev}')
 
         tag = f'-{self.out_tag}' if self.out_tag else ''
         out_dir = self.dataset_dir.joinpath('results')
         super().__init__(id=f'pointwise_cdist{tag}', out_dir=out_dir,
                          tag=out_tag, create_zip=False, )
 
+        self.condition_on_prev = condition_on_prev
+        self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
         self.strict_ss = strict_ss
 
-        if not angle_pairs:
-            self.angle_pairs = [
-                (f'phi+0', f'psi+0'), (f'phi+0', f'psi-1'),
-            ]
-        else:
-            self.angle_pairs = angle_pairs
-
+        self.angle_pairs = [(f'phi+0', f'psi+0'), (f'phi+0', f'psi-1')]
         self.angle_cols = sorted(set(it.chain(*self.angle_pairs)))
         self.codon_cols = [f'codon-1', f'codon+0']
         self.secondary_cols = [f'secondary-1', f'secondary+0']
         self.secondary_col = 'secondary'
+        self.condition_col = 'condition_group'
 
         self.kde_args = dict(n_bins=kde_nbins, k1=kde_k1, k2=kde_k2, k3=kde_k3)
         self.kde_dist_metric = 'l2'
@@ -158,13 +165,14 @@ class PointwiseCodonDistance(ParallelDataCollector):
             -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
             'preprocess-dataset': self._preprocess_dataset,
+            'dataset-stats': self._dataset_stats,
             'dihedral-kde-full': self._dihedral_kde_full,
             'codon-dists': self._codons_dists,
             'codon-dists-expected': self._codon_dists_expected,
             'plot-results': self._plot_results,
         }
 
-    def _dump_intermediate_result(self, name: str, obj):
+    def _dump_intermediate(self, name: str, obj):
         # Update dict of intermediate files
         path = self.intermediate_dir.joinpath(f'{name}.pkl')
         self.intermediate_files[name] = path
@@ -175,16 +183,24 @@ class PointwiseCodonDistance(ParallelDataCollector):
         LOGGER.info(f'Wrote intermediate file {path}')
         return path
 
-    def _load_intermediate_result(self, name):
+    def _load_intermediate(self, name, allow_old=True, raise_if_missing=True):
         path = self.intermediate_dir.joinpath(f'{name}.pkl')
-        if not path.is_file():
-            raise ValueError(f"Can't find intermediate file {path}")
-        if name not in self.intermediate_files:
-            # This is not a problem, might be from a previous run we wish to
-            # resume
-            LOGGER.warning(f'Unregistered intermediate file {path}')
-            self.intermediate_files[name] = path
 
+        if name not in self.intermediate_files:
+            # Intermediate files might exist from a previous run we wish to
+            # resume
+            if allow_old:
+                LOGGER.warning(f'Loading old intermediate file {path}')
+            else:
+                return None
+
+        if not path.is_file():
+            if raise_if_missing:
+                raise ValueError(f"Can't find intermediate file {path}")
+            else:
+                return None
+
+        self.intermediate_files[name] = path
         with open(str(path), 'rb') as f:
             obj = pickle.load(f)
 
@@ -211,7 +227,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
         LOGGER.info(f'Loaded {self.input_file}: {len(df_preproc)} rows\n'
                     f'{df_preproc}\n{df_preproc.dtypes}')
 
-        self._dump_intermediate_result('dataset', df_preproc)
+        self._dump_intermediate('dataset', df_preproc)
         return {
             'n_TOTAL': len(df_preproc),
         }
@@ -244,6 +260,29 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
             return None
 
+        # Based on the configuratrion, we create a column that represents
+        # the group a sample belongs to when conditioning
+        def assign_condition_group(row: pd.Series):
+            prev_aac = row[self.codon_cols[0]]  # AA-CODON
+
+            cond_groups = []
+
+            if self.condition_on_prev == 'codon':
+                # Keep AA-CODON
+                cond_groups.append(prev_aac)
+            elif self.condition_on_prev == 'aa':
+                # Keep only AA
+                cond_groups.append(prev_aac[0])
+            else:
+                cond_groups.append(CODON_TYPE_ANY)
+
+            if self.condition_on_ss:
+                cond_groups.append(row[self.secondary_col])
+            else:
+                cond_groups.append(SS_TYPE_ANY)
+
+            return str.join('_', cond_groups)
+
         ss_consolidated = df_sub.apply(ss_consolidator, axis=1)
 
         # Keep only angle and codon columns from the full dataset
@@ -256,7 +295,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
         # Remove rows without consolidated SS (this means the residues
         # pairs didn't have the same SS)
-        has_ss = ~df_pointwise['secondary'].isnull()
+        has_ss = ~df_pointwise[self.secondary_col].isnull()
         df_pointwise = df_pointwise[has_ss]
 
         # Convert angles to radians
@@ -271,10 +310,79 @@ class PointwiseCodonDistance(ParallelDataCollector):
         aac = df_pointwise[self.codon_cols].applymap(codon2aac)
         df_pointwise[self.codon_cols] = aac
 
+        # Add a column representing what we condition on
+        condition_groups = df_pointwise.apply(assign_condition_group, axis=1)
+        df_pointwise[self.condition_col] = condition_groups
+
         return df_pointwise
 
+    def _dataset_stats(self, pool: mp.pool.Pool) -> dict:
+        # Calculate likelihood distribution of prev codon, separated by SS
+        codon_likelihoods = {}
+        prev_codon, curr_codon = self.codon_cols
+        df_processed: pd.DataFrame = self._load_intermediate('dataset')
+
+        df_ss_groups = df_processed.groupby(self.secondary_col)
+        for ss_type, df_ss_group in df_ss_groups:
+            n_ss = len(df_ss_group)
+            df_codon_groups = df_ss_group.groupby(prev_codon)
+            df_codon_group_names = df_codon_groups.groups.keys()
+
+            codon_likelihood = np.array([
+                0.
+                if codon not in df_codon_group_names
+                else len(df_codon_groups.get_group(codon)) / n_ss
+                for codon in CODONS  # ensure consistent order
+            ], dtype=np.float32)
+            assert np.isclose(np.sum(codon_likelihood), 1.)
+
+            # Save a map from codon name to it's likelihood
+            codon_likelihoods[ss_type] = {
+                c: codon_likelihood[i] for i, c in enumerate(CODONS)
+            }
+
+        # Calculate AA likelihoods based on the codon likelihoods
+        aa_likelihoods = {}
+        for ss_type, codons in codon_likelihoods.items():
+            aa_likelihoods[ss_type] = {aac[0]: 0. for aac in codons.keys()}
+            for aac, likelihood in codons.items():
+                aa = aac[0]
+                aa_likelihoods[ss_type][aa] += likelihood
+
+            assert np.isclose(sum(aa_likelihoods[ss_type].values()), 1.)
+
+        # Calculate SS likelihoods (ss->probability)
+        ss_likelihoods = {}
+        n_total = len(df_processed)
+        for ss_type, df_ss_group in df_ss_groups:
+            n_ss = len(df_ss_group)
+            ss_likelihoods[ss_type] = n_ss / n_total
+        assert np.isclose(sum(ss_likelihoods.values()), 1.)
+
+        # Add 'ANY' SS type to all likelihoods dicts
+        for l in [codon_likelihoods, aa_likelihoods]:
+            l[SS_TYPE_ANY] = {}
+
+            for ss_type, aac_likelihoods in l.items():
+                if ss_type == SS_TYPE_ANY:
+                    continue
+
+                p = ss_likelihoods[ss_type]
+
+                for aac, likelihood in aac_likelihoods.items():
+                    l[SS_TYPE_ANY].setdefault(aac, 0)
+                    l[SS_TYPE_ANY][aac] += p * likelihood
+
+            assert np.isclose(sum(l[SS_TYPE_ANY].values()), 1.)
+
+        self._dump_intermediate('codon-likelihoods', codon_likelihoods)
+        self._dump_intermediate('aa-likelihoods', aa_likelihoods)
+        self._dump_intermediate('ss-likelihoods', ss_likelihoods)
+
+        return {}
+
     def _dihedral_kde_full(self, pool: mp.pool.Pool) -> dict:
-        df_processed: pd.DataFrame = self._load_intermediate_result('dataset')
+        df_processed: pd.DataFrame = self._load_intermediate('dataset')
         df_groups = df_processed.groupby(by=self.secondary_col)
         df_groups_count: pd.DataFrame = df_groups.count()
         ss_counts = {
@@ -293,15 +401,15 @@ class PointwiseCodonDistance(ParallelDataCollector):
         # maps from group (SS) to a list, containing a dihedral KDE
         # matrix for each angle-pair.
         map_result = {group_idx: dkdes for group_idx, dkdes in map_result}
-        self._dump_intermediate_result('full-dkde', map_result)
+        self._dump_intermediate('full-dkde', map_result)
 
         return {**ss_counts}
 
     def _codons_dists(self, pool: mp.pool.Pool) -> dict:
         prev_codon, curr_codon = self.codon_cols
 
-        df_processed: pd.DataFrame = self._load_intermediate_result('dataset')
-        df_groups = df_processed.groupby(by=[self.secondary_col, prev_codon])
+        df_processed: pd.DataFrame = self._load_intermediate('dataset')
+        df_groups = df_processed.groupby(by=self.condition_col)
 
         LOGGER.info(f'Calculating codon-pair distance matrices...')
 
@@ -326,68 +434,67 @@ class PointwiseCodonDistance(ParallelDataCollector):
         for group_idx, group_size, d2_matrices, dkdes in map_result:
             codon_dists[group_idx] = d2_matrices
             codon_dkdes[group_idx] = dkdes
-
-            # Need a string key here due to json serialization
-            group_sizes[str.join('_', group_idx)] = group_size
+            group_sizes[group_idx] = group_size
 
         # codon_dists: maps from group (codon, SS) to a list, containing a
         # codon-distance matrix for each angle-pair.
         # The codon distance matrix is complex, where real is mu
         # and imag is sigma
-        self._dump_intermediate_result('codon-dists', codon_dists)
+        self._dump_intermediate('codon-dists', codon_dists)
 
         # codon_dkdes: maps from group to a dict where keys are codons.
         # For each codon we have a list of KDEs, one for each angle pair.
-        self._dump_intermediate_result('codon-dkdes', codon_dkdes)
+        self._dump_intermediate('codon-dkdes', codon_dkdes)
 
         return {'groups': group_sizes}
 
     def _codon_dists_expected(self, pool: mp.pool.Pool) -> dict:
-        # Calculate likelihood distribution of prev codon, separated by SS
-        codon_likelihoods = {}
-        prev_codon, curr_codon = self.codon_cols
-        df_processed: pd.DataFrame = self._load_intermediate_result('dataset')
-
-        df_ss_groups = df_processed.groupby(self.secondary_col)
-        for ss_type, df_ss_group in df_ss_groups:
-            n_ss = len(df_ss_group)
-            df_codon_groups = df_ss_group.groupby(prev_codon)
-
-            codon_likelihood = np.array([
-                len(df_codon_groups.get_group(codon)) / n_ss
-                for codon in CODONS  # for consistent order in the likelihood
-            ], dtype=np.float32)
-            assert np.isclose(np.sum(codon_likelihood), 1.)
-
-            # Save a map from codon name to it's likelihood
-            codon_likelihoods[ss_type] = {
-                c: codon_likelihood[i] for i, c in enumerate(CODONS)
-            }
+        # Load map of likelihoods, depending on the type of previous
+        # conditioning (ss->codon or AA->probability)
+        if self.condition_on_prev == 'codon':
+            likelihoods: dict = self._load_intermediate('codon-likelihoods')
+        elif self.condition_on_prev == 'aa':
+            likelihoods: dict = self._load_intermediate('aa-likelihoods')
+        else:
+            likelihoods = None
 
         # Load the calculated codon-dists matrices. The loaded dict
-        # maps from  (SS, prev_codon) to a list of distance matrices
-        codon_dists: dict = self._load_intermediate_result('codon-dists')
+        # maps from  (prev_codon/AA, SS) to a list of distance matrices
+        codon_dists: dict = self._load_intermediate('codon-dists')
 
         # This dict will hold the final expected distance matrices (i.e. we
-        # calculate the expectation using the likelihood of the prev codon).
-        # Note that we actually have one matrix per angle pair.
+        # calculate the expectation using the likelihood of the prev codon
+        # or aa). Note that we actually have one matrix per angle pair.
         codon_dists_exp = {}
         for group_idx, d2_matrices in codon_dists.items():
             assert len(d2_matrices) == len(self.angle_pairs)
-            ss_type, codon = group_idx
+            codon_or_aa, ss_type = group_idx.split('_')
 
             if ss_type not in codon_dists_exp:
                 defaults = [np.zeros_like(d2) for d2 in d2_matrices]
                 codon_dists_exp[ss_type] = defaults
 
             for i, d2 in enumerate(d2_matrices):
-                p = codon_likelihoods[ss_type][codon]
+                p = likelihoods[ss_type][codon_or_aa] if likelihoods else 1.
                 # Don't sum nan's because they kill the entire cell
                 d2 = np.nan_to_num(d2, copy=False, nan=0.)
                 codon_dists_exp[ss_type][i] += p * d2
 
-        self._dump_intermediate_result('codon-likelihoods', codon_likelihoods)
-        self._dump_intermediate_result('codon-dists-exp', codon_dists_exp)
+        # Now we also take the expectation over all SS types to produce one
+        # averaged distance matrix, but only if we actually conditioned on it
+        if self.condition_on_ss:
+            ss_likelihoods: dict = self._load_intermediate('ss-likelihoods')
+            defaults = [np.zeros_like(d2) for d2 in d2_matrices]
+            codon_dists_exp[SS_TYPE_ANY] = defaults
+            for ss_type, d2_matrices in codon_dists_exp.items():
+                if ss_type == SS_TYPE_ANY:
+                    continue
+                p = ss_likelihoods[ss_type]
+                for i, d2 in enumerate(d2_matrices):
+                    codon_dists_exp[SS_TYPE_ANY][i] += p * d2
+
+        self._dump_intermediate('codon-dists-exp', codon_dists_exp)
+        return {}
 
     def _plot_results(self, pool: mp.pool.Pool):
         LOGGER.info(f'Plotting results...')
@@ -398,10 +505,10 @@ class PointwiseCodonDistance(ParallelDataCollector):
         async_results = []
 
         # Expected codon dists
-        codon_dists_exp = self._load_intermediate_result('codon-dists-exp')
-        try:
+        codon_dists_exp = self._load_intermediate('codon-dists-exp', False)
+        if codon_dists_exp is not None:
             for ss_type, d2_matrices in codon_dists_exp.items():
-                args = ((ss_type,), d2_matrices)
+                args = (ss_type, d2_matrices)
                 async_results.append(pool.apply_async(
                     self._plot_codon_distances, args=args,
                     kwds=dict(out_dir=self.out_dir.joinpath('codon-dists-exp'),
@@ -409,35 +516,38 @@ class PointwiseCodonDistance(ParallelDataCollector):
                               annotate_mu=True, plot_std=True)
                 ))
             del codon_dists_exp, d2_matrices
-        except ValueError as e:
-            LOGGER.warning(f'Not plotting: {e}')
 
         # Codon likelihoods
-        codon_likelihoods = self._load_intermediate_result('codon-likelihoods')
-        try:
+        codon_likelihoods = self._load_intermediate('codon-likelihoods', False)
+        if codon_likelihoods is not None:
             async_results.append(pool.apply_async(
-                self._plot_codon_likelihoods, args=(codon_likelihoods,),
+                self._plot_likelihoods, args=(codon_likelihoods, 'codon'),
                 kwds=dict(out_dir=self.out_dir, )
             ))
             del codon_likelihoods
-        except ValueError as e:
-            LOGGER.warning(f'Not plottings: {e}')
+
+        # AA likelihoods
+        aa_likelihoods = self._load_intermediate('aa-likelihoods', False)
+        if aa_likelihoods is not None:
+            async_results.append(pool.apply_async(
+                self._plot_likelihoods, args=(aa_likelihoods, 'aa'),
+                kwds=dict(out_dir=self.out_dir, )
+            ))
+            del aa_likelihoods
 
         # Dihedral KDEs of full dataset
-        try:
-            full_dkde: dict = self._load_intermediate_result('full-dkde')
+        full_dkde: dict = self._load_intermediate('full-dkde', False)
+        if full_dkde is not None:
             async_results.append(pool.apply_async(
                 self._plot_full_dkdes,
                 args=(full_dkde,),
                 kwds=dict(out_dir=self.out_dir, angle_pair_labels=ap_labels)
             ))
             del full_dkde
-        except ValueError as e:
-            LOGGER.warning(f'Not plotting: {e}')
 
         # Codon distance matrices
-        try:
-            codon_dists: dict = self._load_intermediate_result('codon-dists')
+        codon_dists: dict = self._load_intermediate('codon-dists', False)
+        if codon_dists is not None:
             for group_idx, d2_matrices in codon_dists.items():
                 args = (group_idx, d2_matrices)
                 async_results.append(pool.apply_async(
@@ -447,12 +557,10 @@ class PointwiseCodonDistance(ParallelDataCollector):
                               annotate_mu=True, plot_std=False)
                 ))
             del codon_dists, d2_matrices
-        except ValueError as e:
-            LOGGER.warning(f'Not plotting codon-dists: {e}')
 
         # Dihedral KDEs of each codon in each group
-        try:
-            codon_dkdes: dict = self._load_intermediate_result('codon-dkdes')
+        codon_dkdes: dict = self._load_intermediate('codon-dkdes', False)
+        if codon_dkdes is not None:
             for group_idx, dkdes in codon_dkdes.items():
                 args = (group_idx, dkdes)
                 async_results.append(pool.apply_async(
@@ -461,28 +569,36 @@ class PointwiseCodonDistance(ParallelDataCollector):
                               angle_pair_labels=ap_labels)
                 ))
             del codon_dkdes, dkdes
-        except ValueError as e:
-            LOGGER.warning(f'Not plotting codon-dkdes: {e}')
 
         # Wait for plotting to complete. Each function returns a path
         fig_paths = self._handle_async_results(async_results, collect=True)
 
     @staticmethod
-    def _plot_codon_likelihoods(
-            codon_likelihoods: dict, out_dir: Path
+    def _plot_likelihoods(
+            likelihoods: dict, codon_or_aa: str, out_dir: Path,
     ):
-        fig_filename = out_dir.joinpath('codon-likelihoods.pdf')
+        if codon_or_aa == 'codon':
+            fig_filename = out_dir.joinpath(f'codon-likelihoods.pdf')
+            xlabel, ylabel = r'$c$', r'$\Pr(CODON=c)$'
+        elif codon_or_aa == 'aa':
+            fig_filename = out_dir.joinpath(f'aa-likelihoods.pdf')
+            xlabel, ylabel = r'$a$', r'$\Pr(AA=a)$'
+        else:
+            raise ValueError('Invalid type')
 
         # Convert from ss_type -> codon -> p, ss_type -> array
-        for ss_type in codon_likelihoods.keys():
-            a = np.array([p for p in codon_likelihoods[ss_type].values()],
+        for ss_type in likelihoods.keys():
+            xticklabels = likelihoods[ss_type].keys()
+            a = np.array([p for p in likelihoods[ss_type].values()],
                          dtype=np.float32)
-            codon_likelihoods[ss_type] = a
+            likelihoods[ss_type] = a
+
 
         pp5.plot.multi_bar(
-            codon_likelihoods, CODONS,
-            ylabel=r'$\Pr(C=c)$', xlabel='$c$', fig_size=(20, 5),
-            single_width=1., total_width=0.7, outfile=fig_filename,
+            likelihoods,
+            xticklabels=xticklabels, xlabel=xlabel, ylabel=ylabel,
+            fig_size=(20, 5), single_width=1., total_width=0.7,
+            outfile=fig_filename,
         )
 
         return str(fig_filename)
@@ -515,13 +631,11 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
     @staticmethod
     def _plot_codon_distances(
-            group_idx: tuple, d2_matrices: List[np.ndarray],
+            group_idx: str, d2_matrices: List[np.ndarray],
             angle_pair_labels: List[str], out_dir: Path,
             annotate_mu=True, plot_std=False,
     ):
         LOGGER.info(f'Plotting codon distances for {group_idx}')
-
-        fig_basename = f'{str.join("_", reversed(group_idx))}'
 
         # d2_matrices contains a matrix for each analyzed angle pair.
         # Split the mu and sigma from the complex d2 matrices
@@ -550,7 +664,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             else:
                 ann_fn = quartile_ann_fn if annotate_mu else None
 
-            fig_filename = out_dir.joinpath(f'{fig_basename}-{avg_std}.png')
+            fig_filename = out_dir.joinpath(f'{group_idx}-{avg_std}.png')
 
             pp5.plot.multi_heatmap(
                 d2, CODONS, CODONS, titles=angle_pair_labels, fig_size=20,
@@ -563,13 +677,11 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
     @staticmethod
     def _plot_codon_dkdes(
-            group_idx: tuple, codon_dkdes: Dict[str, List[np.ndarray]],
+            group_idx: str, codon_dkdes: Dict[str, List[np.ndarray]],
             angle_pair_labels: List[str], out_dir: Path
     ):
         # Plot the kdes and distance matrices
         LOGGER.info(f'Plotting KDEs for {group_idx}')
-
-        fig_basename = f'{str.join("_", reversed(group_idx))}'
 
         with mpl.style.context(PP5_MPL_STYLE):
             vmin, vmax = 0., 5e-4
@@ -587,7 +699,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
                     vmin=vmin, vmax=vmax
                 )
 
-            fig_filename = out_dir.joinpath(f'{fig_basename}.png')
+            fig_filename = out_dir.joinpath(f'{group_idx}.png')
             pp5.plot.savefig(fig, fig_filename, close=True)
 
         return str(fig_filename)
@@ -608,7 +720,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
     @staticmethod
     def _codon_dists_single_group(
-            group_idx: tuple, df_codon_group: pd.DataFrame, curr_codon: str,
+            group_idx: str, df_codon_group: pd.DataFrame, curr_codon: str,
             angle_pairs: list, kde_args: dict, kde_dist_metric: Callable,
             bs_niter: int, bs_randstate: Optional[int],
     ):
