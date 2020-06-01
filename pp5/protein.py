@@ -237,6 +237,7 @@ class ProteinRecord(object):
         try:
             # Either chain or entity or none can be provided, but not both
             pdb_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
+            numeric_chain = False
             if entity_id:
                 entity_id = int(entity_id)
 
@@ -244,10 +245,21 @@ class ProteinRecord(object):
                 pdb_dict = pdb.pdb_dict(pdb_id, struct_d=pdb_dict)
                 meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
                 chain_id = meta.get_chain(entity_id)
+
                 if not chain_id:
-                    raise ProteinInitError(
-                        f'No matching chain found for entity '
-                        f'{entity_id} in PDB structure {pdb_id}')
+                    # In rare cases the chain is a number instead of a letter,
+                    # so there's no way to distinguish between entity id and
+                    # chain except also trying to use our entity as a chain
+                    # and finding the actual entity. See e.g. 4N6V.
+                    if str(entity_id) in meta.chain_entities:
+                        # Chain is number, but use it's string representation
+                        chain_id = str(entity_id)
+                        numeric_chain = True
+                    else:
+                        raise ProteinInitError(
+                            f'No matching chain found for entity '
+                            f'{entity_id} in PDB structure {pdb_id}')
+
                 pdb_id = f'{pdb_id}:{chain_id}'
 
             elif chain_id:
@@ -265,7 +277,8 @@ class ProteinRecord(object):
                 pdb_id, strict=strict_pdb_xref, cache=True, struct_d=pdb_dict
             )
 
-            prec = cls(unp_id, pdb_id, pdb_dict=pdb_dict, **kw_for_init)
+            prec = cls(unp_id, pdb_id, pdb_dict=pdb_dict,
+                       numeric_chain=numeric_chain, **kw_for_init)
             if cache_dir:
                 prec.save(out_dir=cache_dir)
 
@@ -314,7 +327,7 @@ class ProteinRecord(object):
 
     def __init__(self, unp_id: str, pdb_id: str, pdb_dict: dict = None,
                  dihedral_est_name='erp', dihedral_est_args: dict = None,
-                 max_ena=None, strict_unp_xref=True):
+                 max_ena=None, strict_unp_xref=True, numeric_chain=False):
         """
         Initialize a protein record from both Uniprot and PDB ids.
         To initialize a protein from Uniprot id or PDB id only, use the
@@ -338,6 +351,8 @@ class ProteinRecord(object):
         means no limit (all cross-refs from Uniprot will be aligned).
         :param strict_unp_xref: Whether to require that there exist a PDB
         cross-ref for the given Uniprot ID.
+        :param numeric_chain: Whether the given chain id (if any) is
+        numeric. In rare cases PDB structures have numbers as chain ids.
         """
         if not (unp_id and pdb_id):
             raise ProteinInitError("Must provide both Uniprot and PDB IDs")
@@ -352,6 +367,7 @@ class ProteinRecord(object):
         # Uniprot id. If a pdb_id is given we'll try to use that, depending
         # on whether there's a Uniprot xref for it and on strict_unp_xref.
         self.strict_unp_xref = strict_unp_xref
+        self.numeric_chain = numeric_chain
         self.pdb_base_id, self.pdb_chain_id = self._find_pdb_xref(pdb_id)
         self.pdb_id = f'{self.pdb_base_id}:{self.pdb_chain_id}'
         if pdb_dict:
@@ -668,9 +684,15 @@ class ProteinRecord(object):
         return best_ena, idx_to_codons
 
     def _find_pdb_xref(self, ref_pdb_id) -> Tuple[str, str]:
-        ref_pdb_id, ref_chain_id = pdb.split_id(ref_pdb_id)
+        ref_pdb_id, ref_chain_id, ent_id = pdb.split_id_with_entity(ref_pdb_id)
         if not ref_chain_id:
-            ref_chain_id = ''
+            if ent_id is not None and self.numeric_chain:
+                # In rare cases the chain is a number and indistinguishable
+                # from entity. Handle this case only if explicitly
+                # requested.
+                ref_chain_id = ent_id
+            else:
+                ref_chain_id = ''
 
         ref_pdb_id, ref_chain_id = ref_pdb_id.upper(), ref_chain_id.upper()
 
