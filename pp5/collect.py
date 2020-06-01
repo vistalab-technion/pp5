@@ -537,9 +537,13 @@ class ProteinGroupCollector(ParallelDataCollector):
             chain_id = meta.get_chain(entity_id)
 
         if chain_id:
+            # If we have a specific chain, use only that
             all_chains = (chain_id,)
         else:
-            all_chains = tuple(meta.chain_entities.keys())
+            # Otherwise we'll take all UNIQUE chains: only one chain from
+            # each unique entity. This is important, since chains from the same
+            # entity are identical, so they're redundant.
+            all_chains = [meta.get_chain(e) for e in meta.entity_sequence]
 
         chain_data = []
         for chain_id in all_chains:
