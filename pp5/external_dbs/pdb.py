@@ -549,7 +549,7 @@ class PDBMetadata(object):
         chains = [c for c, e in self.chain_entities.items() if e == entity_id]
         if not chains:
             return None
-        return chains[0]
+        return sorted(chains)[0]
 
     def __repr__(self):
         return str(self.__dict__)
