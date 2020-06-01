@@ -282,7 +282,8 @@ class ProteinGroupCollector(ParallelDataCollector):
     def __init__(self,
                  resolution: float,
                  expr_sys: str = ProteinGroup.DEFAULT_EXPR_SYS,
-                 evalue_cutoff: float = 1., identity_cutoff: float = 30,
+                 evalue_cutoff: float = 1., identity_cutoff: float = 30.,
+                 b_max: float = 30.,
                  out_dir=pp5.out_subdir('pgroup-collected'),
                  pgroup_out_dir=pp5.out_subdir('pgroup'),
                  write_pgroup_csvs=True, out_tag: str = None,
@@ -299,6 +300,9 @@ class ProteinGroupCollector(ParallelDataCollector):
         :param identity_cutoff: Minimal percent sequence identity
         allowed for BLAST matches when searching for proteins to include in
         pgroups.
+        :param b_max: Maximal b-factor a residue can have
+        (backbone-atom average) in order for it to be included in a match
+        group. None means no limit.
         :param out_dir: Output directory for collection CSV files.
         :param pgroup_out_dir: Output directory for pgroup CSV files. Only
         relevant if write_pgroup_csvs is True.
@@ -321,6 +325,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.query = pdb.PDBCompositeQuery(self.res_query, self.expr_sys_query)
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
+        self.b_max = b_max
         self.pgroup_out_dir = pgroup_out_dir
         self.write_pgroup_csvs = write_pgroup_csvs
         self.out_tag = out_tag
@@ -452,7 +457,8 @@ class ProteinGroupCollector(ParallelDataCollector):
             idx = (i, len(ref_pdb_ids))
             pgroup_out_dir = self.pgroup_out_dir \
                 if self.write_pgroup_csvs else None
-            args = (ref_pdb_id, blast, pgroup_out_dir, self.out_tag, idx)
+            args = (ref_pdb_id, blast, self.b_max, pgroup_out_dir,
+                    self.out_tag, idx)
             r = pool.apply_async(self._collect_single_pgroup, args=args)
             async_results.append(r)
 
@@ -628,8 +634,8 @@ class ProteinGroupCollector(ParallelDataCollector):
 
     @staticmethod
     def _collect_single_pgroup(
-            ref_pdb_id: str, blast: ProteinBLAST,
-            out_dir: Optional[Path], out_tag: str, idx
+            ref_pdb_id: str, blast: ProteinBLAST, b_max: float,
+            out_dir: Optional[Path], out_tag: str, idx: tuple
     ) -> Optional[dict]:
         try:
             LOGGER.info(f'Creating ProteinGroup for {ref_pdb_id} '
@@ -643,7 +649,7 @@ class ProteinGroupCollector(ParallelDataCollector):
             # exact ids of the query structures.
             pgroup = ProteinGroup.from_query_ids(
                 ref_pdb_id, query_pdb_ids=df_blast.index,
-                parallel=False, prec_cache=True,
+                b_max=b_max, parallel=False, prec_cache=True,
             )
 
             # Get the pairwise and pointwise matches from the pgroup
