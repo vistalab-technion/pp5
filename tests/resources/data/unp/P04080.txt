@@ -1,0 +1,289 @@
+ID   CYTB_HUMAN              Reviewed;          98 AA.
+AC   P04080;
+DT   01-NOV-1986, integrated into UniProtKB/Swiss-Prot.
+DT   01-OCT-1996, sequence version 2.
+DT   22-APR-2020, entry version 215.
+DE   RecName: Full=Cystatin-B;
+DE   AltName: Full=CPI-B;
+DE   AltName: Full=Liver thiol proteinase inhibitor;
+DE   AltName: Full=Stefin-B;
+GN   Name=CSTB; Synonyms=CST6, STFB;
+OS   Homo sapiens (Human).
+OC   Eukaryota; Metazoa; Chordata; Craniata; Vertebrata; Euteleostomi; Mammalia;
+OC   Eutheria; Euarchontoglires; Primates; Haplorrhini; Catarrhini; Hominidae;
+OC   Homo.
+OX   NCBI_TaxID=9606;
+RN   [1]
+RP   PROTEIN SEQUENCE.
+RX   PubMed=3902020; DOI=10.1016/0006-291x(85)90216-5;
+RA   Ritonja A., Machleidt W., Barrett A.J.;
+RT   "Amino acid sequence of the intracellular cysteine proteinase inhibitor
+RT   cystatin B from human liver.";
+RL   Biochem. Biophys. Res. Commun. 131:1187-1192(1985).
+RN   [2]
+RP   NUCLEOTIDE SEQUENCE [GENOMIC DNA / MRNA].
+RX   PubMed=8596935; DOI=10.1126/science.271.5256.1731;
+RA   Pennacchio L.A., Lehesjoki A.-E., Stone N.E., Willour V.L., Virteneva K.,
+RA   Miao J., D'Amato E., Ramirez L., Faham J., Koskiniemi M., Warringtion J.A.,
+RA   Norio R., la Chapelle A., Cox D.R., Myers R.M.;
+RT   "Mutations in the gene encoding cystatin B in progressive myoclonus
+RT   epilepsy (EPM1).";
+RL   Science 271:1731-1734(1996).
+RN   [3]
+RP   NUCLEOTIDE SEQUENCE [MRNA].
+RA   Bhat K.S.;
+RL   Submitted (MAY-1993) to the EMBL/GenBank/DDBJ databases.
+RN   [4]
+RP   NUCLEOTIDE SEQUENCE [LARGE SCALE GENOMIC DNA].
+RX   PubMed=10830953; DOI=10.1038/35012518;
+RA   Hattori M., Fujiyama A., Taylor T.D., Watanabe H., Yada T., Park H.-S.,
+RA   Toyoda A., Ishii K., Totoki Y., Choi D.-K., Groner Y., Soeda E., Ohki M.,
+RA   Takagi T., Sakaki Y., Taudien S., Blechschmidt K., Polley A., Menzel U.,
+RA   Delabar J., Kumpf K., Lehmann R., Patterson D., Reichwald K., Rump A.,
+RA   Schillhabel M., Schudy A., Zimmermann W., Rosenthal A., Kudoh J.,
+RA   Shibuya K., Kawasaki K., Asakawa S., Shintani A., Sasaki T., Nagamine K.,
+RA   Mitsuyama S., Antonarakis S.E., Minoshima S., Shimizu N., Nordsiek G.,
+RA   Hornischer K., Brandt P., Scharfe M., Schoen O., Desario A., Reichelt J.,
+RA   Kauer G., Bloecker H., Ramser J., Beck A., Klages S., Hennig S.,
+RA   Riesselmann L., Dagand E., Wehrmeyer S., Borzym K., Gardiner K.,
+RA   Nizetic D., Francis F., Lehrach H., Reinhardt R., Yaspo M.-L.;
+RT   "The DNA sequence of human chromosome 21.";
+RL   Nature 405:311-319(2000).
+RN   [5]
+RP   NUCLEOTIDE SEQUENCE [LARGE SCALE MRNA].
+RC   TISSUE=Placenta;
+RX   PubMed=15489334; DOI=10.1101/gr.2596504;
+RG   The MGC Project Team;
+RT   "The status, quality, and expansion of the NIH full-length cDNA project:
+RT   the Mammalian Gene Collection (MGC).";
+RL   Genome Res. 14:2121-2127(2004).
+RN   [6]
+RP   SUBCELLULAR LOCATION.
+RX   PubMed=11139332; DOI=10.1006/excr.2000.5085;
+RA   Riccio M., Di Giaimo R., Pianetti S., Palmieri P.P., Melli M., Santi S.;
+RT   "Nuclear localization of cystatin B, the cathepsin inhibitor implicated in
+RT   myoclonus epilepsy (EPM1).";
+RL   Exp. Cell Res. 262:84-94(2001).
+RN   [7]
+RP   ACETYLATION [LARGE SCALE ANALYSIS] AT MET-1, AND IDENTIFICATION BY MASS
+RP   SPECTROMETRY [LARGE SCALE ANALYSIS].
+RX   PubMed=19413330; DOI=10.1021/ac9004309;
+RA   Gauci S., Helbig A.O., Slijper M., Krijgsveld J., Heck A.J., Mohammed S.;
+RT   "Lys-N and trypsin cover complementary parts of the phosphoproteome in a
+RT   refined SCX-based approach.";
+RL   Anal. Chem. 81:4493-4501(2009).
+RN   [8]
+RP   IDENTIFICATION BY MASS SPECTROMETRY [LARGE SCALE ANALYSIS].
+RX   PubMed=21269460; DOI=10.1186/1752-0509-5-17;
+RA   Burkard T.R., Planyavsky M., Kaupe I., Breitwieser F.P., Buerckstuemmer T.,
+RA   Bennett K.L., Superti-Furga G., Colinge J.;
+RT   "Initial characterization of the human central proteome.";
+RL   BMC Syst. Biol. 5:17-17(2011).
+RN   [9]
+RP   ACETYLATION [LARGE SCALE ANALYSIS] AT MET-1, AND IDENTIFICATION BY MASS
+RP   SPECTROMETRY [LARGE SCALE ANALYSIS].
+RX   PubMed=22223895; DOI=10.1074/mcp.m111.015131;
+RA   Bienvenut W.V., Sumpton D., Martinez A., Lilla S., Espagne C., Meinnel T.,
+RA   Giglione C.;
+RT   "Comparative large-scale characterisation of plant vs. mammal proteins
+RT   reveals similar and idiosyncratic N-alpha acetylation features.";
+RL   Mol. Cell. Proteomics 11:M111.015131-M111.015131(2012).
+RN   [10]
+RP   IDENTIFICATION BY MASS SPECTROMETRY [LARGE SCALE ANALYSIS].
+RC   TISSUE=Liver;
+RX   PubMed=24275569; DOI=10.1016/j.jprot.2013.11.014;
+RA   Bian Y., Song C., Cheng K., Dong M., Wang F., Huang J., Sun D., Wang L.,
+RA   Ye M., Zou H.;
+RT   "An enzyme assisted RP-RPLC approach for in-depth analysis of human liver
+RT   phosphoproteome.";
+RL   J. Proteomics 96:253-262(2014).
+RN   [11]
+RP   IDENTIFICATION BY MASS SPECTROMETRY [LARGE SCALE ANALYSIS].
+RX   PubMed=25944712; DOI=10.1002/pmic.201400617;
+RA   Vaca Jacome A.S., Rabilloud T., Schaeffer-Reiss C., Rompais M., Ayoub D.,
+RA   Lane L., Bairoch A., Van Dorsselaer A., Carapito C.;
+RT   "N-terminome analysis of the human mitochondrial proteome.";
+RL   Proteomics 15:2519-2524(2015).
+RN   [12]
+RP   X-RAY CRYSTALLOGRAPHY (2.4 ANGSTROMS).
+RX   PubMed=2347312; DOI=10.1002/j.1460-2075.1990.tb08321.x;
+RA   Stubbs M.T., Laber B., Bode W., Huber R., Jerala R., Lenarcic B., Turk V.;
+RT   "The refined 2.4 A X-ray crystal structure of recombinant human stefin B in
+RT   complex with the cysteine proteinase papain: a novel type of proteinase
+RT   inhibitor interaction.";
+RL   EMBO J. 9:1939-1947(1990).
+RN   [13]
+RP   VARIANT EPM1 ARG-4.
+RX   PubMed=9012407;
+RA   Lalioti M.D., Mirotsou M., Buresi C., Peitsch M.C., Rossier C.,
+RA   Ouazzani R., Baldy-Moulinier M., Bottani A., Malafosse A.,
+RA   Antonarakis S.E.;
+RT   "Identification of mutations in cystatin B, the gene responsible for the
+RT   Unverricht-Lundborg type of progressive myoclonus epilepsy (EPM1).";
+RL   Am. J. Hum. Genet. 60:342-351(1997).
+CC   -!- FUNCTION: This is an intracellular thiol proteinase inhibitor. Tightly
+CC       binding reversible inhibitor of cathepsins L, H and B.
+CC   -!- SUBUNIT: Able to form dimers stabilized by noncovalent forces.
+CC   -!- SUBCELLULAR LOCATION: Cytoplasm {ECO:0000269|PubMed:11139332}. Nucleus
+CC       {ECO:0000269|PubMed:11139332}.
+CC   -!- DISEASE: Epilepsy, progressive myoclonic 1 (EPM1) [MIM:254800]: An
+CC       autosomal recessive disorder characterized by severe, stimulus-
+CC       sensitive myoclonus and tonic-clonic seizures. The onset, occurring
+CC       between 6 and 13 years of age, is characterized by convulsions.
+CC       Myoclonus begins 1 to 5 years later. The twitchings occur predominantly
+CC       in the proximal muscles of the extremities and are bilaterally
+CC       symmetrical, although asynchronous. At first small, they become late in
+CC       the clinical course so violent that the victim is thrown to the floor.
+CC       Mental deterioration and eventually dementia develop.
+CC       {ECO:0000269|PubMed:9012407}. Note=The disease is caused by mutations
+CC       affecting the gene represented in this entry.
+CC   -!- SIMILARITY: Belongs to the cystatin family. {ECO:0000305}.
+CC   -!- WEB RESOURCE: Name=Atlas of Genetics and Cytogenetics in Oncology and
+CC       Haematology;
+CC       URL="http://atlasgeneticsoncology.org/Genes/CSTBID40181ch21q22.html";
+CC   ---------------------------------------------------------------------------
+CC   Copyrighted by the UniProt Consortium, see https://www.uniprot.org/terms
+CC   Distributed under the Creative Commons Attribution (CC BY 4.0) License
+CC   ---------------------------------------------------------------------------
+DR   EMBL; U46692; AAA99014.1; -; Genomic_DNA.
+DR   EMBL; L03558; AAA35727.1; -; mRNA.
+DR   EMBL; AF208234; AAF44059.1; -; Genomic_DNA.
+DR   EMBL; AP001752; BAA95541.1; -; Genomic_DNA.
+DR   EMBL; BC003370; AAH03370.1; -; mRNA.
+DR   EMBL; BC010532; AAH10532.1; -; mRNA.
+DR   CCDS; CCDS13701.1; -.
+DR   PIR; A01278; UDHUB.
+DR   RefSeq; NP_000091.1; NM_000100.3.
+DR   PDB; 1STF; X-ray; 2.37 A; I=1-98.
+DR   PDB; 2OCT; X-ray; 1.40 A; A/B=1-98.
+DR   PDB; 4N6V; X-ray; 1.80 A; 0/1/2/3/4/5/6/7/8/9=8-98.
+DR   PDBsum; 1STF; -.
+DR   PDBsum; 2OCT; -.
+DR   PDBsum; 4N6V; -.
+DR   SMR; P04080; -.
+DR   BioGrid; 107858; 32.
+DR   IntAct; P04080; 12.
+DR   MINT; P04080; -.
+DR   STRING; 9606.ENSP00000291568; -.
+DR   DrugBank; DB09131; Cupric Chloride.
+DR   MEROPS; I25.003; -.
+DR   TCDB; 1.C.91.1.1; the stefin b pore-forming protein (stefin b) family.
+DR   iPTMnet; P04080; -.
+DR   PhosphoSitePlus; P04080; -.
+DR   SwissPalm; P04080; -.
+DR   BioMuta; CSTB; -.
+DR   DMDM; 1706278; -.
+DR   CPTAC; CPTAC-184; -.
+DR   CPTAC; CPTAC-185; -.
+DR   EPD; P04080; -.
+DR   jPOST; P04080; -.
+DR   MassIVE; P04080; -.
+DR   PaxDb; P04080; -.
+DR   PeptideAtlas; P04080; -.
+DR   PRIDE; P04080; -.
+DR   ProteomicsDB; 51648; -.
+DR   TopDownProteomics; P04080; -.
+DR   Antibodypedia; 4378; 759 antibodies.
+DR   DNASU; 1476; -.
+DR   Ensembl; ENST00000291568; ENSP00000291568; ENSG00000160213.
+DR   GeneID; 1476; -.
+DR   KEGG; hsa:1476; -.
+DR   CTD; 1476; -.
+DR   DisGeNET; 1476; -.
+DR   GeneCards; CSTB; -.
+DR   GeneReviews; CSTB; -.
+DR   HGNC; HGNC:2482; CSTB.
+DR   HPA; ENSG00000160213; Tissue enhanced (esophagus, lymphoid tissue, tongue).
+DR   MalaCards; CSTB; -.
+DR   MIM; 254800; phenotype.
+DR   MIM; 601145; gene.
+DR   neXtProt; NX_P04080; -.
+DR   OpenTargets; ENSG00000160213; -.
+DR   Orphanet; 308; Unverricht-Lundborg disease.
+DR   PharmGKB; PA26984; -.
+DR   eggNOG; ENOG410IZK7; Eukaryota.
+DR   eggNOG; ENOG41121QW; LUCA.
+DR   GeneTree; ENSGT00940000154826; -.
+DR   HOGENOM; CLU_150234_2_0_1; -.
+DR   InParanoid; P04080; -.
+DR   KO; K13907; -.
+DR   OMA; SLPHEDK; -.
+DR   OrthoDB; 1647595at2759; -.
+DR   PhylomeDB; P04080; -.
+DR   TreeFam; TF333174; -.
+DR   Reactome; R-HSA-6798695; Neutrophil degranulation.
+DR   ChiTaRS; CSTB; human.
+DR   EvolutionaryTrace; P04080; -.
+DR   GeneWiki; Cystatin_B; -.
+DR   GenomeRNAi; 1476; -.
+DR   Pharos; P04080; Tbio.
+DR   PRO; PR:P04080; -.
+DR   Proteomes; UP000005640; Chromosome 21.
+DR   RNAct; P04080; protein.
+DR   Bgee; ENSG00000160213; Expressed in mouth mucosa and 237 other tissues.
+DR   ExpressionAtlas; P04080; baseline and differential.
+DR   Genevisible; P04080; HS.
+DR   GO; GO:0062023; C:collagen-containing extracellular matrix; HDA:BHF-UCL.
+DR   GO; GO:0005737; C:cytoplasm; IDA:UniProtKB.
+DR   GO; GO:0005829; C:cytosol; IDA:HPA.
+DR   GO; GO:0070062; C:extracellular exosome; HDA:UniProtKB.
+DR   GO; GO:0005576; C:extracellular region; TAS:Reactome.
+DR   GO; GO:0005615; C:extracellular space; IDA:UniProtKB.
+DR   GO; GO:1904813; C:ficolin-1-rich granule lumen; TAS:Reactome.
+DR   GO; GO:0005730; C:nucleolus; IDA:HPA.
+DR   GO; GO:0005634; C:nucleus; IDA:MGI.
+DR   GO; GO:0034774; C:secretory granule lumen; TAS:Reactome.
+DR   GO; GO:1904724; C:tertiary granule lumen; TAS:Reactome.
+DR   GO; GO:0004869; F:cysteine-type endopeptidase inhibitor activity; IDA:UniProtKB.
+DR   GO; GO:0004866; F:endopeptidase inhibitor activity; IDA:MGI.
+DR   GO; GO:0002020; F:protease binding; IDA:MGI.
+DR   GO; GO:0003723; F:RNA binding; HDA:UniProtKB.
+DR   GO; GO:0008344; P:adult locomotory behavior; IEA:Ensembl.
+DR   GO; GO:0010466; P:negative regulation of peptidase activity; IDA:BHF-UCL.
+DR   GO; GO:0045861; P:negative regulation of proteolysis; IDA:UniProtKB.
+DR   GO; GO:0043312; P:neutrophil degranulation; TAS:Reactome.
+DR   CDD; cd00042; CY; 1.
+DR   InterPro; IPR000010; Cystatin_dom.
+DR   InterPro; IPR018073; Prot_inh_cystat_CS.
+DR   InterPro; IPR001713; Prot_inh_stefin.
+DR   PANTHER; PTHR11414; PTHR11414; 1.
+DR   Pfam; PF00031; Cystatin; 1.
+DR   PRINTS; PR00295; STEFINA.
+DR   SMART; SM00043; CY; 1.
+DR   PROSITE; PS00287; CYSTATIN; 1.
+PE   1: Evidence at protein level;
+KW   3D-structure; Acetylation; Cytoplasm; Direct protein sequencing;
+KW   Disease mutation; Epilepsy; Nucleus; Protease inhibitor;
+KW   Reference proteome; Thiol protease inhibitor.
+FT   CHAIN           1..98
+FT                   /note="Cystatin-B"
+FT                   /id="PRO_0000207136"
+FT   MOTIF           46..50
+FT                   /note="Secondary area of contact"
+FT   SITE            4
+FT                   /note="Reactive site"
+FT   MOD_RES         1
+FT                   /note="N-acetylmethionine"
+FT                   /evidence="ECO:0000244|PubMed:19413330,
+FT                   ECO:0000244|PubMed:22223895"
+FT   VARIANT         4
+FT                   /note="G -> R (in EPM1; dbSNP:rs74315443)"
+FT                   /evidence="ECO:0000269|PubMed:9012407"
+FT                   /id="VAR_002206"
+FT   CONFLICT        31
+FT                   /note="E -> Y (in Ref. 1; AA sequence)"
+FT                   /evidence="ECO:0000305"
+FT   HELIX           14..31
+FT                   /evidence="ECO:0000244|PDB:2OCT"
+FT   STRAND          39..58
+FT                   /evidence="ECO:0000244|PDB:2OCT"
+FT   STRAND          60..62
+FT                   /evidence="ECO:0000244|PDB:1STF"
+FT   STRAND          64..74
+FT                   /evidence="ECO:0000244|PDB:2OCT"
+FT   STRAND          80..89
+FT                   /evidence="ECO:0000244|PDB:2OCT"
+SQ   SEQUENCE   98 AA;  11140 MW;  B8076220E19D0483 CRC64;
+     MMCGAPSATQ PATAETQHIA DQVRSQLEEK ENKKFPVFKA VSFKSQVVAG TNYFIKVHVG
+     DEDFVHLRVF QSLPHENKPL TLSNYQTNKA KHDELTYF
+//

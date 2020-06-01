@@ -26,32 +26,49 @@ class TestFromUnp:
 
 
 class TestFromPDB:
-    def test_from_pdb_with_chain(self):
+    def test_with_chain(self):
         pdb_id = '102L:A'
         prec = ProteinRecord.from_pdb(pdb_id)
         assert prec.unp_id == 'P00720'
         assert prec.pdb_id == pdb_id
 
-    def test_from_pdb_without_chain(self):
+    def test_without_chain(self):
         pdb_id = '102L'
         prec = ProteinRecord.from_pdb(pdb_id)
         assert prec.unp_id == 'P00720'
         assert prec.pdb_id == f'{pdb_id}:A'
 
-    def test_from_pdb_invalid_chain(self):
+    def test_invalid_chain(self):
         with pytest.raises(ProteinInitError):
             ProteinRecord.from_pdb('102L:Z')
 
-    def test_from_pdb_entity(self):
+    def test_entity(self):
         pdb_id = '4HHB:2'
         prec = ProteinRecord.from_pdb(pdb_id)
         assert prec.pdb_chain_id == 'B'
 
-    def test_from_pdb_entity_with_invalid_entity(self):
+    def test_numerical_chain(self):
+        pdb_id = '4N6V:9'
+        prec = ProteinRecord.from_pdb(pdb_id)
+        assert prec.pdb_base_id == '4N6V'
+        assert prec.pdb_chain_id == '9'
+
+    def test_ambiguous_numerical_entity_and_chain(self):
+        # In this rare case it's impossible to know if entity or chain!
+        # In this PDB structure the chains are numeric and there's also an
+        # entity with id=1.
+        # We expect the ':1' to be treated as an entity, and the first
+        # associated chain should be returned.
+        pdb_id = '4N6V:1'
+        prec = ProteinRecord.from_pdb(pdb_id)
+        assert prec.pdb_base_id == '4N6V'
+        assert prec.pdb_chain_id == '0'
+
+    def test_entity_with_invalid_entity(self):
         with pytest.raises(ProteinInitError):
             ProteinRecord.from_pdb('4HHB:3')
 
-    def test_from_pdb_invalid_pdbid(self):
+    def test_invalid_pdbid(self):
         with pytest.raises(ProteinInitError):
             ProteinRecord.from_pdb('0AAA')
 
@@ -134,7 +151,7 @@ class TestCache:
     def setup_class(cls):
         cls.CACHE_DIR = get_tmp_path('prec_cache')
 
-    @pytest.mark.parametrize('pdb_id', ['1MWC:A', ])
+    @pytest.mark.parametrize('pdb_id', ['1MWC:A', '4N6V:7'])
     def test_from_pdb_with_cache(self, pdb_id):
         prec = ProteinRecord.from_pdb(pdb_id, cache=True,
                                       cache_dir=self.CACHE_DIR)
@@ -152,7 +169,7 @@ class TestCache:
         assert prec == loaded_prec
 
     @pytest.mark.parametrize('pdb_id', ['1B0Y:A', ])
-    def test_from_cache_non_existant_id(self, pdb_id):
+    def test_from_cache_non_existent_id(self, pdb_id):
         prec = ProteinRecord.from_cache(pdb_id, cache_dir=self.CACHE_DIR)
 
         filename = f"{pdb_id.replace(':', '_')}.prec"
