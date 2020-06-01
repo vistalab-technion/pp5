@@ -405,14 +405,14 @@ class DihedralAnglesUncertaintyEstimator(DihedralAnglesEstimator):
         temperature factors.
         """
         super().__init__(**kw)
-        self.bfactor_est = BFactorEstimator(True, unit_cell, isotropic)
+        self.uncertainty = AtomLocationUncertainty(True, unit_cell, isotropic)
 
     def _calc_fn(self, *atoms: Atom):
         assert len(atoms) == 4
 
         # Create vectors with uncertainty based on b-factor
         vs = [a.get_vector().get_array() for a in atoms]
-        es = [np.sqrt(self.bfactor_est.atom_xyz(a)) for a in atoms]
+        es = [np.sqrt(self.uncertainty.atom_xyz(a)) for a in atoms]
         uvs = [unumpy.uarray(vs[i], es[i]) for i in range(4)]
         v1, v2, v3, v4 = uvs
         b0 = v1 - v2
@@ -455,7 +455,7 @@ class DihedralAnglesMonteCarloEstimator(DihedralAnglesUncertaintyEstimator):
             return super()._calc_fn(*atoms)
 
         # Calculate mu and 3x3 covariance matrix of atom positions
-        mu_sigma = [self.bfactor_est.mvn_mu_sigma(a) for a in atoms]
+        mu_sigma = [self.uncertainty.mvn_mu_sigma(a) for a in atoms]
 
         # Sample atom coordinates from multivariate Gaussian
         samples = [np.random.multivariate_normal(mu, S, size=self.n_samples)
@@ -470,7 +470,11 @@ class DihedralAnglesMonteCarloEstimator(DihedralAnglesUncertaintyEstimator):
         return np.mean(angles), np.std(angles)
 
 
-class BFactorEstimator(object):
+class AtomLocationUncertainty(object):
+    """
+    Calculates uncertainty in atom locations, based on isotropic or
+    anisotropic b-factors.
+    """
     def __init__(self, backbone_only=True, unit_cell: PDBUnitCell = None,
                  isotropic=True, sigma_factor=1.):
         """
@@ -492,14 +496,18 @@ class BFactorEstimator(object):
         self.isotropic = isotropic
         self.sigma_factor = sigma_factor
 
-    def average_bfactors(self, pp: PDB.Polypeptide) -> List[float]:
+    def mean_uncertainty(self, pp: PDB.Polypeptide, scale_as_bfactor=False) \
+            -> List[float]:
         """
-        Calculates the average b-factor for each residue in a polypeptide
-        chain. The b-factors will be returned in units of Angstroms^2.
+        Calculates the average uncertainties for each residue in a polypeptide
+        chain. The uncertainties will be returned in units of Angstroms^2.
         :param pp: The polypeptide.
-        :return: A list of b-factors, the same length as the polypeptide.
-        Each b-factor in the list is an average of b-factors from each atom
-        (or only backbone atoms) in each residue.
+        :param scale_as_bfactor: Whether to return the uncertainties in
+        regular physical units of A^2, or scaled by 8pi^2 as for b-factors
+        (i.e., B = 8pi^2 U).
+        :return: A list of uncertainties the same length as the polypeptide.
+        Each value in the list is calculated based on b-factors from each
+        atom (or only backbone atoms) in each residue.
         """
         mean_bfactors = []
         for res in pp:
@@ -510,7 +518,10 @@ class BFactorEstimator(object):
                     continue
                 bfactors.append(self.atom_avg(atom))
 
-            mean_bfactors.append(np.mean(bfactors).item())
+            res_mean = np.mean(bfactors).item()
+            if scale_as_bfactor:
+                res_mean *= CONST_8PI2
+            mean_bfactors.append(res_mean)
 
         return mean_bfactors
 
@@ -555,7 +566,7 @@ class BFactorEstimator(object):
     def atom_avg(self, a: Atom) -> float:
         """
         :param a: An atom.
-        :return: Average b-factor along X, Y, Z directions.
+        :return: Average uncertainty along X, Y, Z directions.
         """
         sigma = self.atom_cov_matrix(a)
         return np.trace(sigma) / 3.
@@ -563,7 +574,7 @@ class BFactorEstimator(object):
     def atom_xyz(self, a: Atom) -> np.ndarray:
         """
         :param a: An atom.
-        :return: b-factor along X, Y, Z directions.
+        :return: vector of uncertainties along X, Y, Z directions.
         """
         sigma = self.atom_cov_matrix(a)
         return np.diagonal(sigma)
