@@ -919,6 +919,7 @@ class ProteinGroup(object):
                  sa_outlier_cutoff: float = 2.,
                  sa_max_all_atom_rmsd: float = 2.,
                  sa_min_aligned_residues: int = 50,
+                 b_max: float = None,
                  angle_aggregation='circ',
                  strict_pdb_xref=True, strict_unp_xref=False,
                  parallel=True):
@@ -938,6 +939,9 @@ class ProteinGroup(object):
         after structural alignment to include a structure in a group.
         :param sa_min_aligned_residues: Minimal number of aligned residues (stars)
         required to include a structure in a group.
+        :param b_max: Maximal b-factor a residue can have
+        (backbone-atom average) in order for it to be included in a match
+        group. None means no limit.
         :param angle_aggregation: Method for angle-aggregation of matching
         query residues of each reference residue. Options are
         'circ' - Circular mean;
@@ -971,6 +975,7 @@ class ProteinGroup(object):
         self.sa_outlier_cutoff = sa_outlier_cutoff
         self.sa_max_all_atom_rmsd = sa_max_all_atom_rmsd
         self.sa_min_aligned_residues = sa_min_aligned_residues
+        self.b_max = b_max if b_max is not None else math.inf
         self.prec_cache = prec_cache
         self.strict_pdb_xref = strict_pdb_xref
         self.strict_unp_xref = strict_unp_xref
@@ -1465,8 +1470,7 @@ class ProteinGroup(object):
     def _align_query_residues_to_ref_inner(
             self, q_pdb_id: str
     ) -> Optional[Tuple[ProteinRecord, StructuralAlignment,
-                        Dict[int, Dict[str, ResidueMatch]]]
-    ]:
+                        Dict[int, Dict[str, ResidueMatch]]]]:
         try:
             q_prec = ProteinRecord.from_pdb(
                 q_pdb_id, cache=self.prec_cache,
@@ -1538,11 +1542,14 @@ class ProteinGroup(object):
             if r_idx_prec is None or q_idx_prec is None:
                 continue
 
-            # Get the matching residues, make sure they are usable
+            # Get the matching residues, and make sure they are usable:
+            # We require known AA, codon, and bfactor within maximum value.
             r_res, q_res = self.ref_prec[r_idx_prec], q_prec[q_idx_prec]
             if r_res.name == UNKNOWN_AA or q_res.name == UNKNOWN_AA:
                 continue
             if r_res.codon == UNKNOWN_CODON or q_res.codon == UNKNOWN_CODON:
+                continue
+            if r_res.bfactor > self.b_max or q_res.bfactor > self.b_max:
                 continue
 
             # Make sure we got from i to the correct residues in the precs
