@@ -4,6 +4,7 @@ import logging
 import multiprocessing as mp
 import os
 import socket
+import string
 import time
 import zipfile
 from multiprocessing.pool import AsyncResult
@@ -567,8 +568,9 @@ class ProteinGroupCollector(ParallelDataCollector):
             # create the pgroups. Only collect structures for which we can
             # create a prec (e.g. they must have a DNA sequence).
             try:
+                nc = chain_id in string.digits
                 prec = ProteinRecord(unp_id, pdb_id_full, pdb_dict=pdb_dict,
-                                     strict_unp_xref=False)
+                                     strict_unp_xref=False, numeric_chain=nc)
                 prec.save()
             except Exception as e:
                 LOGGER.warning(f'Failed to create ProteinRecord for '
