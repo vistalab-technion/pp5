@@ -24,7 +24,7 @@ from pytest import approx
 import pp5
 from pp5.dihedral import Dihedral, DihedralAnglesEstimator, \
     DihedralAnglesUncertaintyEstimator, DihedralAnglesMonteCarloEstimator, \
-    BFactorEstimator
+    AtomLocationUncertainty
 from pp5.external_dbs import pdb, unp, ena
 from pp5.external_dbs.pdb import PDBRecord, PDBQuery
 from pp5.external_dbs.unp import UNPRecord
@@ -423,7 +423,7 @@ class ProteinRecord(object):
             pdb_aa_seq += str(pp.get_sequence())
             aa_ids.extend([str.join("", map(str, res.get_id())) for res in pp])
             angles.extend(dihedral_est.estimate(pp))
-            bfactors.extend(bfactor_est.average_bfactors(pp))
+            bfactors.extend(bfactor_est.mean_uncertainty(pp, True))
             res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
             sss = (ss_dict.get(res_id, '-') for res_id in res_ids)
             sstructs.extend(sss)
@@ -770,8 +770,8 @@ class ProteinRecord(object):
         else:
             d_est = DihedralAnglesEstimator(**args)
 
-        b_est = BFactorEstimator(backbone_only=True, unit_cell=None,
-                                 isotropic=True)
+        b_est = AtomLocationUncertainty(backbone_only=True, unit_cell=None,
+                                        isotropic=True)
         return d_est, b_est
 
     def __iter__(self) -> Iterator[ResidueRecord]:
