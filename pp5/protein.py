@@ -919,7 +919,7 @@ class ProteinGroup(object):
                  sa_outlier_cutoff: float = 2.,
                  sa_max_all_atom_rmsd: float = 2.,
                  sa_min_aligned_residues: int = 50,
-                 b_max: float = None,
+                 b_max: float = math.inf,
                  angle_aggregation='circ',
                  strict_pdb_xref=True, strict_unp_xref=False,
                  parallel=True):
@@ -941,7 +941,7 @@ class ProteinGroup(object):
         required to include a structure in a group.
         :param b_max: Maximal b-factor a residue can have
         (backbone-atom average) in order for it to be included in a match
-        group. None means no limit.
+        group.
         :param angle_aggregation: Method for angle-aggregation of matching
         query residues of each reference residue. Options are
         'circ' - Circular mean;
@@ -975,7 +975,7 @@ class ProteinGroup(object):
         self.sa_outlier_cutoff = sa_outlier_cutoff
         self.sa_max_all_atom_rmsd = sa_max_all_atom_rmsd
         self.sa_min_aligned_residues = sa_min_aligned_residues
-        self.b_max = b_max if b_max is not None else math.inf
+        self.b_max = b_max
         self.prec_cache = prec_cache
         self.strict_pdb_xref = strict_pdb_xref
         self.strict_unp_xref = strict_unp_xref
