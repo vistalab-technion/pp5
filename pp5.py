@@ -84,8 +84,14 @@ def _generate_cli_from_func(func: Callable, skip=()):
             args['required'] = True
             args['type'] = None
         else:
-            args['type'] = type(args['default']) \
-                if args['default'] is not None else None
+            if args['default'] is not None:
+                args['type'] = type(args['default'])
+            elif param.annotation is not None \
+                    and hasattr(__builtins__, str(param.annotation)):
+                # For simple type annotations like 'str', 'float'
+                args['type'] = getattr(__builtins__, str(param.annotation))
+            else:
+                args['type'] = None
 
         args['action'] = 'store'
 
