@@ -75,7 +75,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             condition_on_prev='codon', condition_on_ss=True,
             consolidate_ss=DSSP_TO_SS_TYPE.copy(), strict_ss=True,
             kde_nbins=128, kde_k1=30., kde_k2=30., kde_k3=0.,
-            bs_niter=1, bs_randstate=None,
+            bs_niter=1, bs_randstate=None, bs_limit_n=False,
             out_tag: str = None,
             clear_intermediate=False,
     ):
@@ -102,6 +102,9 @@ class PointwiseCodonDistance(ParallelDataCollector):
         :param kde_k3: KDE joint concentration parameter.
         :param bs_niter: Number of bootstrap iterations.
         :param bs_randstate: Random state for bootstrap.
+        :param bs_limit_n: Whether to limit number of samples in each
+        bootstrap iteration for each subgroup, to the number of samples in the
+        smallest subgroup.
         :param out_tag: Tag for output.
         :param clear_intermediate: Whether to clear intermediate folder.
         """
@@ -139,6 +142,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
+        self.bs_limit_n = bs_limit_n
 
         # Update metadata with current configuration
         state_dict = self.__getstate__()
@@ -423,7 +427,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 group_idx, df_group, curr_codon,
                 self.angle_pairs, self.kde_args,
                 dist_metrics[self.kde_dist_metric.lower()],
-                self.bs_niter, self.bs_randstate,
+                self.bs_niter, self.bs_randstate, self.bs_limit_n,
             )
             for group_idx, df_group in df_groups
         )
@@ -722,7 +726,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
     def _codon_dists_single_group(
             group_idx: str, df_codon_group: pd.DataFrame, curr_codon: str,
             angle_pairs: list, kde_args: dict, kde_dist_metric: Callable,
-            bs_niter: int, bs_randstate: Optional[int],
+            bs_niter: int, bs_randstate: Optional[int], bs_limit_n: bool,
     ):
         # Initialize in advance to obtain consistent order of codons
         codon_dkdes = {c: None for c in CODONS}
@@ -741,12 +745,20 @@ class PointwiseCodonDistance(ParallelDataCollector):
         # distance matrix between the distribution of each pair of current
         # codons.
         df_subgroups = df_codon_group.groupby(curr_codon)
-        for subgroup_idx, df_subgroup in df_subgroups:
+        subgroup_lens = [len(df_subgroup) for _, df_subgroup in df_subgroups]
+        if bs_limit_n:
+            min_n = min(subgroup_lens)
+            bs_n = [min_n] * len(subgroup_lens)
+        else:
+            min_n = None
+            bs_n = subgroup_lens
+
+        for i, (subgroup_idx, df_subgroup) in enumerate(df_subgroups):
             for bootstrap_idx in range(bs_niter):
                 # Sample from dataset with replacement, the same number of
                 # elements as it's size. This is our bootstrap sample.
                 df_subgroup_sampled = df_subgroup.sample(
-                    axis=0, frac=1., replace=bs_niter > 1,
+                    axis=0, replace=bs_niter > 1, n=bs_n[i],
                 )
 
                 # dkdes contains one KDE for each pair in angle_pairs
@@ -762,7 +774,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
         bs_rate_iter = bs_niter / (time.time() - start_time)
         bs_rate_samples = group_size * bs_rate_iter
         LOGGER.info(f'Completed {bs_niter} bootstrap iterations for '
-                    f'{group_idx}, size={group_size}, '
+                    f'{group_idx}, size={group_size}, bs_limit_n={min_n}, '
                     f'rate={bs_rate_iter:.1f} iter/sec '
                     f'({bs_rate_samples:.1f} samples/sec)')
 
