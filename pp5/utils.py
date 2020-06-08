@@ -10,7 +10,7 @@ import contextlib
 from datetime import datetime, timedelta
 from io import UnsupportedOperation
 from pathlib import Path
-from typing import Union
+from typing import Union, Callable, Any
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -238,16 +238,26 @@ def elapsed_seconds_to_dhms(elapsed_sec: float):
     return f'{d:02d}+{h:02d}:{m:02d}:{s:02d}'
 
 
-def sort_dict(d: dict, by_value=True):
+def sort_dict(d: dict, by_value=True, selector: Callable[[Any], Any] = None):
     """
     Sorts a dict by key or value.
     Assumes python 3.6+ since that's when dicts became ordered.
     :param d: A dict.
     :param by_value: Whether to sort by values (true) or by keys.
+    :param selector: Function to apply to key or value (depending on
+    by_value) to get the actual value for sorting. Useful in case e.g. the
+    values in the given dict are complex objects from which the sort key
+    needs to be extracted/computed. Also useful for reversing sort order,
+    e.g. if selector=(lambda x: -x).
     :return: A new dict, which is the old one sorted.
     """
     i = 1 if by_value else 0
-    return {k: v for k, v in sorted(d.items(), key=lambda kv: kv[i])}
+    selector = (lambda x: x) if selector is None else selector
+
+    def sort_key(kv: tuple):
+        return selector(kv[i])
+
+    return {k: v for k, v in sorted(d.items(), key=sort_key)}
 
 
 class JSONCacheableMixin(object):
