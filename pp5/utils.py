@@ -238,6 +238,18 @@ def elapsed_seconds_to_dhms(elapsed_sec: float):
     return f'{d:02d}+{h:02d}:{m:02d}:{s:02d}'
 
 
+def sort_dict(d: dict, by_value=True):
+    """
+    Sorts a dict by key or value.
+    Assumes python 3.6+ since that's when dicts became ordered.
+    :param d: A dict.
+    :param by_value: Whether to sort by values (true) or by keys.
+    :return: A new dict, which is the old one sorted.
+    """
+    i = 1 if by_value else 0
+    return {k: v for k, v in sorted(d.items(), key=lambda kv: kv[i])}
+
+
 class JSONCacheableMixin(object):
     """
     Makes a class cacheable to JSON.
