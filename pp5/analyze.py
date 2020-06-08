@@ -438,9 +438,9 @@ class PointwiseCodonDistance(ParallelDataCollector):
         df_processed: pd.DataFrame = self._load_intermediate('dataset')
         df_groups = df_processed.groupby(by=self.condition_col)
 
-        LOGGER.info(f'Calculating codon-pair distance matrices...')
+        LOGGER.info(f'Calculating subgroup KDEs...')
 
-        subgroup_async_results = {}
+        group_async_results = {}
         for group_idx, df_group in df_groups:
             # In each pre-condition group, group by current codon.
             # These subgroups are where we estimate the dihedral angle KDEs.
@@ -468,29 +468,33 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 for i, (subgroup_idx, df_subgroup) in enumerate(df_subgroups)
             )
             # Run bootstrapped KDE estimation for all subgroups in parallel
-            async_res = pool.starmap_async(self._codon_dkdes_single_subgroup,
-                                           subprocess_args, chunksize=1)
-            subgroup_async_results[group_idx] = async_res
+            # Note: Not using async version here because creating many
+            # bootstapped KDEs uses extreme amounts of RAM for high values
+            # of bs_niter.
+            map_res = pool.starmap(self._codon_dkdes_single_subgroup,
+                                   subprocess_args, chunksize=1)
 
-        # Collect the subgroup results and calculate distances
-        subgroup_results = yield_async_results(
-            subgroup_async_results, wait_time_sec=.1, max_retries=None
-        )
-
-        codon_dists, codon_dkdes = {}, {}
-        for group_idx, subgroup_result in subgroup_results:
             # bs_codon_dkdes maps from codon to a list of (B,N,N) bootstrapped
             # KDEs, on for each angle pair
             # Initialize in advance to obtain consistent order of codons
             bs_codon_dkdes = {c: None for c in CODONS}
-            for subgroup_idx, subgroup_bs_dkdes in subgroup_result:
+            for subgroup_idx, subgroup_bs_dkdes in map_res:
                 bs_codon_dkdes[subgroup_idx] = subgroup_bs_dkdes
 
             args = (group_idx, bs_codon_dkdes, self.angle_pairs, dist_metric)
-            group_d2_matrices, group_codon_dkdes = \
-                self._codon_dists_single_group(*args)
+            async_res = pool.apply_async(self._codon_dists_single_group, args)
+            group_async_results[group_idx] = async_res
 
-            # Collect the distance results
+        LOGGER.info(f'Collecting group distance matrices...')
+
+        # Collect the group results and calculate distances
+        group_results = yield_async_results(
+            group_async_results, wait_time_sec=.1, max_retries=None
+        )
+
+        codon_dists, codon_dkdes = {}, {}
+        for group_idx, group_result in group_results:
+            group_d2_matrices, group_codon_dkdes = group_result
             codon_dists[group_idx] = group_d2_matrices
             codon_dkdes[group_idx] = group_codon_dkdes
 
