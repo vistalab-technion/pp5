@@ -110,7 +110,10 @@ class ParallelDataCollector(abc.ABC):
         time_str = elapsed_seconds_to_dhms(end_time - start_time)
 
         LOGGER.info(f'Completed collection for {self} in {time_str}')
-        LOGGER.info(f'Collection metadata:\n{pformat(self.collection_meta)}')
+        collection_meta_formatted = pformat(
+            self.collection_meta, width=120, compact=True,
+        )
+        LOGGER.info(f'Collection metadata:\n' f'{collection_meta_formatted}')
 
     def _finalize_collection(self, pool):
         LOGGER.info(f"Finalizing collection for {self.id}...")
