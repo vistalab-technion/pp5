@@ -384,7 +384,22 @@ class PointwiseCodonDistance(ParallelDataCollector):
         self._dump_intermediate('aa-likelihoods', aa_likelihoods)
         self._dump_intermediate('ss-likelihoods', ss_likelihoods)
 
-        return {}
+        # Calculate group and subgroup sizes
+        group_sizes = {}
+        _, curr_codon_col = self.codon_cols
+        df_groups = df_processed.groupby(by=self.condition_col)
+        for group_idx, df_group in df_groups:
+            df_subgroups = df_group.groupby(curr_codon_col)
+            group_sizes[group_idx] = {
+                'total': len(df_group),
+                'subgroups': sort_dict({
+                    idx_sub: len(df_sub) for idx_sub, df_sub in df_subgroups
+                })
+            }
+        group_sizes = sort_dict(group_sizes, selector=lambda g: g['total'])
+        self._dump_intermediate('group-sizes', group_sizes)
+
+        return {'group_sizes': group_sizes}
 
     def _dihedral_kde_full(self, pool: mp.pool.Pool) -> dict:
         df_processed: pd.DataFrame = self._load_intermediate('dataset')
@@ -424,7 +439,6 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
         LOGGER.info(f'Calculating codon-pair distance matrices...')
 
-        group_sizes, subgroup_sizes = {}, {}
         subgroup_async_results = {}
         for group_idx, df_group in df_groups:
             # In each pre-condition group, group by current codon.
@@ -432,17 +446,9 @@ class PointwiseCodonDistance(ParallelDataCollector):
             df_subgroups = df_group.groupby(curr_codon_col)
 
             # Find smallest subgroup
-            subgroup_idx = [sidx for sidx, _ in df_subgroups]
             subgroup_lens = [len(df_s) for _, df_s in df_subgroups]
             min_idx = np.argmin(subgroup_lens)
             min_len = subgroup_lens[min_idx]
-
-            # Save group and subgroup sizes
-            group_sizes[group_idx] = len(df_group)
-            subgroup_sizes.update({
-                f'{group_idx}_{subgroup_idx[i]}': subgroup_lens[i]
-                for i in range(len(subgroup_lens))
-            })
 
             # Calculates number of samples in each bootstrap iteration:
             # We either take all samples in each subgroup, or the number of
@@ -497,10 +503,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
         # For each codon we have a list of KDEs, one for each angle pair.
         self._dump_intermediate('codon-dkdes', codon_dkdes)
 
-        return {
-            'groups': sort_dict(group_sizes, by_value=True),
-            'subgroups': sort_dict(subgroup_sizes, by_value=True)
-        }
+        return {}
 
     def _codon_dists_expected(self, pool: mp.pool.Pool) -> dict:
         # Load map of likelihoods, depending on the type of previous
