@@ -8,7 +8,9 @@ import shutil
 import tempfile
 import signal
 from pathlib import Path
-from typing import ContextManager
+from multiprocessing.pool import AsyncResult
+from typing import ContextManager, List, Generator, Any, Union, Dict, Tuple, \
+    Iterator
 
 import pp5
 
@@ -91,6 +93,64 @@ def pool(name: str, processes=None, context='spawn') \
     finally:
         _clean_worker_downloads(base_workers_dl_dir)
         _remove_workers_dir(base_workers_dl_dir)
+
+
+def yield_async_results(
+        async_results: Union[Dict[str, AsyncResult], List[AsyncResult]],
+        wait_time_sec=.1, max_retries=None
+) -> Generator[Tuple[str, Any], None, None]:
+    """
+
+    Waits for async results to be ready, and yields them.
+    This function waits for each result for a fixed time, and moves to the
+    next result if it's not ready. Therefore, the order of yielded results is
+    not guaranteed to be the same as the order of the AsyncResult objects.
+    :param async_results: Either a dict mapping from some name to an
+    AsyncResult to wait for, or a list of AsyncResults (in which case a name
+    will be generated for each one based on it's index).
+    :param wait_time_sec: Time to wait for each AsyncResult before moving to
+    the next one if the current one is not ready.
+    :param max_retries: Maximal number of times to wait for the same
+    AsyncResult, before giving up on it. None means never give up. If
+    max_retries is exceeded, an error will be logged.
+    :return: A generator, where each element is a tuple. The first element
+    in the tuple is the name of the result, and the second element is the
+    actual result.
+    """
+
+    if isinstance(async_results, (list, tuple)):
+        async_results = {f'#{i}': r for i, r in enumerate(async_results)}
+    elif isinstance(async_results, dict):
+        pass
+    else:
+        raise ValueError("async_results must be a dict or list of AsyncResult")
+
+    # Map result to number of retries
+    retry_counts = {res_name: 0 for res_name in async_results.keys()}
+
+    while len(retry_counts) > 0:
+        retry_counts_next = {}
+
+        for res_name, retry_count in retry_counts.items():
+            res: AsyncResult = async_results[res_name]
+
+            res.wait(wait_time_sec)
+            if not res.ready():
+                retries = retry_counts[res_name] + 1
+                if max_retries is not None and retries > max_retries:
+                    LOGGER.error(f'*** MAX RETRIES FOR RESULT {res_name}')
+                else:
+                    retry_counts_next[res_name] = retries
+                continue
+
+            if res.successful():
+                try:
+                    yield res_name, res.get()
+                except Exception as e:
+                    LOGGER.error(f"AsyncResult {res_name} raised {type(e)}: "
+                                 f"{e}", exc_info=e)
+
+        retry_counts = retry_counts_next
 
 
 def _cleanup():
