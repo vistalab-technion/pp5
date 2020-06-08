@@ -617,15 +617,17 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
         # Dihedral KDEs of each codon in each group
         codon_dkdes: dict = self._load_intermediate('codon-dkdes', False)
+        group_sizes: dict = self._load_intermediate('group-sizes', False)
         if codon_dkdes is not None:
             for group_idx, dkdes in codon_dkdes.items():
-                args = (group_idx, dkdes)
+                subgroup_sizes = group_sizes[group_idx]['subgroups']
+                args = (group_idx, subgroup_sizes, dkdes)
                 async_results.append(pool.apply_async(
                     self._plot_codon_dkdes, args=args,
                     kwds=dict(out_dir=self.out_dir.joinpath('codon-dkdes'),
                               angle_pair_labels=ap_labels)
                 ))
-            del codon_dkdes, dkdes
+            del codon_dkdes, group_sizes, dkdes
 
         # Wait for plotting to complete. Each function returns a path
         fig_paths = self._handle_async_results(async_results, collect=True)
@@ -733,7 +735,8 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
     @staticmethod
     def _plot_codon_dkdes(
-            group_idx: str, codon_dkdes: Dict[str, List[np.ndarray]],
+            group_idx: str, subgroup_sizes: Dict[str, int],
+            codon_dkdes: Dict[str, List[np.ndarray]],
             angle_pair_labels: List[str], out_dir: Path
     ):
         # Plot the kdes and distance matrices
@@ -746,12 +749,13 @@ class PointwiseCodonDistance(ParallelDataCollector):
             ax: np.ndarray[mpl.pyplot.Axes] = np.reshape(ax, -1)
 
             for i, (codon, dkdes) in enumerate(codon_dkdes.items()):
+                title = f'{codon} ({subgroup_sizes.get(codon)})'
                 if dkdes is None:
-                    ax[i].set_title(codon)
+                    ax[i].set_title(title)
                     continue
 
                 pp5.plot.ramachandran(
-                    dkdes, angle_pair_labels, title=codon, ax=ax[i],
+                    dkdes, angle_pair_labels, title=title, ax=ax[i],
                     vmin=vmin, vmax=vmax
                 )
 
