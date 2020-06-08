@@ -19,6 +19,7 @@ from Bio.Data.CodonTable import standard_dna_table as dna_table
 from pp5.collect import ParallelDataCollector
 from pp5.dihedral import DihedralKDE
 import pp5.plot
+from pp5.parallel import yield_async_results
 from pp5.plot import PP5_MPL_STYLE
 from pp5.utils import sort_dict
 
@@ -472,24 +473,24 @@ class PointwiseCodonDistance(ParallelDataCollector):
             subgroup_async_results[group_idx] = async_res
 
         # Collect the subgroup results and calculate distances
-        group_async_results = {}
-        for group_idx, async_res in subgroup_async_results.items():
+        subgroup_results = yield_async_results(
+            subgroup_async_results, wait_time_sec=.1, max_retries=None
+        )
+
+        codon_dists, codon_dkdes = {}, {}
+        for group_idx, subgroup_result in subgroup_results:
             # bs_codon_dkdes maps from codon to a list of (B,N,N) bootstrapped
             # KDEs, on for each angle pair
             # Initialize in advance to obtain consistent order of codons
             bs_codon_dkdes = {c: None for c in CODONS}
-            for subgroup_idx, subgroup_bs_dkdes in async_res.get():
+            for subgroup_idx, subgroup_bs_dkdes in subgroup_result:
                 bs_codon_dkdes[subgroup_idx] = subgroup_bs_dkdes
 
             args = (group_idx, bs_codon_dkdes, self.angle_pairs, dist_metric)
-            group_async_results[group_idx] = pool.apply_async(
-                self._codon_dists_single_group, args
-            )
+            group_d2_matrices, group_codon_dkdes = \
+                self._codon_dists_single_group(*args)
 
-        # Collect the distance results
-        codon_dists, codon_dkdes = {}, {}
-        for group_idx, async_res in group_async_results.items():
-            group_d2_matrices, group_codon_dkdes = async_res.get()
+            # Collect the distance results
             codon_dists[group_idx] = group_d2_matrices
             codon_dkdes[group_idx] = group_codon_dkdes
 
