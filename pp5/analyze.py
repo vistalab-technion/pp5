@@ -7,7 +7,7 @@ import multiprocessing as mp
 import shutil
 import time
 from pathlib import Path
-from typing import Union, Dict, Callable, Optional, List
+from typing import Union, Dict, Callable, Optional, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -20,6 +20,7 @@ from pp5.collect import ParallelDataCollector
 from pp5.dihedral import DihedralKDE
 import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
+from pp5.utils import sort_dict
 
 LOGGER = logging.getLogger(__name__)
 
@@ -410,35 +411,81 @@ class PointwiseCodonDistance(ParallelDataCollector):
         return {**ss_counts}
 
     def _codons_dists(self, pool: mp.pool.Pool) -> dict:
-        prev_codon, curr_codon = self.codon_cols
+        prev_codon_col, curr_codon_col = self.codon_cols
+
+        # We currently only support one type of metric
+        dist_metrics = {
+            'l2': self._kde_dist_metric_l2
+        }
+        dist_metric = dist_metrics[self.kde_dist_metric.lower()]
 
         df_processed: pd.DataFrame = self._load_intermediate('dataset')
         df_groups = df_processed.groupby(by=self.condition_col)
 
         LOGGER.info(f'Calculating codon-pair distance matrices...')
 
-        # We currently only support one type of metric
-        dist_metrics = {
-            'l2': self._kde_dist_metric_l2
-        }
+        group_sizes, subgroup_sizes = {}, {}
+        subgroup_async_results = {}
+        for group_idx, df_group in df_groups:
+            # In each pre-condition group, group by current codon.
+            # These subgroups are where we estimate the dihedral angle KDEs.
+            df_subgroups = df_group.groupby(curr_codon_col)
 
-        args = (
-            (
-                group_idx, df_group, curr_codon,
-                self.angle_pairs, self.kde_args,
-                dist_metrics[self.kde_dist_metric.lower()],
-                self.bs_niter, self.bs_randstate, self.bs_limit_n,
+            # Find smallest subgroup
+            subgroup_idx = [sidx for sidx, _ in df_subgroups]
+            subgroup_lens = [len(df_s) for _, df_s in df_subgroups]
+            min_idx = np.argmin(subgroup_lens)
+            min_len = subgroup_lens[min_idx]
+
+            # Save group and subgroup sizes
+            group_sizes[group_idx] = len(df_group)
+            subgroup_sizes.update({
+                f'{group_idx}_{subgroup_idx[i]}': subgroup_lens[i]
+                for i in range(len(subgroup_lens))
+            })
+
+            # Calculates number of samples in each bootstrap iteration:
+            # We either take all samples in each subgroup, or the number of
+            # samples in the smallest subgroup.
+            if self.bs_limit_n:
+                bs_nsamples = [min_len] * len(subgroup_lens)
+            else:
+                bs_nsamples = subgroup_lens
+
+            subprocess_args = (
+                (
+                    group_idx, subgroup_idx, df_subgroup,
+                    self.angle_pairs, self.kde_args,
+                    self.bs_niter, bs_nsamples[i], self.bs_randstate,
+                )
+                for i, (subgroup_idx, df_subgroup) in enumerate(df_subgroups)
             )
-            for group_idx, df_group in df_groups
-        )
+            # Run bootstrapped KDE estimation for all subgroups in parallel
+            async_res = pool.starmap_async(self._codon_dkdes_single_subgroup,
+                                           subprocess_args, chunksize=1)
+            subgroup_async_results[group_idx] = async_res
 
-        map_result = pool.starmap(self._codon_dists_single_group, args)
+        # Collect the subgroup results and calculate distances
+        group_async_results = {}
+        for group_idx, async_res in subgroup_async_results.items():
+            # bs_codon_dkdes maps from codon to a list of (B,N,N) bootstrapped
+            # KDEs, on for each angle pair
+            # Initialize in advance to obtain consistent order of codons
+            bs_codon_dkdes = {c: None for c in CODONS}
+            for subgroup_idx, subgroup_bs_dkdes in async_res.get():
+                bs_codon_dkdes[subgroup_idx] = subgroup_bs_dkdes
 
-        codon_dists, codon_dkdes, group_sizes = {}, {}, {}
-        for group_idx, group_size, d2_matrices, dkdes in map_result:
-            codon_dists[group_idx] = d2_matrices
-            codon_dkdes[group_idx] = dkdes
-            group_sizes[group_idx] = group_size
+            args = (group_idx, bs_codon_dkdes, self.angle_pairs, dist_metric)
+            group_async_results[group_idx] = pool.apply_async(
+                self._codon_dists_single_group, args
+            )
+
+        # Collect the distance results
+        codon_dists, codon_dkdes = {}, {}
+        for group_idx, async_res in group_async_results.items():
+            group_d2_matrices, group_codon_dkdes = async_res.get()
+            codon_dists[group_idx] = group_d2_matrices
+            codon_dkdes[group_idx] = group_codon_dkdes
 
         # codon_dists: maps from group (codon, SS) to a list, containing a
         # codon-distance matrix for each angle-pair.
@@ -450,7 +497,10 @@ class PointwiseCodonDistance(ParallelDataCollector):
         # For each codon we have a list of KDEs, one for each angle pair.
         self._dump_intermediate('codon-dkdes', codon_dkdes)
 
-        return {'groups': group_sizes}
+        return {
+            'groups': sort_dict(group_sizes, by_value=True),
+            'subgroups': sort_dict(subgroup_sizes, by_value=True)
+        }
 
     def _codon_dists_expected(self, pool: mp.pool.Pool) -> dict:
         # Load map of likelihoods, depending on the type of previous
@@ -597,7 +647,6 @@ class PointwiseCodonDistance(ParallelDataCollector):
                          dtype=np.float32)
             likelihoods[ss_type] = a
 
-
         pp5.plot.multi_bar(
             likelihoods,
             xticklabels=xticklabels, xlabel=xlabel, ylabel=ylabel,
@@ -723,110 +772,82 @@ class PointwiseCodonDistance(ParallelDataCollector):
         return group_idx, dkdes
 
     @staticmethod
-    def _codon_dists_single_group(
-            group_idx: str, df_codon_group: pd.DataFrame, curr_codon: str,
-            angle_pairs: list, kde_args: dict, kde_dist_metric: Callable,
-            bs_niter: int, bs_randstate: Optional[int], bs_limit_n: bool,
-    ):
-        # Initialize in advance to obtain consistent order of codons
-        codon_dkdes = {c: None for c in CODONS}
+    def _codon_dkdes_single_subgroup(
+            group_idx: str, subgroup_idx: str, df_subgroup: pd.DataFrame,
+            angle_pairs: list, kde_args: dict,
+            bs_niter: int, bs_nsamples: int, bs_randstate: Optional[int],
+    ) -> Tuple[str, List[np.ndarray]]:
+        # Create a 3D tensor to hold the bootstrapped KDEs (for each angle
+        # pair), of shape (B,N,N)
+        bs_kde_shape = (bs_niter, kde_args['n_bins'], kde_args['n_bins'])
+        bs_dkdes = [np.empty(bs_kde_shape, np.float32) for _ in angle_pairs]
 
-        # We want a different random state in each group, but still
-        # shoud be reproducible
+        # We want a different random state in each subgroup, but still
+        # should be reproducible
         if bs_randstate is not None:
-            seed = (hash(group_idx) + bs_randstate) % (2 ** 31)
+            seed = (hash(group_idx + subgroup_idx) + bs_randstate) % (2 ** 31)
             np.random.seed(seed)
 
-        group_size = len(df_codon_group)
-        start_time = time.time()
+        t_start = time.time()
 
-        # df_codon_group is grouped by SS and prev codon.
-        # Now we also group by the current codon so we can compute a
-        # distance matrix between the distribution of each pair of current
-        # codons.
-        df_subgroups = df_codon_group.groupby(curr_codon)
-        subgroup_lens = [len(df_subgroup) for _, df_subgroup in df_subgroups]
-        if bs_limit_n:
-            min_n = min(subgroup_lens)
-            bs_n = [min_n] * len(subgroup_lens)
-        else:
-            min_n = None
-            bs_n = subgroup_lens
+        for bootstrap_idx in range(bs_niter):
+            # Sample from dataset with replacement, the same number of
+            # elements as it's size. This is our bootstrap sample.
+            df_subgroup_sampled = df_subgroup.sample(
+                axis=0, replace=bs_niter > 1, n=bs_nsamples,
+            )
 
-        for i, (subgroup_idx, df_subgroup) in enumerate(df_subgroups):
-            for bootstrap_idx in range(bs_niter):
-                # Sample from dataset with replacement, the same number of
-                # elements as it's size. This is our bootstrap sample.
-                df_subgroup_sampled = df_subgroup.sample(
-                    axis=0, replace=bs_niter > 1, n=bs_n[i],
-                )
+            # dkdes contains one KDE for each pair in angle_pairs
+            _, dkdes = PointwiseCodonDistance._dihedral_kde_single_group(
+                subgroup_idx, df_subgroup_sampled, angle_pairs, kde_args
+            )
 
-                # dkdes contains one KDE for each pair in angle_pairs
-                _, dkdes = PointwiseCodonDistance._dihedral_kde_single_group(
-                    subgroup_idx, df_subgroup_sampled, angle_pairs, kde_args
-                )
+            # Save the current iteration's KDE into the results tensor
+            for angle_pair_idx, dkde in enumerate(dkdes):
+                bs_dkdes[angle_pair_idx][bootstrap_idx, ...] = dkde
 
-                if codon_dkdes[subgroup_idx] is None:
-                    codon_dkdes[subgroup_idx] = [dkdes]
-                else:
-                    codon_dkdes[subgroup_idx].append(dkdes)
-
-        bs_rate_iter = bs_niter / (time.time() - start_time)
-        bs_rate_samples = group_size * bs_rate_iter
+        t_elapsed = time.time() - t_start
+        bs_rate_iter = bs_niter / t_elapsed
         LOGGER.info(f'Completed {bs_niter} bootstrap iterations for '
-                    f'{group_idx}, size={group_size}, bs_limit_n={min_n}, '
+                    f'{group_idx}_{subgroup_idx}, size={len(df_subgroup)}, '
+                    f'bs_nsamples={bs_nsamples}, '
                     f'rate={bs_rate_iter:.1f} iter/sec '
-                    f'({bs_rate_samples:.1f} samples/sec)')
+                    f'elapsed={t_elapsed:.1f} sec')
 
-        # Now we have the bootstrap results, we must consolidate them.
-        # For each current codon, we'll create a 3D tensor containing
-        # n_bootstraps 2D KDEs.
-        for (codon, codon_dkdes_list) in codon_dkdes.items():
-            if codon_dkdes_list is None:
-                # Will happen if we didn't see this codon in the current group
-                continue
+        return subgroup_idx, bs_dkdes
 
-            # We will replace the contents of this map with a list of
-            # arrays, one for each angle pair, each array will contain all
-            # bootstrapped KDEs
-            codon_dkdes[codon] = []
+    @staticmethod
+    def _codon_dists_single_group(
+            group_idx: str, bs_codon_dkdes: Dict[str, List[np.ndarray]],
+            angle_pairs: list, kde_dist_metric: Callable,
+    ):
+        tstart = time.time()
 
-            # codon_dkdes_list is e.g.
-            # [(kde1_1, kde2_1), (kde1_2, kde2_2), ... (kde1_B, kde2_B)]
-            # (when we have two angle pairs).
-            # Convert it to [(kde1_1, kde1_2, ..., kde1_B), ...]
-            for codon_angle_pair_dkdes in zip(*codon_dkdes_list):
-                # stacked will be of shape (B, N, N) and contain all the
-                # bootstrapped KDEs for this codon and current angle pair
-                stacked = np.stack(codon_angle_pair_dkdes, axis=0)
-                codon_dkdes[codon].append(stacked)
-
-        LOGGER.info(f'Calculating codon-codon distance matrix in subgroup '
-                    f'{group_idx}...')
-
+        # Calculate distance matrix
         d2_matrices = []
         for pair_idx in range(len(angle_pairs)):
             # For each angle pair we have N_CODONS dkde matrices,
             # so we compute the distance between each such pair.
             # We use a complex array to store mu as the real part and sigma
             # as the imaginary part in a single array.
-            d2_mat = np.full((N_CODONS, N_CODONS), np.nan, dtype=np.complex64)
+            d2_mat = np.full((N_CODONS, N_CODONS), np.nan, np.complex64)
 
-            all_codon_pairs = it.product(enumerate(CODONS), enumerate(CODONS))
-            for (i, ci), (j, cj) in all_codon_pairs:
-                if codon_dkdes[ci] is None:
+            codon_pairs = it.product(enumerate(CODONS), enumerate(CODONS))
+            for (i, ci), (j, cj) in codon_pairs:
+                if bs_codon_dkdes[ci] is None:
                     continue
 
-                if j < i or codon_dkdes[cj] is None:
+                if j < i or bs_codon_dkdes[cj] is None:
                     continue
 
                 # Get the two dihedral KDEs arrays to compare, each is of
                 # shape (B, N, N) due to bootstrapping B times
-                dkde1 = codon_dkdes[ci][pair_idx]
-                dkde2 = codon_dkdes[cj][pair_idx]
+                dkde1 = bs_codon_dkdes[ci][pair_idx]
+                dkde2 = bs_codon_dkdes[cj][pair_idx]
 
                 # If ci is cj, randomize the order of the KDEs when
-                # comparing, so that different bootstrapped KDEs are compared
+                # comparing, so that different bootstrapped KDEs are
+                # compared
                 if i == j:
                     # This permutes the order along the first axis
                     dkde2 = np.random.permutation(dkde2)
@@ -841,19 +862,23 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
             d2_matrices.append(d2_mat)
 
-        # Average the codon KDEs from all bootstraps for each codon, so that we
-        # can return a simple KDE per codon
-        for codon, dkde in codon_dkdes.items():
-            if codon_dkdes[codon] is None:
+        # Average the codon KDEs from all bootstraps for each codon,
+        # so that we can save a simple KDE per codon
+        codon_dkdes = {c: [] for c in CODONS}
+        for codon, bs_dkde in bs_codon_dkdes.items():
+            if bs_dkde is None:
                 continue
             for pair_idx in range(len(angle_pairs)):
-                # kde here is of shape (B, N, N) due to bootstrapping
-                # Average it over the bootstrap dimension
-                kde = codon_dkdes[codon][pair_idx]
-                mean_kde = np.nanmean(kde, axis=0)
-                codon_dkdes[codon][pair_idx] = mean_kde
+                # bs_dkde[pair_idx] here is of shape (B, N, N) due to
+                # bootstrapping. Average it over the bootstrap dimension
+                mean_dkde = np.nanmean(bs_dkde[pair_idx], axis=0)
+                codon_dkdes[codon].append(mean_dkde)
 
-        return group_idx, group_size, d2_matrices, codon_dkdes
+        tend = time.time()
+        LOGGER.info(f'Calculated distance matrix for {group_idx} '
+                    f'({tend - tstart:.1f}s)...')
+
+        return d2_matrices, codon_dkdes
 
     @staticmethod
     def _kde_dist_metric_l2(kde1: np.ndarray, kde2: np.ndarray):
