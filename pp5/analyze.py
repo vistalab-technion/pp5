@@ -6,6 +6,7 @@ import logging
 import multiprocessing as mp
 import shutil
 import time
+from multiprocessing.pool import AsyncResult
 from pathlib import Path
 from typing import Union, Dict, Callable, Optional, List, Tuple
 
@@ -78,6 +79,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             consolidate_ss=DSSP_TO_SS_TYPE.copy(), strict_ss=True,
             kde_nbins=128, kde_k1=30., kde_k2=30., kde_k3=0.,
             bs_niter=1, bs_randstate=None, bs_limit_n=False,
+            n_parallel_kdes: int = None,
             out_tag: str = None,
             clear_intermediate=False,
     ):
@@ -107,6 +109,11 @@ class PointwiseCodonDistance(ParallelDataCollector):
         :param bs_limit_n: Whether to limit number of samples in each
         bootstrap iteration for each subgroup, to the number of samples in the
         smallest subgroup.
+        :param n_parallel_kdes: Number of parallel bootstrapped KDE
+        calculations to run simultaneously.
+        By default it will be equal to the number of available CPU cores.
+        Setting this to a high number together with a high bs_niter will cause
+        excessive memory usage.
         :param out_tag: Tag for output.
         :param clear_intermediate: Whether to clear intermediate folder.
         """
@@ -145,6 +152,9 @@ class PointwiseCodonDistance(ParallelDataCollector):
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
         self.bs_limit_n = bs_limit_n
+        self.n_parallel_kdes = n_parallel_kdes
+        if self.n_parallel_kdes is None:
+            self.n_parallel_kdes = pp5.get_config('MAX_PROCESSES')
 
         # Update metadata with current configuration
         state_dict = self.__getstate__()
@@ -435,15 +445,22 @@ class PointwiseCodonDistance(ParallelDataCollector):
         }
         dist_metric = dist_metrics[self.kde_dist_metric.lower()]
 
+        # Calculate chunk-size for parallel mapping.
+        # (Num groups in parallel) * (Num subgroups) / (num processors)
+        n_procs = pp5.get_config('MAX_PROCESSES')
+        chunksize = self.n_parallel_kdes * N_CODONS / n_procs
+        chunksize = max(int(chunksize), 1)
+
         df_processed: pd.DataFrame = self._load_intermediate('dataset')
         df_groups = df_processed.groupby(by=self.condition_col)
 
-        LOGGER.info(f'Calculating subgroup KDEs...')
+        LOGGER.info(f'Calculating subgroup KDEs '
+                    f'(n_parallel_kdes={self.n_parallel_kdes}, '
+                    f'chunksize={chunksize})...')
 
         codon_dists, codon_dkdes = {}, {}
-
-        dkde_async_results = {}
-        dist_async_results = {}
+        dkde_asyncs: Dict[str, AsyncResult] = {}
+        dist_asyncs: Dict[str, AsyncResult] = {}
         for i, (group_idx, df_group) in enumerate(df_groups):
             last_group = i == len(df_groups) - 1
 
@@ -473,26 +490,27 @@ class PointwiseCodonDistance(ParallelDataCollector):
                 )
                 for j, (subgroup_idx, df_subgroup) in enumerate(df_subgroups)
             )
-            async_res = pool.starmap_async(self._codon_dkdes_single_subgroup,
-                                           subprocess_args, chunksize=1)
-            dkde_async_results[group_idx] = async_res
+            dkde_asyncs[group_idx] = pool.starmap_async(
+                self._codon_dkdes_single_subgroup, subprocess_args,
+                chunksize=chunksize
+            )
 
             # Allow limited number of simultaneous group KDE calculations
             # The limit is needed due to the very high memory required when
             # bs_niter is large.
-            if not last_group and len(dkde_async_results) < 5:
+            if not last_group and len(dkde_asyncs) < self.n_parallel_kdes:
                 continue
 
             # If we already have enough simultaneous KDE calculations, collect
             # one (or all if this is the last group) of their results.
             # Note that we collect the first one that's ready.
-            dkde_results_iter = yield_async_results(dkde_async_results.copy())
+            dkde_results_iter = yield_async_results(dkde_asyncs.copy())
             collected_dkde_results = {}
             for result_group_idx, group_dkde_result in dkde_results_iter:
                 # Collect and remove async result so we dont see it next time
                 LOGGER.info(f'Collected KDEs for {result_group_idx}')
                 collected_dkde_results[result_group_idx] = group_dkde_result
-                del dkde_async_results[result_group_idx]
+                del dkde_asyncs[result_group_idx]
 
                 # We only collect one result here, unless we are in the last
                 # group. In that case we wait for all of the remaining results
@@ -513,34 +531,33 @@ class PointwiseCodonDistance(ParallelDataCollector):
                     bs_codon_dkdes[subgroup_idx] = subgroup_bs_dkdes
 
                 # Run distance matrix calculation in parallel
-                async_res = pool.apply_async(
-                    self._codon_dists_single_group, args=(
-                        result_group_idx, bs_codon_dkdes,
-                        self.angle_pairs, dist_metric
-                    ))
-                dist_async_results[result_group_idx] = async_res
+                dist_asyncs[result_group_idx] = pool.apply_async(
+                    self._codon_dists_single_group,
+                    args=(result_group_idx, bs_codon_dkdes, self.angle_pairs,
+                          dist_metric)
+                )
 
             # Allow limited number of simultaneous distance matrix calculations
-            if not last_group and len(dist_async_results) < 5:
+            if not last_group and len(dist_asyncs) < self.n_parallel_kdes:
                 continue
 
             # Wait for one of the distance matrix calculations, or all of
             # them if it's the last group
-            dists_results_iter = yield_async_results(dist_async_results.copy())
-            for result_group_idx,  group_dist_result in dists_results_iter:
+            dists_results_iter = yield_async_results(dist_asyncs.copy())
+            for result_group_idx, group_dist_result in dists_results_iter:
                 LOGGER.info(f'Collected cdist matrix for {result_group_idx}')
                 group_d2_matrices, group_codon_dkdes = group_dist_result
                 codon_dists[result_group_idx] = group_d2_matrices
                 codon_dkdes[result_group_idx] = group_codon_dkdes
-                del dist_async_results[result_group_idx]
+                del dist_asyncs[result_group_idx]
 
                 # If we're in the last group, collect everything
                 if not last_group:
                     break
 
         # Make sure everything was collected
-        assert len(dkde_async_results) == 0, 'Not all KDEs collected'
-        assert len(dist_async_results) == 0, 'Not all dist matrices collected'
+        assert len(dkde_asyncs) == 0, 'Not all KDEs collected'
+        assert len(dist_asyncs) == 0, 'Not all dist matrices collected'
         LOGGER.info(f'Completed distance matrix collection')
 
         # codon_dists: maps from group (codon, SS) to a list, containing a
