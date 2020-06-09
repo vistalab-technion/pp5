@@ -754,8 +754,8 @@ class PointwiseCodonDistance(ParallelDataCollector):
             ax: np.ndarray[mpl.pyplot.Axes] = np.reshape(ax, -1)
 
             for i, (codon, dkdes) in enumerate(codon_dkdes.items()):
-                title = f'{codon} ({subgroup_sizes.get(codon)})'
-                if dkdes is None:
+                title = f'{codon} ({subgroup_sizes.get(codon, 0)})'
+                if not dkdes:
                     ax[i].set_title(title)
                     continue
 
