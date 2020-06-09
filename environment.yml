@@ -6,7 +6,7 @@ channels:
   - bioconda    # clustal, muscle, blast
   - salilab     # dssp
 dependencies:
-  - python=3.7.6
+  - python=3.8.3
   - ipython>=7.9
   - jupyter
   - jupyterlab
