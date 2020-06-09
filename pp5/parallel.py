@@ -97,7 +97,7 @@ def pool(name: str, processes=None, context='spawn') \
 
 def yield_async_results(
         async_results: Union[Dict[str, AsyncResult], List[AsyncResult]],
-        wait_time_sec=.1, max_retries=None
+        wait_time_sec=.1, max_retries=None, re_raise=False,
 ) -> Generator[Tuple[str, Any], None, None]:
     """
 
@@ -113,9 +113,13 @@ def yield_async_results(
     :param max_retries: Maximal number of times to wait for the same
     AsyncResult, before giving up on it. None means never give up. If
     max_retries is exceeded, an error will be logged.
+    :param re_raise: Whether to re-raise an exception thrown in on of the
+    tasks and stop handling. If False, exception will be logged instead and
+    handling will continue.
     :return: A generator, where each element is a tuple. The first element
     in the tuple is the name of the result, and the second element is the
-    actual result.
+    actual result. In case the task raised an exception, the second element
+    will be None.
     """
 
     if isinstance(async_results, (list, tuple)):
@@ -146,12 +150,14 @@ def yield_async_results(
                     retry_counts_next[res_name] = retries
                 continue
 
-            if res.successful():
-                try:
-                    yield res_name, res.get()
-                except Exception as e:
-                    LOGGER.error(f"AsyncResult {res_name} raised {type(e)}: "
-                                 f"{e}", exc_info=e)
+            try:
+                yield res_name, res.get()
+            except Exception as e:
+                if re_raise:
+                    raise e
+                LOGGER.error(f"AsyncResult {res_name} raised {type(e)}: "
+                             f"{e}", exc_info=e)
+                yield res_name, None
 
         retry_counts = retry_counts_next
 
