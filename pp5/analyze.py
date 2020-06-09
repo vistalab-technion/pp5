@@ -440,8 +440,13 @@ class PointwiseCodonDistance(ParallelDataCollector):
 
         LOGGER.info(f'Calculating subgroup KDEs...')
 
-        group_async_results = {}
-        for group_idx, df_group in df_groups:
+        codon_dists, codon_dkdes = {}, {}
+
+        dkde_async_results = {}
+        dist_async_results = {}
+        for i, (group_idx, df_group) in enumerate(df_groups):
+            last_group = i == len(df_groups) - 1
+
             # In each pre-condition group, group by current codon.
             # These subgroups are where we estimate the dihedral angle KDEs.
             df_subgroups = df_group.groupby(curr_codon_col)
@@ -459,44 +464,84 @@ class PointwiseCodonDistance(ParallelDataCollector):
             else:
                 bs_nsamples = subgroup_lens
 
+            # Run bootstrapped KDE estimation for all subgroups in parallel
             subprocess_args = (
                 (
                     group_idx, subgroup_idx, df_subgroup,
                     self.angle_pairs, self.kde_args,
-                    self.bs_niter, bs_nsamples[i], self.bs_randstate,
+                    self.bs_niter, bs_nsamples[j], self.bs_randstate,
                 )
-                for i, (subgroup_idx, df_subgroup) in enumerate(df_subgroups)
+                for j, (subgroup_idx, df_subgroup) in enumerate(df_subgroups)
             )
-            # Run bootstrapped KDE estimation for all subgroups in parallel
-            # Note: Not using async version here because creating many
-            # bootstapped KDEs uses extreme amounts of RAM for high values
-            # of bs_niter.
-            map_res = pool.starmap(self._codon_dkdes_single_subgroup,
-                                   subprocess_args, chunksize=1)
+            async_res = pool.starmap_async(self._codon_dkdes_single_subgroup,
+                                           subprocess_args, chunksize=1)
+            dkde_async_results[group_idx] = async_res
 
-            # bs_codon_dkdes maps from codon to a list of (B,N,N) bootstrapped
-            # KDEs, on for each angle pair
-            # Initialize in advance to obtain consistent order of codons
-            bs_codon_dkdes = {c: None for c in CODONS}
-            for subgroup_idx, subgroup_bs_dkdes in map_res:
-                bs_codon_dkdes[subgroup_idx] = subgroup_bs_dkdes
+            # Allow limited number of simultaneous group KDE calculations
+            # The limit is needed due to the very high memory required when
+            # bs_niter is large.
+            if not last_group and len(dkde_async_results) < 5:
+                continue
 
-            args = (group_idx, bs_codon_dkdes, self.angle_pairs, dist_metric)
-            async_res = pool.apply_async(self._codon_dists_single_group, args)
-            group_async_results[group_idx] = async_res
+            # If we already have enough simultaneous KDE calculations, collect
+            # one (or all if this is the last group) of their results.
+            # Note that we collect the first one that's ready.
+            dkde_results_iter = yield_async_results(dkde_async_results.copy())
+            collected_dkde_results = {}
+            for result_group_idx, group_dkde_result in dkde_results_iter:
+                # Collect and remove async result so we dont see it next time
+                LOGGER.info(f'Collected KDEs for {result_group_idx}')
+                collected_dkde_results[result_group_idx] = group_dkde_result
+                del dkde_async_results[result_group_idx]
 
-        LOGGER.info(f'Collecting group distance matrices...')
+                # We only collect one result here, unless we are in the last
+                # group. In that case we wait for all of the remaining results
+                # since there's no next group.
+                if not last_group:
+                    break
 
-        # Collect the group results and calculate distances
-        group_results = yield_async_results(
-            group_async_results, wait_time_sec=.1, max_retries=None
-        )
+            # Go over collected KDE results (usually only one) and start
+            # the distance matrix calculation in parallel.
+            for result_group_idx in collected_dkde_results:
+                group_dkde_result = collected_dkde_results[result_group_idx]
 
-        codon_dists, codon_dkdes = {}, {}
-        for group_idx, group_result in group_results:
-            group_d2_matrices, group_codon_dkdes = group_result
-            codon_dists[group_idx] = group_d2_matrices
-            codon_dkdes[group_idx] = group_codon_dkdes
+                # bs_codon_dkdes maps from codon to a list of bootstrapped
+                # KDEs of shape (B,N,N), one for each angle pair
+                # Initialize in advance to obtain consistent order of codons
+                bs_codon_dkdes = {c: None for c in CODONS}
+                for subgroup_idx, subgroup_bs_dkdes in group_dkde_result:
+                    bs_codon_dkdes[subgroup_idx] = subgroup_bs_dkdes
+
+                # Run distance matrix calculation in parallel
+                async_res = pool.apply_async(
+                    self._codon_dists_single_group, args=(
+                        result_group_idx, bs_codon_dkdes,
+                        self.angle_pairs, dist_metric
+                    ))
+                dist_async_results[result_group_idx] = async_res
+
+            # Allow limited number of simultaneous distance matrix calculations
+            if not last_group and len(dist_async_results) < 5:
+                continue
+
+            # Wait for one of the distance matrix calculations, or all of
+            # them if it's the last group
+            dists_results_iter = yield_async_results(dist_async_results.copy())
+            for result_group_idx,  group_dist_result in dists_results_iter:
+                LOGGER.info(f'Collected cdist matrix for {result_group_idx}')
+                group_d2_matrices, group_codon_dkdes = group_dist_result
+                codon_dists[result_group_idx] = group_d2_matrices
+                codon_dkdes[result_group_idx] = group_codon_dkdes
+                del dist_async_results[result_group_idx]
+
+                # If we're in the last group, collect everything
+                if not last_group:
+                    break
+
+        # Make sure everything was collected
+        assert len(dkde_async_results) == 0, 'Not all KDEs collected'
+        assert len(dist_async_results) == 0, 'Not all dist matrices collected'
+        LOGGER.info(f'Completed distance matrix collection')
 
         # codon_dists: maps from group (codon, SS) to a list, containing a
         # codon-distance matrix for each angle-pair.
