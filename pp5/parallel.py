@@ -125,6 +125,9 @@ def yield_async_results(
     else:
         raise ValueError("async_results must be a dict or list of AsyncResult")
 
+    if len(async_results) == 0:
+        raise ValueError('No async results to wait for')
+
     # Map result to number of retries
     retry_counts = {res_name: 0 for res_name in async_results.keys()}
 
