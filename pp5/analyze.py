@@ -507,6 +507,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             # Note that we collect the first one that's ready.
             dkde_results_iter = yield_async_results(dkde_asyncs.copy())
             collected_dkde_results = {}
+            LOGGER.info(f'Waiting to collect KDEs (i={i})...')
             for result_group_idx, group_dkde_result in dkde_results_iter:
                 # Collect and remove async result so we dont see it next time
                 LOGGER.info(f'Collected KDEs for {result_group_idx}')
@@ -545,6 +546,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             # Wait for one of the distance matrix calculations, or all of
             # them if it's the last group
             dists_results_iter = yield_async_results(dist_asyncs.copy())
+            LOGGER.info(f'Waiting to collect cdist matrices (i={i})...')
             for result_group_idx, group_dist_result in dists_results_iter:
                 LOGGER.info(f'Collected cdist matrix for {result_group_idx}')
                 group_d2_matrices, group_codon_dkdes = group_dist_result
