@@ -152,9 +152,10 @@ class PointwiseCodonDistance(ParallelDataCollector):
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
         self.bs_limit_n = bs_limit_n
-        self.n_parallel_kdes = n_parallel_kdes
-        if self.n_parallel_kdes is None:
+        if n_parallel_kdes is None:
             self.n_parallel_kdes = pp5.get_config('MAX_PROCESSES')
+        else:
+            self.n_parallel_kdes = int(n_parallel_kdes)
 
         # Update metadata with current configuration
         state_dict = self.__getstate__()
