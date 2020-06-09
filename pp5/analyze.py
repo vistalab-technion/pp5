@@ -79,7 +79,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             consolidate_ss=DSSP_TO_SS_TYPE.copy(), strict_ss=True,
             kde_nbins=128, kde_k1=30., kde_k2=30., kde_k3=0.,
             bs_niter=1, bs_randstate=None, bs_limit_n=False,
-            n_parallel_kdes: int = None,
+            n_parallel_kdes: int = 8,
             out_tag: str = None,
             clear_intermediate=False,
     ):
@@ -152,10 +152,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
         self.bs_limit_n = bs_limit_n
-        if n_parallel_kdes is None:
-            self.n_parallel_kdes = pp5.get_config('MAX_PROCESSES')
-        else:
-            self.n_parallel_kdes = int(n_parallel_kdes)
+        self.n_parallel_kdes = n_parallel_kdes
 
         # Update metadata with current configuration
         state_dict = self.__getstate__()
@@ -510,7 +507,11 @@ class PointwiseCodonDistance(ParallelDataCollector):
             LOGGER.info(f'[{i}] Waiting to collect KDEs '
                         f'(#async_results={len(dkde_asyncs)})...')
             for result_group_idx, group_dkde_result in dkde_results_iter:
-                # Collect and remove async result so we dont see it next time
+                if group_dkde_result is None:
+                    LOGGER.error(f'[{i}] No KDE result in {result_group_idx}')
+                    continue
+
+                # Remove async result so we dont see it next time
                 LOGGER.info(f'[{i}] Collected KDEs for {result_group_idx}')
                 collected_dkde_results[result_group_idx] = group_dkde_result
                 del dkde_asyncs[result_group_idx]
@@ -551,6 +552,10 @@ class PointwiseCodonDistance(ParallelDataCollector):
             LOGGER.info(f'[{i}] Waiting to collect cdist matrices '
                         f'(#async_results={len(dist_asyncs)})...')
             for result_group_idx, group_dist_result in dists_results_iter:
+                if group_dist_result is None:
+                    LOGGER.error(f'[{i}] No cdist in {result_group_idx}')
+                    continue
+
                 LOGGER.info(f'[{i}] Collected cdist matrix {result_group_idx}')
                 group_d2_matrices, group_codon_dkdes = group_dist_result
                 codon_dists[result_group_idx] = group_d2_matrices
