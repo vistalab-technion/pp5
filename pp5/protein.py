@@ -129,18 +129,24 @@ class ResidueMatch(ResidueRecord):
     """
 
     @classmethod
-    def from_residue(cls, res: ResidueRecord,
-                     match_type: ResidueMatchType, diff_deg: float):
-        return cls(match_type, diff_deg, **res.__dict__)
+    def from_residue(cls, query_res: ResidueRecord,
+                     query_idx: int,
+                     match_type: ResidueMatchType,
+                     ang_dist: float, context: int):
+        return cls(query_idx, match_type, ang_dist, context,
+                   **query_res.__dict__)
 
-    def __init__(self, match_type: ResidueMatchType, diff_deg: float,
-                 **res_rec_args):
-        super().__init__(**res_rec_args)
+    def __init__(self, query_idx: int, match_type: ResidueMatchType,
+                 ang_dist: float, context: int, **res_rec_args):
+        self.idx = query_idx
         self.type = match_type
-        self.ang_dist = diff_deg
+        self.ang_dist = ang_dist
+        self.context = context
+        super().__init__(**res_rec_args)
 
     def __repr__(self):
-        return f'{self.type.name}, diff={self.ang_dist:.2f}'
+        return f'[{self.idx}] {self.type.name}, ' \
+               f'diff={self.ang_dist:.2f}, context={self.context}'
 
 
 class ResidueMatchGroup(object):
@@ -1353,16 +1359,9 @@ class ProteinGroup(object):
             for query_pdb_id, match in matches.items():
                 q_prec = self.query_pdb_to_prec[query_pdb_id]
 
-                data = OrderedDict(match.__dict__.copy())
-                angles: Dihedral = data.pop('angles')
-                data.update(angles.as_dict(degrees=True, skip_omega=True,
-                                           with_std=True))
-                data['resolution'] = q_prec.pdb_meta.resolution
-                data.move_to_end('resolution', last=False)
-                data['type'] = match.type.name
-                data.move_to_end('type', last=False)
-                data['unp_id'] = q_prec.unp_id
-                data.move_to_end('unp_id', last=False)
+                data = {'unp_id': q_prec.unp_id}
+                data.update(match.as_dict(skip_omega=True))
+                data['type'] = match.type.name  # change from number to name
 
                 df_data.append(data)
                 df_index.append((ref_idx, query_pdb_id))
@@ -1566,11 +1565,22 @@ class ProteinGroup(object):
             if match_type is None:
                 continue
 
+            # Calculate angle distance between match and reference
             ang_dist = Dihedral.flat_torus_distance(r_res.angles, q_res.angles,
                                                     degrees=True)
 
+            # Calculate full context length
+            context_len = 0
+            for d in range(1, min(i, n - 1 - i)):
+                if stars[i - d] == stars[i + d] == '*':
+                    context_len += 1
+                else:
+                    break
+
             # Save match object
-            match = ResidueMatch.from_residue(q_res, match_type, ang_dist)
+            match = ResidueMatch.from_residue(
+                q_res, q_idx_prec, match_type, ang_dist, context_len
+            )
             res_matches = matches.setdefault(r_idx_prec, OrderedDict())
             res_matches[q_prec.pdb_id] = match
 
