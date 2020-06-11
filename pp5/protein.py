@@ -155,22 +155,51 @@ class ResidueMatchGroup(object):
     and codon.
     """
 
-    def __init__(self, unp_id: str, codon: str, group_size: int,
-                 match_type: ResidueMatchType, name: str, codon_opts: set,
-                 secondary: list, angles: Dihedral, ang_dist: float):
+    def __init__(self, unp_id: str, codon: str, pdb_ids: Tuple[str],
+                 group_idxs: Tuple[int], group_res_ids: Tuple[str],
+                 group_contexts: Tuple[int], match_type: ResidueMatchType,
+                 name: str, codon_opts: set, secondary: list,
+                 angles: Dihedral, ang_dist: float):
+        assert len(pdb_ids) == len(group_idxs) == len(group_res_ids) == \
+               len(group_contexts) > 0
         self.unp_id = unp_id
         self.codon = codon
-        self.group_size = group_size
+        self.group_size = len(pdb_ids)
         self.name = name
         self.codon_opts = codon_opts
         self.secondary = secondary
         self.match_type = match_type
         self.angles = angles
         self.ang_dist = ang_dist
+        self.pdb_ids = pdb_ids
+        self.idxs = group_idxs
+        self.res_ids = group_res_ids
+        self.contexts = group_contexts
 
     def __repr__(self):
         return f'[{self.unp_id}, {self.codon}] {self.match_type.name} ' \
                f'{self.angles}, n={self.group_size}, diff={self.ang_dist:.2f}'
+
+    @property
+    def codon_opts_str(self): return self._join(self.codon_opts, '/')
+
+    @property
+    def secondary_str(self): return self._join(self.secondary, '/')
+
+    @property
+    def pdb_ids_str(self): return self._join(self.pdb_ids)
+
+    @property
+    def idxs_str(self): return self._join(self.idxs)
+
+    @property
+    def res_ids_str(self): return self._join(self.res_ids)
+
+    @property
+    def contexts_str(self): return self._join(self.contexts)
+
+    @staticmethod
+    def _join(seq, d=';'): return str.join(d, map(str, seq))
 
 
 class ProteinRecord(object):
@@ -1276,10 +1305,11 @@ class ProteinGroup(object):
 
             ref_data = ref_data_base.copy()
             ref_data.update({
+                'ref_res_id': ref_group.res_ids[0],
                 'ref_codon': ref_group.codon,
                 'ref_name': ref_group.name,
-                'ref_codon_opts': str.join('/', ref_group.codon_opts),
-                'ref_secondary': str.join('/', ref_group.secondary),
+                'ref_codon_opts': ref_group.codon_opts_str,
+                'ref_secondary': ref_group.secondary_str,
                 'ref_group_size': ref_group.group_size,
                 'ref_norm_factor': ref_norm_factor,
             })
@@ -1295,11 +1325,15 @@ class ProteinGroup(object):
                     'unp_id': match_group.unp_id,
                     'codon': match_group.codon,
                     'name': match_group.name,
-                    'codon_opts': str.join('/', match_group.codon_opts),
-                    'secondary': str.join('/', match_group.secondary),
+                    'codon_opts': match_group.codon_opts_str,
+                    'secondary': match_group.secondary_str,
                     'group_size': match_group.group_size,
                     'ang_dist': match_group.ang_dist,
                     'norm_factor': norm_factor,
+                    'pdb_ids': match_group.pdb_ids_str,
+                    'idxs': match_group.idxs_str,
+                    'res_ids': match_group.res_ids_str,
+                    'contexts': match_group.contexts_str,
                 })
                 data.update(match_group.angles.as_dict(
                     degrees=True, skip_omega=True, with_std=True)
@@ -1331,10 +1365,14 @@ class ProteinGroup(object):
                 data = {
                     'type': match_group.match_type.name,
                     'name': match_group.name,
-                    'codon_opts': str.join('/', match_group.codon_opts),
-                    'secondary': str.join('/', match_group.secondary),
+                    'codon_opts': match_group.codon_opts_str,
+                    'secondary': match_group.secondary_str,
                     'group_size': match_group.group_size,
                     'ang_dist': match_group.ang_dist,
+                    'pdb_ids': match_group.pdb_ids_str,
+                    'idxs': match_group.idxs_str,
+                    'res_ids': match_group.res_ids_str,
+                    'contexts': match_group.contexts_str,
                 }
                 data.update(match_group.angles.as_dict(
                     degrees=True, skip_omega=True, with_std=True)
@@ -1715,7 +1753,13 @@ class ProteinGroup(object):
                 (unp_id, codon) = match_group_idx
                 match_group: Dict[str, ResidueMatch]
 
-                group_size = len(match_group)
+                # Save information about the structures in this group
+                group_pdb_ids = tuple(match_group.keys())
+                vals = ((m.idx, m.res_id, m.context)
+                        for m in match_group.values())
+                idxs, res_ids, contexts = [tuple(z) for z in zip(*vals)]
+
+                # Calculate angle difference w.r.t. ref group
                 if match_group_idx == ref_group_idx:
                     group_angles = ref_group_angles
                 else:
@@ -1724,8 +1768,9 @@ class ProteinGroup(object):
                     ref_group_angles, group_angles, degrees=True)
 
                 # Collect sets of features from the matches in the group
-                vals = ((v.type, v.name, v.secondary, v.codon_opts)
-                        for v in match_group.values())
+                vals = ((
+                    m.type, m.name, m.secondary, m.codon_opts,
+                ) for m in match_group.values())
                 types, names, secondaries, opts = [set(z) for z in zip(*vals)]
 
                 # Make sure all members of group have the same match type,
@@ -1755,8 +1800,10 @@ class ProteinGroup(object):
                 # Store the aggregate info
                 ref_res_groups = grouped_matches.setdefault(ref_res_idx, [])
                 ref_res_groups.append(ResidueMatchGroup(
-                    unp_id, codon, group_size, group_type, group_aa_name,
-                    group_codon_opts, group_secondary, group_angles, ang_dist
+                    unp_id, codon,
+                    group_pdb_ids, idxs, res_ids, contexts,
+                    group_type, group_aa_name, group_codon_opts,
+                    group_secondary, group_angles, ang_dist
                 ))
 
         return grouped_matches
