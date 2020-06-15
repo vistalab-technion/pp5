@@ -157,11 +157,13 @@ class ResidueMatchGroup(object):
 
     def __init__(self, unp_id: str, codon: str, pdb_ids: Tuple[str],
                  group_idxs: Tuple[int], group_res_ids: Tuple[str],
-                 group_contexts: Tuple[int], match_type: ResidueMatchType,
+                 group_contexts: Tuple[int], group_angles: Tuple[Dihedral],
+                 match_type: ResidueMatchType,
                  name: str, codon_opts: set, secondary: list,
-                 angles: Dihedral, ang_dist: float):
+                 avg_phipsi: Dihedral, ang_dist: float):
         assert len(pdb_ids) == len(group_idxs) == len(group_res_ids) == \
-               len(group_contexts) > 0
+               len(group_contexts) == len(group_angles) > 0
+
         self.unp_id = unp_id
         self.codon = codon
         self.group_size = len(pdb_ids)
@@ -169,16 +171,21 @@ class ResidueMatchGroup(object):
         self.codon_opts = codon_opts
         self.secondary = secondary
         self.match_type = match_type
-        self.angles = angles
+        self.avg_phipsi = avg_phipsi
+        self.norm_factor = math.sqrt(
+            avg_phipsi.phi_std_deg ** 2 + avg_phipsi.psi_std_deg ** 2
+        )
         self.ang_dist = ang_dist
         self.pdb_ids = pdb_ids
         self.idxs = group_idxs
         self.res_ids = group_res_ids
         self.contexts = group_contexts
+        self.angles = tuple((a.phi_deg, a.psi_deg) for a in group_angles)
 
     def __repr__(self):
         return f'[{self.unp_id}, {self.codon}] {self.match_type.name} ' \
-               f'{self.angles}, n={self.group_size}, diff={self.ang_dist:.2f}'
+               f'{self.avg_phipsi}, n={self.group_size},' \
+               f'ang_dist={self.ang_dist:.2f}'
 
     @property
     def codon_opts_str(self): return self._join(self.codon_opts, '/')
@@ -197,6 +204,10 @@ class ResidueMatchGroup(object):
 
     @property
     def contexts_str(self): return self._join(self.contexts)
+
+    @property
+    def angles_str(self):
+        return self._join(f'{phi:.3f},{psi:.3f}' for phi, psi, in self.angles)
 
     @staticmethod
     def _join(seq, d=';'): return str.join(d, map(str, seq))
@@ -1234,7 +1245,7 @@ class ProteinGroup(object):
                 rel_idx = f'{j - len(iii) // 2:+0d}' if len(iii) > 1 else ''
                 angles = {
                     f'{k}{rel_idx}': v for k, v in
-                    vgroup.angles.as_dict(
+                    vgroup.avg_phipsi.as_dict(
                         degrees=True, skip_omega=True, with_std=True
                     ).items()
                 }
@@ -1291,35 +1302,37 @@ class ProteinGroup(object):
             assert ref_group is not None
 
             # Get angles of variant group
-            ref_angles = ref_group.angles.as_dict(
+            ref_avg_phipsi = ref_group.avg_phipsi.as_dict(
                 degrees=True, skip_omega=True, with_std=True
             )
-            ref_angles = {
+            ref_avg_phipsi = {
                 f'ref_{k}': v
-                for k, v in ref_angles.items()
+                for k, v in ref_avg_phipsi.items()
             }
-            ref_norm_factor = math.sqrt(
-                ref_group.angles.phi_std_deg ** 2 +
-                ref_group.angles.psi_std_deg ** 2
-            )
 
             ref_data = ref_data_base.copy()
             ref_data.update({
-                'ref_res_id': ref_group.res_ids[0],
                 'ref_codon': ref_group.codon,
                 'ref_name': ref_group.name,
                 'ref_codon_opts': ref_group.codon_opts_str,
                 'ref_secondary': ref_group.secondary_str,
                 'ref_group_size': ref_group.group_size,
-                'ref_norm_factor': ref_norm_factor,
+                'ref_norm_factor': ref_group.norm_factor,
+                **ref_avg_phipsi,
+                'ref_pdb_ids': ref_group.pdb_ids_str,
+                'ref_idxs': ref_group.idxs_str,
+                'ref_res_ids': ref_group.res_ids_str,
+                'ref_contexts': ref_group.contexts_str,
+                'ref_angles': ref_group.angles_str,
             })
-            ref_data.update(ref_angles)
+            ref_data.update(ref_avg_phipsi)
 
             for match_group in other_groups:
-                norm_factor = math.sqrt(match_group.angles.phi_std_deg ** 2 +
-                                        match_group.angles.psi_std_deg ** 2)
-
                 data = ref_data.copy()
+                match_group_avg_phipsi = match_group.avg_phipsi.as_dict(
+                    degrees=True, skip_omega=True, with_std=True
+                )
+
                 data.update({
                     'type': match_group.match_type.name,
                     'unp_id': match_group.unp_id,
@@ -1329,15 +1342,14 @@ class ProteinGroup(object):
                     'secondary': match_group.secondary_str,
                     'group_size': match_group.group_size,
                     'ang_dist': match_group.ang_dist,
-                    'norm_factor': norm_factor,
+                    'norm_factor': match_group.norm_factor,
+                    **match_group_avg_phipsi,
                     'pdb_ids': match_group.pdb_ids_str,
                     'idxs': match_group.idxs_str,
                     'res_ids': match_group.res_ids_str,
                     'contexts': match_group.contexts_str,
+                    'angles': match_group.angles_str,
                 })
-                data.update(match_group.angles.as_dict(
-                    degrees=True, skip_omega=True, with_std=True)
-                )
 
                 df_data.append(data)
                 df_index.append(ref_idx)
@@ -1374,7 +1386,7 @@ class ProteinGroup(object):
                     'res_ids': match_group.res_ids_str,
                     'contexts': match_group.contexts_str,
                 }
-                data.update(match_group.angles.as_dict(
+                data.update(match_group.avg_phipsi.as_dict(
                     degrees=True, skip_omega=True, with_std=True)
                 )
                 df_index.append(idx)
@@ -1746,7 +1758,7 @@ class ProteinGroup(object):
 
             # Compute reference group aggregate angles
             assert ref_group_idx is not None
-            ref_group_angles = aggregate_fn(match_groups[ref_group_idx])
+            ref_group_avg_phipsi = aggregate_fn(match_groups[ref_group_idx])
 
             # Compute aggregate statistics in each group
             for match_group_idx, match_group in match_groups.items():
@@ -1755,23 +1767,23 @@ class ProteinGroup(object):
 
                 # Save information about the structures in this group
                 group_pdb_ids = tuple(match_group.keys())
-                vals = ((m.idx, m.res_id, m.context)
-                        for m in match_group.values())
-                idxs, res_ids, contexts = [tuple(z) for z in zip(*vals)]
+                vs = ((m.idx, m.res_id, m.context, m.angles)
+                      for m in match_group.values())
+                idxs, res_ids, contexts, angles = [tuple(z) for z in zip(*vs)]
 
                 # Calculate angle difference w.r.t. ref group
                 if match_group_idx == ref_group_idx:
-                    group_angles = ref_group_angles
+                    group_avg_phipsi = ref_group_avg_phipsi
                 else:
-                    group_angles = aggregate_fn(match_group)
+                    group_avg_phipsi = aggregate_fn(match_group)
                 ang_dist = Dihedral.flat_torus_distance(
-                    ref_group_angles, group_angles, degrees=True)
+                    ref_group_avg_phipsi, group_avg_phipsi, degrees=True)
 
                 # Collect sets of features from the matches in the group
-                vals = ((
+                vs = ((
                     m.type, m.name, m.secondary, m.codon_opts,
                 ) for m in match_group.values())
-                types, names, secondaries, opts = [set(z) for z in zip(*vals)]
+                types, names, secondaries, opts = [set(z) for z in zip(*vs)]
 
                 # Make sure all members of group have the same match type,
                 # except the VARIANT group which should have one REFERENCE.
@@ -1801,9 +1813,9 @@ class ProteinGroup(object):
                 ref_res_groups = grouped_matches.setdefault(ref_res_idx, [])
                 ref_res_groups.append(ResidueMatchGroup(
                     unp_id, codon,
-                    group_pdb_ids, idxs, res_ids, contexts,
+                    group_pdb_ids, idxs, res_ids, contexts, angles,
                     group_type, group_aa_name, group_codon_opts,
-                    group_secondary, group_angles, ang_dist
+                    group_secondary, group_avg_phipsi, ang_dist
                 ))
 
         return grouped_matches
