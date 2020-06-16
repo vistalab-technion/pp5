@@ -9,6 +9,7 @@ from collections.abc import Mapping, Set, Sequence
 import contextlib
 from datetime import datetime, timedelta
 from io import UnsupportedOperation
+from json import JSONEncoder
 from pathlib import Path
 from typing import Union, Callable, Any
 
@@ -315,3 +316,17 @@ class JSONCacheableMixin(object):
                 LOGGER.warning(
                     f'Failed to load cached {cls.__name__} {filepath} {e}')
         return obj
+
+
+class ReprJSONEncoder(JSONEncoder):
+    """
+    A JSONEncoder that converts an object to it's representation string in
+    case it's not serializable.
+    """
+    def default(self, o: Any) -> Any:
+        try:
+            return repr(o)
+        except Exception as e:
+            pass
+        # Let the base class default method raise the TypeError
+        return JSONEncoder.default(self, o)
