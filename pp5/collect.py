@@ -7,10 +7,11 @@ import socket
 import string
 import time
 import zipfile
+from dataclasses import dataclass
 from multiprocessing.pool import AsyncResult
 from pathlib import Path
 from pprint import pformat
-from typing import Callable, Optional, List, Iterable, NamedTuple, Dict
+from typing import Callable, Optional, List, Iterable, NamedTuple, Dict, Any
 
 import pandas as pd
 
@@ -19,12 +20,13 @@ import pp5.parallel
 from pp5.align import ProteinBLAST
 from pp5.external_dbs import pdb, unp
 from pp5.protein import ProteinRecord, ProteinInitError, ProteinGroup
-from pp5.utils import elapsed_seconds_to_dhms
+from pp5.utils import elapsed_seconds_to_dhms, ReprJSONEncoder
 
 LOGGER = logging.getLogger(__name__)
 
 
-class CollectorStep(NamedTuple):
+@dataclass(repr=False)
+class CollectorStep:
     name: str
     elapsed: str
     result: str
@@ -74,15 +76,19 @@ class ParallelDataCollector(abc.ABC):
             os.makedirs(str(out_dir), exist_ok=True)
 
         self.out_dir = out_dir
-        self.collection_steps = []
-        self.collection_meta = {'id': self.id}
-        self.out_filepaths: List[Path] = []
+
+        self._collection_steps: List[CollectorStep] = []
+        self._out_filepaths: List[Path] = []
+        self._collection_meta = {'id': self.id}
 
     def collect(self):
         start_time = time.time()
         # Note: in python 3.7+ dict order is guaranteed to be insertion order
         collection_functions = self._collection_functions()
         collection_functions['Finalize'] = self._finalize_collection
+
+        # Update metadata with configuration of this collector
+        self._collection_meta.update(self._get_collection_config())
 
         for step_name, collect_fn in collection_functions.items():
             step_start_time = time.time()
@@ -91,7 +97,7 @@ class ParallelDataCollector(abc.ABC):
                 try:
                     step_meta = collect_fn(pool)
                     if step_meta:
-                        self.collection_meta.update(step_meta)
+                        self._collection_meta.update(step_meta)
                     step_status = 'SUCCESS'
                     step_message = None
                 except Exception as e:
@@ -102,7 +108,7 @@ class ParallelDataCollector(abc.ABC):
                 finally:
                     step_elapsed = time.time() - step_start_time
                     step_elapsed = elapsed_seconds_to_dhms(step_elapsed)
-                    self.collection_steps.append(CollectorStep(
+                    self._collection_steps.append(CollectorStep(
                         step_name, step_elapsed, step_status, step_message
                     ))
 
@@ -111,7 +117,7 @@ class ParallelDataCollector(abc.ABC):
 
         LOGGER.info(f'Completed collection for {self} in {time_str}')
         collection_meta_formatted = pformat(
-            self.collection_meta, width=120, compact=True,
+            self._collection_meta, width=120, compact=True,
         )
         LOGGER.info(f'Collection metadata:\n' f'{collection_meta_formatted}')
 
@@ -122,15 +128,15 @@ class ParallelDataCollector(abc.ABC):
 
         # Create a metadata file in the output dir based on the step results
         meta_filepath = self.out_dir.joinpath('meta.json')
-        meta = self.collection_meta
-        meta['steps'] = [str(s) for s in self.collection_steps]
+        meta = self._collection_meta
+        meta['steps'] = [str(s) for s in self._collection_steps]
         with open(str(meta_filepath), 'w', encoding='utf-8') as f:
             try:
-                json.dump(meta, f, indent=2)
+                json.dump(meta, f, indent=2, cls=ReprJSONEncoder)
             except Exception as e:
                 LOGGER.error(f"Failed to serialize metadata", exc_info=e)
 
-        self.out_filepaths.append(meta_filepath)
+        self._out_filepaths.append(meta_filepath)
 
         # Create a zip of the results
         if not self.create_zip:
@@ -143,7 +149,7 @@ class ParallelDataCollector(abc.ABC):
                 zip_filepath, 'w', compression=zipfile.ZIP_DEFLATED,
                 compresslevel=9
         ) as z:
-            for out_filepath in self.out_filepaths:
+            for out_filepath in self._out_filepaths:
                 LOGGER.info(f'Compressing {out_filepath}')
                 arcpath = f'{zip_filename.stem}/{out_filepath.name}'
                 z.write(str(out_filepath), arcpath)
@@ -205,6 +211,22 @@ class ParallelDataCollector(abc.ABC):
         :return: Dict mapping step name to a functions to call during collect.
         """
         return {}
+
+    def _get_collection_config(self):
+        cfg = {}
+        for k, v in self.__dict__.items():
+            # Ignore attributes marked with '_'
+            if k.startswith('_'):
+                continue
+
+            # Convert paths to string for serialization
+            if isinstance(v, (Path,)):
+                cfg[k] = str(v)
+
+            else:
+                cfg[k] = v
+
+        return cfg
 
     def __repr__(self):
         return f'{self.__class__.__name__} id={self.id}'
@@ -323,20 +345,23 @@ class ProteinGroupCollector(ParallelDataCollector):
         super().__init__(out_dir=out_dir, tag=out_tag,
                          async_timeout=async_timeout, create_zip=create_zip)
 
-        self.res_query = pdb.PDBResolutionQuery(max_res=resolution)
-        self.expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys=expr_sys)
-        self.query = pdb.PDBCompositeQuery(self.res_query, self.expr_sys_query)
+        res_query = pdb.PDBResolutionQuery(max_res=resolution)
+        expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys=expr_sys)
+        self.query = pdb.PDBCompositeQuery(res_query, expr_sys_query)
+
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
         self.b_max = b_max
+
         self.pgroup_out_dir = pgroup_out_dir
         self.write_pgroup_csvs = write_pgroup_csvs
         self.out_tag = out_tag
-        self.df_all = None  # Metadata about all structures
-        self.df_ref = None  # Metadata about collected reference structures
-        self.df_pgroups = None  # Metadata for each pgroup
-        self.df_pairwise = None  # Pairwise matches from all pgroups
-        self.df_pointwise = None  # Pointwise matches from all pgroups
+
+        self._df_all = None  # Metadata about all structures
+        self._df_ref = None  # Metadata about collected reference structures
+        self._df_pgroups = None  # Metadata for each pgroup
+        self._df_pairwise = None  # Pairwise matches from all pgroups
+        self._df_pointwise = None  # Pointwise matches from all pgroups
 
         if ref_file is None:
             self._all_file = None
@@ -367,7 +392,7 @@ class ProteinGroupCollector(ParallelDataCollector):
             LOGGER.info(f'Skipping all-structure collection step: '
                         f'loading {self._all_file}')
             read_csv_args = dict(comment='#', index_col=None, header=0)
-            self.df_all = pd.read_csv(self._all_file, **read_csv_args)
+            self._df_all = pd.read_csv(self._all_file, **read_csv_args)
             meta['init_from_all_file'] = str(self._all_file)
         else:
             # Execute PDB query to get a list of PDB IDs
@@ -390,17 +415,17 @@ class ProteinGroupCollector(ParallelDataCollector):
             )
 
             # Create a dataframe from the collected data
-            self.df_all = pd.DataFrame(pdb_id_data)
-            if len(self.df_all):
-                self.df_all.sort_values(
+            self._df_all = pd.DataFrame(pdb_id_data)
+            if len(self._df_all):
+                self._df_all.sort_values(
                     by=['unp_id', 'resolution'], inplace=True,
                     ignore_index=True
                 )
 
-        filepath = self._write_csv(self.df_all, 'meta-structs_all')
-        self.out_filepaths.append(filepath)
+        filepath = self._write_csv(self._df_all, 'meta-structs_all')
+        self._out_filepaths.append(filepath)
 
-        meta['n_all_structures'] = len(self.df_all)
+        meta['n_all_structures'] = len(self._df_all)
         return meta
 
     def _collect_all_refs(self, pool: mp.Pool):
@@ -410,12 +435,12 @@ class ProteinGroupCollector(ParallelDataCollector):
             LOGGER.info(f'Skipping reference-structure collection step: '
                         f'loading {self._ref_file}')
             read_csv_args = dict(comment='#', index_col=None, header=0)
-            self.df_ref = pd.read_csv(self._ref_file, **read_csv_args)
+            self._df_ref = pd.read_csv(self._ref_file, **read_csv_args)
             meta['init_from_ref_file'] = str(self._all_file)
         else:
             # Find reference structure
             LOGGER.info(f'Finding reference structures...')
-            groups = self.df_all.groupby('unp_id')
+            groups = self._df_all.groupby('unp_id')
 
             async_results = []
             for unp_id, df_group in groups:
@@ -428,24 +453,24 @@ class ProteinGroupCollector(ParallelDataCollector):
             )
             group_datas = filter(None, group_datas)
 
-            self.df_ref = pd.DataFrame(group_datas)
-            if len(self.df_ref):
-                self.df_ref.sort_values(
+            self._df_ref = pd.DataFrame(group_datas)
+            if len(self._df_ref):
+                self._df_ref.sort_values(
                     by=['group_size', 'group_median_res'],
                     ascending=[False, True],
                     inplace=True, ignore_index=True
                 )
 
-        meta['n_ref_structures'] = len(self.df_ref)
-        filepath = self._write_csv(self.df_ref, 'meta-structs_ref')
-        self.out_filepaths.append(filepath)
+        meta['n_ref_structures'] = len(self._df_ref)
+        filepath = self._write_csv(self._df_ref, 'meta-structs_ref')
+        self._out_filepaths.append(filepath)
         return meta
 
     def _collect_all_pgroups(self, pool: mp.Pool):
         meta = {}
 
         # Create a local BLAST DB containing all collected PDB IDs.
-        all_pdb_ids = self.df_all['pdb_id']
+        all_pdb_ids = self._df_all['pdb_id']
         alias_name = f'pgc-{self.out_tag}'
         blast_db = ProteinBLAST.create_db_subset_alias(all_pdb_ids, alias_name)
         blast = ProteinBLAST(db_name=blast_db,
@@ -454,7 +479,7 @@ class ProteinGroupCollector(ParallelDataCollector):
                              db_autoupdate_days=7)
 
         LOGGER.info(f'Creating ProteinGroup for each reference...')
-        ref_pdb_ids = self.df_ref['ref_pdb_id'].values
+        ref_pdb_ids = self._df_ref['ref_pdb_id'].values
         async_results = []
         for i, ref_pdb_id in enumerate(ref_pdb_ids):
             idx = (i, len(ref_pdb_ids))
@@ -487,39 +512,39 @@ class ProteinGroupCollector(ParallelDataCollector):
             pgroup_datas.append(pgroup_data)
 
         # Create pgroup metadata dataframe
-        self.df_pgroups = pd.DataFrame(pgroup_datas)
-        if len(self.df_pgroups):
-            self.df_pgroups.sort_values(
+        self._df_pgroups = pd.DataFrame(pgroup_datas)
+        if len(self._df_pgroups):
+            self._df_pgroups.sort_values(
                 by=['n_unp_ids', 'n_total_matches'], ascending=False,
                 inplace=True, ignore_index=True
             )
 
         # Sum the counter columns into the collection step metadata
-        meta['n_pgroups'] = len(self.df_pgroups)
-        for c in [c for c in self.df_pgroups.columns if c.startswith('n_')]:
-            meta[c] = int(self.df_pgroups[c].sum())  # converts from np.int64
+        meta['n_pgroups'] = len(self._df_pgroups)
+        for c in [c for c in self._df_pgroups.columns if c.startswith('n_')]:
+            meta[c] = int(self._df_pgroups[c].sum())  # converts from np.int64
 
-        filepath = self._write_csv(self.df_pgroups, 'meta-pgroups')
-        self.out_filepaths.append(filepath)
+        filepath = self._write_csv(self._df_pgroups, 'meta-pgroups')
+        self._out_filepaths.append(filepath)
 
         # Create the pairwise matches dataframe
-        self.df_pairwise = pd.concat(pairwise_dfs, axis=0).reset_index()
-        if len(self.df_pairwise):
-            self.df_pairwise.sort_values(
+        self._df_pairwise = pd.concat(pairwise_dfs, axis=0).reset_index()
+        if len(self._df_pairwise):
+            self._df_pairwise.sort_values(
                 by=['ref_pdb_id', 'ref_idx', 'type'], inplace=True,
                 ignore_index=True
             )
-        filepath = self._write_csv(self.df_pairwise, 'data-pairwise')
-        self.out_filepaths.append(filepath)
+        filepath = self._write_csv(self._df_pairwise, 'data-pairwise')
+        self._out_filepaths.append(filepath)
 
         # Create the pointwise matches dataframe
-        self.df_pointwise = pd.concat(pointwise_dfs, axis=0).reset_index()
-        if len(self.df_pointwise):
-            self.df_pointwise.sort_values(
+        self._df_pointwise = pd.concat(pointwise_dfs, axis=0).reset_index()
+        if len(self._df_pointwise):
+            self._df_pointwise.sort_values(
                 by=['unp_id', 'ref_idx'], inplace=True, ignore_index=True
             )
-        filepath = self._write_csv(self.df_pointwise, 'data-pointwise')
-        self.out_filepaths.append(filepath)
+        filepath = self._write_csv(self._df_pointwise, 'data-pointwise')
+        self._out_filepaths.append(filepath)
 
         return meta
 
