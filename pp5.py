@@ -136,7 +136,7 @@ def _parse_cli():
         ProteinRecord.from_pdb, skip=['unp_id', 'pdb_dict']
     )
     _, init_args = _generate_cli_from_func(
-        ProteinRecord.__init__, skip=['unp_id', 'pdb_dict']
+        ProteinRecord.__init__, skip=['unp_id', 'pdb_dict', 'numeric_chain']
     )
     _, csv_args = _generate_cli_from_func(ProteinRecord.to_csv)
 
@@ -263,4 +263,4 @@ if __name__ == '__main__':
     except KeyboardInterrupt as e:
         _LOG.warning(f'Interrupted by user, stopping.')
     except Exception as e:
-        _LOG.error(f'{e.__class__.__name__}: {e}')
+        _LOG.error(f'{e.__class__.__name__}: {e}', exc_info=e)
