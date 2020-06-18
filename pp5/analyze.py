@@ -80,6 +80,7 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
             self,
             analysis_name,
             dataset_dir: Union[str, Path],
+            input_file: Union[str, Path],
             out_tag: str = None,
             clear_intermediate=False,
     ):
@@ -87,6 +88,7 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
 
         :param analysis_name:
         :param dataset_dir: Path to directory with the dataset files.
+        :param input_file: Name of input file.
         :param out_tag: Tag for output files.
         :param clear_intermediate: Whether to clear intermediate folder.
         """
@@ -96,6 +98,10 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
 
         if not self.dataset_dir.is_dir():
             raise ValueError(f'Dataset dir {self.dataset_dir} not found')
+
+        self.input_file = self.dataset_dir.joinpath(input_file)
+        if not self.input_file.is_file():
+            raise ValueError(f'Dataset file {self.input_file} not found')
 
         tag = f'-{self.out_tag}' if self.out_tag else ''
         out_dir = self.dataset_dir.joinpath('results')
@@ -192,12 +198,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         excessive memory usage.
         :param out_tag: Tag for output.
         """
-        super().__init__('pointwise_cdist', dataset_dir, out_tag,
-                         clear_intermediate=False)
-
-        self.input_file = self.dataset_dir.joinpath(pointwise_filename)
-        if not self.input_file.is_file():
-            raise ValueError(f'Dataset file {self.input_file} not found')
+        super().__init__('pointwise_cdist', dataset_dir, pointwise_filename,
+                         out_tag, clear_intermediate=False)
 
         condition_on_prev = '' if condition_on_prev is None \
             else condition_on_prev.lower()
