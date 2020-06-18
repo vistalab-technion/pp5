@@ -160,6 +160,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             pointwise_filename: str = 'data-pointwise.csv',
             condition_on_prev='codon', condition_on_ss=True,
             consolidate_ss=DSSP_TO_SS_TYPE.copy(), strict_ss=True,
+            strict_codons=True,
             kde_nbins=128, kde_k1=30., kde_k2=30., kde_k3=0.,
             bs_niter=1, bs_randstate=None, bs_limit_n=False,
             n_parallel_kdes: int = 8,
@@ -174,7 +175,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         :param dataset_dir: Path to directory with the pointwise collector
         output.
-        :param pointwise_filename: Filename of the pointwise daataset.
+        :param pointwise_filename: Filename of the pointwise dataset.
         :param consolidate_ss: Dict mapping from DSSP secondary structure to
         the consolidated SS types used in this analysis.
         :param condition_on_prev: What to condition on from previous residue of
@@ -182,6 +183,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param condition_on_ss: Whether to condition on secondary structure
         (of two consecutive residues, after consolidation).
         :param strict_ss: Enforce no ambiguous codons in any residue.
+        :param strict_codons: Enforce only one known codon per residue
+        (reject residues where DNA matching was ambiguous).
         :param kde_nbins: Number of angle binds for KDE estimation.
         :param kde_k1: KDE concentration parameter for phi.
         :param kde_k2: KDE concentration parameter for psi.
@@ -210,10 +213,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
         self.strict_ss = strict_ss
+        self.strict_codons = strict_codons
 
         self.angle_pairs = [(f'phi+0', f'psi+0'), (f'phi+0', f'psi-1')]
         self.angle_cols = sorted(set(it.chain(*self.angle_pairs)))
         self.codon_cols = [f'codon-1', f'codon+0']
+        self.codon_opts_cols = [f'codon_opts-1', f'codon_opts+0']
         self.secondary_cols = [f'secondary-1', f'secondary+0']
         self.secondary_col = 'secondary'
         self.condition_col = 'condition_group'
@@ -290,7 +295,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             return None
 
-        # Based on the configuratrion, we create a column that represents
+        # Based on the configuration, we create a column that represents
         # the group a sample belongs to when conditioning
         def assign_condition_group(row: pd.Series):
             prev_aac = row[self.codon_cols[0]]  # AA-CODON
@@ -312,6 +317,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 cond_groups.append(SS_TYPE_ANY)
 
             return str.join('_', cond_groups)
+
+        # Remove rows where ambiguous codons exist
+        if self.strict_codons:
+            idx_single_codon = df_sub[self.codon_opts_cols[0]].isnull()
+            idx_single_codon &= df_sub[self.codon_opts_cols[1]].isnull()
+            df_sub = df_sub[idx_single_codon]
 
         ss_consolidated = df_sub.apply(ss_consolidator, axis=1)
 
