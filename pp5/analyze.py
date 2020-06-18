@@ -6,6 +6,7 @@ import logging
 import multiprocessing as mp
 import shutil
 import time
+from abc import ABC
 from multiprocessing.pool import AsyncResult
 from pathlib import Path
 from typing import Union, Dict, Callable, Optional, List, Tuple
@@ -70,10 +71,86 @@ N_CODONS = len(CODONS)
 CODON_TYPE_ANY = 'ANY'
 
 
-class PointwiseCodonDistance(ParallelDataCollector):
+class ParallelAnalyzer(ParallelDataCollector, ABC):
+    """
+    Base class for analyzers.
+    """
 
     def __init__(
-            self, dataset_dir: Union[str, Path],
+            self,
+            analysis_name,
+            dataset_dir: Union[str, Path],
+            out_tag: str = None,
+            clear_intermediate=False,
+    ):
+        """
+
+        :param analysis_name:
+        :param dataset_dir: Path to directory with the dataset files.
+        :param out_tag: Tag for output files.
+        :param clear_intermediate: Whether to clear intermediate folder.
+        """
+        self.analysis_name = analysis_name
+        self.dataset_dir = Path(dataset_dir)
+        self.out_tag = out_tag
+
+        if not self.dataset_dir.is_dir():
+            raise ValueError(f'Dataset dir {self.dataset_dir} not found')
+
+        tag = f'-{self.out_tag}' if self.out_tag else ''
+        out_dir = self.dataset_dir.joinpath('results')
+        super().__init__(id=f'{self.analysis_name}{tag}', out_dir=out_dir,
+                         tag=out_tag, create_zip=False, )
+
+        # Create clean directory for intermediate results between steps
+        self.intermediate_dir = self.out_dir.joinpath('_intermediate_')
+        if clear_intermediate and self.intermediate_dir.exists():
+            shutil.rmtree(str(self.intermediate_dir))
+        os.makedirs(str(self.intermediate_dir), exist_ok=True)
+
+        # Create dict for storing paths of intermediate results
+        self._intermediate_files: Dict[str, Path] = {}
+
+    def _dump_intermediate(self, name: str, obj):
+        # Update dict of intermediate files
+        path = self.intermediate_dir.joinpath(f'{name}.pkl')
+        self._intermediate_files[name] = path
+
+        with open(str(path), 'wb') as f:
+            pickle.dump(obj, f, protocol=4)
+
+        LOGGER.info(f'Wrote intermediate file {path}')
+        return path
+
+    def _load_intermediate(self, name, allow_old=True, raise_if_missing=True):
+        path = self.intermediate_dir.joinpath(f'{name}.pkl')
+
+        if name not in self._intermediate_files:
+            # Intermediate files might exist from a previous run we wish to
+            # resume
+            if allow_old:
+                LOGGER.warning(f'Loading old intermediate file {path}')
+            else:
+                return None
+
+        if not path.is_file():
+            if raise_if_missing:
+                raise ValueError(f"Can't find intermediate file {path}")
+            else:
+                return None
+
+        self._intermediate_files[name] = path
+        with open(str(path), 'rb') as f:
+            obj = pickle.load(f)
+
+        LOGGER.info(f'Loaded intermediate file {path}')
+        return obj
+
+
+class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
+    def __init__(
+            self,
+            dataset_dir: Union[str, Path],
             pointwise_filename: str = 'data-pointwise.csv',
             condition_on_prev='codon', condition_on_ss=True,
             consolidate_ss=DSSP_TO_SS_TYPE.copy(), strict_ss=True,
@@ -81,12 +158,11 @@ class PointwiseCodonDistance(ParallelDataCollector):
             bs_niter=1, bs_randstate=None, bs_limit_n=False,
             n_parallel_kdes: int = 8,
             out_tag: str = None,
-            clear_intermediate=False,
     ):
         """
         Analyzes a pointwise dataset (dihedral angles with residue information)
         to produce a matrix of distances between codons Dij.
-        Each entry ij in Dij corresponds to codons i and j, and teh value is a
+        Each entry ij in Dij corresponds to codons i and j, and the value is a
         distance metric between the distributions of dihedral angles coming
         from these codons.
 
@@ -115,24 +191,18 @@ class PointwiseCodonDistance(ParallelDataCollector):
         Setting this to a high number together with a high bs_niter will cause
         excessive memory usage.
         :param out_tag: Tag for output.
-        :param clear_intermediate: Whether to clear intermediate folder.
         """
-        self.dataset_dir = Path(dataset_dir)
-        self.out_tag = out_tag
+        super().__init__('pointwise_cdist', dataset_dir, out_tag,
+                         clear_intermediate=False)
+
         self.input_file = self.dataset_dir.joinpath(pointwise_filename)
-        if not self.dataset_dir.is_dir():
-            raise ValueError(f'Dataset dir {self.dataset_dir} not found')
         if not self.input_file.is_file():
             raise ValueError(f'Dataset file {self.input_file} not found')
+
         condition_on_prev = '' if condition_on_prev is None \
             else condition_on_prev.lower()
         if condition_on_prev not in {'codon', 'aa', ''}:
             raise ValueError(f'invalid condition_on_prev: {condition_on_prev}')
-
-        tag = f'-{self.out_tag}' if self.out_tag else ''
-        out_dir = self.dataset_dir.joinpath('results')
-        super().__init__(id=f'pointwise_cdist{tag}', out_dir=out_dir,
-                         tag=out_tag, create_zip=False, )
 
         self.condition_on_prev = condition_on_prev
         self.condition_on_ss = condition_on_ss
@@ -154,27 +224,6 @@ class PointwiseCodonDistance(ParallelDataCollector):
         self.bs_limit_n = bs_limit_n
         self.n_parallel_kdes = n_parallel_kdes
 
-        # Update metadata with current configuration
-        state_dict = self.__getstate__()
-        state_dict.pop('collection_meta')
-        self.collection_meta.update(state_dict)
-
-        # Create clean directory for intermediate results between steps
-        self.intermediate_dir = self.out_dir.joinpath('_intermediate_')
-        if clear_intermediate and self.intermediate_dir.exists():
-            shutil.rmtree(str(self.intermediate_dir))
-        os.makedirs(str(self.intermediate_dir), exist_ok=True)
-
-        # Create dict for storing paths of intermediate results
-        self.intermediate_files: Dict[str, Path] = {}
-
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        for k, v in state.items():
-            if isinstance(v, (Path,)):
-                state[k] = str(v)
-        return state
-
     def _collection_functions(self) \
             -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
@@ -185,41 +234,6 @@ class PointwiseCodonDistance(ParallelDataCollector):
             'codon-dists-expected': self._codon_dists_expected,
             'plot-results': self._plot_results,
         }
-
-    def _dump_intermediate(self, name: str, obj):
-        # Update dict of intermediate files
-        path = self.intermediate_dir.joinpath(f'{name}.pkl')
-        self.intermediate_files[name] = path
-
-        with open(str(path), 'wb') as f:
-            pickle.dump(obj, f, protocol=4)
-
-        LOGGER.info(f'Wrote intermediate file {path}')
-        return path
-
-    def _load_intermediate(self, name, allow_old=True, raise_if_missing=True):
-        path = self.intermediate_dir.joinpath(f'{name}.pkl')
-
-        if name not in self.intermediate_files:
-            # Intermediate files might exist from a previous run we wish to
-            # resume
-            if allow_old:
-                LOGGER.warning(f'Loading old intermediate file {path}')
-            else:
-                return None
-
-        if not path.is_file():
-            if raise_if_missing:
-                raise ValueError(f"Can't find intermediate file {path}")
-            else:
-                return None
-
-        self.intermediate_files[name] = path
-        with open(str(path), 'rb') as f:
-            obj = pickle.load(f)
-
-        LOGGER.info(f'Loaded intermediate file {path}')
-        return obj
 
     def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
         # Specifies which columns to read from the CSV
@@ -883,7 +897,7 @@ class PointwiseCodonDistance(ParallelDataCollector):
             )
 
             # dkdes contains one KDE for each pair in angle_pairs
-            _, dkdes = PointwiseCodonDistance._dihedral_kde_single_group(
+            _, dkdes = PointwiseCodonDistanceAnalyzer._dihedral_kde_single_group(
                 subgroup_idx, df_subgroup_sampled, angle_pairs, kde_args
             )
 
