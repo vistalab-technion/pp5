@@ -9,7 +9,7 @@ import pickle
 from pathlib import Path
 from typing import List, Tuple, Dict, Iterator, Callable, Any, Union, \
     Iterable, Optional, Set
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 import itertools as it
 
 import pandas as pd
@@ -159,7 +159,7 @@ class ResidueMatchGroup(object):
                  group_idxs: Tuple[int], group_res_ids: Tuple[str],
                  group_contexts: Tuple[int], group_angles: Tuple[Dihedral],
                  match_type: ResidueMatchType,
-                 name: str, codon_opts: set, secondary: list,
+                 name: str, codon_opts: set, secondary: str,
                  avg_phipsi: Dihedral, ang_dist: float):
         assert len(pdb_ids) == len(group_idxs) == len(group_res_ids) == \
                len(group_contexts) == len(group_angles) > 0
@@ -189,9 +189,6 @@ class ResidueMatchGroup(object):
 
     @property
     def codon_opts_str(self): return self._join(self.codon_opts, '/')
-
-    @property
-    def secondary_str(self): return self._join(self.secondary, '/')
 
     @property
     def pdb_ids_str(self): return self._join(self.pdb_ids)
@@ -1315,7 +1312,7 @@ class ProteinGroup(object):
                 'ref_codon': ref_group.codon,
                 'ref_name': ref_group.name,
                 'ref_codon_opts': ref_group.codon_opts_str,
-                'ref_secondary': ref_group.secondary_str,
+                'ref_secondary': ref_group.secondary,
                 'ref_group_size': ref_group.group_size,
                 'ref_norm_factor': ref_group.norm_factor,
                 **ref_avg_phipsi,
@@ -1339,7 +1336,7 @@ class ProteinGroup(object):
                     'codon': match_group.codon,
                     'name': match_group.name,
                     'codon_opts': match_group.codon_opts_str,
-                    'secondary': match_group.secondary_str,
+                    'secondary': match_group.secondary,
                     'group_size': match_group.group_size,
                     'ang_dist': match_group.ang_dist,
                     'norm_factor': match_group.norm_factor,
@@ -1378,7 +1375,7 @@ class ProteinGroup(object):
                     'type': match_group.match_type.name,
                     'name': match_group.name,
                     'codon_opts': match_group.codon_opts_str,
-                    'secondary': match_group.secondary_str,
+                    'secondary': match_group.secondary,
                     'group_size': match_group.group_size,
                     'ang_dist': match_group.ang_dist,
                     'pdb_ids': match_group.pdb_ids_str,
@@ -1802,12 +1799,10 @@ class ProteinGroup(object):
                 group_codon_opts = set(it.chain(*[o.split('/') for o in opts]))
                 group_codon_opts.remove(codon)
 
-                # Get possible secondary structures. Make sure the ref
-                # residue structure appears first.
-                if ref_res.secondary in secondaries:
-                    secondaries.remove(ref_res.secondary)
-                group_secondary = [ref_res.secondary]
-                group_secondary.extend(secondaries)
+                # Assign a SS to a group based on majority-vote. Since
+                # we're dealing with different structures of the same protein,
+                # they should have the same SS.
+                group_secondary, _ = Counter(secondaries).most_common(1)[0]
 
                 # Store the aggregate info
                 ref_res_groups = grouped_matches.setdefault(ref_res_idx, [])
