@@ -531,7 +531,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         self._df_pairwise = pd.concat(pairwise_dfs, axis=0).reset_index()
         if len(self._df_pairwise):
             self._df_pairwise.sort_values(
-                by=['ref_pdb_id', 'ref_idx', 'type'], inplace=True,
+                by=['ref_unp_id', 'ref_idx', 'type'], inplace=True,
                 ignore_index=True
             )
         filepath = self._write_csv(self._df_pairwise, 'data-pairwise')
@@ -681,7 +681,7 @@ class ProteinGroupCollector(ParallelDataCollector):
             )
 
             # Get the pairwise and pointwise matches from the pgroup
-            pgroup_pairwise = pgroup.to_pairwise_dataframe(with_ref_id=True)
+            pgroup_pairwise = pgroup.to_pairwise_dataframe()
             pgroup_pointwise = pgroup.to_pointwise_dataframe(
                 with_ref_id=True, with_neighbors=True
             )
