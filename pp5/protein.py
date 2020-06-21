@@ -151,63 +151,146 @@ class ResidueMatch(ResidueRecord):
 
 class ResidueMatchGroup(object):
     """
-    Represents a group of residue matches which share a common Uniprot ID
-    and codon.
+    Represents a group of residues from structures of the same protein (unp_id)
+    that match at a specific residue which is coded by the same codon.
     """
 
-    def __init__(self, unp_id: str, codon: str, pdb_ids: Tuple[str],
-                 group_idxs: Tuple[int], group_res_ids: Tuple[str],
-                 group_contexts: Tuple[int], group_angles: Tuple[Dihedral],
-                 match_type: ResidueMatchType,
-                 name: str, codon_opts: set, secondary: str,
+    def __init__(self, unp_id: str, codon: str,
+                 match_group: Dict[str, ResidueMatch],
+                 precs: Dict[str, ProteinRecord],
                  avg_phipsi: Dihedral, ang_dist: float):
-        assert len(pdb_ids) == len(group_idxs) == len(group_res_ids) == \
-               len(group_contexts) == len(group_angles) > 0
 
         self.unp_id = unp_id
         self.codon = codon
-        self.group_size = len(pdb_ids)
-        self.name = name
-        self.codon_opts = codon_opts
-        self.secondary = secondary
-        self.match_type = match_type
+        self.group_size = len(match_group)
+        self.pdb_ids = tuple(match_group.keys())
+
         self.avg_phipsi = avg_phipsi
         self.norm_factor = math.sqrt(
             avg_phipsi.phi_std_deg ** 2 + avg_phipsi.psi_std_deg ** 2
         )
         self.ang_dist = ang_dist
-        self.pdb_ids = pdb_ids
-        self.idxs = group_idxs
-        self.res_ids = group_res_ids
-        self.contexts = group_contexts
-        self.angles = tuple((a.phi_deg, a.psi_deg) for a in group_angles)
+
+        # Save information about the structures in this group
+        vs = (
+            (m.idx, m.res_id, m.context, m.angles)
+            for m in match_group.values()
+        )
+        self.idxs, self.res_ids, self.contexts, angles = [
+            tuple(z) for z in zip(*vs)
+        ]
+        self.curr_phis = tuple(a.phi_deg for a in angles)
+        self.curr_psis = tuple(a.psi_deg for a in angles)
+
+        vs = (
+            (m.type, m.name, m.secondary, m.codon_opts,)
+            for m in match_group.values()
+        )
+        types, names, secondaries, opts = [set(z) for z in zip(*vs)]
+
+        # Make sure all members of group have the same match type,
+        # except the VARIANT group which should have one REFERENCE.
+        # Also, AA name should be the same since codon is the same.
+        if ResidueMatchType.REFERENCE in types:
+            types.remove(ResidueMatchType.REFERENCE)
+            types.add(ResidueMatchType.VARIANT)
+        self.match_type = types.pop()
+        self.name = names.pop()
+        assert len(types) == 0, types
+        assert len(names) == 0, names
+
+        # Assign a SS to a group based on majority-vote. Since
+        # we're dealing with different structures of the same protein,
+        # they should have the same SS.
+        self.secondary, _ = Counter(secondaries).most_common(1)[0]
+
+        # Get alternative possible codon options. Remove the
+        # group codon to prevent redundancy.  Note that
+        # UNKNOWN_CODON is a possibility, we leave it in.
+        self.codon_opts = set(it.chain(*[o.split('/') for o in opts]))
+        self.codon_opts.remove(codon)
+
+        # Get information about the residues around the match:
+        # codons and angles in the previous and next residues of each structure
+        d = {
+            'prev_codons': [], 'prev_phis': [], 'prev_psis': [],
+            'next_codons': [], 'next_phis': [], 'next_psis': [],
+        }
+        for pdb_id, match in match_group.items():
+            prec = precs[pdb_id]
+            prec_idx_range = range(0, len(prec))
+
+            for prevnext, offset in [('prev', -1), ('next', 1)]:
+                i = match.idx + offset
+
+                if i in prec_idx_range:
+                    prevnext_codon = prec[i].codon
+                    prevnext_phi = prec[i].angles.phi_deg
+                    prevnext_psi = prec[i].angles.psi_deg
+                else:
+                    prevnext_codon = ''
+                    prevnext_phi, prevnext_psi = math.nan, math.nan
+
+                d[f'{prevnext}_codons'].append(prevnext_codon)
+                d[f'{prevnext}_phis'].append(prevnext_phi)
+                d[f'{prevnext}_psis'].append(prevnext_psi)
+
+        for k, v in d.items():
+            self.__setattr__(k, tuple(v))
 
     def __repr__(self):
         return f'[{self.unp_id}, {self.codon}] {self.match_type.name} ' \
-               f'{self.avg_phipsi}, n={self.group_size},' \
+               f'{self.avg_phipsi}, n={self.group_size}, ' \
                f'ang_dist={self.ang_dist:.2f}'
 
-    @property
-    def codon_opts_str(self): return self._join(self.codon_opts, '/')
+    def as_dict(self, join_sequences=False, key_prefix=None):
+        p = f'{key_prefix}_' if key_prefix else ''
 
-    @property
-    def pdb_ids_str(self): return self._join(self.pdb_ids)
+        def _str(x):
+            if isinstance(x, float):
+                return f'{x:.3f}'
+            return str(x)
 
-    @property
-    def idxs_str(self): return self._join(self.idxs)
+        def _join(sequence: Union[set, list, tuple]):
+            if not join_sequences:
+                return sequence
 
-    @property
-    def res_ids_str(self): return self._join(self.res_ids)
+            if isinstance(sequence, (set,)):
+                sep = '/'
+            elif isinstance(sequence, (list, tuple)):
+                sep = ';'
+            else:
+                raise ValueError('Unexpected sequence type')
 
-    @property
-    def contexts_str(self): return self._join(self.contexts)
+            return str.join(sep, map(_str, sequence))
 
-    @property
-    def angles_str(self):
-        return self._join(f'{phi:.3f},{psi:.3f}' for phi, psi, in self.angles)
+        group_avg_phipsi = {
+            f'{p}{k}': v
+            for k, v in self.avg_phipsi.as_dict(degrees=True, skip_omega=True,
+                                                with_std=True).items()
+        }
 
-    @staticmethod
-    def _join(seq, d=';'): return str.join(d, map(str, seq))
+        d = {
+            f'{p}type': self.match_type.name,
+            f'{p}unp_id': self.unp_id,
+            f'{p}codon': self.codon,
+            f'{p}name': self.name,
+            f'{p}secondary': self.secondary,
+            f'{p}group_size': self.group_size,
+            **group_avg_phipsi,
+            f'{p}norm_factor': self.norm_factor,
+        }
+
+        sequence_attributes = [
+            'pdb_ids', 'idxs', 'res_ids', 'contexts',
+            'prev_phis', 'curr_phis', 'next_phis',
+            'prev_psis', 'curr_psis', 'next_psis',
+            'codon_opts', 'prev_codons', 'next_codons',
+        ]
+        for attr in sequence_attributes:
+            d[f'{p}{attr}'] = _join(self.__getattribute__(attr))
+
+        return d
 
 
 class ProteinRecord(object):
@@ -1261,12 +1344,8 @@ class ProteinGroup(object):
         df = pd.DataFrame(data=df_data, index=df_index)
         return df
 
-    def to_pairwise_dataframe(self, with_ref_id=False):
+    def to_pairwise_dataframe(self):
         """
-        :param with_ref_id: Whether to include a column with the reference
-        structure ids (pdb and unp). This is generally redundant as it will
-        have the same value for all rows. However may be useful when
-        creating multiple pairwise dataframes from different pgroups.
         :return: A dataframe containing the aligned residue match groups (i.e.,
         matches grouped by Uniprot ID and codon), but compared to the VARIANT
         group at that reference index.
@@ -1279,11 +1358,6 @@ class ProteinGroup(object):
         """
         df_index = []
         df_data = []
-
-        ref_data_base = {}
-        if with_ref_id:
-            ref_data_base['ref_pdb_id'] = self.ref_pdb_id
-            ref_data_base['ref_unp_id'] = self.ref_prec.unp_id
 
         for ref_idx, grouped_matches in self.ref_groups.items():
             grouped_matches: List[ResidueMatchGroup]
@@ -1298,56 +1372,12 @@ class ProteinGroup(object):
                     other_groups.append(group)
             assert ref_group is not None
 
-            # Get angles of variant group
-            ref_avg_phipsi = ref_group.avg_phipsi.as_dict(
-                degrees=True, skip_omega=True, with_std=True
-            )
-            ref_avg_phipsi = {
-                f'ref_{k}': v
-                for k, v in ref_avg_phipsi.items()
-            }
-
-            ref_data = ref_data_base.copy()
-            ref_data.update({
-                'ref_codon': ref_group.codon,
-                'ref_name': ref_group.name,
-                'ref_codon_opts': ref_group.codon_opts_str,
-                'ref_secondary': ref_group.secondary,
-                'ref_group_size': ref_group.group_size,
-                'ref_norm_factor': ref_group.norm_factor,
-                **ref_avg_phipsi,
-                'ref_pdb_ids': ref_group.pdb_ids_str,
-                'ref_idxs': ref_group.idxs_str,
-                'ref_res_ids': ref_group.res_ids_str,
-                'ref_contexts': ref_group.contexts_str,
-                'ref_angles': ref_group.angles_str,
-            })
-            ref_data.update(ref_avg_phipsi)
+            ref_data = ref_group.as_dict(join_sequences=True, key_prefix='ref')
+            ref_data.pop('ref_type')  # Always VARIANT
 
             for match_group in other_groups:
                 data = ref_data.copy()
-                match_group_avg_phipsi = match_group.avg_phipsi.as_dict(
-                    degrees=True, skip_omega=True, with_std=True
-                )
-
-                data.update({
-                    'type': match_group.match_type.name,
-                    'unp_id': match_group.unp_id,
-                    'codon': match_group.codon,
-                    'name': match_group.name,
-                    'codon_opts': match_group.codon_opts_str,
-                    'secondary': match_group.secondary,
-                    'group_size': match_group.group_size,
-                    'ang_dist': match_group.ang_dist,
-                    'norm_factor': match_group.norm_factor,
-                    **match_group_avg_phipsi,
-                    'pdb_ids': match_group.pdb_ids_str,
-                    'idxs': match_group.idxs_str,
-                    'res_ids': match_group.res_ids_str,
-                    'contexts': match_group.contexts_str,
-                    'angles': match_group.angles_str,
-                })
-
+                data.update(match_group.as_dict(join_sequences=True))
                 df_data.append(data)
                 df_index.append(ref_idx)
 
@@ -1370,22 +1400,8 @@ class ProteinGroup(object):
             grouped_matches: List[ResidueMatchGroup]
 
             for match_group in grouped_matches:
-                idx = (ref_idx, match_group.unp_id, match_group.codon)
-                data = {
-                    'type': match_group.match_type.name,
-                    'name': match_group.name,
-                    'codon_opts': match_group.codon_opts_str,
-                    'secondary': match_group.secondary,
-                    'group_size': match_group.group_size,
-                    'ang_dist': match_group.ang_dist,
-                    'pdb_ids': match_group.pdb_ids_str,
-                    'idxs': match_group.idxs_str,
-                    'res_ids': match_group.res_ids_str,
-                    'contexts': match_group.contexts_str,
-                }
-                data.update(match_group.avg_phipsi.as_dict(
-                    degrees=True, skip_omega=True, with_std=True)
-                )
+                data = match_group.as_dict(join_sequences=True)
+                idx = (ref_idx, data.pop('unp_id'), data.pop('codon'))
                 df_index.append(idx)
                 df_data.append(data)
 
@@ -1413,8 +1429,8 @@ class ProteinGroup(object):
                 df_data.append(data)
                 df_index.append((ref_idx, query_pdb_id))
 
-        df_index = pd.MultiIndex.from_tuples(df_index,
-                                             names=['ref_idx', 'query_pdb_id'])
+        idx_names = ['ref_idx', 'query_pdb_id']
+        df_index = pd.MultiIndex.from_tuples(df_index, names=idx_names)
         df = pd.DataFrame(data=df_data, index=df_index)
         return df
 
@@ -1733,8 +1749,6 @@ class ProteinGroup(object):
         grouped_matches: Dict[int, List[ResidueMatchGroup]] = OrderedDict()
 
         for ref_res_idx, matches in self.ref_matches.items():
-            ref_res = self.ref_prec[ref_res_idx]
-
             # Group matches of queries to current residue by unp_id and codon
             match_groups: Dict[Tuple[str, str], Dict[str, ResidueMatch]] = {}
             ref_group_idx = None
@@ -1762,56 +1776,28 @@ class ProteinGroup(object):
                 (unp_id, codon) = match_group_idx
                 match_group: Dict[str, ResidueMatch]
 
-                # Save information about the structures in this group
-                group_pdb_ids = tuple(match_group.keys())
-                vs = ((m.idx, m.res_id, m.context, m.angles)
-                      for m in match_group.values())
-                idxs, res_ids, contexts, angles = [tuple(z) for z in zip(*vs)]
-
-                # Calculate angle difference w.r.t. ref group
+                # Calculate average angle in this group with the aggregation
+                # function
                 if match_group_idx == ref_group_idx:
                     group_avg_phipsi = ref_group_avg_phipsi
                 else:
                     group_avg_phipsi = aggregate_fn(match_group)
-                ang_dist = Dihedral.flat_torus_distance(
-                    ref_group_avg_phipsi, group_avg_phipsi, degrees=True)
 
-                # Collect sets of features from the matches in the group
-                vs = ((
-                    m.type, m.name, m.secondary, m.codon_opts,
-                ) for m in match_group.values())
-                types, names, secondaries, opts = [set(z) for z in zip(*vs)]
+                # Calculate angle distance between the group's average angle
+                # and the reference group average angle.
+                group_ang_dist = Dihedral.flat_torus_distance(
+                    ref_group_avg_phipsi, group_avg_phipsi, degrees=True
+                )
 
-                # Make sure all members of group have the same match type,
-                # except the VARIANT group which should have one REFERENCE.
-                # Also, AA name should be the same since codon is the same.
-                if ResidueMatchType.REFERENCE in types:
-                    types.remove(ResidueMatchType.REFERENCE)
-                    types.add(ResidueMatchType.VARIANT)
-                group_type = types.pop()
-                group_aa_name = names.pop()
-                assert len(types) == 0, types
-                assert len(names) == 0, names
-
-                # Get alternative possible codon options. Remove the
-                # group codon to prevent redundancy.  Note that
-                # UNKNOWN_CODON is a possibility, we leave it in.
-                group_codon_opts = set(it.chain(*[o.split('/') for o in opts]))
-                group_codon_opts.remove(codon)
-
-                # Assign a SS to a group based on majority-vote. Since
-                # we're dealing with different structures of the same protein,
-                # they should have the same SS.
-                group_secondary, _ = Counter(secondaries).most_common(1)[0]
+                group_precs = {pdb_id: self.query_pdb_to_prec[pdb_id]
+                               for pdb_id in match_group.keys()}
 
                 # Store the aggregate info
                 ref_res_groups = grouped_matches.setdefault(ref_res_idx, [])
-                ref_res_groups.append(ResidueMatchGroup(
-                    unp_id, codon,
-                    group_pdb_ids, idxs, res_ids, contexts, angles,
-                    group_type, group_aa_name, group_codon_opts,
-                    group_secondary, group_avg_phipsi, ang_dist
-                ))
+                ref_res_groups.append(
+                    ResidueMatchGroup(unp_id, codon, match_group, group_precs,
+                                      group_avg_phipsi, group_ang_dist)
+                )
 
         return grouped_matches
 
