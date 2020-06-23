@@ -278,6 +278,7 @@ class ResidueMatchGroup(object):
             f'{p}secondary': self.secondary,
             f'{p}group_size': self.group_size,
             **group_avg_phipsi,
+            f'{p}ang_dist': self.ang_dist,
             f'{p}norm_factor': self.norm_factor,
         }
 
