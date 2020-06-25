@@ -1099,7 +1099,8 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 args=(df_sub, float_list_cols, int_list_cols, str_list_cols)
             ))
 
-        _, _, sub_dfs = self._handle_async_results(async_results, collect=True)
+        _, _, results = self._handle_async_results(async_results, collect=True)
+        sub_dfs, orig_counts = zip(*results)
 
         # Dump processed dataset
         df_preproc = pd.concat(sub_dfs, axis=0, ignore_index=True)
@@ -1107,6 +1108,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self._dump_intermediate('dataset', df_preproc)
 
         return {
+            'n_ORIG': sum(orig_counts),
             'n_TOTAL': len(df_preproc),
         }
 
@@ -1115,6 +1117,8 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             float_list_cols, int_list_cols, str_list_cols
     ):
         pd.set_option('mode.chained_assignment', 'raise')
+
+        orig_len = len(df_sub)
 
         # Based on the configuration, we create a column that represents
         # the group a sample belongs to when conditioning
@@ -1153,4 +1157,4 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         drop_columns = self.codon_opts_cols + self.secondary_cols
         df_sub = df_sub.drop(drop_columns, axis=1)
 
-        return df_sub
+        return df_sub, orig_len
