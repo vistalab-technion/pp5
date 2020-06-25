@@ -3,13 +3,14 @@ import pickle
 import re
 import itertools as it
 import logging
+import functools as ft
 import multiprocessing as mp
 import shutil
 import time
 from abc import ABC
 from multiprocessing.pool import AsyncResult
 from pathlib import Path
-from typing import Union, Dict, Callable, Optional, List, Tuple
+from typing import Union, Dict, Callable, Optional, List, Tuple, Iterable
 
 import numpy as np
 import pandas as pd
@@ -125,7 +126,8 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
         with open(str(path), 'wb') as f:
             pickle.dump(obj, f, protocol=4)
 
-        LOGGER.info(f'Wrote intermediate file {path}')
+        size_mbytes = os.path.getsize(path) / 1024 / 1024
+        LOGGER.info(f'Wrote intermediate file {path} ({size_mbytes:.1f}MB)')
         return path
 
     def _load_intermediate(self, name, allow_old=True, raise_if_missing=True):
@@ -275,8 +277,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             ss_p0 = row[self.secondary_cols[1]]
 
             # In strict mode we require that all group members had the same SS,
-            # i.e. we don't allow groups with more than one type (ambiguous
-            # codons).
+            # i.e. we don't allow groups with more than one type
             if self.strict_ss and (len(ss_p0) != 1 or len(ss_m1) != 1):
                 return None
 
@@ -1009,3 +1010,165 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             return col
 
         return rf'${rep(phi_col)}, {rep(psi_col)}$'
+
+
+class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
+
+    def __init__(
+            self,
+            dataset_dir: Union[str, Path],
+            pairwise_filename: str = 'data-pairwise.csv',
+            condition_on_ss=True,
+            consolidate_ss=DSSP_TO_SS_TYPE.copy(),
+            strict_codons=True,
+            out_tag: str = None,
+    ):
+        """
+        Analyzes a pairwise dataset (pairs of match-groups of a residue in a
+        specific context, from different structures)
+        to produce a matrix of distances between codons Dij.
+        Each entry ij in Dij corresponds to codons i and j, and the value is a
+        distance metric between the distributions of dihedral angles coming
+        from these codons.
+
+        :param dataset_dir: Path to directory with the pairwise collector
+        output.
+        :param pairwise_filename: Filename of the pairwise dataset.
+        :param out_tag: Tag for output.
+        """
+        super().__init__('pairwise_cdist', dataset_dir, pairwise_filename,
+                         out_tag, clear_intermediate=False)
+
+        self.condition_on_ss = condition_on_ss
+        self.consolidate_ss = consolidate_ss
+        self.strict_codons = strict_codons
+
+        col_prefixes = ('ref_', '')
+        self.codon_opts_cols = [f'{p}codon_opts' for p in col_prefixes]
+        self.secondary_cols = [f'{p}secondary' for p in col_prefixes]
+        self.condition_col = 'condition_group'
+
+    def _collection_functions(self) \
+            -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
+        return {
+            'preprocess-dataset': self._preprocess_dataset,
+        }
+
+    def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
+        def any_in(queries: Iterable[str], target: str):
+            # Are any of the query strings contained in the target?
+            return any(filter(lambda q: q in target, queries))
+
+        # Load just a single row to get all column names, then group them by
+        # their types
+        all_cols = list(pd.read_csv(self.input_file, nrows=1).columns)
+        float_list_cols = [c for c in all_cols
+                           if any_in(('phis', 'psis'), c)]
+        int_list_cols = [c for c in all_cols
+                         if any_in(('contexts', 'idxs',), c)]
+        str_list_cols = [c for c in all_cols
+                         if any_in(('res_ids', 'codons'), c)]
+        list_cols = float_list_cols + int_list_cols + str_list_cols
+        float_cols = [c for c in all_cols
+                      if any_in(('phi', 'psi', 'norm'), c)
+                      and c not in float_list_cols]
+        str_cols = [c for c in all_cols
+                    if c not in list_cols and c not in float_cols]
+
+        # Make sure we got all columns
+        if len(all_cols) != len(list_cols) + len(float_cols) + len(str_cols):
+            raise ValueError("Not all columns accounted for")
+
+        # We'll initially load the columns containing list as strings for
+        # faster parsing
+        col_dtypes = {
+            **{c: str for c in list_cols + str_cols},
+            **{c: np.float32 for c in float_cols},
+        }
+
+        # Load the data lazily and in chunks
+        df_pointwise_reader = pd.read_csv(
+            str(self.input_file), dtype=col_dtypes, chunksize=10_000,
+        )
+
+        # Parallelize loading and preprocessing
+        async_results = []
+        for df_sub in df_pointwise_reader:
+            async_results.append(pool.apply_async(
+                self._preprocess_subframe,
+                args=(df_sub, float_list_cols, int_list_cols, str_list_cols)
+            ))
+
+        _, _, sub_dfs = self._handle_async_results(async_results, collect=True)
+
+        # Dump processed dataset
+        df_preproc = pd.concat(sub_dfs, axis=0, ignore_index=True)
+        LOGGER.info(f'Loaded {self.input_file}: {len(df_preproc)} rows')
+        self._dump_intermediate('dataset', df_preproc)
+
+        return {
+            'n_TOTAL': len(df_preproc),
+        }
+
+    def _preprocess_subframe(
+            self, df_sub: pd.DataFrame,
+            float_list_cols, int_list_cols, str_list_cols
+    ):
+        pd.set_option('mode.chained_assignment', 'raise')
+
+        # Based on the configuration, we create a column that represents
+        # the group a sample belongs to when conditioning
+        def assign_condition_group(row: pd.Series):
+            cond_groups = []
+
+            # Don't consider matches with ambiguous codons
+            if self.strict_codons:
+                if not all(pd.isna(row[c]) for c in self.codon_opts_cols):
+                    return None
+
+            # Don't consider matches without same SS for ref and queries
+            secondaries = set(row[c] for c in self.secondary_cols)
+            if len(secondaries) != 1:
+                return None
+
+            # Consolidate SS and add to condition groups
+            if not self.condition_on_ss:
+                cond_groups.append(SS_TYPE_ANY)
+            else:
+                ss = self.consolidate_ss.get(secondaries.pop())
+                # Dont consider matches without SS
+                if ss is None:
+                    return None
+                cond_groups.append(ss)
+
+            return str.join('_', cond_groups)
+
+        # Calculate condition group and only keep rows with a valid group
+        cond_col = df_sub.apply(assign_condition_group, axis=1)
+        df_sub[self.condition_col] = cond_col
+        has_cond = ~df_sub[self.condition_col].isnull()
+        df_sub = df_sub[has_cond].copy()
+
+        # Drop unnecessary columns
+        drop_columns = self.codon_opts_cols + self.secondary_cols
+        df_sub = df_sub.drop(drop_columns, axis=1)
+
+        # Convert list columns to arrays
+        def convert_list_col(list_col_val: str, sep=';', dtype=None):
+            if pd.isna(list_col_val):
+                return np.empty(0, dtype=dtype)
+            return np.array(list_col_val.split(sep), dtype=dtype)
+
+        col_converters = {
+            **{c: ft.partial(convert_list_col, dtype=np.float32)
+               for c in float_list_cols},
+            **{c: ft.partial(convert_list_col, dtype=np.int32)
+               for c in int_list_cols},
+            **{c: convert_list_col for c in str_list_cols}
+        }
+
+        for col, converter in col_converters.items():
+            converted = df_sub[col].map(converter)
+            df_sub.loc[:, col] = converted
+
+        return df_sub
