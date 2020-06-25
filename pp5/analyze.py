@@ -1153,22 +1153,4 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         drop_columns = self.codon_opts_cols + self.secondary_cols
         df_sub = df_sub.drop(drop_columns, axis=1)
 
-        # Convert list columns to arrays
-        def convert_list_col(list_col_val: str, sep=';', dtype=None):
-            if pd.isna(list_col_val):
-                return np.empty(0, dtype=dtype)
-            return np.array(list_col_val.split(sep), dtype=dtype)
-
-        col_converters = {
-            **{c: ft.partial(convert_list_col, dtype=np.float32)
-               for c in float_list_cols},
-            **{c: ft.partial(convert_list_col, dtype=np.int32)
-               for c in int_list_cols},
-            **{c: convert_list_col for c in str_list_cols}
-        }
-
-        for col, converter in col_converters.items():
-            converted = df_sub[col].map(converter)
-            df_sub.loc[:, col] = converted
-
         return df_sub
