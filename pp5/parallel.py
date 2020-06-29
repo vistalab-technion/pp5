@@ -10,7 +10,7 @@ import signal
 from pathlib import Path
 from multiprocessing.pool import AsyncResult
 from typing import ContextManager, List, Generator, Any, Union, Dict, Tuple, \
-    Iterator
+    Iterator, T
 
 import pp5
 
@@ -96,15 +96,16 @@ def pool(name: str, processes=None, context='spawn') \
 
 
 def yield_async_results(
-        async_results: Union[Dict[str, AsyncResult], List[AsyncResult]],
+        async_results: Union[Dict[T, AsyncResult], List[AsyncResult]],
         wait_time_sec=.1, max_retries=None, re_raise=False,
-) -> Generator[Tuple[str, Any], None, None]:
+) -> Generator[Tuple[T, Any], None, None]:
     """
 
     Waits for async results to be ready, and yields them.
     This function waits for each result for a fixed time, and moves to the
     next result if it's not ready. Therefore, the order of yielded results is
     not guaranteed to be the same as the order of the AsyncResult objects.
+
     :param async_results: Either a dict mapping from some name to an
     AsyncResult to wait for, or a list of AsyncResults (in which case a name
     will be generated for each one based on it's index).
@@ -123,7 +124,7 @@ def yield_async_results(
     """
 
     if isinstance(async_results, (list, tuple)):
-        async_results = {f'#{i}': r for i, r in enumerate(async_results)}
+        async_results = {i: r for i, r in enumerate(async_results)}
     elif isinstance(async_results, dict):
         pass
     else:
