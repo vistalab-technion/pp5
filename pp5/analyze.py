@@ -1066,6 +1066,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         return {
             'preprocess-dataset': self._preprocess_dataset,
             'codon-dists': self._codon_dists,
+            'plot-results': self._plot_results,
         }
 
     def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
@@ -1263,6 +1264,27 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self._dump_intermediate('subgroup-indices', subgroup_indices)
 
         return {'group_sizes': group_sizes}
+
+    def _plot_results(self, pool: mp.pool.Pool):
+        LOGGER.info(f'Plotting results...')
+        async_results = []
+
+        # Expected codon dists
+        codon_dists = self._load_intermediate('codon-dists', True)
+        if codon_dists is not None:
+            for group_idx, d2_matrix in codon_dists.items():
+                args = (group_idx, [d2_matrix])
+                async_results.append(pool.apply_async(
+                    PointwiseCodonDistanceAnalyzer._plot_codon_distances,
+                    args=args,
+                    kwds=dict(out_dir=self.out_dir.joinpath('codon-dists'),
+                              angle_pair_labels=[''],
+                              annotate_mu=True, plot_std=True)
+                ))
+            del codon_dists, d2_matrix
+
+        # Wait for plotting to complete. Each function returns a path
+        _ = self._handle_async_results(async_results, collect=True)
 
     @staticmethod
     def _codon_dists_single_subgroup(
