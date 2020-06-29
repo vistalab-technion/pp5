@@ -1055,7 +1055,9 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.query_angle_cols = list(angle_cols)
 
         self.condition_col = 'condition_group'
+        self.type_col = 'type'
 
+        self.allowed_match_types = ['SAME', 'SILENT']
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
 
@@ -1136,6 +1138,10 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # the group a sample belongs to when conditioning
         def assign_condition_group(row: pd.Series):
             cond_groups = []
+
+            # Don't consider matches with an ignored type
+            if row[self.type_col] not in self.allowed_match_types:
+                return None
 
             # Don't consider matches with ambiguous codons
             if self.strict_codons:
@@ -1249,6 +1255,10 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # The codon distance matrix is complex, where real is mu
         # and imag is sigma.
         self._dump_intermediate('codon-dists', codon_dists)
+
+        # subgroup_indices: maps from group to subgroup (codon pair) to a
+        # numpy packed array corresponding to the indices of that subgroup
+        # in the group.
         self._dump_intermediate('subgroup-indices', subgroup_indices)
 
         return {'group_sizes': group_sizes}
