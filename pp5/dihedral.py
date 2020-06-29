@@ -144,7 +144,8 @@ class Dihedral(object):
         return math.degrees(rad)
 
     @staticmethod
-    def flat_torus_distance(a1: Dihedral, a2: Dihedral, degrees=False) \
+    def flat_torus_distance(a1: Dihedral, a2: Dihedral, degrees=False,
+                            squared=False) \
             -> float:
         """
         Computes the distance between two dihedral angles as if they were on a
@@ -154,19 +155,23 @@ class Dihedral(object):
         :param a1: first angle.
         :param a2: second angle.
         :param degrees: Whether to return degrees (True) or radians (False)
+        :param squared: Whether to return squared-distance.
         :return: The angle difference.
         """
         return Dihedral._flat_torus_distance(a1.phi, a2.phi, a1.psi, a2.psi,
-                                             degrees)
+                                             degrees, squared)
 
     @staticmethod
     @numba.jit(nopython=True)
-    def _flat_torus_distance(phi0, phi1, psi0, psi1, degrees=False):
+    def _flat_torus_distance(phi0, phi1, psi0, psi1, degrees=False,
+                             squared=False):
         dphi = math.fabs(phi0 - phi1)
         dphi = min(dphi, 2 * math.pi - dphi)
         dpsi = math.fabs(psi0 - psi1)
         dpsi = min(dpsi, 2 * math.pi - dpsi)
-        dist = math.sqrt(dphi ** 2 + dpsi ** 2)
+        dist = dphi ** 2 + dpsi ** 2
+        if not squared:
+            dist = math.sqrt(dist)
         return math.degrees(dist) if degrees else dist
 
     @staticmethod
