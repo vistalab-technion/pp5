@@ -1237,7 +1237,8 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # We use a complex matrix to store mu and std as real and imag.
         codon_dists = {}
         for group_idx, _ in df_groups:
-            d2_mat = np.full((N_CODONS, N_CODONS), np.nan, np.complex64)
+            d2_mat = np.full((N_CODONS, N_CODONS), np.nan + 1j * np.nan,
+                             np.complex64)
             codon_dists[group_idx] = d2_mat
 
         # Populate distance matrix per group as the results come in
