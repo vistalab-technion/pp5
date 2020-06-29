@@ -676,7 +676,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 async_results.append(pool.apply_async(
                     self._plot_codon_distances, args=args,
                     kwds=dict(out_dir=self.out_dir.joinpath('codon-dists-exp'),
-                              angle_pair_labels=ap_labels,
+                              titles=ap_labels,
+                              vmin=None, vmax=None,  # should consider scale
                               annotate_mu=True, plot_std=True)
                 ))
             del codon_dists_exp, d2_matrices
@@ -717,7 +718,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 async_results.append(pool.apply_async(
                     self._plot_codon_distances, args=args,
                     kwds=dict(out_dir=self.out_dir.joinpath('codon-dists'),
-                              angle_pair_labels=ap_labels,
+                              titles=ap_labels,
+                              vmin=None, vmax=None,  # should consider scale
                               annotate_mu=True, plot_std=False)
                 ))
             del codon_dists, d2_matrices
@@ -797,7 +799,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
     @staticmethod
     def _plot_codon_distances(
             group_idx: str, d2_matrices: List[np.ndarray],
-            angle_pair_labels: List[str], out_dir: Path,
+            titles: List[str], out_dir: Path,
+            vmin: float = None, vmax: float = None,
             annotate_mu=True, plot_std=False,
     ):
         LOGGER.info(f'Plotting codon distances for {group_idx}')
@@ -832,7 +835,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             fig_filename = out_dir.joinpath(f'{group_idx}-{avg_std}.png')
 
             pp5.plot.multi_heatmap(
-                d2, CODONS, CODONS, titles=angle_pair_labels, fig_size=20,
+                d2, CODONS, CODONS, titles=titles, fig_size=20,
+                vmin=vmin, vmax=vmax,
                 fig_rows=1, outfile=fig_filename, data_annotation_fn=ann_fn
             )
 
@@ -1064,7 +1068,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
     def _collection_functions(self) \
             -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
-            'preprocess-dataset': self._preprocess_dataset,
+            # 'preprocess-dataset': self._preprocess_dataset,
             'codon-dists': self._codon_dists,
             'plot-results': self._plot_results,
         }
@@ -1280,7 +1284,8 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     PointwiseCodonDistanceAnalyzer._plot_codon_distances,
                     args=args,
                     kwds=dict(out_dir=self.out_dir.joinpath('codon-dists'),
-                              angle_pair_labels=[''],
+                              titles=[''],
+                              vmin=None, vmax=None.,  # should consider scale
                               annotate_mu=True, plot_std=True)
                 ))
             del codon_dists, d2_matrix
