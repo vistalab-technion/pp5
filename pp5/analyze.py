@@ -1068,7 +1068,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
     def _collection_functions(self) \
             -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
-            # 'preprocess-dataset': self._preprocess_dataset,
+            'preprocess-dataset': self._preprocess_dataset,
             'codon-dists': self._codon_dists,
             'plot-results': self._plot_results,
         }
@@ -1285,7 +1285,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     args=args,
                     kwds=dict(out_dir=self.out_dir.joinpath('codon-dists'),
                               titles=[''],
-                              vmin=None, vmax=None.,  # should consider scale
+                              vmin=None, vmax=None,  # should consider scale
                               annotate_mu=True, plot_std=True)
                 ))
             del codon_dists, d2_matrix
