@@ -1,3 +1,4 @@
+import math
 import os
 import pickle
 import re
@@ -20,7 +21,7 @@ import matplotlib.pyplot
 from Bio.Data.CodonTable import standard_dna_table as dna_table
 
 from pp5.collect import ParallelDataCollector
-from pp5.dihedral import DihedralKDE
+from pp5.dihedral import DihedralKDE, Dihedral
 import pp5.plot
 from pp5.parallel import yield_async_results
 from pp5.plot import PP5_MPL_STYLE
@@ -1018,9 +1019,8 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             self,
             dataset_dir: Union[str, Path],
             pairwise_filename: str = 'data-pairwise.csv',
-            condition_on_ss=True,
-            consolidate_ss=DSSP_TO_SS_TYPE.copy(),
-            strict_codons=True,
+            condition_on_ss=True, consolidate_ss=DSSP_TO_SS_TYPE.copy(),
+            strict_codons=True, bs_niter=1, bs_randstate=None,
             out_tag: str = None,
     ):
         """
@@ -1043,15 +1043,27 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.consolidate_ss = consolidate_ss
         self.strict_codons = strict_codons
 
-        col_prefixes = ('ref_', '')
+        self.ref_prefix = 'ref_'
+        col_prefixes = (self.ref_prefix, '')
+
         self.codon_opts_cols = [f'{p}codon_opts' for p in col_prefixes]
         self.secondary_cols = [f'{p}secondary' for p in col_prefixes]
+        self.codon_cols = [f'{p}codon' for p in col_prefixes]
+
+        angle_cols = ('curr_phis', 'curr_psis')
+        self.ref_angle_cols = [f'{self.ref_prefix}{p}' for p in angle_cols]
+        self.query_angle_cols = list(angle_cols)
+
         self.condition_col = 'condition_group'
+
+        self.bs_niter = bs_niter
+        self.bs_randstate = bs_randstate
 
     def _collection_functions(self) \
             -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
             'preprocess-dataset': self._preprocess_dataset,
+            'codon-dists': self._codon_dists,
         }
 
     def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
@@ -1157,4 +1169,151 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         drop_columns = self.codon_opts_cols + self.secondary_cols
         df_sub = df_sub.drop(drop_columns, axis=1)
 
+        # Convert codon columns to AA-CODON
+        aac = df_sub[self.codon_cols].applymap(codon2aac)
+        df_sub[self.codon_cols] = aac
+
         return df_sub, orig_len
+
+    def _codon_dists(self, pool: mp.pool.Pool) -> dict:
+        # Load processed dataset
+        df_processed: pd.DataFrame = self._load_intermediate('dataset')
+
+        # Group by condition column
+        df_groups = df_processed.groupby(by=self.condition_col)
+
+        # Create unique codon pairs
+        codon_pairs = sorted(set(map(
+            lambda t: tuple(sorted(t)), it.product(CODONS, CODONS)
+        )))
+        col1, col2 = self.codon_cols
+
+        cdist_angle_cols = self.ref_angle_cols + self.query_angle_cols
+
+        group_sizes = {}
+        async_results = {}
+        for group_idx, df_group in df_groups:
+            group_sizes[group_idx] = {}
+
+            for c1, c2 in codon_pairs:
+                subgroup_idx = f'{c1}_{c2}'
+
+                # Find all matches where between c1 and c2, in any order (we
+                # don't care which is the reference and which is the query).
+                idx = (df_group[col1] == c1) & (df_group[col2] == c2)
+                idx |= (df_group[col2] == c1) & (df_group[col1] == c2)
+
+                # Keep only relevant rows and columns
+                df_subgroup = df_group[idx]
+                df_subgroup = df_subgroup[cdist_angle_cols]
+                group_sizes[group_idx][subgroup_idx] = len(df_subgroup)
+
+                if len(df_subgroup) == 0:
+                    LOGGER.info(f'Skipping codon-dists for {group_idx=}, '
+                                f'{subgroup_idx=}, no matches')
+                    continue
+
+                # Parallelize over the sub-groups
+                async_results[(group_idx, subgroup_idx)] = pool.apply_async(
+                    self._codon_dists_single_subgroup,
+                    args=(group_idx, subgroup_idx, df_subgroup,
+                          self.ref_angle_cols, self.query_angle_cols,
+                          self.bs_niter, self.bs_randstate,),
+                )
+
+        # Construct empty distance matrix per group
+        # We use a complex matrix to store mu and std as real and imag.
+        codon_dists = {}
+        for group_idx, _ in df_groups:
+            d2_mat = np.full((N_CODONS, N_CODONS), np.nan, np.complex64)
+            codon_dists[group_idx] = d2_mat
+
+        # Populate distance matrix per group as the results come in
+        codon_to_idx = {c: i for i, c in enumerate(CODONS)}
+        results_iter = yield_async_results(async_results)
+        for (group_idx, subgroup_idx), (mu, sigma) in results_iter:
+            LOGGER.info(f'Codon-dist for {group_idx=}, {subgroup_idx=}: '
+                        f'({mu}±{sigma})')
+            c1, c2 = subgroup_idx.split('_')
+            i, j = codon_to_idx[c1], codon_to_idx[c2]
+            d2_mat = codon_dists[group_idx]
+            d2_mat[i, j] = d2_mat[j, i] = mu + 1j * sigma
+
+        # codon_dists: maps from group to a codon-distance matrix.
+        # The codon distance matrix is complex, where real is mu
+        # and imag is sigma.
+        self._dump_intermediate('codon-dists', codon_dists)
+
+        return {'group_sizes': group_sizes}
+
+    @staticmethod
+    def _codon_dists_single_subgroup(
+            group_idx: str, subgroup_idx: str,
+            df_subgroup: pd.DataFrame,
+            ref_angle_cols: list, query_angle_cols: list,
+            bs_niter, bs_randstate
+    ):
+        tstart = time.time()
+
+        # Reference and query angle columns
+        ref_phi_col, ref_psi_col = ref_angle_cols
+        query_phi_col, query_psi_col = query_angle_cols
+
+        def convert_angles_col(col_val: Union[str, float]):
+            # Col val is a string like '-123.456;-12.34' or nan
+            angles = map(float, str.split(str(col_val), ';'))
+            return map(math.radians, angles)
+
+        def extract_dihedrals(row: pd.Series) \
+                -> Tuple[List[Dihedral], List[Dihedral]]:
+            # row contains phi,psi columns for ref and query. Each column
+            # contains multiple values (but the same number).
+            refs = it.starmap(Dihedral.from_rad, zip(
+                convert_angles_col(row[ref_phi_col]),
+                convert_angles_col(row[ref_psi_col])
+            ))
+            queries = it.starmap(Dihedral.from_rad, zip(
+                convert_angles_col(row[query_phi_col]),
+                convert_angles_col(row[query_psi_col])
+            ))
+
+            return list(refs), list(queries)
+
+        # Transform into a dataframe with two columns,
+        # each column containing a list of reference or query Dihedrals angles.
+        df_angles = df_subgroup.apply(extract_dihedrals, axis=1, raw=False,
+                                   result_type='expand')
+
+        # Now we have for each match, a list of dihedrals of ref and query
+        # groups.
+        ref_groups, query_groups = df_angles[0].values, df_angles[1].values
+        assert len(ref_groups) == len(query_groups) > 0
+        n_matches = len(ref_groups)
+
+        # We want a different random state in each subgroup, but still
+        # should be reproducible
+        if bs_randstate is not None:
+            seed = (hash(group_idx + subgroup_idx) + bs_randstate) % (2 ** 31)
+            np.random.seed(seed)
+
+        # Create a K*B matrix for bootstapped squared-distances
+        dists2 = np.empty(shape=(n_matches, bs_niter), dtype=np.float32)
+        for m_idx in range(n_matches):
+            ref_sample = np.random.choice(ref_groups[m_idx], bs_niter)
+            query_sample = np.random.choice(query_groups[m_idx], bs_niter)
+            zip_rq = zip(ref_sample, query_sample)
+
+            dists2[m_idx, :] = [
+                Dihedral.flat_torus_distance(r, q, degrees=True, squared=True)
+                for r, q in zip_rq
+            ]
+
+        mean = np.nanmean(dists2)
+        std = np.nanstd(dists2)
+        elapsed = time.time() - tstart
+
+        LOGGER.info(f'Calculated codon-dists for {group_idx=}, '
+                    f'{subgroup_idx=}, n_matches={len(df_subgroup)}, '
+                    f'{elapsed=:.2f}s')
+
+        return mean, std
