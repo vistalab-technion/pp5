@@ -247,6 +247,14 @@ class TestInit:
         assert d.omega == approx(radians(78))
         assert d.omega_std is None
 
+    def test_from_deg_with_default(self):
+        d = dihedral.Dihedral.from_deg(-12, 34)
+        assert d.phi_deg == approx(-12)
+        assert d.phi_std_deg is None
+        assert d.psi_deg == approx(34)
+        assert d.omega == approx(radians(180))
+        assert d.omega_std is None
+
     def test_from_rad(self):
         d = dihedral.Dihedral.from_rad(.12, (-.34, -.056), .78)
 
@@ -263,6 +271,16 @@ class TestInit:
         assert d.psi_std_deg == approx(degrees(-.056))
         assert d.omega_deg == approx(degrees(.78))
         assert d.omega_std_deg is None
+
+    def test_from_rad_with_default(self):
+        d = dihedral.Dihedral.from_rad(-.12, .34)
+
+        assert d.phi == approx(-.12)
+        assert d.phi_std is None
+        assert d.psi == approx(.34)
+        assert d.psi_std is None
+        assert d.omega == approx(np.pi)
+        assert d.omega_std is None
 
     def test_without_std(self):
         d1 = dihedral.Dihedral.from_deg(1, 1, 1)

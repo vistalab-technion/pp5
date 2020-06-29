@@ -126,11 +126,11 @@ class Dihedral(object):
         self.__init__(**init_args)
 
     @classmethod
-    def from_deg(cls, phi, psi, omega):
+    def from_deg(cls, phi, psi, omega=180.):
         return cls(np.deg2rad(phi), np.deg2rad(psi), np.deg2rad(omega))
 
     @classmethod
-    def from_rad(cls, phi, psi, omega):
+    def from_rad(cls, phi, psi, omega=np.pi):
         return cls(phi, psi, omega)
 
     @classmethod
