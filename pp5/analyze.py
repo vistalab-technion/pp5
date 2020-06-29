@@ -1191,9 +1191,12 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         cdist_angle_cols = self.ref_angle_cols + self.query_angle_cols
 
         group_sizes = {}
+        subgroup_indices = {}  # group_idx -> subgroup_idx -> indices
+
         async_results = {}
         for group_idx, df_group in df_groups:
             group_sizes[group_idx] = {}
+            subgroup_indices[group_idx] = {}
 
             for c1, c2 in codon_pairs:
                 subgroup_idx = f'{c1}_{c2}'
@@ -1206,7 +1209,10 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # Keep only relevant rows and columns
                 df_subgroup = df_group[idx]
                 df_subgroup = df_subgroup[cdist_angle_cols]
-                group_sizes[group_idx][subgroup_idx] = len(df_subgroup)
+
+                idx = idx.values
+                group_sizes[group_idx][subgroup_idx] = np.sum(idx)
+                subgroup_indices[group_idx][subgroup_idx] = np.packbits(idx)
 
                 if len(df_subgroup) == 0:
                     LOGGER.info(f'Skipping codon-dists for {group_idx=}, '
@@ -1233,7 +1239,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         results_iter = yield_async_results(async_results)
         for (group_idx, subgroup_idx), (mu, sigma) in results_iter:
             LOGGER.info(f'Codon-dist for {group_idx=}, {subgroup_idx=}: '
-                        f'({mu}±{sigma})')
+                        f'({mu:.2f}±{sigma:.2f})')
             c1, c2 = subgroup_idx.split('_')
             i, j = codon_to_idx[c1], codon_to_idx[c2]
             d2_mat = codon_dists[group_idx]
@@ -1243,6 +1249,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # The codon distance matrix is complex, where real is mu
         # and imag is sigma.
         self._dump_intermediate('codon-dists', codon_dists)
+        self._dump_intermediate('subgroup-indices', subgroup_indices)
 
         return {'group_sizes': group_sizes}
 
@@ -1282,7 +1289,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Transform into a dataframe with two columns,
         # each column containing a list of reference or query Dihedrals angles.
         df_angles = df_subgroup.apply(extract_dihedrals, axis=1, raw=False,
-                                   result_type='expand')
+                                      result_type='expand')
 
         # Now we have for each match, a list of dihedrals of ref and query
         # groups.
