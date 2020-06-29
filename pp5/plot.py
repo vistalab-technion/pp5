@@ -119,6 +119,7 @@ def multi_heatmap(
         row_labels: List[str] = None, col_labels: List[str] = None,
         titles: List[str] = None,
         fig_size=None, fig_rows=1,
+        vmin: float = None, vmax: float = None,
         data_annotation_fn: Callable[[int, int, int], str] = None,
         style=PP5_MPL_STYLE, outfile: Union[Path, str] = None,
 ) -> Optional[Tuple[Figure, Iterable[Axes]]]:
@@ -134,6 +135,8 @@ def multi_heatmap(
     size and scaled by the number of rows and columns in the figure.
     Otherwise it should be a tuple of (width, height).
     :param fig_rows: How many rows of heatmaps to create in the figure.
+    :param vmin: Minimum value for scaling.
+    :param vmax: Maximum value for scaling.
     :param data_annotation_fn: An optional callable accepting three indices
     (i,j, k) into the given datas. It should return a string which will be
     used as an annotation (drawn inside the corresponding location in the
@@ -154,8 +157,8 @@ def multi_heatmap(
         assert len(datas) == len(titles), "Inconsistent number of titles"
     assert fig_rows >= 1, "Invalid number of rows"
 
-    vmin = min(np.nanmin(d) for d in datas)
-    vmax = max(np.nanmax(d) for d in datas)
+    vmin = vmin or min(np.nanmin(d) for d in datas)
+    vmax = vmax or max(np.nanmax(d) for d in datas)
     norm = mpl.colors.Normalize(vmin, vmax)
 
     n = len(datas)
