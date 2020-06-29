@@ -1193,38 +1193,43 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         codon_pairs = sorted(set(map(
             lambda t: tuple(sorted(t)), it.product(CODONS, CODONS)
         )))
-        col1, col2 = self.codon_cols
 
         cdist_angle_cols = self.ref_angle_cols + self.query_angle_cols
 
         group_sizes = {}
-        subgroup_indices = {}  # group_idx -> subgroup_idx -> indices
 
         async_results = {}
         for group_idx, df_group in df_groups:
-            group_sizes[group_idx] = {}
-            subgroup_indices[group_idx] = {}
+            df_group: pd.DataFrame
 
+            df_subgroups = df_group.groupby(self.codon_cols)
+            subgroup_indices = set(df_subgroups.groups.keys())
+
+            group_sizes[group_idx] = {}
+
+            # Loop over unique pairs of codons
             for c1, c2 in codon_pairs:
                 subgroup_idx = f'{c1}_{c2}'
 
-                # Find all matches where between c1 and c2, in any order (we
-                # don't care which is the reference and which is the query).
-                idx = (df_group[col1] == c1) & (df_group[col2] == c2)
-                idx |= (df_group[col2] == c1) & (df_group[col1] == c2)
+                # Find subgroups with codon pair in any order
+                dfs = []
+                if (c1, c2) in subgroup_indices:
+                    dfs.append(df_subgroups.get_group((c1, c2)))
+                if c1 != c2 and (c2, c1) in subgroup_indices:
+                    dfs.append(df_subgroups.get_group((c2, c1)))
+
+                if len(dfs) == 0:
+                    LOGGER.debug(f'Skipping codon-dists for {group_idx=}, '
+                                 f'{subgroup_idx=}, no matches')
+                    continue
+
+                # Combine matches from this codon pair, in any order
+                df_subgroup = pd.concat(dfs, axis=0)
 
                 # Keep only relevant rows and columns
-                df_subgroup = df_group[idx]
                 df_subgroup = df_subgroup[cdist_angle_cols]
 
-                idx = idx.values
-                group_sizes[group_idx][subgroup_idx] = np.sum(idx)
-                subgroup_indices[group_idx][subgroup_idx] = np.packbits(idx)
-
-                if len(df_subgroup) == 0:
-                    LOGGER.info(f'Skipping codon-dists for {group_idx=}, '
-                                f'{subgroup_idx=}, no matches')
-                    continue
+                group_sizes[group_idx][subgroup_idx] = len(df_subgroup)
 
                 # Parallelize over the sub-groups
                 async_results[(group_idx, subgroup_idx)] = pool.apply_async(
@@ -1233,6 +1238,8 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                           self.ref_angle_cols, self.query_angle_cols,
                           self.bs_niter, self.bs_randstate,),
                 )
+
+            group_sizes[group_idx] = sort_dict(group_sizes[group_idx])
 
         # Construct empty distance matrix per group
         # We use a complex matrix to store mu and std as real and imag.
@@ -1257,11 +1264,6 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # The codon distance matrix is complex, where real is mu
         # and imag is sigma.
         self._dump_intermediate('codon-dists', codon_dists)
-
-        # subgroup_indices: maps from group to subgroup (codon pair) to a
-        # numpy packed array corresponding to the indices of that subgroup
-        # in the group.
-        self._dump_intermediate('subgroup-indices', subgroup_indices)
 
         return {'group_sizes': group_sizes}
 
@@ -1336,7 +1338,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             seed = (hash(group_idx + subgroup_idx) + bs_randstate) % (2 ** 31)
             np.random.seed(seed)
 
-        # Create a K*B matrix for bootstapped squared-distances
+        # Create a K*B matrix for bootstrapped squared-distances
         dists2 = np.empty(shape=(n_matches, bs_niter), dtype=np.float32)
         for m_idx in range(n_matches):
             ref_sample = np.random.choice(ref_groups[m_idx], bs_niter)
