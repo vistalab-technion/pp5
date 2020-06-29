@@ -1351,7 +1351,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             zip_rq = zip(ref_sample, query_sample)
 
             dists2[m_idx, :] = [
-                Dihedral.flat_torus_distance(r, q, degrees=True, squared=True)
+                Dihedral.flat_torus_distance(r, q, degrees=True)
                 for r, q in zip_rq
             ]
 
