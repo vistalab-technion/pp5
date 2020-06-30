@@ -18,7 +18,6 @@ import pandas as pd
 import matplotlib as mpl
 import matplotlib.style
 import matplotlib.pyplot
-from Bio.Data.CodonTable import standard_dna_table as dna_table
 
 from pp5.collect import ParallelDataCollector
 from pp5.dihedral import DihedralKDE, Dihedral
@@ -26,9 +25,11 @@ import pp5.plot
 from pp5.parallel import yield_async_results
 from pp5.plot import PP5_MPL_STYLE
 from pp5.utils import sort_dict
+from pp5.codons import AA_CODONS as CODONS, N_CODONS, codon2aac
 
 LOGGER = logging.getLogger(__name__)
 
+CODON_TYPE_ANY = 'ANY'
 SS_TYPE_ANY = 'ANY'
 SS_TYPE_HELIX = 'HELIX'
 SS_TYPE_SHEET = 'SHEET'
@@ -54,23 +55,6 @@ DSSP_TO_SS_TYPE = {
     '-': None,
     '': None,
 }
-
-
-def codon2aac(codon: str):
-    """
-    Converts codon to AA-CODON, which we will use as codon identifiers.
-    :param codon: a codon string.
-    :return: a string formatted AA-CODON where AA is the
-    corresponding amino acid.
-    """
-    aa = dna_table.forward_table[codon]
-    return f'{aa}-{codon}'.upper()
-
-
-CODONS = sorted(codon2aac(c) for c in dna_table.forward_table)
-ACIDS = sorted(set([aac[0] for aac in CODONS]))
-N_CODONS = len(CODONS)
-CODON_TYPE_ANY = 'ANY'
 
 
 class ParallelAnalyzer(ParallelDataCollector, ABC):

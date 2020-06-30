@@ -14,7 +14,6 @@ import itertools as it
 
 import pandas as pd
 from Bio.Align import PairwiseAligner
-from Bio.Data import CodonTable
 from Bio.PDB import PPBuilder
 from Bio.PDB.Polypeptide import Polypeptide
 from Bio.Seq import Seq
@@ -22,6 +21,7 @@ from Bio.SeqRecord import SeqRecord
 from pytest import approx
 
 import pp5
+from pp5.codons import CODON_TABLE, STOP_CODONS
 from pp5.dihedral import Dihedral, DihedralAnglesEstimator, \
     DihedralAnglesUncertaintyEstimator, DihedralAnglesMonteCarloEstimator, \
     AtomLocationUncertainty
@@ -38,9 +38,6 @@ with warnings.catch_warnings():
 
 BLOSUM62 = substitution_matrices.load("BLOSUM62")
 BLOSUM80 = substitution_matrices.load("BLOSUM80")
-CODON_TABLE = CodonTable.standard_dna_table.forward_table
-START_CODONS = CodonTable.standard_dna_table.start_codons
-STOP_CODONS = CodonTable.standard_dna_table.stop_codons
 UNKNOWN_AA = 'X'
 UNKNOWN_CODON = '---'
 
