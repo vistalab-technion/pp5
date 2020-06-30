@@ -1,5 +1,6 @@
 import itertools as it
 import os
+import re
 from typing import Union, List, Tuple, Callable, Optional, Iterable, Dict
 from pathlib import Path
 import logging
@@ -9,12 +10,14 @@ from numpy import ndarray
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
+import matplotlib.patches as patches
+import matplotlib.collections as collections
 import matplotlib.style
 import matplotlib.colors
 from matplotlib.pyplot import Axes, Figure
 
 import pp5
+from pp5.codons import ACIDS, CODON_RE, ACIDS_1TO3, CODON_TABLE
 
 LOGGER = logging.getLogger(__name__)
 
@@ -95,7 +98,7 @@ def ramachandran(
         for i in range(len(pdist)):
             color = legend_colors[i % len(legend_colors)]
             label = legend_label[i]
-            legend_handles.append(mpl.patches.Patch(color=color, label=label))
+            legend_handles.append(patches.Patch(color=color, label=label))
 
         ax.set_xlabel(r'$\varphi$')
         ax.set_ylabel(r'$\psi$')
@@ -308,6 +311,93 @@ def multi_bar(
         ax.set_ylabel(ylabel)
         ax.grid(axis='y')
         ax.legend(bars, data.keys())
+
+    if outfile is not None:
+        savefig(fig, outfile, style=style)
+        return None
+
+    return fig, ax
+
+
+def rainbow(
+        data: List[Tuple[float, float, float, float]],
+        group_labels: List[str], point_labels: List[str] = None,
+        all_groups: List[str] = None,
+        xlabel: str = None, ylabel: str = None, title=None,
+        cmap: Union[str, mpl.colors.Colormap] = 'gist_rainbow',
+        alpha: float = 0.7, rscale: float = 0.1,
+        ax: Axes = None, fig_size: Tuple[int, int] = None,
+        style=PP5_MPL_STYLE, outfile: Union[Path, str] = None,
+) -> Optional[Tuple[Figure, Axes]]:
+
+    assert len(data) == len(group_labels) > 0
+    if all_groups is None:
+        all_groups = sorted(set(group_labels))
+    else:
+        assert len(all_groups) >= len(set(group_labels))
+    if point_labels is not None:
+        assert len(point_labels) == len(data)
+
+    # Add r2 equal to r1 if missing
+    data = np.array(data, dtype=np.float32)  # (N, 3 or 4)
+    assert data.shape[1] == 3 or data.shape[1] == 4
+    if data.shape[1] == 3:
+        data = np.concatenate([data, data[:, [-1]]], axis=1)
+
+    # Scale x,y to [0,1]
+    xyvals = data[:, :2]
+    xyvals /= np.max(xyvals, axis=0)
+
+    # Get and scale radii to a fixed maximal radius
+    rrvals = data[:, 2:]
+    rrvals /= np.max(rrvals, axis=0)
+    rrvals *= rscale
+
+    # Set limits
+    xmin, xmax = np.min(xyvals[:, 0]), np.max(xyvals[:, 0])
+    ymin, ymax = np.min(xyvals[:, 1]), np.max(xyvals[:, 1])
+    xlim = 10 * np.array([-rscale, rscale]) + [xmin, xmax]
+    ylim = 2 * np.array([-rscale, rscale]) + [ymin, ymax]
+
+    # Create a dict containing a unique color per group
+    cmap = plt.get_cmap(cmap)
+    colors = cmap(np.linspace(0, 1, len(all_groups), endpoint=True))
+    colors[:, -1] = alpha  # Colors has RGBA in each row
+    group_colors = {g: colors[i] for i, g in enumerate(all_groups)}
+
+    with mpl.style.context(style, after_reset=False):
+        if ax is None:
+            fig, ax = plt.subplots(1, 1, figsize=fig_size)
+        else:
+            fig, ax = ax.figure, ax
+        fig: Figure
+        ax: Axes
+
+        patch_list = []
+        for i, group in enumerate(group_labels):
+            xy = xyvals[i]
+            w, h = 2 * rrvals[i]
+            ell = patches.Ellipse(xy, w, h)
+            ell.set_color(group_colors[group])
+            patch_list.append(ell)
+            if point_labels is not None:
+                ax.text(xy[0], xy[1], point_labels[i], fontsize='2')
+
+        pc = mpl.collections.PatchCollection(patch_list, match_original=True)
+        ax.add_collection(pc)
+
+        # Create legend with group names and colors
+        legend_handles = []
+        for i, group in enumerate(all_groups):
+            color = group_colors[group]
+            label = f'{group} ({ACIDS_1TO3[group]})'
+            legend_handles.append(patches.Patch(color=color, label=label))
+
+        ax.set_aspect('equal')
+        ax.set_xlim(xlim), ax.set_ylim(ylim)
+        ax.set_xlabel(xlabel), ax.set_ylabel(ylabel), ax.set_title(title)
+        ax.legend(handles=legend_handles, loc='right', fontsize='x-small')
+        fig.tight_layout()
 
     if outfile is not None:
         savefig(fig, outfile, style=style)
