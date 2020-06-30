@@ -24,6 +24,6 @@ N_CODONS = len(CODONS)
 AA_CODONS = sorted(codon2aac(c) for c in CODONS)
 ACIDS = sorted(set([aac[0] for aac in AA_CODONS]))
 
-CODON_RE = re.compile(rf'(?:(?P<aa>[{str.join("", ACIDS)}])-)?'
-                      rf'(?P<codon>{str.join("|", CODONS)})',
+CODON_RE = re.compile(rf'^(?:(?P<aa>[{str.join("", ACIDS)}])-)?'
+                      rf'(?P<codon>{str.join("|", CODONS)})$',
                       re.VERBOSE | re.IGNORECASE)
