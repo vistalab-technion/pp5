@@ -4,7 +4,6 @@ import pickle
 import re
 import itertools as it
 import logging
-import functools as ft
 import multiprocessing as mp
 import shutil
 import time
@@ -67,14 +66,18 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
             analysis_name,
             dataset_dir: Union[str, Path],
             input_file: Union[str, Path],
+            out_dir: Union[str, Path] = None,
             out_tag: str = None,
             clear_intermediate=False,
     ):
         """
 
-        :param analysis_name:
+        :param analysis_name: Name of the analysis this instance is used for.
         :param dataset_dir: Path to directory with the dataset files.
         :param input_file: Name of input file.
+        :param out_dir: Path to output directory. If None, will be set to
+        <dataset_dir>/results. Another directory based on the analysis name and
+        out tag will be created within.
         :param out_tag: Tag for output files.
         :param clear_intermediate: Whether to clear intermediate folder.
         """
@@ -90,11 +93,12 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
             raise ValueError(f'Dataset file {self.input_file} not found')
 
         tag = f'-{self.out_tag}' if self.out_tag else ''
-        out_dir = self.dataset_dir.joinpath('results')
+        out_dir = out_dir or self.dataset_dir.joinpath('results')
         super().__init__(id=f'{self.analysis_name}{tag}', out_dir=out_dir,
                          tag=out_tag, create_zip=False, )
 
         # Create clean directory for intermediate results between steps
+        # Note that super() init set out_dir to include the id (analysis name).
         self.intermediate_dir = self.out_dir.joinpath('_intermediate_')
         if clear_intermediate and self.intermediate_dir.exists():
             shutil.rmtree(str(self.intermediate_dir))
@@ -140,14 +144,82 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
         return obj
 
 
+class CodonDistanceAnalyzer(ParallelAnalyzer):
+
+    def __init__(self,
+                 dataset_dir: Union[str, Path],
+                 out_dir: Union[str, Path] = None,
+                 pointwise_filename: str = 'data-pointwise.csv',
+                 pairwise_filename: str = 'data-pairwise.csv',
+                 condition_on_ss=True, consolidate_ss=DSSP_TO_SS_TYPE.copy(),
+                 bs_niter=1, bs_randstate=None,
+                 out_tag: str = None,
+                 pointwise_extra_kw: dict = None,
+                 pairwise_extra_kw: dict = None,
+                 ):
+        """
+        Performs both pointwise and pairwise codon-distance analysis and produces a
+        comparison between these two type of analysis.
+        :param dataset_dir: Path to directory with the collector output.
+        :param out_dir: Path to output directory. Defaults to <dataset_dir>/results.
+        :param pointwise_filename: Filename of the pointwise dataset.
+        :param pairwise_filename: Filename of the pairwise dataset.
+        :param condition_on_ss: Whether to group pairwise matches by sencondary
+        structure and analyse each SS group separately.
+        :param consolidate_ss: Dict mapping from DSSP secondary structure to
+        the consolidated SS types used in this analysis.
+        :param bs_niter: Number of bootstrap iterations.
+        :param bs_randstate: Random state for bootstrap.
+        :param out_tag: Tag for output.
+        :param pointwise_extra_kw: Extra args for PointwiseCodonDistanceAnalyzer.
+        Will override the ones define in this function.
+        :param pairwise_extra_kw: Extra args for PairwiseCodonDistanceAnalyzer.
+        Will override the ones define in this function.
+        """
+        super().__init__('codon_dist', dataset_dir, 'meta.json', out_dir,
+                         out_tag, clear_intermediate=False)
+
+        common_kw = dict(
+            dataset_dir=dataset_dir, out_dir=self.out_dir,
+            condition_on_ss=condition_on_ss, consolidate_ss=consolidate_ss,
+            bs_niter=bs_niter, bs_randstate=bs_randstate,
+        )
+        pointwise_extra_kw = pointwise_extra_kw or {}
+        pairwise_extra_kw = pairwise_extra_kw or {}
+
+        pointwise_kw = common_kw.copy()
+        pointwise_kw.update(pointwise_filename=pointwise_filename, **pointwise_extra_kw)
+        self.pointwise_analyzer = PointwiseCodonDistanceAnalyzer(**pointwise_kw)
+
+        pairwise_kw = common_kw.copy()
+        pairwise_kw.update(pairwise_filename=pairwise_filename, **pairwise_extra_kw)
+        self.pairwise_analyzer = PairwiseCodonDistanceAnalyzer(**pairwise_kw)
+
+    def _collection_functions(self) \
+            -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
+        return {
+            '_run_pointwise': self._run_pointwise,
+            '_run_pairwise': self._run_pairwise
+        }
+
+    def _run_pointwise(self, pool: mp.pool.Pool) -> dict:
+        self.pointwise_analyzer.collect()
+        return {'pointwise': self.pairwise_analyzer._collection_meta}
+
+    def _run_pairwise(self, pool: mp.pool.Pool) -> dict:
+        self.pairwise_analyzer.collect()
+        return {'pairwise': self.pairwise_analyzer._collection_meta}
+
+
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
     def __init__(
             self,
             dataset_dir: Union[str, Path],
+            out_dir: Union[str, Path] = None,
             pointwise_filename: str = 'data-pointwise.csv',
-            condition_on_prev='codon', condition_on_ss=True,
-            consolidate_ss=DSSP_TO_SS_TYPE.copy(), strict_ss=True,
-            strict_codons=True,
+            condition_on_prev='codon',
+            condition_on_ss=True, consolidate_ss=DSSP_TO_SS_TYPE.copy(),
+            strict_ss=True, strict_codons=True,
             kde_nbins=128, kde_k1=30., kde_k2=30., kde_k3=0.,
             bs_niter=1, bs_randstate=None, bs_limit_n=False,
             n_parallel_kdes: int = 8,
@@ -162,6 +234,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         :param dataset_dir: Path to directory with the pointwise collector
         output.
+        :param out_dir: Path to output directory. Defaults to <dataset_dir>/results.
         :param pointwise_filename: Filename of the pointwise dataset.
         :param consolidate_ss: Dict mapping from DSSP secondary structure to
         the consolidated SS types used in this analysis.
@@ -169,7 +242,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         each sample. Options are 'codon', 'aa', or None/''.
         :param condition_on_ss: Whether to condition on secondary structure
         (of two consecutive residues, after consolidation).
-        :param strict_ss: Enforce no ambiguous codons in any residue.
+        :param strict_ss: Enforce no ambiguous secondary structure in any residue.
         :param strict_codons: Enforce only one known codon per residue
         (reject residues where DNA matching was ambiguous).
         :param kde_nbins: Number of angle binds for KDE estimation.
@@ -188,7 +261,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         excessive memory usage.
         :param out_tag: Tag for output.
         """
-        super().__init__('pointwise_cdist', dataset_dir, pointwise_filename,
+        super().__init__('pointwise_cdist', dataset_dir, pointwise_filename, out_dir,
                          out_tag, clear_intermediate=False)
 
         condition_on_prev = '' if condition_on_prev is None \
@@ -1006,9 +1079,11 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
     def __init__(
             self,
             dataset_dir: Union[str, Path],
+            out_dir: Union[str, Path] = None,
             pairwise_filename: str = 'data-pairwise.csv',
             condition_on_ss=True, consolidate_ss=DSSP_TO_SS_TYPE.copy(),
-            strict_codons=True, bs_niter=1, bs_randstate=None,
+            strict_codons=True,
+            bs_niter=1, bs_randstate=None,
             out_tag: str = None,
     ):
         """
@@ -1021,10 +1096,19 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         :param dataset_dir: Path to directory with the pairwise collector
         output.
+        :param out_dir: Path to output directory. Defaults to <dataset_dir>/results.
         :param pairwise_filename: Filename of the pairwise dataset.
+        :param condition_on_ss: Whether to group pairwise matches by sencondary
+        structure and analyse each SS group separately.
+        :param consolidate_ss: Dict mapping from DSSP secondary structure to
+        the consolidated SS types used in this analysis.
+        :param strict_codons:  If True, matches where one of the groups has more than
+        one codon option will be discarded.
+        :param bs_niter: Number of bootstrap iterations.
+        :param bs_randstate: Random state for bootstrap.
         :param out_tag: Tag for output.
         """
-        super().__init__('pairwise_cdist', dataset_dir, pairwise_filename,
+        super().__init__('pairwise_cdist', dataset_dir, pairwise_filename, out_dir,
                          out_tag, clear_intermediate=False)
 
         self.condition_on_ss = condition_on_ss
