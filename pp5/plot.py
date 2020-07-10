@@ -325,16 +325,52 @@ def rainbow(
         all_groups: List[str] = None,
         xlabel: str = None, ylabel: str = None, title=None,
         cmap: Union[str, mpl.colors.Colormap] = 'gist_rainbow',
-        alpha: float = 0.7, rscale: float = 0.1,
+        alpha: float = 0.5, rscale: float = 0.1, with_regression=False,
         ax: Axes = None, fig_size: Tuple[int, int] = None,
         style=PP5_MPL_STYLE, outfile: Union[Path, str] = None,
 ) -> Optional[Tuple[Figure, Axes]]:
-
+    """
+    A rainbow plot represents teh relation between two variables where is also
+    a group assigned to each data point. The plot shows each point as an
+    ellipse centered at the location of the point (the width of which could
+    represent e.g. confidence intervals) and the color of the ellipse
+    denotes the group the point belongs to.
+    :param data: List of tuples (x,y,r1,r2) where (x,y) is an ellipse center
+    and (r1,r2) its radii. The r2 is optional, and if omitted will be set
+    equal to r1. Note that all tuples must either include r2 or not.
+    :param group_labels: The name of the group each point belongs to.
+    Should be same length as data.
+    :param point_labels: A string to print inside the ellipse of each point
+    to display additional data about it. Should be same length as data.
+    :param all_groups: Names of all possible groups. If None, then the set
+    of group names in the group_labels will be used.
+    :param xlabel: x-axis label.
+    :param ylabel: y-axis label.
+    :param title: Axis title.
+    :param cmap: Colormap to use. Will be discretized evenly so that a
+    different color is assigned to each group. By default assigns the
+    colors of the rainbow!
+    :param alpha: Transparency level of the ellipses. Should be in [0, 1].
+    :param rscale: Scale factor to apply to the ellipse radii to reduce
+    overlap.
+    :param with_regression: If true, a simple linear regression line will be
+    calculated and plotted on the data, with a correlation coefficient shown.
+    :param ax: Axis to plot on.
+    :param fig_size: Size of figure to create if no axis given.
+    :param style: Style name or style file path.
+    :param outfile: Optional path to write output figure to.
+    :return: If figure was written to file, return nothing. Otherwise
+    returns Tuple of figure, axes objects.
+    """
     assert len(data) == len(group_labels) > 0
+
     if all_groups is None:
-        all_groups = sorted(set(group_labels))
+        all_groups = {g: g for g in sorted(set(group_labels))}
     else:
         assert len(all_groups) >= len(set(group_labels))
+        if not isinstance(all_groups, dict):
+            all_groups = {g: g for g in all_groups}
+
     if point_labels is not None:
         assert len(point_labels) == len(data)
 
@@ -352,12 +388,6 @@ def rainbow(
     rrvals = data[:, 2:]
     rrvals /= np.max(rrvals, axis=0)
     rrvals *= rscale
-
-    # Set limits
-    xmin, xmax = np.min(xyvals[:, 0]), np.max(xyvals[:, 0])
-    ymin, ymax = np.min(xyvals[:, 1]), np.max(xyvals[:, 1])
-    xlim = 10 * np.array([-rscale, rscale]) + [xmin, xmax]
-    ylim = 2 * np.array([-rscale, rscale]) + [ymin, ymax]
 
     # Create a dict containing a unique color per group
     cmap = plt.get_cmap(cmap)
@@ -386,17 +416,41 @@ def rainbow(
         pc = mpl.collections.PatchCollection(patch_list, match_original=True)
         ax.add_collection(pc)
 
-        # Create legend with group names and colors
+        # Create custom legend handles with group names and colors
         legend_handles = []
         for i, group in enumerate(all_groups):
             color = group_colors[group]
-            label = f'{group} ({ACIDS_1TO3[group]})'
+            label = all_groups[group]
             legend_handles.append(patches.Patch(color=color, label=label))
 
-        ax.set_aspect('equal')
+        # Create regression line if needed
+        if with_regression:
+            # Add bias-trick column to x vals
+            X = np.hstack([xyvals[:, [0]], np.ones((len(xyvals), 1))])  # N, 2
+            y = xyvals[:, [1]]  # (N, 1)
+            w, *_ = np.linalg.lstsq(X, y, rcond=None)  # w is (2,)
+            regression_y = np.dot(X, w)
+            ss_tot = np.sum((y - np.mean(y)) ** 2)
+            ss_res = np.sum((y - regression_y) ** 2)
+            rsq = 1 - ss_res / ss_tot
+            r = np.corrcoef(X[:, 0], y[:, 0])[0, 1]
+            h = ax.plot(X[:, 0], regression_y, 'k:', linewidth=1.,
+                        label=rf'$R^2={rsq:.2f}$')
+            legend_handles.append(h[0])
+
+        # Set axes properties
+        xmin, xmax = np.min(xyvals[:, 0]), np.max(xyvals[:, 0])
+        ymin, ymax = np.min(xyvals[:, 1]), np.max(xyvals[:, 1])
+        xlim = 1 * np.array([-.1, .1]) + [xmin, xmax]
+        ylim = 1 * np.array([-.1, .1]) + [ymin, ymax]
         ax.set_xlim(xlim), ax.set_ylim(ylim)
+        xyticks = np.linspace(0, 1, num=11, endpoint=True)
+        ax.set_xticks(xyticks), ax.set_yticks(xyticks)
+        ax.grid()
         ax.set_xlabel(xlabel), ax.set_ylabel(ylabel), ax.set_title(title)
-        ax.legend(handles=legend_handles, loc='right', fontsize='x-small')
+        ax.legend(handles=legend_handles, loc='center left',
+                  fontsize='x-small')
+        ax.set_aspect('equal')
         fig.tight_layout()
 
     if outfile is not None:
