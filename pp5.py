@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Callable, List, Dict, Any
 
 import pp5
-from pp5.analyze import PointwiseCodonDistanceAnalyzer
+from pp5.analyze import PointwiseCodonDistanceAnalyzer, \
+    PairwiseCodonDistanceAnalyzer, CodonDistanceAnalyzer
 from pp5.protein import ProteinRecord, ProteinGroup
 from pp5.collect import ProteinRecordCollector, ProteinGroupCollector
 
@@ -20,6 +21,13 @@ def _merge_dicts(*dicts: dict) -> dict:
     for d in dicts:
         result.update(d)
     return result
+
+
+def _subtract_dicts(d1: dict, d2: dict) -> dict:
+    """
+    :return: d1 - d2 in terms of keys
+    """
+    return {k: d1[k] for k in d1 if k not in d2}
 
 
 def _is_dir(dirname):
@@ -133,7 +141,9 @@ def _parse_cli():
     # Subcommands
     sp = p.add_subparsers(help='Available actions', dest='action')
 
+    ##########
     # prec
+    ##########
     desc, args = _generate_cli_from_func(
         ProteinRecord.from_pdb, skip=['unp_id', 'pdb_dict']
     )
@@ -157,7 +167,9 @@ def _parse_cli():
         names = arg_dict.pop('names')
         sp_prec.add_argument(*names, **arg_dict)
 
+    ##########
     # pgroup
+    ##########
     desc, args = _generate_cli_from_func(ProteinGroup.from_pdb_ref)
     _, init_args = _generate_cli_from_func(
         ProteinGroup.__init__, skip=['ref_pdb_id', 'query_pdb_ids']
@@ -179,7 +191,9 @@ def _parse_cli():
         names = arg_dict.pop('names')
         sp_pgroup.add_argument(*names, **arg_dict)
 
+    ##########
     # Data collectors
+    ##########
     prec_collector_desc, prec_collector_args = _generate_cli_from_func(
         ProteinRecordCollector.__init__, skip=['prec_init_args'])
     pgroup_collector_desc, pgroup_collector_args = _generate_cli_from_func(
@@ -214,21 +228,44 @@ def _parse_cli():
         names = arg_dict.pop('names')
         sp_collect_pgroup.add_argument(*names, **arg_dict)
 
+    ##########
     # Analysis
-    pointwise_cdist_desc, pointwise_cdist_args = _generate_cli_from_func(
-        PointwiseCodonDistanceAnalyzer.__init__,
-        skip=['consoildate_ss', 'angle_pairs'])
+    ##########
+    cdist_desc, cdist_args = _generate_cli_from_func(
+        CodonDistanceAnalyzer.__init__,
+        skip=['pointwise_extra_kw', 'pairwise_extra_kw']
+    )
 
-    def _handle_pointwise_cdist(args=pointwise_cdist_args, **parsed_args):
-        pcd = PointwiseCodonDistanceAnalyzer(
-            **{k: parsed_args[k] for k in args})
-        pcd.collect()
+    # Get pointwise args and subtract all common args
+    pointwise_desc, pointwise_args = _generate_cli_from_func(
+        PointwiseCodonDistanceAnalyzer.__init__
+    )
+    pointwise_args = _subtract_dicts(pointwise_args, cdist_args)
 
+    # Get pairwise args and subtract all common args
+    pairwise_desc, pairwise_args = _generate_cli_from_func(
+        PairwiseCodonDistanceAnalyzer.__init__
+    )
+    pairwise_args = _subtract_dicts(pairwise_args, cdist_args)
+
+    def _handle_pointwise_cdist(
+            common_args=cdist_args, pointwise_args=pointwise_args,
+            pairwise_args=pairwise_args, **parsed_args
+    ):
+        analyzer = CodonDistanceAnalyzer(
+            **{k: parsed_args[k] for k in common_args},
+            pointwise_extra_kw={k: parsed_args[k] for k in pointwise_args},
+            pairwise_extra_kw={k: parsed_args[k] for k in pairwise_args},
+        )
+        analyzer.analyze()
+
+    cdist_desc = f'{cdist_desc} Pointwise: {pointwise_desc} Pairwise: {pairwise_desc}'
     sp_pointwise_cdist = sp.add_parser(
-        'pointwise-cdist', help=pointwise_cdist_desc, formatter_class=hf)
+        'analyze-cdist', help=cdist_desc, formatter_class=hf
+    )
 
     sp_pointwise_cdist.set_defaults(handler=_handle_pointwise_cdist)
-    for _, arg_dict in pointwise_cdist_args.items():
+    for _, arg_dict in _merge_dicts(cdist_args, pointwise_args, pairwise_args).items():
         arg_dict = arg_dict.copy()
         names = arg_dict.pop('names')
         sp_pointwise_cdist.add_argument(*names, **arg_dict)
