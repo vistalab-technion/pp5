@@ -382,10 +382,12 @@ def rainbow(
 
     # Scale x,y to [0,1]
     xyvals = data[:, :2]
+    xyvals[xyvals == 0] = 1e-9
     xyvals /= np.max(xyvals, axis=0)
 
     # Get and scale radii to a fixed maximal radius
     rrvals = data[:, 2:]
+    rrvals[rrvals == 0] = 1e-9
     rrvals /= np.max(rrvals, axis=0)
     rrvals *= rscale
 
@@ -428,15 +430,18 @@ def rainbow(
             # Add bias-trick column to x vals
             X = np.hstack([xyvals[:, [0]], np.ones((len(xyvals), 1))])  # N, 2
             y = xyvals[:, [1]]  # (N, 1)
-            w, *_ = np.linalg.lstsq(X, y, rcond=None)  # w is (2,)
-            regression_y = np.dot(X, w)
-            ss_tot = np.sum((y - np.mean(y)) ** 2)
-            ss_res = np.sum((y - regression_y) ** 2)
-            rsq = 1 - ss_res / ss_tot
-            r = np.corrcoef(X[:, 0], y[:, 0])[0, 1]
-            h = ax.plot(X[:, 0], regression_y, 'k:', linewidth=1.,
-                        label=rf'$R^2={rsq:.2f}$')
-            legend_handles.append(h[0])
+            try:
+                w, *_ = np.linalg.lstsq(X, y, rcond=None)  # w is (2,)
+                reg_y = np.dot(X, w)
+                ss_tot = np.sum((y - np.mean(y)) ** 2)
+                ss_res = np.sum((y - reg_y) ** 2)
+                rsq = 1 - ss_res / ss_tot if ss_tot > 0 else np.inf
+                reg_label = rf'$R^2={rsq:.2f}$'
+                h = ax.plot(X[:, 0], reg_y, 'k:', linewidth=1., label=reg_label)
+                legend_handles.append(h[0])
+            except np.linalg.LinAlgError as e:
+                LOGGER.warning(f'Failed to fit regression line for rainbow, '
+                               f'{group_labels=}, {point_labels=}')
 
         # Set axes properties
         xmin, xmax = np.min(xyvals[:, 0]), np.max(xyvals[:, 0])
