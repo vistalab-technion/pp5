@@ -24,7 +24,7 @@ import pp5.plot
 from pp5.parallel import yield_async_results
 from pp5.plot import PP5_MPL_STYLE
 from pp5.utils import sort_dict
-from pp5.codons import AA_CODONS as CODONS, N_CODONS, codon2aac
+from pp5.codons import AA_CODONS, N_CODONS, codon2aac, CODON_RE, ACIDS, ACIDS_1TO1AND3
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ SS_TYPE_HELIX = 'HELIX'
 SS_TYPE_SHEET = 'SHEET'
 SS_TYPE_TURN = 'TURN'
 SS_TYPE_OTHER = 'OTHER'
+SS_TYPES = (SS_TYPE_HELIX, SS_TYPE_SHEET, SS_TYPE_TURN, SS_TYPE_OTHER)
 DSSP_TO_SS_TYPE = {
     # The DSSP codes for secondary structure used here are:
     # H        Alpha helix (4-12)
@@ -145,7 +146,6 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
 
 
 class CodonDistanceAnalyzer(ParallelAnalyzer):
-
     def __init__(self,
                  dataset_dir: Union[str, Path],
                  out_dir: Union[str, Path] = None,
@@ -160,6 +160,10 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
         """
         Performs both pointwise and pairwise codon-distance analysis and produces a
         comparison between these two type of analysis.
+        Uses two sub-analyzers PointwiseCodonDistanceAnalyzer and
+        PairwiseCodonDistanceAnalyzer as sub analyzers, which should be configured
+        with the *_extra_kw dicts.
+
         :param dataset_dir: Path to directory with the collector output.
         :param out_dir: Path to output directory. Defaults to <dataset_dir>/results.
         :param pointwise_filename: Filename of the pointwise dataset.
@@ -198,17 +202,125 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
     def _collection_functions(self) \
             -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
-            '_run_pointwise': self._run_pointwise,
-            '_run_pairwise': self._run_pairwise
+            'run-analysis': self._run_analysis,
+            'cdist-correlation': self._cdist_correlation,
+            'plot-rainbows': self._plot_rainbows,
         }
 
-    def _run_pointwise(self, pool: mp.pool.Pool) -> dict:
-        self.pointwise_analyzer.collect()
-        return {'pointwise': self.pairwise_analyzer._collection_meta}
+    def _run_analysis(self, pool: mp.pool.Pool) -> dict:
+        analyzers = {'pointwise': self.pointwise_analyzer,
+                     'pairwise': self.pairwise_analyzer}
 
-    def _run_pairwise(self, pool: mp.pool.Pool) -> dict:
-        self.pairwise_analyzer.collect()
-        return {'pairwise': self.pairwise_analyzer._collection_meta}
+        return_meta = {}
+        for name, analyzer in analyzers.items():
+            analyzer.collect()
+            if any(s.result == 'FAIL' for s in analyzer._collection_steps):
+                raise RuntimeError(f'{name} analysis failed, stopping...')
+            return_meta[name] = analyzer._collection_meta
+
+        return return_meta
+
+    def _cdist_correlation(self, pool: mp.pool.Pool) -> dict:
+        cdists_pointwise = self.pointwise_analyzer._load_intermediate('codon-dists-exp')
+        cdists_pairwise = self.pairwise_analyzer._load_intermediate('codon-dists')
+
+        # Will hold a dataframe of corr coefficients for each SS type
+        corr_dfs = []
+
+        # Dict: SS -> AA or 'ALL' -> dists, acids, codons
+        # where dists is (x,y,r1,r2) where x,y are pairwise and pointwise codon
+        # distances for one codon of AA and r1, r2 are the variances.
+        # Acids contains the AA names, and Labels contains the codon names.
+        corr_data = {}
+        for ss_type in SS_TYPES:
+            LOGGER.info(f'Calculating pointwise-pairwise correlation for {ss_type}...')
+
+            # Get codon-distance matrices (61, 61)
+            pointwise = cdists_pointwise[ss_type][0]
+            pairwise = cdists_pairwise[ss_type]
+
+            # Loop over unique pairs of codons
+            ii, jj = np.triu_indices(N_CODONS)
+            ss_corr_data = {}
+            for k in range(len(ii)):
+                i, j = ii[k], jj[k]
+                a1, c1 = CODON_RE.match(AA_CODONS[i]).groups()
+                a2, c2 = CODON_RE.match(AA_CODONS[j]).groups()
+
+                # We care only about synonymous codons
+                if a1 != a2:
+                    continue
+
+                # Get the pairwise/pointwise dists for this codon pair
+                x, y = np.real(pairwise[i, j]), np.real(pointwise[i, j])
+                r1, r2 = np.imag(pairwise[i, j]), np.imag(pointwise[i, j])
+
+                # Add to both current AA key and 'ALL' key
+                for plot_data_key in ('ALL', a1):
+                    curr_plot_data = ss_corr_data.setdefault(plot_data_key, {})
+                    curr_plot_data.setdefault('dists', []).append((x, y, r1, r2))
+                    curr_plot_data.setdefault('acids', []).append(a1)
+                    label = c1 if c1 == c2 else f'{c1}-{c2}'
+                    curr_plot_data.setdefault('codons', []).append(label)
+
+            corr_data[ss_type] = ss_corr_data
+
+            # Calculate the correlation coefficient in each AA and for ALL
+            corr_coeffs = {}
+            for aa in ACIDS + ['ALL']:
+                d = ss_corr_data[aa]
+                xy = np.array(d['dists'])[:, :2]
+                if len(xy) == 1:
+                    r = np.nan
+                else:
+                    r = np.corrcoef(xy[:, 0], xy[:, 1])[0, 1]
+                corr_coeffs[aa] = r
+
+            corr_dfs.append(pd.DataFrame([corr_coeffs]))
+
+        # Now we can create a full DataFrame with the corr coeffs of all SS types.
+        df_corr = pd.concat(corr_dfs)
+        df_corr.index = SS_TYPES
+        df_corr.columns = list(ACIDS_1TO1AND3.values()) + ['ALL']
+        df_corr = df_corr.T
+
+        # Write the CSV file
+        outfile = self.out_dir.joinpath('corr-pairwise_pointwise.csv')
+        df_corr.to_csv(outfile, float_format="%.3f")
+
+        # Save the correlation data dict
+        self._dump_intermediate('cdist-corr-data', corr_data)
+        return {}
+
+    def _plot_rainbows(self, pool: mp.pool.Pool) -> dict:
+        corr_data = self._load_intermediate('cdist-corr-data', allow_old=True)
+
+        fig_size = (8, 8)
+        rscale, alpha = 0.02, 0.5
+
+        for ss_type in SS_TYPES:
+            LOGGER.info(f'Plotting rainbows for {ss_type}...')
+            async_results = []
+
+            for aa in ACIDS + ['ALL']:
+                d = corr_data[ss_type][aa]
+                title = f'{aa}_{ss_type}' if aa != 'ALL' else f'{ss_type}'
+                fig_dir = 'rainbow-dists-aa' if aa != 'ALL' else 'rainbow-dists'
+                fig_dir = self.out_dir.joinpath(fig_dir)
+                fig_file = fig_dir.joinpath(f'{title}.pdf')
+
+                async_results.append(pool.apply_async(
+                    pp5.plot.rainbow, args=(d['dists'],), kwds=dict(
+                        group_labels=d['acids'], point_labels=d['codons'],
+                        all_groups=ACIDS_1TO1AND3, alpha=alpha, fig_size=fig_size,
+                        rscale=rscale, xlabel='Pairwise', ylabel='Pointwise',
+                        with_regression=True, title=title, outfile=fig_file,
+                    )
+                ))
+
+            # Wait for plotting to complete
+            self._handle_async_results(async_results)
+        return {}
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
@@ -432,13 +544,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 0.
                 if codon not in df_codon_group_names
                 else len(df_codon_groups.get_group(codon)) / n_ss
-                for codon in CODONS  # ensure consistent order
+                for codon in AA_CODONS  # ensure consistent order
             ], dtype=np.float32)
             assert np.isclose(np.sum(codon_likelihood), 1.)
 
             # Save a map from codon name to it's likelihood
             codon_likelihoods[ss_type] = {
-                c: codon_likelihood[i] for i, c in enumerate(CODONS)
+                c: codon_likelihood[i] for i, c in enumerate(AA_CODONS)
             }
 
         # Calculate AA likelihoods based on the codon likelihoods
@@ -616,7 +728,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # bs_codon_dkdes maps from codon to a list of bootstrapped
                 # KDEs of shape (B,N,N), one for each angle pair
                 # Initialize in advance to obtain consistent order of codons
-                bs_codon_dkdes = {c: None for c in CODONS}
+                bs_codon_dkdes = {c: None for c in AA_CODONS}
                 for subgroup_idx, subgroup_bs_dkdes in group_dkde_result:
                     bs_codon_dkdes[subgroup_idx] = subgroup_bs_dkdes
 
@@ -892,7 +1004,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             fig_filename = out_dir.joinpath(f'{group_idx}-{avg_std}.png')
 
             pp5.plot.multi_heatmap(
-                d2, CODONS, CODONS, titles=titles, fig_size=20,
+                d2, AA_CODONS, AA_CODONS, titles=titles, fig_size=20,
                 vmin=vmin, vmax=vmax,
                 fig_rows=1, outfile=fig_filename, data_annotation_fn=ann_fn
             )
@@ -1007,7 +1119,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # as the imaginary part in a single array.
             d2_mat = np.full((N_CODONS, N_CODONS), np.nan, np.complex64)
 
-            codon_pairs = it.product(enumerate(CODONS), enumerate(CODONS))
+            codon_pairs = it.product(enumerate(AA_CODONS), enumerate(AA_CODONS))
             for (i, ci), (j, cj) in codon_pairs:
                 if bs_codon_dkdes[ci] is None:
                     continue
@@ -1039,7 +1151,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Average the codon KDEs from all bootstraps for each codon,
         # so that we can save a simple KDE per codon
-        codon_dkdes = {c: [] for c in CODONS}
+        codon_dkdes = {c: [] for c in AA_CODONS}
         for codon, bs_dkde in bs_codon_dkdes.items():
             if bs_dkde is None:
                 continue
@@ -1263,7 +1375,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Create unique codon pairs
         codon_pairs = sorted(set(map(
-            lambda t: tuple(sorted(t)), it.product(CODONS, CODONS)
+            lambda t: tuple(sorted(t)), it.product(AA_CODONS, AA_CODONS)
         )))
 
         cdist_angle_cols = self.ref_angle_cols + self.query_angle_cols
@@ -1322,7 +1434,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             codon_dists[group_idx] = d2_mat
 
         # Populate distance matrix per group as the results come in
-        codon_to_idx = {c: i for i, c in enumerate(CODONS)}
+        codon_to_idx = {c: i for i, c in enumerate(AA_CODONS)}
         results_iter = yield_async_results(async_results)
         for (group_idx, subgroup_idx), (mu, sigma) in results_iter:
             LOGGER.info(f'Codon-dist for {group_idx=}, {subgroup_idx=}: '
