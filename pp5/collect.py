@@ -81,7 +81,11 @@ class ParallelDataCollector(abc.ABC):
         self._out_filepaths: List[Path] = []
         self._collection_meta = {'id': self.id}
 
-    def collect(self):
+    def collect(self) -> dict:
+        """
+        Performs all collection steps defined in this collector.
+        :return: Collection metadata.
+        """
         start_time = time.time()
         # Note: in python 3.7+ dict order is guaranteed to be insertion order
         collection_functions = self._collection_functions()
@@ -120,6 +124,7 @@ class ParallelDataCollector(abc.ABC):
             self._collection_meta, width=120, compact=True,
         )
         LOGGER.info(f'Collection metadata:\n' f'{collection_meta_formatted}')
+        return self._collection_meta
 
     def _finalize_collection(self, pool):
         LOGGER.info(f"Finalizing collection for {self.id}...")

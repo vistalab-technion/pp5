@@ -144,6 +144,13 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
         LOGGER.info(f'Loaded intermediate file {path}')
         return obj
 
+    def analyze(self):
+        """
+        Performs all analysis steps defined in this analyzer.
+        :return: Analysis metadata.
+        """
+        return self.collect()
+
 
 class CodonDistanceAnalyzer(ParallelAnalyzer):
     def __init__(self,
