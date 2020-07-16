@@ -1041,6 +1041,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     ax[i].set_title(title)
                     continue
 
+                # Remove the std of the DKDE
+                dkdes = [np.real(dkde) for dkde in dkdes]
+
                 pp5.plot.ramachandran(
                     dkdes, angle_pair_labels, title=title, ax=ax[i],
                     vmin=vmin, vmax=vmax
@@ -1157,7 +1160,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             d2_matrices.append(d2_mat)
 
         # Average the codon KDEs from all bootstraps for each codon,
-        # so that we can save a simple KDE per codon
+        # so that we can save a single KDE per codon. Note that this KDE will also
+        # include the variance in each bin, so we'll save as a complex matrix where
+        # real is the KDE value and imag is the std.
         codon_dkdes = {c: [] for c in AA_CODONS}
         for codon, bs_dkde in bs_codon_dkdes.items():
             if bs_dkde is None:
@@ -1165,8 +1170,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             for pair_idx in range(len(angle_pairs)):
                 # bs_dkde[pair_idx] here is of shape (B, N, N) due to
                 # bootstrapping. Average it over the bootstrap dimension
-                mean_dkde = np.nanmean(bs_dkde[pair_idx], axis=0)
-                codon_dkdes[codon].append(mean_dkde)
+                mean_dkde = np.nanmean(bs_dkde[pair_idx], axis=0, dtype=np.float32)
+                std_dkde = np.nanstd(bs_dkde[pair_idx], axis=0, dtype=np.float32)
+                codon_dkdes[codon].append(mean_dkde + 1j * std_dkde)
 
         tend = time.time()
         LOGGER.info(f'Calculated distance matrix for {group_idx} '
