@@ -1472,7 +1472,9 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         codon_dists = self._load_intermediate('codon-dists', True)
         if codon_dists is not None:
             for group_idx, d2_matrix in codon_dists.items():
-                args = (group_idx, [d2_matrix])
+                # When plotting, use d instead of d^2 for better dynamic range.
+                d_matrix = np.sqrt(d2_matrix)
+                args = (group_idx, [d_matrix])
                 async_results.append(pool.apply_async(
                     PointwiseCodonDistanceAnalyzer._plot_codon_distances,
                     args=args,
@@ -1481,7 +1483,6 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                               vmin=None, vmax=None,  # should consider scale
                               annotate_mu=True, plot_std=True)
                 ))
-            del codon_dists, d2_matrix
 
         # Wait for plotting to complete. Each function returns a path
         _ = self._handle_async_results(async_results, collect=True)
@@ -1544,7 +1545,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             zip_rq = zip(ref_sample, query_sample)
 
             dists2[m_idx, :] = [
-                Dihedral.flat_torus_distance(r, q, degrees=True)
+                Dihedral.flat_torus_distance(r, q, degrees=True, squared=True)
                 for r, q in zip_rq
             ]
 
