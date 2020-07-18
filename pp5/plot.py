@@ -325,19 +325,21 @@ def rainbow(
         all_groups: List[str] = None,
         xlabel: str = None, ylabel: str = None, title=None,
         cmap: Union[str, mpl.colors.Colormap] = 'gist_rainbow',
-        alpha: float = 0.5, rscale: float = 0.1, with_regression=False,
+        alpha: float = 0.5, with_regression=False,
+        error_ellipse=False, normalize=False, err_scale: float = 1.,
         ax: Axes = None, fig_size: Tuple[int, int] = None,
         style=PP5_MPL_STYLE, outfile: Union[Path, str] = None,
 ) -> Optional[Tuple[Figure, Axes]]:
     """
     A rainbow plot represents teh relation between two variables where is also
-    a group assigned to each data point. The plot shows each point as an
-    ellipse centered at the location of the point (the width of which could
-    represent e.g. confidence intervals) and the color of the ellipse
-    denotes the group the point belongs to.
-    :param data: List of tuples (x,y,r1,r2) where (x,y) is an ellipse center
-    and (r1,r2) its radii. The r2 is optional, and if omitted will be set
-    equal to r1. Note that all tuples must either include r2 or not.
+    a group assigned to each data point. The plot shows each point as either
+    (1) an ellipse centered at the location of the point (the width of which could
+    represent e.g. confidence intervals); or (2) a point with horizontal and vertical
+    error bars. The color of the ellipse/bars denotes the group the point belongs to.
+    :param data: List of tuples (x,y,e1,e2) where (x,y) is the point location
+    and (e1,e2) its horizontal and vertical errors (e.g. std).
+    The e2 is optional, and if omitted will be set equal to e1.
+    Note that all tuples must either include e2 or not.
     :param group_labels: The name of the group each point belongs to.
     Should be same length as data.
     :param point_labels: A string to print inside the ellipse of each point
@@ -351,10 +353,14 @@ def rainbow(
     different color is assigned to each group. By default assigns the
     colors of the rainbow!
     :param alpha: Transparency level of the ellipses. Should be in [0, 1].
-    :param rscale: Scale factor to apply to the ellipse radii to reduce
-    overlap.
     :param with_regression: If true, a simple linear regression line will be
     calculated and plotted on the data, with a correlation coefficient shown.
+    :param error_ellipse: Whether to plot each point as a dot with errorbars (False)
+    or as an Ellipse with error radii (True).
+    :param normalize: If True, each data column will be normalized to dynamic range
+    [0,1]. The errors will then be normalized by the same normalization factor.
+    :param err_scale: Scale factor to apply to the errors to reduce
+    overlap. Applied after normalization.
     :param ax: Axis to plot on.
     :param fig_size: Size of figure to create if no axis given.
     :param style: Style name or style file path.
@@ -380,16 +386,18 @@ def rainbow(
     if data.shape[1] == 3:
         data = np.concatenate([data, data[:, [-1]]], axis=1)
 
+    xy_vals = data[:, :2]
+    err_vals = data[:, 2:]
+
     # Scale x,y to [0,1]
-    xyvals = data[:, :2]
-    xyvals[xyvals == 0] = 1e-9
-    xyvals /= np.max(xyvals, axis=0)
+    if normalize:
+        xy_vals -= np.min(xy_vals, axis=0)
+        xymax = np.max(xy_vals, axis=0) + 1e-12
+        xy_vals /= xymax
+        err_vals /= xymax
 
     # Get and scale radii to a fixed maximal radius
-    rrvals = data[:, 2:]
-    rrvals[rrvals == 0] = 1e-9
-    rrvals /= np.max(rrvals, axis=0)
-    rrvals *= rscale
+    err_vals *= err_scale
 
     # Create a dict containing a unique color per group
     cmap = plt.get_cmap(cmap)
@@ -407,16 +415,22 @@ def rainbow(
 
         patch_list = []
         for i, group in enumerate(group_labels):
-            xy = xyvals[i]
-            w, h = 2 * rrvals[i]
-            ell = patches.Ellipse(xy, w, h)
-            ell.set_color(group_colors[group])
-            patch_list.append(ell)
+            x, y = xy_vals[i]
+            xerr, yerr = err_vals[i]
+            color = group_colors[group]
+            if error_ellipse:
+                ell = patches.Ellipse((x, y), 2 * xerr, 2 * yerr)
+                ell.set_color(color)
+                patch_list.append(ell)
+            else:
+                ax.errorbar(x, y, yerr, xerr, ecolor=color, fmt='o',
+                            mfc=color, mec='k', mew=.2, ms=1.5)
             if point_labels is not None:
-                ax.text(xy[0], xy[1], point_labels[i], fontsize='2')
+                ax.text(x, y, point_labels[i], fontsize=4)
 
-        pc = mpl.collections.PatchCollection(patch_list, match_original=True)
-        ax.add_collection(pc)
+        if patch_list:
+            pc = mpl.collections.PatchCollection(patch_list, match_original=True)
+            ax.add_collection(pc)
 
         # Create custom legend handles with group names and colors
         legend_handles = []
@@ -428,24 +442,24 @@ def rainbow(
         # Create regression line if needed
         if with_regression:
             # Add bias-trick column to x vals
-            X = np.hstack([xyvals[:, [0]], np.ones((len(xyvals), 1))])  # N, 2
-            y = xyvals[:, [1]]  # (N, 1)
+            X = np.hstack([xy_vals[:, [0]], np.ones((len(xy_vals), 1))])  # N, 2
+            y = xy_vals[:, [1]]  # (N, 1)
             try:
-                w, *_ = np.linalg.lstsq(X, y, rcond=None)  # w is (2,)
-                reg_y = np.dot(X, w)
+                xerr, *_ = np.linalg.lstsq(X, y, rcond=None)  # w is (2,)
+                reg_y = np.dot(X, xerr)
                 ss_tot = np.sum((y - np.mean(y)) ** 2)
                 ss_res = np.sum((y - reg_y) ** 2)
                 rsq = 1 - ss_res / ss_tot if ss_tot > 0 else np.inf
                 reg_label = rf'$R^2={rsq:.2f}$'
-                h = ax.plot(X[:, 0], reg_y, 'k:', linewidth=1., label=reg_label)
-                legend_handles.append(h[0])
+                yerr = ax.plot(X[:, 0], reg_y, 'k:', linewidth=1., label=reg_label)
+                legend_handles.append(yerr[0])
             except np.linalg.LinAlgError as e:
                 LOGGER.warning(f'Failed to fit regression line for rainbow, '
                                f'{group_labels=}, {point_labels=}')
 
         # Set axes properties
-        xmin, xmax = np.min(xyvals[:, 0]), np.max(xyvals[:, 0])
-        ymin, ymax = np.min(xyvals[:, 1]), np.max(xyvals[:, 1])
+        xmin, xmax = np.min(xy_vals[:, 0]), np.max(xy_vals[:, 0])
+        ymin, ymax = np.min(xy_vals[:, 1]), np.max(xy_vals[:, 1])
         xlim = 1 * np.array([-.1, .1]) + [xmin, xmax]
         ylim = 1 * np.array([-.1, .1]) + [ymin, ymax]
         ax.set_xlim(xlim), ax.set_ylim(ylim)
