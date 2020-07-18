@@ -258,14 +258,14 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
                 if a1 != a2:
                     continue
 
-                # Get the pairwise/pointwise dists for this codon pair
+                # Get the pairwise/pointwise d^2 avg and std for this codon pair
                 x, y = np.real(pairwise[i, j]), np.real(pointwise[i, j])
-                r1, r2 = np.imag(pairwise[i, j]), np.imag(pointwise[i, j])
+                s1, s2 = np.imag(pairwise[i, j]), np.imag(pointwise[i, j])
 
                 # Add to both current AA key and 'ALL' key
                 for plot_data_key in ('ALL', a1):
                     curr_plot_data = ss_corr_data.setdefault(plot_data_key, {})
-                    curr_plot_data.setdefault('dists', []).append((x, y, r1, r2))
+                    curr_plot_data.setdefault('dists', []).append((x, y, s1, s2))
                     curr_plot_data.setdefault('acids', []).append(a1)
                     label = c1 if c1 == c2 else f'{c1}-{c2}'
                     curr_plot_data.setdefault('codons', []).append(label)
@@ -303,7 +303,7 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
         corr_data = self._load_intermediate('cdist-corr-data', allow_old=True)
 
         fig_size = (8, 8)
-        rscale, alpha = 0.02, 0.5
+        err_scale, alpha = .1, 0.5
 
         for ss_type in SS_TYPES:
             LOGGER.info(f'Plotting rainbows for {ss_type}...')
@@ -320,7 +320,8 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
                     pp5.plot.rainbow, args=(d['dists'],), kwds=dict(
                         group_labels=d['acids'], point_labels=d['codons'],
                         all_groups=ACIDS_1TO1AND3, alpha=alpha, fig_size=fig_size,
-                        rscale=rscale, xlabel='Pairwise', ylabel='Pointwise',
+                        err_scale=err_scale, error_ellipse=False, normalize=True,
+                        xlabel='Pairwise', ylabel='Pointwise',
                         with_regression=True, title=title, outfile=fig_file,
                     )
                 ))
