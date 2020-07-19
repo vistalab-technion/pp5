@@ -17,6 +17,7 @@ import pandas as pd
 import matplotlib as mpl
 import matplotlib.style
 import matplotlib.pyplot
+import sklearn.manifold as manifold
 
 from pp5.collect import ParallelDataCollector
 from pp5.dihedral import DihedralKDE, Dihedral
@@ -211,7 +212,8 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
         return {
             'run-analysis': self._run_analysis,
             'cdist-correlation': self._cdist_correlation,
-            'plot-rainbows': self._plot_rainbows,
+            'plot-corr-rainbows': self._plot_corr_rainbows,
+            'plot-mds-rainbows': self._plot_mds_rainbows,
         }
 
     def _run_analysis(self, pool: mp.pool.Pool) -> dict:
@@ -299,14 +301,15 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
         self._dump_intermediate('cdist-corr-data', corr_data)
         return {}
 
-    def _plot_rainbows(self, pool: mp.pool.Pool) -> dict:
+    def _plot_corr_rainbows(self, pool: mp.pool.Pool) -> dict:
         corr_data = self._load_intermediate('cdist-corr-data', allow_old=True)
 
         fig_size = (8, 8)
         err_scale, alpha = .1, 0.5
 
         for ss_type in SS_TYPES:
-            LOGGER.info(f'Plotting rainbows for {ss_type}...')
+            LOGGER.info(f'Plotting pairwise-pointwise correlation rainbows for'
+                        f' {ss_type}...')
             async_results = []
 
             for aa in ACIDS + ['ALL']:
@@ -329,6 +332,44 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
             # Wait for plotting to complete
             self._handle_async_results(async_results)
         return {}
+
+    def _plot_mds_rainbows(self, pool: mp.pool.Pool) -> dict:
+        cdists_pointwise = self.pointwise_analyzer._load_intermediate('codon-dists-exp')
+
+        d_scale = 1e3
+        s_scale = .25
+        alpha = .5
+        mds_args = dict(n_components=2, metric=True, n_init=10, max_iter=2000,
+                        verbose=False, eps=1e-9, dissimilarity='precomputed',
+                        n_jobs=-1, random_state=42)
+        mds = manifold.MDS(**mds_args)
+
+        for ss_type in SS_TYPES:
+            LOGGER.info(f'Plotting pointwise MDS rainbows for {ss_type}...')
+            mu_d2 = np.real(cdists_pointwise[ss_type][0])
+            std_d2 = np.imag(cdists_pointwise[ss_type][0])
+
+            # Compute correction for distance estimate
+            S = np.zeros((N_CODONS, 1), dtype=np.float32)
+            D = np.zeros((N_CODONS, N_CODONS), dtype=np.float32)
+            for i in range(N_CODONS):
+                S[i] = np.sqrt(.25 * mu_d2[i, i])
+                for j in range(N_CODONS):
+                    D[i, j] = np.sqrt(mu_d2[i, j] - .5 * mu_d2[i, i] - .5 * mu_d2[j, j])
+
+            D *= d_scale
+            S *= d_scale
+            X = mds.fit_transform(D)
+
+            # Plot
+            rainbow_data = np.hstack((X, S, S))
+            group_labels = [aac[0] for aac in AA_CODONS]
+            point_labels = AA_CODONS
+            fig_file = self.out_dir.joinpath('rainbow-mds', f'{ss_type}.pdf')
+            pp5.plot.rainbow(rainbow_data, group_labels, point_labels,
+                             all_groups=ACIDS_1TO1AND3, title=ss_type,
+                             alpha=alpha, err_scale=s_scale, error_ellipse=True,
+                             normalize=True, outfile=fig_file)
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
