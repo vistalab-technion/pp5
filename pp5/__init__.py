@@ -5,7 +5,7 @@ from pathlib import Path
 PROJECT_DIR = Path(Path(__file__).resolve().parents[1])
 if str(PROJECT_DIR).startswith(os.getcwd()):
     PROJECT_DIR = PROJECT_DIR.relative_to(os.getcwd())
-CFG_DIR = PROJECT_DIR.joinpath('cfg')
+CFG_DIR = PROJECT_DIR.joinpath("cfg")
 
 """
 Dict for storing top-level package configuration options, and their default
@@ -13,27 +13,27 @@ values.
 """
 _CONFIG = {
     # Number of worker processes in global parallel pool
-    'MAX_PROCESSES': int(os.getenv('PP5_MAX_PROCESSES', os.cpu_count())),
+    "MAX_PROCESSES": int(os.getenv("PP5_MAX_PROCESSES", os.cpu_count())),
     # Number of retries to use when fetching/querying data
-    'REQUEST_RETRIES': 5,
+    "REQUEST_RETRIES": 5,
     # Default expression system for PDB queries
-    'DEFAULT_EXPR_SYS': 'Escherichia Coli',
+    "DEFAULT_EXPR_SYS": "Escherichia Coli",
     # Default resolution for PDB queries
-    'DEFAULT_RES': 1.8,
+    "DEFAULT_RES": 1.8,
 }
 
 """
 Specify directory paths used for input and output.
-All these directories can be overridden by environment variables with matching 
+All these directories can be overridden by environment variables with matching
 names.
 """
 
 # Top-level directory for raw data and downloading files
-BASE_DATA_DIR = Path(os.getenv('DATA_DIR', PROJECT_DIR.joinpath('data')))
+BASE_DATA_DIR = Path(os.getenv("DATA_DIR", PROJECT_DIR.joinpath("data")))
 BASE_DOWNLOAD_DIR = BASE_DATA_DIR
 
 # Directory for writing output files
-OUT_DIR = Path(os.getenv('OUT_DIR', PROJECT_DIR.joinpath('out')))
+OUT_DIR = Path(os.getenv("OUT_DIR", PROJECT_DIR.joinpath("out")))
 
 for d in [CFG_DIR, BASE_DATA_DIR, OUT_DIR]:
     os.makedirs(d, exist_ok=True)
@@ -68,25 +68,25 @@ def get_config(name: str):
 
 
 # Directory for PDB files
-PDB_DIR = Path(os.getenv('PDB_DIR', data_subdir('pdb')))
+PDB_DIR = Path(os.getenv("PDB_DIR", data_subdir("pdb")))
 
 # Directory for UniProt files
-UNP_DIR = Path(os.getenv('UNP_DIR', data_subdir('unp')))
+UNP_DIR = Path(os.getenv("UNP_DIR", data_subdir("unp")))
 
 # Directory for ENA files
-ENA_DIR = Path(os.getenv('ENA_DIR', data_subdir('ena')))
+ENA_DIR = Path(os.getenv("ENA_DIR", data_subdir("ena")))
 
 # Directory for ProteinRecords
-PREC_DIR = Path(os.getenv('PREC_DIR', data_subdir('prec')))
+PREC_DIR = Path(os.getenv("PREC_DIR", data_subdir("prec")))
 
 # Directory for PDB to UNP mappings
-PDB2UNP_DIR = Path(os.getenv('PDB2UNP_DIR', data_subdir('pdb2unp')))
+PDB2UNP_DIR = Path(os.getenv("PDB2UNP_DIR", data_subdir("pdb2unp")))
 
 # Directory for Structural Alignments
-ALIGNMENT_DIR = Path(os.getenv('ALIGNMENT_DIR', data_subdir('align')))
+ALIGNMENT_DIR = Path(os.getenv("ALIGNMENT_DIR", data_subdir("align")))
 
 # Directory for local BLAST DB
-BLASTDB_DIR = Path(os.getenv('BLASTDB_DIR', data_subdir('blast')))
+BLASTDB_DIR = Path(os.getenv("BLASTDB_DIR", data_subdir("blast")))
 
 
 def get_resource_path(data_dir: Path, basename: str):
@@ -120,5 +120,6 @@ def get_resource_path(data_dir: Path, basename: str):
 
 
 # load logger config
-logging.config.fileConfig(PROJECT_DIR.joinpath('logging.ini'),
-                          disable_existing_loggers=False)
+logging.config.fileConfig(
+    PROJECT_DIR.joinpath("logging.ini"), disable_existing_loggers=False
+)

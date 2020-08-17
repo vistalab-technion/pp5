@@ -19,7 +19,7 @@ from scipy.optimize import minimize_scalar
 from pp5.external_dbs.pdb import PDBUnitCell
 
 CONST_8PI2 = math.pi * math.pi * 8
-BACKBONE_ATOMS = {'N', 'CA', 'C'}
+BACKBONE_ATOMS = {"N", "CA", "C"}
 
 
 class Dihedral(object):
@@ -28,8 +28,8 @@ class Dihedral(object):
     Values are stored in radians.
     """
 
-    NAMES = ('phi', 'psi', 'omega')
-    SYMBOLS = dict(phi='ɸ', psi='ψ', omega='ω', deg='°', rad='ʳ', pm='±')
+    NAMES = ("phi", "psi", "omega")
+    SYMBOLS = dict(phi="ɸ", psi="ψ", omega="ω", deg="°", rad="ʳ", pm="±")
 
     def __init__(self, phi, psi, omega):
         """
@@ -44,55 +44,68 @@ class Dihedral(object):
 
             if isinstance(a, (float, int)):
                 val, std = float(a), None
-            elif hasattr(a, '__len__') and len(a) == 2:
+            elif hasattr(a, "__len__") and len(a) == 2:
                 val = float(a[0])
                 std = float(a[1]) if a[1] is not None else None
             else:
-                raise ValueError('Input angles must be either a float or a '
-                                 'tuple (value, std)')
+                raise ValueError(
+                    "Input angles must be either a float or a " "tuple (value, std)"
+                )
 
             # Shift to [-pi, pi]
             if val < -math.pi or val > math.pi:
                 val = math.atan2(math.sin(val), math.cos(val))
 
-            setattr(self, f'_{name}', val)
-            setattr(self, f'_{name}_std', std)
+            setattr(self, f"_{name}", val)
+            setattr(self, f"_{name}_std", std)
 
     @property
-    def phi(self): return self._phi
+    def phi(self):
+        return self._phi
 
     @property
-    def psi(self): return self._psi
+    def psi(self):
+        return self._psi
 
     @property
-    def omega(self): return self._omega
+    def omega(self):
+        return self._omega
 
     @property
-    def phi_std(self): return self._phi_std
+    def phi_std(self):
+        return self._phi_std
 
     @property
-    def psi_std(self): return self._psi_std
+    def psi_std(self):
+        return self._psi_std
 
     @property
-    def omega_std(self): return self._omega_std
+    def omega_std(self):
+        return self._omega_std
 
     @property
-    def phi_deg(self): return self._deg(self._phi)
+    def phi_deg(self):
+        return self._deg(self._phi)
 
     @property
-    def psi_deg(self): return self._deg(self._psi)
+    def psi_deg(self):
+        return self._deg(self._psi)
 
     @property
-    def omega_deg(self): return self._deg(self._omega)
+    def omega_deg(self):
+        return self._deg(self._omega)
 
     @property
-    def phi_std_deg(self): return self._deg(self._phi_std)
+    def phi_std_deg(self):
+        return self._deg(self._phi_std)
 
     @property
-    def psi_std_deg(self): return self._deg(self._psi_std)
+    def psi_std_deg(self):
+        return self._deg(self._psi_std)
 
     @property
-    def omega_std_deg(self): return self._deg(self._omega_std)
+    def omega_std_deg(self):
+        return self._deg(self._omega_std)
 
     def as_dict(self, degrees=False, skip_omega=False, with_std=False):
         """
@@ -107,10 +120,10 @@ class Dihedral(object):
             names = names[0:2]
 
         if with_std:
-            names += tuple(map(lambda n: f'{n}_std', names))
+            names += tuple(map(lambda n: f"{n}_std", names))
 
         if degrees:
-            attrs = map(lambda n: f'{n}_deg', names)
+            attrs = map(lambda n: f"{n}_deg", names)
         else:
             attrs = names
 
@@ -122,11 +135,11 @@ class Dihedral(object):
     def __setstate__(self, state: dict):
         init_args = {}
         for n in self.NAMES:
-            init_args[n] = (state[n], state[f'{n}_std'])
+            init_args[n] = (state[n], state[f"{n}_std"])
         self.__init__(**init_args)
 
     @classmethod
-    def from_deg(cls, phi, psi, omega=180.):
+    def from_deg(cls, phi, psi, omega=180.0):
         return cls(np.deg2rad(phi), np.deg2rad(psi), np.deg2rad(omega))
 
     @classmethod
@@ -144,9 +157,9 @@ class Dihedral(object):
         return math.degrees(rad)
 
     @staticmethod
-    def flat_torus_distance(a1: Dihedral, a2: Dihedral, degrees=False,
-                            squared=False) \
-            -> float:
+    def flat_torus_distance(
+        a1: Dihedral, a2: Dihedral, degrees=False, squared=False
+    ) -> float:
         """
         Computes the distance between two dihedral angles as if they were on a
         "flat torus" (also a Ramachandran Plot). Calculates a euclidean
@@ -158,13 +171,13 @@ class Dihedral(object):
         :param squared: Whether to return squared-distance.
         :return: The angle difference.
         """
-        return Dihedral._flat_torus_distance(a1.phi, a2.phi, a1.psi, a2.psi,
-                                             degrees, squared)
+        return Dihedral._flat_torus_distance(
+            a1.phi, a2.phi, a1.psi, a2.psi, degrees, squared
+        )
 
     @staticmethod
     @numba.jit(nopython=True)
-    def _flat_torus_distance(phi0, phi1, psi0, psi1, degrees=False,
-                             squared=False):
+    def _flat_torus_distance(phi0, phi1, psi0, psi1, degrees=False, squared=False):
         dphi = math.fabs(phi0 - phi1)
         dphi = min(dphi, 2 * math.pi - dphi)
         dpsi = math.fabs(psi0 - psi1)
@@ -191,8 +204,7 @@ class Dihedral(object):
     @numba.jit(nopython=True)
     def _s1_distance(phi0, phi1, psi0, psi1, degrees=False):
         dist = np.sqrt(
-            np.arccos(np.cos(phi0 - phi1)) ** 2 +
-            np.arccos(np.cos(psi0 - psi1)) ** 2
+            np.arccos(np.cos(phi0 - phi1)) ** 2 + np.arccos(np.cos(psi0 - psi1)) ** 2
         )
         return np.degrees(dist) if degrees else dist
 
@@ -212,9 +224,11 @@ class Dihedral(object):
 
         def frechet_mean_s1(phi):
             res = minimize_scalar(
-                fun=metric_fn, args=(phi,),
-                bounds=(-math.pi, math.pi), method='Bounded',
-                options=dict(xatol=1e-4, maxiter=50)
+                fun=metric_fn,
+                args=(phi,),
+                bounds=(-math.pi, math.pi),
+                method="Bounded",
+                options=dict(xatol=1e-4, maxiter=50),
             )
             # Return optimum and function value at optimum (Frechet variance)
             return res.x, math.sqrt(res.fun)
@@ -254,7 +268,7 @@ class Dihedral(object):
         # Replace mean=0, with mean=nan mark missing data, then log(nan)=nan,
         # and the std will also be nan.
         n = np.sum(~np.isnan(phi_psi), axis=0, dtype=np.float32)
-        n[n == 0.] = np.nan  # prevent 0/0 runtime warning
+        n[n == 0.0] = np.nan  # prevent 0/0 runtime warning
         r = np.hypot(sigma_sin / n, sigma_cos / n)  # will be nan for missing
         circstd = np.sqrt(-2 * np.log(r))
 
@@ -279,13 +293,12 @@ class Dihedral(object):
         reprs = []
         unit_sym = self.SYMBOLS["deg" if deg else "rad"]
         for name in self.NAMES:
-            val_attr = f'{name}_deg' if deg else name
-            std_attr = f'{name}_std_deg' if deg else f'{name}_std'
+            val_attr = f"{name}_deg" if deg else name
+            std_attr = f"{name}_std_deg" if deg else f"{name}_std"
             val = getattr(self, val_attr)
             std = getattr(self, std_attr)
-            std_str = f'{self.SYMBOLS["pm"]}{std:.1f}' if std is not None \
-                else ''
-            reprs.append(f'{self.SYMBOLS[name]}={val:.1f}{std_str}{unit_sym}')
+            std_str = f'{self.SYMBOLS["pm"]}{std:.1f}' if std is not None else ""
+            reprs.append(f"{self.SYMBOLS[name]}={val:.1f}{std_str}{unit_sym}")
         return f'({str.join(",", reprs)})'
 
     def __eq__(self, other, delta=1e-10):
@@ -332,27 +345,27 @@ class DihedralAnglesEstimator(object):
 
             try:
                 # Get the locations (x, y, z) of backbone atoms
-                n = aa_curr['N']
-                ca = aa_curr['CA']  # Alpha-carbon
-                c = aa_curr['C']
+                n = aa_curr["N"]
+                ca = aa_curr["CA"]  # Alpha-carbon
+                c = aa_curr["C"]
             except KeyError:
                 # Phi/Psi cannot be calculated for this AA
                 angles.append(Dihedral.empty())
                 continue
 
             # Phi
-            if 'C' in aa_prev:
-                c_prev = aa_prev['C']
+            if "C" in aa_prev:
+                c_prev = aa_prev["C"]
                 phi = self._calc_fn(c_prev, n, ca, c)
 
             # Psi
-            if 'N' in aa_next:
-                n_next = aa_next['N']
+            if "N" in aa_next:
+                n_next = aa_next["N"]
                 psi = self._calc_fn(n, ca, c, n_next)
 
             # Omega
-            if 'C' in aa_prev and 'CA' in aa_prev:
-                c_prev, ca_prev = aa_prev['C'], aa_prev['CA']
+            if "C" in aa_prev and "CA" in aa_prev:
+                c_prev, ca_prev = aa_prev["C"], aa_prev["CA"]
                 omega = self._calc_fn(ca_prev, c_prev, n, ca)
 
             angles.append(Dihedral.from_rad(phi, psi, omega))
@@ -391,8 +404,10 @@ class DihedralAnglesEstimator(object):
 
     def _calc_fn(self, a1: Atom, a2: Atom, a3: Atom, a4: Atom):
         return self.calc_dihedral2(
-            a1.get_vector().get_array(), a2.get_vector().get_array(),
-            a3.get_vector().get_array(), a4.get_vector().get_array()
+            a1.get_vector().get_array(),
+            a2.get_vector().get_array(),
+            a3.get_vector().get_array(),
+            a4.get_vector().get_array(),
         )
 
 
@@ -439,8 +454,14 @@ class DihedralAnglesMonteCarloEstimator(DihedralAnglesUncertaintyEstimator):
     factors.
     """
 
-    def __init__(self, unit_cell: PDBUnitCell = None, isotropic=True,
-                 n_samples=100, skip_omega=False, **kw):
+    def __init__(
+        self,
+        unit_cell: PDBUnitCell = None,
+        isotropic=True,
+        n_samples=100,
+        skip_omega=False,
+        **kw,
+    ):
         """
         :param unit_cell: Unit-cell of the PDB structure. Optional,
         but must be provided if isotropic=False.
@@ -456,15 +477,17 @@ class DihedralAnglesMonteCarloEstimator(DihedralAnglesUncertaintyEstimator):
         assert len(atoms) == 4
 
         # For Omega, don't do mc sampling.
-        if self.skip_omega and atoms[0].get_name() == 'CA':
+        if self.skip_omega and atoms[0].get_name() == "CA":
             return super()._calc_fn(*atoms)
 
         # Calculate mu and 3x3 covariance matrix of atom positions
         mu_sigma = [self.uncertainty.mvn_mu_sigma(a) for a in atoms]
 
         # Sample atom coordinates from multivariate Gaussian
-        samples = [np.random.multivariate_normal(mu, S, size=self.n_samples)
-                   for mu, S in mu_sigma]
+        samples = [
+            np.random.multivariate_normal(mu, S, size=self.n_samples)
+            for mu, S in mu_sigma
+        ]
 
         angles = np.empty(self.n_samples)
         for i in range(self.n_samples):
@@ -480,8 +503,14 @@ class AtomLocationUncertainty(object):
     Calculates uncertainty in atom locations, based on isotropic or
     anisotropic b-factors.
     """
-    def __init__(self, backbone_only=True, unit_cell: PDBUnitCell = None,
-                 isotropic=True, sigma_factor=1.):
+
+    def __init__(
+        self,
+        backbone_only=True,
+        unit_cell: PDBUnitCell = None,
+        isotropic=True,
+        sigma_factor=1.0,
+    ):
         """
         :param backbone_only: Whether to only average over backbone atoms,
         i.e. N CA C (where CA means alpha-carbon).
@@ -501,8 +530,9 @@ class AtomLocationUncertainty(object):
         self.isotropic = isotropic
         self.sigma_factor = sigma_factor
 
-    def mean_uncertainty(self, pp: PDB.Polypeptide, scale_as_bfactor=False) \
-            -> List[float]:
+    def mean_uncertainty(
+        self, pp: PDB.Polypeptide, scale_as_bfactor=False
+    ) -> List[float]:
         """
         Calculates the average uncertainties for each residue in a polypeptide
         chain. The uncertainties will be returned in units of Angstroms^2.
@@ -574,7 +604,7 @@ class AtomLocationUncertainty(object):
         :return: Average uncertainty along X, Y, Z directions.
         """
         sigma = self.atom_cov_matrix(a)
-        return np.trace(sigma) / 3.
+        return np.trace(sigma) / 3.0
 
     def atom_xyz(self, a: Atom) -> np.ndarray:
         """
@@ -590,10 +620,10 @@ class DihedralKDE(object):
     Performs Kernel density estimation of a set of angles, evaluated on a
     discrete 2d grid.
     """
-    def __init__(self,
-                 n_bins=128, k1=1., k2=1., k3=0.,
-                 batchsize=64, dtype=np.float32,
-                 ):
+
+    def __init__(
+        self, n_bins=128, k1=1.0, k2=1.0, k3=0.0, batchsize=64, dtype=np.float32,
+    ):
         """
         :param n_bins: Number of discrete angle bins in each axis of the 2d
         grid.
@@ -628,7 +658,7 @@ class DihedralKDE(object):
 
         :return: BvM kernel evaluated pointwise on the given data.
         """
-        t1, t2, t3 = 0., 0., 0.
+        t1, t2, t3 = 0.0, 0.0, 0.0
 
         if k1 > 0:
             t1 = k1 * np.cos(phi)

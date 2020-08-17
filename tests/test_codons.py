@@ -5,8 +5,7 @@ from pp5.codons import CODON_RE, CODONS, AA_CODONS
 
 class TestCodonRe:
     def test_invalid(self):
-        invalids = ['AAZ', 'AACD', 'XAAC', '123', 'AC', '!@#', 'Z-GTA',
-                    'A-ZCA']
+        invalids = ["AAZ", "AACD", "XAAC", "123", "AC", "!@#", "Z-GTA", "A-ZCA"]
         for s in invalids:
             m = CODON_RE.match(s)
             assert m is None, s

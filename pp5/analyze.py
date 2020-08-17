@@ -29,12 +29,12 @@ from pp5.codons import AA_CODONS, N_CODONS, codon2aac, CODON_RE, ACIDS, ACIDS_1T
 
 LOGGER = logging.getLogger(__name__)
 
-CODON_TYPE_ANY = 'ANY'
-SS_TYPE_ANY = 'ANY'
-SS_TYPE_HELIX = 'HELIX'
-SS_TYPE_SHEET = 'SHEET'
-SS_TYPE_TURN = 'TURN'
-SS_TYPE_OTHER = 'OTHER'
+CODON_TYPE_ANY = "ANY"
+SS_TYPE_ANY = "ANY"
+SS_TYPE_HELIX = "HELIX"
+SS_TYPE_SHEET = "SHEET"
+SS_TYPE_TURN = "TURN"
+SS_TYPE_OTHER = "OTHER"
 SS_TYPES = (SS_TYPE_HELIX, SS_TYPE_SHEET, SS_TYPE_TURN, SS_TYPE_OTHER)
 DSSP_TO_SS_TYPE = {
     # The DSSP codes for secondary structure used here are:
@@ -46,15 +46,15 @@ DSSP_TO_SS_TYPE = {
     # T        Turn
     # S        Bend
     # -        None
-    'E': SS_TYPE_SHEET,
-    'H': SS_TYPE_HELIX,
-    'G': SS_TYPE_OTHER,  # maybe also helix?
-    'I': SS_TYPE_OTHER,  # maybe also helix?
-    'T': SS_TYPE_TURN,
-    'S': SS_TYPE_OTHER,  # maybe also turn?
-    'B': SS_TYPE_OTHER,  # maybe also sheet?
-    '-': None,
-    '': None,
+    "E": SS_TYPE_SHEET,
+    "H": SS_TYPE_HELIX,
+    "G": SS_TYPE_OTHER,  # maybe also helix?
+    "I": SS_TYPE_OTHER,  # maybe also helix?
+    "T": SS_TYPE_TURN,
+    "S": SS_TYPE_OTHER,  # maybe also turn?
+    "B": SS_TYPE_OTHER,  # maybe also sheet?
+    "-": None,
+    "": None,
 }
 
 
@@ -64,13 +64,13 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
     """
 
     def __init__(
-            self,
-            analysis_name,
-            dataset_dir: Union[str, Path],
-            input_file: Union[str, Path],
-            out_dir: Union[str, Path] = None,
-            out_tag: str = None,
-            clear_intermediate=False,
+        self,
+        analysis_name,
+        dataset_dir: Union[str, Path],
+        input_file: Union[str, Path],
+        out_dir: Union[str, Path] = None,
+        out_tag: str = None,
+        clear_intermediate=False,
     ):
         """
 
@@ -88,20 +88,24 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
         self.out_tag = out_tag
 
         if not self.dataset_dir.is_dir():
-            raise ValueError(f'Dataset dir {self.dataset_dir} not found')
+            raise ValueError(f"Dataset dir {self.dataset_dir} not found")
 
         self.input_file = self.dataset_dir.joinpath(input_file)
         if not self.input_file.is_file():
-            raise ValueError(f'Dataset file {self.input_file} not found')
+            raise ValueError(f"Dataset file {self.input_file} not found")
 
-        tag = f'-{self.out_tag}' if self.out_tag else ''
-        out_dir = out_dir or self.dataset_dir.joinpath('results')
-        super().__init__(id=f'{self.analysis_name}{tag}', out_dir=out_dir,
-                         tag=out_tag, create_zip=False, )
+        tag = f"-{self.out_tag}" if self.out_tag else ""
+        out_dir = out_dir or self.dataset_dir.joinpath("results")
+        super().__init__(
+            id=f"{self.analysis_name}{tag}",
+            out_dir=out_dir,
+            tag=out_tag,
+            create_zip=False,
+        )
 
         # Create clean directory for intermediate results between steps
         # Note that super() init set out_dir to include the id (analysis name).
-        self.intermediate_dir = self.out_dir.joinpath('_intermediate_')
+        self.intermediate_dir = self.out_dir.joinpath("_intermediate_")
         if clear_intermediate and self.intermediate_dir.exists():
             shutil.rmtree(str(self.intermediate_dir))
         os.makedirs(str(self.intermediate_dir), exist_ok=True)
@@ -111,24 +115,24 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
 
     def _dump_intermediate(self, name: str, obj):
         # Update dict of intermediate files
-        path = self.intermediate_dir.joinpath(f'{name}.pkl')
+        path = self.intermediate_dir.joinpath(f"{name}.pkl")
         self._intermediate_files[name] = path
 
-        with open(str(path), 'wb') as f:
+        with open(str(path), "wb") as f:
             pickle.dump(obj, f, protocol=4)
 
         size_mbytes = os.path.getsize(path) / 1024 / 1024
-        LOGGER.info(f'Wrote intermediate file {path} ({size_mbytes:.1f}MB)')
+        LOGGER.info(f"Wrote intermediate file {path} ({size_mbytes:.1f}MB)")
         return path
 
     def _load_intermediate(self, name, allow_old=True, raise_if_missing=True):
-        path = self.intermediate_dir.joinpath(f'{name}.pkl')
+        path = self.intermediate_dir.joinpath(f"{name}.pkl")
 
         if name not in self._intermediate_files:
             # Intermediate files might exist from a previous run we wish to
             # resume
             if allow_old:
-                LOGGER.warning(f'Loading old intermediate file {path}')
+                LOGGER.warning(f"Loading old intermediate file {path}")
             else:
                 return None
 
@@ -139,10 +143,10 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
                 return None
 
         self._intermediate_files[name] = path
-        with open(str(path), 'rb') as f:
+        with open(str(path), "rb") as f:
             obj = pickle.load(f)
 
-        LOGGER.info(f'Loaded intermediate file {path}')
+        LOGGER.info(f"Loaded intermediate file {path}")
         return obj
 
     def analyze(self):
@@ -154,17 +158,20 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
 
 
 class CodonDistanceAnalyzer(ParallelAnalyzer):
-    def __init__(self,
-                 dataset_dir: Union[str, Path],
-                 out_dir: Union[str, Path] = None,
-                 pointwise_filename: str = 'data-pointwise.csv',
-                 pairwise_filename: str = 'data-pairwise.csv',
-                 condition_on_ss=True, consolidate_ss=DSSP_TO_SS_TYPE.copy(),
-                 bs_niter=1, bs_randstate=None,
-                 out_tag: str = None,
-                 pointwise_extra_kw: dict = None,
-                 pairwise_extra_kw: dict = None,
-                 ):
+    def __init__(
+        self,
+        dataset_dir: Union[str, Path],
+        out_dir: Union[str, Path] = None,
+        pointwise_filename: str = "data-pointwise.csv",
+        pairwise_filename: str = "data-pairwise.csv",
+        condition_on_ss=True,
+        consolidate_ss=DSSP_TO_SS_TYPE.copy(),
+        bs_niter=1,
+        bs_randstate=None,
+        out_tag: str = None,
+        pointwise_extra_kw: dict = None,
+        pairwise_extra_kw: dict = None,
+    ):
         """
         Performs both pointwise and pairwise codon-distance analysis and produces a
         comparison between these two type of analysis.
@@ -188,13 +195,22 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
         :param pairwise_extra_kw: Extra args for PairwiseCodonDistanceAnalyzer.
         Will override the ones define in this function.
         """
-        super().__init__('codon_dist', dataset_dir, 'meta.json', out_dir,
-                         out_tag, clear_intermediate=False)
+        super().__init__(
+            "codon_dist",
+            dataset_dir,
+            "meta.json",
+            out_dir,
+            out_tag,
+            clear_intermediate=False,
+        )
 
         common_kw = dict(
-            dataset_dir=dataset_dir, out_dir=self.out_dir,
-            condition_on_ss=condition_on_ss, consolidate_ss=consolidate_ss,
-            bs_niter=bs_niter, bs_randstate=bs_randstate,
+            dataset_dir=dataset_dir,
+            out_dir=self.out_dir,
+            condition_on_ss=condition_on_ss,
+            consolidate_ss=consolidate_ss,
+            bs_niter=bs_niter,
+            bs_randstate=bs_randstate,
         )
         pointwise_extra_kw = pointwise_extra_kw or {}
         pairwise_extra_kw = pairwise_extra_kw or {}
@@ -207,31 +223,34 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
         pairwise_kw.update(pairwise_filename=pairwise_filename, **pairwise_extra_kw)
         self.pairwise_analyzer = PairwiseCodonDistanceAnalyzer(**pairwise_kw)
 
-    def _collection_functions(self) \
-            -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
+    def _collection_functions(
+        self,
+    ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
-            'run-analysis': self._run_analysis,
-            'cdist-correlation': self._cdist_correlation,
-            'plot-corr-rainbows': self._plot_corr_rainbows,
-            'plot-mds-rainbows': self._plot_mds_rainbows,
+            "run-analysis": self._run_analysis,
+            "cdist-correlation": self._cdist_correlation,
+            "plot-corr-rainbows": self._plot_corr_rainbows,
+            "plot-mds-rainbows": self._plot_mds_rainbows,
         }
 
     def _run_analysis(self, pool: mp.pool.Pool) -> dict:
-        analyzers = {'pointwise': self.pointwise_analyzer,
-                     'pairwise': self.pairwise_analyzer}
+        analyzers = {
+            "pointwise": self.pointwise_analyzer,
+            "pairwise": self.pairwise_analyzer,
+        }
 
         return_meta = {}
         for name, analyzer in analyzers.items():
             analyzer.collect()
-            if any(s.result == 'FAIL' for s in analyzer._collection_steps):
-                raise RuntimeError(f'{name} analysis failed, stopping...')
+            if any(s.result == "FAIL" for s in analyzer._collection_steps):
+                raise RuntimeError(f"{name} analysis failed, stopping...")
             return_meta[name] = analyzer._collection_meta
 
         return return_meta
 
     def _cdist_correlation(self, pool: mp.pool.Pool) -> dict:
-        cdists_pointwise = self.pointwise_analyzer._load_intermediate('codon-dists-exp')
-        cdists_pairwise = self.pairwise_analyzer._load_intermediate('codon-dists')
+        cdists_pointwise = self.pointwise_analyzer._load_intermediate("codon-dists-exp")
+        cdists_pairwise = self.pairwise_analyzer._load_intermediate("codon-dists")
 
         # Will hold a dataframe of corr coefficients for each SS type
         corr_dfs = []
@@ -242,7 +261,7 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
         # Acids contains the AA names, and Labels contains the codon names.
         corr_data = {}
         for ss_type in SS_TYPES:
-            LOGGER.info(f'Calculating pointwise-pairwise correlation for {ss_type}...')
+            LOGGER.info(f"Calculating pointwise-pairwise correlation for {ss_type}...")
 
             # Get codon-distance matrices (61, 61)
             pointwise = cdists_pointwise[ss_type][0]
@@ -265,20 +284,20 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
                 s1, s2 = np.imag(pairwise[i, j]), np.imag(pointwise[i, j])
 
                 # Add to both current AA key and 'ALL' key
-                for plot_data_key in ('ALL', a1):
+                for plot_data_key in ("ALL", a1):
                     curr_plot_data = ss_corr_data.setdefault(plot_data_key, {})
-                    curr_plot_data.setdefault('dists', []).append((x, y, s1, s2))
-                    curr_plot_data.setdefault('acids', []).append(a1)
-                    label = c1 if c1 == c2 else f'{c1}-{c2}'
-                    curr_plot_data.setdefault('codons', []).append(label)
+                    curr_plot_data.setdefault("dists", []).append((x, y, s1, s2))
+                    curr_plot_data.setdefault("acids", []).append(a1)
+                    label = c1 if c1 == c2 else f"{c1}-{c2}"
+                    curr_plot_data.setdefault("codons", []).append(label)
 
             corr_data[ss_type] = ss_corr_data
 
             # Calculate the correlation coefficient in each AA and for ALL
             corr_coeffs = {}
-            for aa in ACIDS + ['ALL']:
+            for aa in ACIDS + ["ALL"]:
                 d = ss_corr_data[aa]
-                xy = np.array(d['dists'])[:, :2]
+                xy = np.array(d["dists"])[:, :2]
                 if len(xy) == 1:
                     r = np.nan
                 else:
@@ -290,62 +309,83 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
         # Now we can create a full DataFrame with the corr coeffs of all SS types.
         df_corr = pd.concat(corr_dfs)
         df_corr.index = SS_TYPES
-        df_corr.columns = list(ACIDS_1TO1AND3.values()) + ['ALL']
+        df_corr.columns = list(ACIDS_1TO1AND3.values()) + ["ALL"]
         df_corr = df_corr.T
 
         # Write the CSV file
-        outfile = self.out_dir.joinpath('corr-pairwise_pointwise.csv')
+        outfile = self.out_dir.joinpath("corr-pairwise_pointwise.csv")
         df_corr.to_csv(outfile, float_format="%.3f")
 
         # Save the correlation data dict
-        self._dump_intermediate('cdist-corr-data', corr_data)
+        self._dump_intermediate("cdist-corr-data", corr_data)
         return {}
 
     def _plot_corr_rainbows(self, pool: mp.pool.Pool) -> dict:
-        corr_data = self._load_intermediate('cdist-corr-data', allow_old=True)
+        corr_data = self._load_intermediate("cdist-corr-data", allow_old=True)
 
         fig_size = (8, 8)
-        err_scale, alpha = .1, 0.5
+        err_scale, alpha = 0.1, 0.5
 
         for ss_type in SS_TYPES:
-            LOGGER.info(f'Plotting pairwise-pointwise correlation rainbows for'
-                        f' {ss_type}...')
+            LOGGER.info(
+                f"Plotting pairwise-pointwise correlation rainbows for" f" {ss_type}..."
+            )
             async_results = []
 
-            for aa in ACIDS + ['ALL']:
+            for aa in ACIDS + ["ALL"]:
                 d = corr_data[ss_type][aa]
-                title = f'{aa}_{ss_type}' if aa != 'ALL' else f'{ss_type}'
-                fig_dir = 'rainbow-dists-aa' if aa != 'ALL' else 'rainbow-dists'
+                title = f"{aa}_{ss_type}" if aa != "ALL" else f"{ss_type}"
+                fig_dir = "rainbow-dists-aa" if aa != "ALL" else "rainbow-dists"
                 fig_dir = self.out_dir.joinpath(fig_dir)
-                fig_file = fig_dir.joinpath(f'{title}.pdf')
+                fig_file = fig_dir.joinpath(f"{title}.pdf")
 
-                async_results.append(pool.apply_async(
-                    pp5.plot.rainbow, args=(d['dists'],), kwds=dict(
-                        group_labels=d['acids'], point_labels=d['codons'],
-                        all_groups=ACIDS_1TO1AND3, alpha=alpha, fig_size=fig_size,
-                        err_scale=err_scale, error_ellipse=False, normalize=True,
-                        xlabel='Pairwise', ylabel='Pointwise',
-                        with_regression=True, title=title, outfile=fig_file,
+                async_results.append(
+                    pool.apply_async(
+                        pp5.plot.rainbow,
+                        args=(d["dists"],),
+                        kwds=dict(
+                            group_labels=d["acids"],
+                            point_labels=d["codons"],
+                            all_groups=ACIDS_1TO1AND3,
+                            alpha=alpha,
+                            fig_size=fig_size,
+                            err_scale=err_scale,
+                            error_ellipse=False,
+                            normalize=True,
+                            xlabel="Pairwise",
+                            ylabel="Pointwise",
+                            with_regression=True,
+                            title=title,
+                            outfile=fig_file,
+                        ),
                     )
-                ))
+                )
 
             # Wait for plotting to complete
             self._handle_async_results(async_results)
         return {}
 
     def _plot_mds_rainbows(self, pool: mp.pool.Pool) -> dict:
-        cdists_pointwise = self.pointwise_analyzer._load_intermediate('codon-dists-exp')
+        cdists_pointwise = self.pointwise_analyzer._load_intermediate("codon-dists-exp")
 
         d_scale = 1e3
-        s_scale = .25
-        alpha = .5
-        mds_args = dict(n_components=2, metric=True, n_init=10, max_iter=2000,
-                        verbose=False, eps=1e-9, dissimilarity='precomputed',
-                        n_jobs=-1, random_state=42)
+        s_scale = 0.25
+        alpha = 0.5
+        mds_args = dict(
+            n_components=2,
+            metric=True,
+            n_init=10,
+            max_iter=2000,
+            verbose=False,
+            eps=1e-9,
+            dissimilarity="precomputed",
+            n_jobs=-1,
+            random_state=42,
+        )
         mds = manifold.MDS(**mds_args)
 
         for ss_type in SS_TYPES:
-            LOGGER.info(f'Plotting pointwise MDS rainbows for {ss_type}...')
+            LOGGER.info(f"Plotting pointwise MDS rainbows for {ss_type}...")
             mu_d2 = np.real(cdists_pointwise[ss_type][0])
             std_d2 = np.imag(cdists_pointwise[ss_type][0])
 
@@ -353,9 +393,11 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
             S = np.zeros((N_CODONS, 1), dtype=np.float32)
             D = np.zeros((N_CODONS, N_CODONS), dtype=np.float32)
             for i in range(N_CODONS):
-                S[i] = np.sqrt(.25 * mu_d2[i, i])
+                S[i] = np.sqrt(0.25 * mu_d2[i, i])
                 for j in range(N_CODONS):
-                    D[i, j] = np.sqrt(mu_d2[i, j] - .5 * mu_d2[i, i] - .5 * mu_d2[j, j])
+                    D[i, j] = np.sqrt(
+                        mu_d2[i, j] - 0.5 * mu_d2[i, i] - 0.5 * mu_d2[j, j]
+                    )
 
             D *= d_scale
             S *= d_scale
@@ -365,26 +407,41 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
             rainbow_data = np.hstack((X, S, S))
             group_labels = [aac[0] for aac in AA_CODONS]
             point_labels = AA_CODONS
-            fig_file = self.out_dir.joinpath('rainbow-mds', f'{ss_type}.pdf')
-            pp5.plot.rainbow(rainbow_data, group_labels, point_labels,
-                             all_groups=ACIDS_1TO1AND3, title=ss_type,
-                             alpha=alpha, err_scale=s_scale, error_ellipse=True,
-                             normalize=True, outfile=fig_file)
+            fig_file = self.out_dir.joinpath("rainbow-mds", f"{ss_type}.pdf")
+            pp5.plot.rainbow(
+                rainbow_data,
+                group_labels,
+                point_labels,
+                all_groups=ACIDS_1TO1AND3,
+                title=ss_type,
+                alpha=alpha,
+                err_scale=s_scale,
+                error_ellipse=True,
+                normalize=True,
+                outfile=fig_file,
+            )
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
     def __init__(
-            self,
-            dataset_dir: Union[str, Path],
-            out_dir: Union[str, Path] = None,
-            pointwise_filename: str = 'data-pointwise.csv',
-            condition_on_prev='codon',
-            condition_on_ss=True, consolidate_ss=DSSP_TO_SS_TYPE.copy(),
-            strict_ss=True, strict_codons=True,
-            kde_nbins=128, kde_k1=30., kde_k2=30., kde_k3=0.,
-            bs_niter=1, bs_randstate=None, bs_limit_n=False,
-            n_parallel_kdes: int = 8,
-            out_tag: str = None,
+        self,
+        dataset_dir: Union[str, Path],
+        out_dir: Union[str, Path] = None,
+        pointwise_filename: str = "data-pointwise.csv",
+        condition_on_prev="codon",
+        condition_on_ss=True,
+        consolidate_ss=DSSP_TO_SS_TYPE.copy(),
+        strict_ss=True,
+        strict_codons=True,
+        kde_nbins=128,
+        kde_k1=30.0,
+        kde_k2=30.0,
+        kde_k3=0.0,
+        bs_niter=1,
+        bs_randstate=None,
+        bs_limit_n=False,
+        n_parallel_kdes: int = 8,
+        out_tag: str = None,
     ):
         """
         Analyzes a pointwise dataset (dihedral angles with residue information)
@@ -422,13 +479,20 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         excessive memory usage.
         :param out_tag: Tag for output.
         """
-        super().__init__('pointwise_cdist', dataset_dir, pointwise_filename, out_dir,
-                         out_tag, clear_intermediate=False)
+        super().__init__(
+            "pointwise_cdist",
+            dataset_dir,
+            pointwise_filename,
+            out_dir,
+            out_tag,
+            clear_intermediate=False,
+        )
 
-        condition_on_prev = '' if condition_on_prev is None \
-            else condition_on_prev.lower()
-        if condition_on_prev not in {'codon', 'aa', ''}:
-            raise ValueError(f'invalid condition_on_prev: {condition_on_prev}')
+        condition_on_prev = (
+            "" if condition_on_prev is None else condition_on_prev.lower()
+        )
+        if condition_on_prev not in {"codon", "aa", ""}:
+            raise ValueError(f"invalid condition_on_prev: {condition_on_prev}")
 
         self.condition_on_prev = condition_on_prev
         self.condition_on_ss = condition_on_ss
@@ -436,38 +500,39 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.strict_ss = strict_ss
         self.strict_codons = strict_codons
 
-        self.angle_pairs = [(f'phi+0', f'psi+0'), (f'phi+0', f'psi-1')]
+        self.angle_pairs = [(f"phi+0", f"psi+0"), (f"phi+0", f"psi-1")]
         self.angle_cols = sorted(set(it.chain(*self.angle_pairs)))
-        self.codon_cols = [f'codon-1', f'codon+0']
-        self.codon_opts_cols = [f'codon_opts-1', f'codon_opts+0']
-        self.secondary_cols = [f'secondary-1', f'secondary+0']
-        self.secondary_col = 'secondary'
-        self.condition_col = 'condition_group'
+        self.codon_cols = [f"codon-1", f"codon+0"]
+        self.codon_opts_cols = [f"codon_opts-1", f"codon_opts+0"]
+        self.secondary_cols = [f"secondary-1", f"secondary+0"]
+        self.secondary_col = "secondary"
+        self.condition_col = "condition_group"
 
         self.kde_args = dict(n_bins=kde_nbins, k1=kde_k1, k2=kde_k2, k3=kde_k3)
-        self.kde_dist_metric = 'l2'
+        self.kde_dist_metric = "l2"
 
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
         self.bs_limit_n = bs_limit_n
         self.n_parallel_kdes = n_parallel_kdes
 
-    def _collection_functions(self) \
-            -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
+    def _collection_functions(
+        self,
+    ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
-            'preprocess-dataset': self._preprocess_dataset,
-            'dataset-stats': self._dataset_stats,
-            'dihedral-kde-full': self._dihedral_kde_full,
-            'codon-dists': self._codons_dists,
-            'codon-dists-expected': self._codon_dists_expected,
-            'plot-results': self._plot_results,
+            "preprocess-dataset": self._preprocess_dataset,
+            "dataset-stats": self._dataset_stats,
+            "dihedral-kde-full": self._dihedral_kde_full,
+            "codon-dists": self._codons_dists,
+            "codon-dists-expected": self._codon_dists_expected,
+            "plot-results": self._plot_results,
         }
 
     def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
         # Specifies which columns to read from the CSV
         def col_filter(col_name: str):
             # Keep only columns from prev and current
-            if col_name.endswith('-1') or col_name.endswith('+0'):
+            if col_name.endswith("-1") or col_name.endswith("+0"):
                 return True
             return False
 
@@ -480,12 +545,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Dump processed dataset
         df_preproc = pd.concat(sub_dfs, axis=0, ignore_index=True)
-        LOGGER.info(f'Loaded {self.input_file}: {len(df_preproc)} rows\n'
-                    f'{df_preproc}\n{df_preproc.dtypes}')
+        LOGGER.info(
+            f"Loaded {self.input_file}: {len(df_preproc)} rows\n"
+            f"{df_preproc}\n{df_preproc.dtypes}"
+        )
 
-        self._dump_intermediate('dataset', df_preproc)
+        self._dump_intermediate("dataset", df_preproc)
         return {
-            'n_TOTAL': len(df_preproc),
+            "n_TOTAL": len(df_preproc),
         }
 
     def _preprocess_subframe(self, df_sub: pd.DataFrame):
@@ -522,10 +589,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             cond_groups = []
 
-            if self.condition_on_prev == 'codon':
+            if self.condition_on_prev == "codon":
                 # Keep AA-CODON
                 cond_groups.append(prev_aac)
-            elif self.condition_on_prev == 'aa':
+            elif self.condition_on_prev == "aa":
                 # Keep only AA
                 cond_groups.append(prev_aac[0])
             else:
@@ -536,7 +603,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             else:
                 cond_groups.append(SS_TYPE_ANY)
 
-            return str.join('_', cond_groups)
+            return str.join("_", cond_groups)
 
         # Remove rows where ambiguous codons exist
         if self.strict_codons:
@@ -547,9 +614,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         ss_consolidated = df_sub.apply(ss_consolidator, axis=1)
 
         # Keep only angle and codon columns from the full dataset
-        df_pointwise = pd.DataFrame(
-            data=df_sub[self.angle_cols + self.codon_cols],
-        )
+        df_pointwise = pd.DataFrame(data=df_sub[self.angle_cols + self.codon_cols],)
 
         # Add consolidated SS
         df_pointwise[self.secondary_col] = ss_consolidated
@@ -581,7 +646,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Calculate likelihood distribution of prev codon, separated by SS
         codon_likelihoods = {}
         prev_codon, curr_codon = self.codon_cols
-        df_processed: pd.DataFrame = self._load_intermediate('dataset')
+        df_processed: pd.DataFrame = self._load_intermediate("dataset")
 
         df_ss_groups = df_processed.groupby(self.secondary_col)
         for ss_type, df_ss_group in df_ss_groups:
@@ -589,13 +654,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             df_codon_groups = df_ss_group.groupby(prev_codon)
             df_codon_group_names = df_codon_groups.groups.keys()
 
-            codon_likelihood = np.array([
-                0.
-                if codon not in df_codon_group_names
-                else len(df_codon_groups.get_group(codon)) / n_ss
-                for codon in AA_CODONS  # ensure consistent order
-            ], dtype=np.float32)
-            assert np.isclose(np.sum(codon_likelihood), 1.)
+            codon_likelihood = np.array(
+                [
+                    0.0
+                    if codon not in df_codon_group_names
+                    else len(df_codon_groups.get_group(codon)) / n_ss
+                    for codon in AA_CODONS  # ensure consistent order
+                ],
+                dtype=np.float32,
+            )
+            assert np.isclose(np.sum(codon_likelihood), 1.0)
 
             # Save a map from codon name to it's likelihood
             codon_likelihoods[ss_type] = {
@@ -605,12 +673,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Calculate AA likelihoods based on the codon likelihoods
         aa_likelihoods = {}
         for ss_type, codons in codon_likelihoods.items():
-            aa_likelihoods[ss_type] = {aac[0]: 0. for aac in codons.keys()}
+            aa_likelihoods[ss_type] = {aac[0]: 0.0 for aac in codons.keys()}
             for aac, likelihood in codons.items():
                 aa = aac[0]
                 aa_likelihoods[ss_type][aa] += likelihood
 
-            assert np.isclose(sum(aa_likelihoods[ss_type].values()), 1.)
+            assert np.isclose(sum(aa_likelihoods[ss_type].values()), 1.0)
 
         # Calculate SS likelihoods (ss->probability)
         ss_likelihoods = {}
@@ -618,7 +686,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         for ss_type, df_ss_group in df_ss_groups:
             n_ss = len(df_ss_group)
             ss_likelihoods[ss_type] = n_ss / n_total
-        assert np.isclose(sum(ss_likelihoods.values()), 1.)
+        assert np.isclose(sum(ss_likelihoods.values()), 1.0)
 
         # Add 'ANY' SS type to all likelihoods dicts
         for l in [codon_likelihoods, aa_likelihoods]:
@@ -634,11 +702,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     l[SS_TYPE_ANY].setdefault(aac, 0)
                     l[SS_TYPE_ANY][aac] += p * likelihood
 
-            assert np.isclose(sum(l[SS_TYPE_ANY].values()), 1.)
+            assert np.isclose(sum(l[SS_TYPE_ANY].values()), 1.0)
 
-        self._dump_intermediate('codon-likelihoods', codon_likelihoods)
-        self._dump_intermediate('aa-likelihoods', aa_likelihoods)
-        self._dump_intermediate('ss-likelihoods', ss_likelihoods)
+        self._dump_intermediate("codon-likelihoods", codon_likelihoods)
+        self._dump_intermediate("aa-likelihoods", aa_likelihoods)
+        self._dump_intermediate("ss-likelihoods", ss_likelihoods)
 
         # Calculate group and subgroup sizes
         group_sizes = {}
@@ -647,37 +715,39 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         for group_idx, df_group in df_groups:
             df_subgroups = df_group.groupby(curr_codon_col)
             group_sizes[group_idx] = {
-                'total': len(df_group),
-                'subgroups': sort_dict({
-                    idx_sub: len(df_sub) for idx_sub, df_sub in df_subgroups
-                })
+                "total": len(df_group),
+                "subgroups": sort_dict(
+                    {idx_sub: len(df_sub) for idx_sub, df_sub in df_subgroups}
+                ),
             }
-        group_sizes = sort_dict(group_sizes, selector=lambda g: g['total'])
-        self._dump_intermediate('group-sizes', group_sizes)
+        group_sizes = sort_dict(group_sizes, selector=lambda g: g["total"])
+        self._dump_intermediate("group-sizes", group_sizes)
 
-        return {'group_sizes': group_sizes}
+        return {"group_sizes": group_sizes}
 
     def _dihedral_kde_full(self, pool: mp.pool.Pool) -> dict:
-        df_processed: pd.DataFrame = self._load_intermediate('dataset')
+        df_processed: pd.DataFrame = self._load_intermediate("dataset")
         df_groups = df_processed.groupby(by=self.secondary_col)
         df_groups_count: pd.DataFrame = df_groups.count()
         ss_counts = {
-            f'n_{ss_type}': count
+            f"n_{ss_type}": count
             for ss_type, count in df_groups_count.max(axis=1).to_dict().items()
         }
 
-        LOGGER.info(f'Secondary-structure groups:\n{ss_counts})')
-        LOGGER.info(f'Calculating dihedral distribution per SS type...')
+        LOGGER.info(f"Secondary-structure groups:\n{ss_counts})")
+        LOGGER.info(f"Calculating dihedral distribution per SS type...")
 
-        args = ((group_idx, df_group, self.angle_pairs, self.kde_args)
-                for group_idx, df_group in df_groups)
+        args = (
+            (group_idx, df_group, self.angle_pairs, self.kde_args)
+            for group_idx, df_group in df_groups
+        )
 
         map_result = pool.starmap(self._dihedral_kde_single_group, args)
 
         # maps from group (SS) to a list, containing a dihedral KDE
         # matrix for each angle-pair.
         map_result = {group_idx: dkdes for group_idx, dkdes in map_result}
-        self._dump_intermediate('full-dkde', map_result)
+        self._dump_intermediate("full-dkde", map_result)
 
         return {**ss_counts}
 
@@ -685,23 +755,23 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         prev_codon_col, curr_codon_col = self.codon_cols
 
         # We currently only support one type of metric
-        dist_metrics = {
-            'l2': self._kde_dist_metric_l2
-        }
+        dist_metrics = {"l2": self._kde_dist_metric_l2}
         dist_metric = dist_metrics[self.kde_dist_metric.lower()]
 
         # Calculate chunk-size for parallel mapping.
         # (Num groups in parallel) * (Num subgroups) / (num processors)
-        n_procs = pp5.get_config('MAX_PROCESSES')
+        n_procs = pp5.get_config("MAX_PROCESSES")
         chunksize = self.n_parallel_kdes * N_CODONS / n_procs
         chunksize = max(int(chunksize), 1)
 
-        df_processed: pd.DataFrame = self._load_intermediate('dataset')
+        df_processed: pd.DataFrame = self._load_intermediate("dataset")
         df_groups = df_processed.groupby(by=self.condition_col)
 
-        LOGGER.info(f'Calculating subgroup KDEs '
-                    f'(n_parallel_kdes={self.n_parallel_kdes}, '
-                    f'chunksize={chunksize})...')
+        LOGGER.info(
+            f"Calculating subgroup KDEs "
+            f"(n_parallel_kdes={self.n_parallel_kdes}, "
+            f"chunksize={chunksize})..."
+        )
 
         codon_dists, codon_dkdes = {}, {}
         dkde_asyncs: Dict[str, AsyncResult] = {}
@@ -729,15 +799,19 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Run bootstrapped KDE estimation for all subgroups in parallel
             subprocess_args = (
                 (
-                    group_idx, subgroup_idx, df_subgroup,
-                    self.angle_pairs, self.kde_args,
-                    self.bs_niter, bs_nsamples[j], self.bs_randstate,
+                    group_idx,
+                    subgroup_idx,
+                    df_subgroup,
+                    self.angle_pairs,
+                    self.kde_args,
+                    self.bs_niter,
+                    bs_nsamples[j],
+                    self.bs_randstate,
                 )
                 for j, (subgroup_idx, df_subgroup) in enumerate(df_subgroups)
             )
             dkde_asyncs[group_idx] = pool.starmap_async(
-                self._codon_dkdes_single_subgroup, subprocess_args,
-                chunksize=chunksize
+                self._codon_dkdes_single_subgroup, subprocess_args, chunksize=chunksize
             )
 
             # Allow limited number of simultaneous group KDE calculations
@@ -751,15 +825,17 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Note that we collect the first one that's ready.
             dkde_results_iter = yield_async_results(dkde_asyncs.copy())
             collected_dkde_results = {}
-            LOGGER.info(f'[{i}] Waiting to collect KDEs '
-                        f'(#async_results={len(dkde_asyncs)})...')
+            LOGGER.info(
+                f"[{i}] Waiting to collect KDEs "
+                f"(#async_results={len(dkde_asyncs)})..."
+            )
             for result_group_idx, group_dkde_result in dkde_results_iter:
                 if group_dkde_result is None:
-                    LOGGER.error(f'[{i}] No KDE result in {result_group_idx}')
+                    LOGGER.error(f"[{i}] No KDE result in {result_group_idx}")
                     continue
 
                 # Remove async result so we dont see it next time
-                LOGGER.info(f'[{i}] Collected KDEs for {result_group_idx}')
+                LOGGER.info(f"[{i}] Collected KDEs for {result_group_idx}")
                 collected_dkde_results[result_group_idx] = group_dkde_result
                 del dkde_asyncs[result_group_idx]
 
@@ -784,10 +860,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # Run distance matrix calculation in parallel
                 dist_asyncs[result_group_idx] = pool.apply_async(
                     self._codon_dists_single_group,
-                    args=(result_group_idx, bs_codon_dkdes, self.angle_pairs,
-                          dist_metric)
+                    args=(
+                        result_group_idx,
+                        bs_codon_dkdes,
+                        self.angle_pairs,
+                        dist_metric,
+                    ),
                 )
-                LOGGER.info(f'[{i}] Submitted cdist task {result_group_idx}')
+                LOGGER.info(f"[{i}] Submitted cdist task {result_group_idx}")
 
             # Allow limited number of simultaneous distance matrix calculations
             if not last_group and len(dist_asyncs) < self.n_parallel_kdes:
@@ -796,14 +876,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Wait for one of the distance matrix calculations, or all of
             # them if it's the last group
             dists_results_iter = yield_async_results(dist_asyncs.copy())
-            LOGGER.info(f'[{i}] Waiting to collect cdist matrices '
-                        f'(#async_results={len(dist_asyncs)})...')
+            LOGGER.info(
+                f"[{i}] Waiting to collect cdist matrices "
+                f"(#async_results={len(dist_asyncs)})..."
+            )
             for result_group_idx, group_dist_result in dists_results_iter:
                 if group_dist_result is None:
-                    LOGGER.error(f'[{i}] No cdist in {result_group_idx}')
+                    LOGGER.error(f"[{i}] No cdist in {result_group_idx}")
                     continue
 
-                LOGGER.info(f'[{i}] Collected cdist matrix {result_group_idx}')
+                LOGGER.info(f"[{i}] Collected cdist matrix {result_group_idx}")
                 group_d2_matrices, group_codon_dkdes = group_dist_result
                 codon_dists[result_group_idx] = group_d2_matrices
                 codon_dkdes[result_group_idx] = group_codon_dkdes
@@ -814,35 +896,35 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     break
 
         # Make sure everything was collected
-        assert len(dkde_asyncs) == 0, 'Not all KDEs collected'
-        assert len(dist_asyncs) == 0, 'Not all dist matrices collected'
-        LOGGER.info(f'Completed distance matrix collection')
+        assert len(dkde_asyncs) == 0, "Not all KDEs collected"
+        assert len(dist_asyncs) == 0, "Not all dist matrices collected"
+        LOGGER.info(f"Completed distance matrix collection")
 
         # codon_dists: maps from group (codon, SS) to a list, containing a
         # codon-distance matrix for each angle-pair.
         # The codon distance matrix is complex, where real is mu
         # and imag is sigma
-        self._dump_intermediate('codon-dists', codon_dists)
+        self._dump_intermediate("codon-dists", codon_dists)
 
         # codon_dkdes: maps from group to a dict where keys are codons.
         # For each codon we have a list of KDEs, one for each angle pair.
-        self._dump_intermediate('codon-dkdes', codon_dkdes)
+        self._dump_intermediate("codon-dkdes", codon_dkdes)
 
         return {}
 
     def _codon_dists_expected(self, pool: mp.pool.Pool) -> dict:
         # Load map of likelihoods, depending on the type of previous
         # conditioning (ss->codon or AA->probability)
-        if self.condition_on_prev == 'codon':
-            likelihoods: dict = self._load_intermediate('codon-likelihoods')
-        elif self.condition_on_prev == 'aa':
-            likelihoods: dict = self._load_intermediate('aa-likelihoods')
+        if self.condition_on_prev == "codon":
+            likelihoods: dict = self._load_intermediate("codon-likelihoods")
+        elif self.condition_on_prev == "aa":
+            likelihoods: dict = self._load_intermediate("aa-likelihoods")
         else:
             likelihoods = None
 
         # Load the calculated codon-dists matrices. The loaded dict
         # maps from  (prev_codon/AA, SS) to a list of distance matrices
-        codon_dists: dict = self._load_intermediate('codon-dists')
+        codon_dists: dict = self._load_intermediate("codon-dists")
 
         # This dict will hold the final expected distance matrices (i.e. we
         # calculate the expectation using the likelihood of the prev codon
@@ -850,22 +932,22 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         codon_dists_exp = {}
         for group_idx, d2_matrices in codon_dists.items():
             assert len(d2_matrices) == len(self.angle_pairs)
-            codon_or_aa, ss_type = group_idx.split('_')
+            codon_or_aa, ss_type = group_idx.split("_")
 
             if ss_type not in codon_dists_exp:
                 defaults = [np.zeros_like(d2) for d2 in d2_matrices]
                 codon_dists_exp[ss_type] = defaults
 
             for i, d2 in enumerate(d2_matrices):
-                p = likelihoods[ss_type][codon_or_aa] if likelihoods else 1.
+                p = likelihoods[ss_type][codon_or_aa] if likelihoods else 1.0
                 # Don't sum nan's because they kill the entire cell
-                d2 = np.nan_to_num(d2, copy=False, nan=0.)
+                d2 = np.nan_to_num(d2, copy=False, nan=0.0)
                 codon_dists_exp[ss_type][i] += p * d2
 
         # Now we also take the expectation over all SS types to produce one
         # averaged distance matrix, but only if we actually conditioned on it
         if self.condition_on_ss:
-            ss_likelihoods: dict = self._load_intermediate('ss-likelihoods')
+            ss_likelihoods: dict = self._load_intermediate("ss-likelihoods")
             defaults = [np.zeros_like(d2) for d2 in d2_matrices]
             codon_dists_exp[SS_TYPE_ANY] = defaults
             for ss_type, d2_matrices in codon_dists_exp.items():
@@ -875,85 +957,113 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 for i, d2 in enumerate(d2_matrices):
                     codon_dists_exp[SS_TYPE_ANY][i] += p * d2
 
-        self._dump_intermediate('codon-dists-exp', codon_dists_exp)
+        self._dump_intermediate("codon-dists-exp", codon_dists_exp)
         return {}
 
     def _plot_results(self, pool: mp.pool.Pool):
-        LOGGER.info(f'Plotting results...')
+        LOGGER.info(f"Plotting results...")
 
-        ap_labels = [self._cols2label(phi_col, psi_col)
-                     for phi_col, psi_col in self.angle_pairs]
+        ap_labels = [
+            self._cols2label(phi_col, psi_col) for phi_col, psi_col in self.angle_pairs
+        ]
 
         async_results = []
 
         # Expected codon dists
-        codon_dists_exp = self._load_intermediate('codon-dists-exp', False)
+        codon_dists_exp = self._load_intermediate("codon-dists-exp", False)
         if codon_dists_exp is not None:
             for ss_type, d2_matrices in codon_dists_exp.items():
                 args = (ss_type, d2_matrices)
-                async_results.append(pool.apply_async(
-                    self._plot_codon_distances, args=args,
-                    kwds=dict(out_dir=self.out_dir.joinpath('codon-dists-exp'),
-                              titles=ap_labels,
-                              vmin=None, vmax=None,  # should consider scale
-                              annotate_mu=True, plot_std=True)
-                ))
+                async_results.append(
+                    pool.apply_async(
+                        self._plot_codon_distances,
+                        args=args,
+                        kwds=dict(
+                            out_dir=self.out_dir.joinpath("codon-dists-exp"),
+                            titles=ap_labels,
+                            vmin=None,
+                            vmax=None,  # should consider scale
+                            annotate_mu=True,
+                            plot_std=True,
+                        ),
+                    )
+                )
             del codon_dists_exp, d2_matrices
 
         # Codon likelihoods
-        codon_likelihoods = self._load_intermediate('codon-likelihoods', False)
+        codon_likelihoods = self._load_intermediate("codon-likelihoods", False)
         if codon_likelihoods is not None:
-            async_results.append(pool.apply_async(
-                self._plot_likelihoods, args=(codon_likelihoods, 'codon'),
-                kwds=dict(out_dir=self.out_dir, )
-            ))
+            async_results.append(
+                pool.apply_async(
+                    self._plot_likelihoods,
+                    args=(codon_likelihoods, "codon"),
+                    kwds=dict(out_dir=self.out_dir,),
+                )
+            )
             del codon_likelihoods
 
         # AA likelihoods
-        aa_likelihoods = self._load_intermediate('aa-likelihoods', False)
+        aa_likelihoods = self._load_intermediate("aa-likelihoods", False)
         if aa_likelihoods is not None:
-            async_results.append(pool.apply_async(
-                self._plot_likelihoods, args=(aa_likelihoods, 'aa'),
-                kwds=dict(out_dir=self.out_dir, )
-            ))
+            async_results.append(
+                pool.apply_async(
+                    self._plot_likelihoods,
+                    args=(aa_likelihoods, "aa"),
+                    kwds=dict(out_dir=self.out_dir,),
+                )
+            )
             del aa_likelihoods
 
         # Dihedral KDEs of full dataset
-        full_dkde: dict = self._load_intermediate('full-dkde', False)
+        full_dkde: dict = self._load_intermediate("full-dkde", False)
         if full_dkde is not None:
-            async_results.append(pool.apply_async(
-                self._plot_full_dkdes,
-                args=(full_dkde,),
-                kwds=dict(out_dir=self.out_dir, angle_pair_labels=ap_labels)
-            ))
+            async_results.append(
+                pool.apply_async(
+                    self._plot_full_dkdes,
+                    args=(full_dkde,),
+                    kwds=dict(out_dir=self.out_dir, angle_pair_labels=ap_labels),
+                )
+            )
             del full_dkde
 
         # Codon distance matrices
-        codon_dists: dict = self._load_intermediate('codon-dists', False)
+        codon_dists: dict = self._load_intermediate("codon-dists", False)
         if codon_dists is not None:
             for group_idx, d2_matrices in codon_dists.items():
                 args = (group_idx, d2_matrices)
-                async_results.append(pool.apply_async(
-                    self._plot_codon_distances, args=args,
-                    kwds=dict(out_dir=self.out_dir.joinpath('codon-dists'),
-                              titles=ap_labels,
-                              vmin=None, vmax=None,  # should consider scale
-                              annotate_mu=True, plot_std=False)
-                ))
+                async_results.append(
+                    pool.apply_async(
+                        self._plot_codon_distances,
+                        args=args,
+                        kwds=dict(
+                            out_dir=self.out_dir.joinpath("codon-dists"),
+                            titles=ap_labels,
+                            vmin=None,
+                            vmax=None,  # should consider scale
+                            annotate_mu=True,
+                            plot_std=False,
+                        ),
+                    )
+                )
             del codon_dists, d2_matrices
 
         # Dihedral KDEs of each codon in each group
-        codon_dkdes: dict = self._load_intermediate('codon-dkdes', False)
-        group_sizes: dict = self._load_intermediate('group-sizes', False)
+        codon_dkdes: dict = self._load_intermediate("codon-dkdes", False)
+        group_sizes: dict = self._load_intermediate("group-sizes", False)
         if codon_dkdes is not None:
             for group_idx, dkdes in codon_dkdes.items():
-                subgroup_sizes = group_sizes[group_idx]['subgroups']
+                subgroup_sizes = group_sizes[group_idx]["subgroups"]
                 args = (group_idx, subgroup_sizes, dkdes)
-                async_results.append(pool.apply_async(
-                    self._plot_codon_dkdes, args=args,
-                    kwds=dict(out_dir=self.out_dir.joinpath('codon-dkdes'),
-                              angle_pair_labels=ap_labels)
-                ))
+                async_results.append(
+                    pool.apply_async(
+                        self._plot_codon_dkdes,
+                        args=args,
+                        kwds=dict(
+                            out_dir=self.out_dir.joinpath("codon-dkdes"),
+                            angle_pair_labels=ap_labels,
+                        ),
+                    )
+                )
             del codon_dkdes, group_sizes, dkdes
 
         # Wait for plotting to complete. Each function returns a path
@@ -961,53 +1071,60 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
     @staticmethod
     def _plot_likelihoods(
-            likelihoods: dict, codon_or_aa: str, out_dir: Path,
+        likelihoods: dict, codon_or_aa: str, out_dir: Path,
     ):
-        if codon_or_aa == 'codon':
-            fig_filename = out_dir.joinpath(f'codon-likelihoods.pdf')
-            xlabel, ylabel = r'$c$', r'$\Pr(CODON=c)$'
-        elif codon_or_aa == 'aa':
-            fig_filename = out_dir.joinpath(f'aa-likelihoods.pdf')
-            xlabel, ylabel = r'$a$', r'$\Pr(AA=a)$'
+        if codon_or_aa == "codon":
+            fig_filename = out_dir.joinpath(f"codon-likelihoods.pdf")
+            xlabel, ylabel = r"$c$", r"$\Pr(CODON=c)$"
+        elif codon_or_aa == "aa":
+            fig_filename = out_dir.joinpath(f"aa-likelihoods.pdf")
+            xlabel, ylabel = r"$a$", r"$\Pr(AA=a)$"
         else:
-            raise ValueError('Invalid type')
+            raise ValueError("Invalid type")
 
         # Convert from ss_type -> codon -> p, ss_type -> array
         for ss_type in likelihoods.keys():
             xticklabels = likelihoods[ss_type].keys()
-            a = np.array([p for p in likelihoods[ss_type].values()],
-                         dtype=np.float32)
+            a = np.array([p for p in likelihoods[ss_type].values()], dtype=np.float32)
             likelihoods[ss_type] = a
 
         pp5.plot.multi_bar(
             likelihoods,
-            xticklabels=xticklabels, xlabel=xlabel, ylabel=ylabel,
-            fig_size=(20, 5), single_width=1., total_width=0.7,
+            xticklabels=xticklabels,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            fig_size=(20, 5),
+            single_width=1.0,
+            total_width=0.7,
             outfile=fig_filename,
         )
 
         return str(fig_filename)
 
     @staticmethod
-    def _plot_full_dkdes(
-            full_dkde: dict,
-            angle_pair_labels: List[str], out_dir: Path
-    ):
-        fig_filename = out_dir.joinpath('full-dkdes.pdf')
+    def _plot_full_dkdes(full_dkde: dict, angle_pair_labels: List[str], out_dir: Path):
+        fig_filename = out_dir.joinpath("full-dkdes.pdf")
         with mpl.style.context(PP5_MPL_STYLE):
             fig_rows, fig_cols = len(full_dkde) // 2, 2
             fig, ax = mpl.pyplot.subplots(
-                fig_rows, fig_cols, figsize=(5 * fig_cols, 5 * fig_rows),
-                sharex='all', sharey='all'
+                fig_rows,
+                fig_cols,
+                figsize=(5 * fig_cols, 5 * fig_rows),
+                sharex="all",
+                sharey="all",
             )
             fig: mpl.pyplot.Figure
             ax: np.ndarray[mpl.pyplot.Axes] = ax.reshape(-1)
 
-            vmin, vmax = 0., 5e-4
+            vmin, vmax = 0.0, 5e-4
             for i, (group_idx, dkdes) in enumerate(full_dkde.items()):
                 pp5.plot.ramachandran(
-                    dkdes, angle_pair_labels, title=group_idx, ax=ax[i],
-                    vmin=vmin, vmax=vmax
+                    dkdes,
+                    angle_pair_labels,
+                    title=group_idx,
+                    ax=ax[i],
+                    vmin=vmin,
+                    vmax=vmax,
                 )
 
             pp5.plot.savefig(fig, fig_filename, close=True)
@@ -1016,12 +1133,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
     @staticmethod
     def _plot_codon_distances(
-            group_idx: str, d2_matrices: List[np.ndarray],
-            titles: List[str], out_dir: Path,
-            vmin: float = None, vmax: float = None,
-            annotate_mu=True, plot_std=False,
+        group_idx: str,
+        d2_matrices: List[np.ndarray],
+        titles: List[str],
+        out_dir: Path,
+        vmin: float = None,
+        vmax: float = None,
+        annotate_mu=True,
+        plot_std=False,
     ):
-        LOGGER.info(f'Plotting codon distances for {group_idx}')
+        LOGGER.info(f"Plotting codon distances for {group_idx}")
 
         # d2_matrices contains a matrix for each analyzed angle pair.
         # Split the mu and sigma from the complex d2 matrices
@@ -1036,26 +1157,37 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         def quartile_ann_fn(ap_idx, j, k):
             std = d2_sigma[ap_idx][j, k]
             p25, p50, p75 = pct[ap_idx]
-            if std < p25: return '*'
-            elif std < p50: return ':'
-            elif std < p75: return '.'
-            return ''
+            if std < p25:
+                return "*"
+            elif std < p50:
+                return ":"
+            elif std < p75:
+                return "."
+            return ""
 
         # Here we plot a separate distance matrix for mu and for sigma.
         fig_filenames = []
-        for avg_std, d2 in zip(('avg', 'std'), (d2_mu, d2_sigma)):
-            if avg_std == 'std':
+        for avg_std, d2 in zip(("avg", "std"), (d2_mu, d2_sigma)):
+            if avg_std == "std":
                 ann_fn = None
-                if not plot_std: continue
+                if not plot_std:
+                    continue
             else:
                 ann_fn = quartile_ann_fn if annotate_mu else None
 
-            fig_filename = out_dir.joinpath(f'{group_idx}-{avg_std}.png')
+            fig_filename = out_dir.joinpath(f"{group_idx}-{avg_std}.png")
 
             pp5.plot.multi_heatmap(
-                d2, AA_CODONS, AA_CODONS, titles=titles, fig_size=20,
-                vmin=vmin, vmax=vmax,
-                fig_rows=1, outfile=fig_filename, data_annotation_fn=ann_fn
+                d2,
+                AA_CODONS,
+                AA_CODONS,
+                titles=titles,
+                fig_size=20,
+                vmin=vmin,
+                vmax=vmax,
+                fig_rows=1,
+                outfile=fig_filename,
+                data_annotation_fn=ann_fn,
             )
 
             fig_filenames.append(str(fig_filename))
@@ -1064,21 +1196,24 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
     @staticmethod
     def _plot_codon_dkdes(
-            group_idx: str, subgroup_sizes: Dict[str, int],
-            codon_dkdes: Dict[str, List[np.ndarray]],
-            angle_pair_labels: List[str], out_dir: Path
+        group_idx: str,
+        subgroup_sizes: Dict[str, int],
+        codon_dkdes: Dict[str, List[np.ndarray]],
+        angle_pair_labels: List[str],
+        out_dir: Path,
     ):
         # Plot the kdes and distance matrices
-        LOGGER.info(f'Plotting KDEs for {group_idx}')
+        LOGGER.info(f"Plotting KDEs for {group_idx}")
 
         with mpl.style.context(PP5_MPL_STYLE):
-            vmin, vmax = 0., 5e-4
-            fig, ax = mpl.pyplot.subplots(8, 8, figsize=(40, 40),
-                                          sharex='all', sharey='all')
+            vmin, vmax = 0.0, 5e-4
+            fig, ax = mpl.pyplot.subplots(
+                8, 8, figsize=(40, 40), sharex="all", sharey="all"
+            )
             ax: np.ndarray[mpl.pyplot.Axes] = np.reshape(ax, -1)
 
             for i, (codon, dkdes) in enumerate(codon_dkdes.items()):
-                title = f'{codon} ({subgroup_sizes.get(codon, 0)})'
+                title = f"{codon} ({subgroup_sizes.get(codon, 0)})"
                 if not dkdes:
                     ax[i].set_title(title)
                     continue
@@ -1087,11 +1222,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 dkdes = [np.real(dkde) for dkde in dkdes]
 
                 pp5.plot.ramachandran(
-                    dkdes, angle_pair_labels, title=title, ax=ax[i],
-                    vmin=vmin, vmax=vmax
+                    dkdes,
+                    angle_pair_labels,
+                    title=title,
+                    ax=ax[i],
+                    vmin=vmin,
+                    vmax=vmax,
                 )
 
-            fig_filename = out_dir.joinpath(f'{group_idx}.png')
+            fig_filename = out_dir.joinpath(f"{group_idx}.png")
             pp5.plot.savefig(fig, fig_filename, close=True)
 
         return str(fig_filename)
@@ -1112,13 +1251,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
     @staticmethod
     def _codon_dkdes_single_subgroup(
-            group_idx: str, subgroup_idx: str, df_subgroup: pd.DataFrame,
-            angle_pairs: list, kde_args: dict,
-            bs_niter: int, bs_nsamples: int, bs_randstate: Optional[int],
+        group_idx: str,
+        subgroup_idx: str,
+        df_subgroup: pd.DataFrame,
+        angle_pairs: list,
+        kde_args: dict,
+        bs_niter: int,
+        bs_nsamples: int,
+        bs_randstate: Optional[int],
     ) -> Tuple[str, List[np.ndarray]]:
         # Create a 3D tensor to hold the bootstrapped KDEs (for each angle
         # pair), of shape (B,N,N)
-        bs_kde_shape = (bs_niter, kde_args['n_bins'], kde_args['n_bins'])
+        bs_kde_shape = (bs_niter, kde_args["n_bins"], kde_args["n_bins"])
         bs_dkdes = [np.empty(bs_kde_shape, np.float32) for _ in angle_pairs]
 
         # We want a different random state in each subgroup, but still
@@ -1147,18 +1291,22 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         t_elapsed = time.time() - t_start
         bs_rate_iter = bs_niter / t_elapsed
-        LOGGER.info(f'Completed {bs_niter} bootstrap iterations for '
-                    f'{group_idx}_{subgroup_idx}, size={len(df_subgroup)}, '
-                    f'bs_nsamples={bs_nsamples}, '
-                    f'rate={bs_rate_iter:.1f} iter/sec '
-                    f'elapsed={t_elapsed:.1f} sec')
+        LOGGER.info(
+            f"Completed {bs_niter} bootstrap iterations for "
+            f"{group_idx}_{subgroup_idx}, size={len(df_subgroup)}, "
+            f"bs_nsamples={bs_nsamples}, "
+            f"rate={bs_rate_iter:.1f} iter/sec "
+            f"elapsed={t_elapsed:.1f} sec"
+        )
 
         return subgroup_idx, bs_dkdes
 
     @staticmethod
     def _codon_dists_single_group(
-            group_idx: str, bs_codon_dkdes: Dict[str, List[np.ndarray]],
-            angle_pairs: list, kde_dist_metric: Callable,
+        group_idx: str,
+        bs_codon_dkdes: Dict[str, List[np.ndarray]],
+        angle_pairs: list,
+        kde_dist_metric: Callable,
     ):
         tstart = time.time()
 
@@ -1217,8 +1365,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 codon_dkdes[codon].append(mean_dkde + 1j * std_dkde)
 
         tend = time.time()
-        LOGGER.info(f'Calculated distance matrix for {group_idx} '
-                    f'({tend - tstart:.1f}s)...')
+        LOGGER.info(
+            f"Calculated distance matrix for {group_idx} " f"({tend - tstart:.1f}s)..."
+        )
 
         return d2_matrices, codon_dkdes
 
@@ -1233,25 +1382,26 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
     @staticmethod
     def _cols2label(phi_col: str, psi_col: str):
         def rep(col: str):
-            col = col.replace('phi', r'\varphi')
-            col = col.replace('psi', r'\psi')
-            col = re.sub(r'([+-][01])', r'_{\1}', col)
+            col = col.replace("phi", r"\varphi")
+            col = col.replace("psi", r"\psi")
+            col = re.sub(r"([+-][01])", r"_{\1}", col)
             return col
 
-        return rf'${rep(phi_col)}, {rep(psi_col)}$'
+        return rf"${rep(phi_col)}, {rep(psi_col)}$"
 
 
 class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
-
     def __init__(
-            self,
-            dataset_dir: Union[str, Path],
-            out_dir: Union[str, Path] = None,
-            pairwise_filename: str = 'data-pairwise.csv',
-            condition_on_ss=True, consolidate_ss=DSSP_TO_SS_TYPE.copy(),
-            strict_codons=True,
-            bs_niter=1, bs_randstate=None,
-            out_tag: str = None,
+        self,
+        dataset_dir: Union[str, Path],
+        out_dir: Union[str, Path] = None,
+        pairwise_filename: str = "data-pairwise.csv",
+        condition_on_ss=True,
+        consolidate_ss=DSSP_TO_SS_TYPE.copy(),
+        strict_codons=True,
+        bs_niter=1,
+        bs_randstate=None,
+        out_tag: str = None,
     ):
         """
         Analyzes a pairwise dataset (pairs of match-groups of a residue in a
@@ -1275,37 +1425,44 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param bs_randstate: Random state for bootstrap.
         :param out_tag: Tag for output.
         """
-        super().__init__('pairwise_cdist', dataset_dir, pairwise_filename, out_dir,
-                         out_tag, clear_intermediate=False)
+        super().__init__(
+            "pairwise_cdist",
+            dataset_dir,
+            pairwise_filename,
+            out_dir,
+            out_tag,
+            clear_intermediate=False,
+        )
 
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
         self.strict_codons = strict_codons
 
-        self.ref_prefix = 'ref_'
-        col_prefixes = (self.ref_prefix, '')
+        self.ref_prefix = "ref_"
+        col_prefixes = (self.ref_prefix, "")
 
-        self.codon_opts_cols = [f'{p}codon_opts' for p in col_prefixes]
-        self.secondary_cols = [f'{p}secondary' for p in col_prefixes]
-        self.codon_cols = [f'{p}codon' for p in col_prefixes]
+        self.codon_opts_cols = [f"{p}codon_opts" for p in col_prefixes]
+        self.secondary_cols = [f"{p}secondary" for p in col_prefixes]
+        self.codon_cols = [f"{p}codon" for p in col_prefixes]
 
-        angle_cols = ('curr_phis', 'curr_psis')
-        self.ref_angle_cols = [f'{self.ref_prefix}{p}' for p in angle_cols]
+        angle_cols = ("curr_phis", "curr_psis")
+        self.ref_angle_cols = [f"{self.ref_prefix}{p}" for p in angle_cols]
         self.query_angle_cols = list(angle_cols)
 
-        self.condition_col = 'condition_group'
-        self.type_col = 'type'
+        self.condition_col = "condition_group"
+        self.type_col = "type"
 
-        self.allowed_match_types = ['SAME', 'SILENT']
+        self.allowed_match_types = ["SAME", "SILENT"]
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
 
-    def _collection_functions(self) \
-            -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
+    def _collection_functions(
+        self,
+    ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
-            'preprocess-dataset': self._preprocess_dataset,
-            'codon-dists': self._codon_dists,
-            'plot-results': self._plot_results,
+            "preprocess-dataset": self._preprocess_dataset,
+            "codon-dists": self._codon_dists,
+            "plot-results": self._plot_results,
         }
 
     def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
@@ -1316,12 +1473,15 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Load just a single row to get all column names, then group them by
         # their types
         all_cols = list(pd.read_csv(self.input_file, nrows=1).columns)
-        float_list_cols = [c for c in all_cols if any_in(('phis', 'psis'), c)]
-        int_list_cols = [c for c in all_cols if any_in(('contexts', 'idxs',), c)]
-        str_list_cols = [c for c in all_cols if any_in(('res_ids', 'codons'), c)]
+        float_list_cols = [c for c in all_cols if any_in(("phis", "psis"), c)]
+        int_list_cols = [c for c in all_cols if any_in(("contexts", "idxs",), c)]
+        str_list_cols = [c for c in all_cols if any_in(("res_ids", "codons"), c)]
         list_cols = float_list_cols + int_list_cols + str_list_cols
-        float_cols = [c for c in all_cols
-                      if any_in(('phi', 'psi', 'norm'), c) and c not in float_list_cols]
+        float_cols = [
+            c
+            for c in all_cols
+            if any_in(("phi", "psi", "norm"), c) and c not in float_list_cols
+        ]
         str_cols = [c for c in all_cols if c not in list_cols and c not in float_cols]
 
         # Make sure we got all columns
@@ -1343,29 +1503,30 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Parallelize loading and preprocessing
         async_results = []
         for df_sub in df_pointwise_reader:
-            async_results.append(pool.apply_async(
-                self._preprocess_subframe,
-                args=(df_sub, float_list_cols, int_list_cols, str_list_cols)
-            ))
+            async_results.append(
+                pool.apply_async(
+                    self._preprocess_subframe,
+                    args=(df_sub, float_list_cols, int_list_cols, str_list_cols),
+                )
+            )
 
         _, _, results = self._handle_async_results(async_results, collect=True)
         sub_dfs, orig_counts = zip(*results)
 
         # Dump processed dataset
         df_preproc = pd.concat(sub_dfs, axis=0, ignore_index=True)
-        LOGGER.info(f'Loaded {self.input_file}: {len(df_preproc)} rows')
-        self._dump_intermediate('dataset', df_preproc)
+        LOGGER.info(f"Loaded {self.input_file}: {len(df_preproc)} rows")
+        self._dump_intermediate("dataset", df_preproc)
 
         return {
-            'n_ORIG': sum(orig_counts),
-            'n_TOTAL': len(df_preproc),
+            "n_ORIG": sum(orig_counts),
+            "n_TOTAL": len(df_preproc),
         }
 
     def _preprocess_subframe(
-            self, df_sub: pd.DataFrame,
-            float_list_cols, int_list_cols, str_list_cols
+        self, df_sub: pd.DataFrame, float_list_cols, int_list_cols, str_list_cols
     ):
-        pd.set_option('mode.chained_assignment', 'raise')
+        pd.set_option("mode.chained_assignment", "raise")
 
         orig_len = len(df_sub)
 
@@ -1398,7 +1559,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     return None
                 cond_groups.append(ss)
 
-            return str.join('_', cond_groups)
+            return str.join("_", cond_groups)
 
         # Calculate condition group and only keep rows with a valid group
         cond_col = df_sub.apply(assign_condition_group, axis=1)
@@ -1418,15 +1579,15 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
     def _codon_dists(self, pool: mp.pool.Pool) -> dict:
         # Load processed dataset
-        df_processed: pd.DataFrame = self._load_intermediate('dataset')
+        df_processed: pd.DataFrame = self._load_intermediate("dataset")
 
         # Group by condition column
         df_groups = df_processed.groupby(by=self.condition_col)
 
         # Create unique codon pairs
-        codon_pairs = sorted(set(map(
-            lambda t: tuple(sorted(t)), it.product(AA_CODONS, AA_CODONS)
-        )))
+        codon_pairs = sorted(
+            set(map(lambda t: tuple(sorted(t)), it.product(AA_CODONS, AA_CODONS)))
+        )
 
         cdist_angle_cols = self.ref_angle_cols + self.query_angle_cols
 
@@ -1443,7 +1604,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             # Loop over unique pairs of codons
             for c1, c2 in codon_pairs:
-                subgroup_idx = f'{c1}_{c2}'
+                subgroup_idx = f"{c1}_{c2}"
 
                 # Find subgroups with codon pair in any order
                 dfs = []
@@ -1453,8 +1614,10 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     dfs.append(df_subgroups.get_group((c2, c1)))
 
                 if len(dfs) == 0:
-                    LOGGER.debug(f'Skipping codon-dists for {group_idx=}, '
-                                 f'{subgroup_idx=}, no matches')
+                    LOGGER.debug(
+                        f"Skipping codon-dists for {group_idx=}, "
+                        f"{subgroup_idx=}, no matches"
+                    )
                     continue
 
                 # Combine matches from this codon pair, in any order
@@ -1468,9 +1631,15 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # Parallelize over the sub-groups
                 async_results[(group_idx, subgroup_idx)] = pool.apply_async(
                     self._codon_dists_single_subgroup,
-                    args=(group_idx, subgroup_idx, df_subgroup,
-                          self.ref_angle_cols, self.query_angle_cols,
-                          self.bs_niter, self.bs_randstate,),
+                    args=(
+                        group_idx,
+                        subgroup_idx,
+                        df_subgroup,
+                        self.ref_angle_cols,
+                        self.query_angle_cols,
+                        self.bs_niter,
+                        self.bs_randstate,
+                    ),
                 )
 
             group_sizes[group_idx] = sort_dict(group_sizes[group_idx])
@@ -1479,17 +1648,18 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # We use a complex matrix to store mu and std as real and imag.
         codon_dists = {}
         for group_idx, _ in df_groups:
-            d2_mat = np.full((N_CODONS, N_CODONS), np.nan + 1j * np.nan,
-                             np.complex64)
+            d2_mat = np.full((N_CODONS, N_CODONS), np.nan + 1j * np.nan, np.complex64)
             codon_dists[group_idx] = d2_mat
 
         # Populate distance matrix per group as the results come in
         codon_to_idx = {c: i for i, c in enumerate(AA_CODONS)}
         results_iter = yield_async_results(async_results)
         for (group_idx, subgroup_idx), (mu, sigma) in results_iter:
-            LOGGER.info(f'Codon-dist for {group_idx=}, {subgroup_idx=}: '
-                        f'({mu:.2f}±{sigma:.2f})')
-            c1, c2 = subgroup_idx.split('_')
+            LOGGER.info(
+                f"Codon-dist for {group_idx=}, {subgroup_idx=}: "
+                f"({mu:.2f}±{sigma:.2f})"
+            )
+            c1, c2 = subgroup_idx.split("_")
             i, j = codon_to_idx[c1], codon_to_idx[c2]
             d2_mat = codon_dists[group_idx]
             d2_mat[i, j] = d2_mat[j, i] = mu + 1j * sigma
@@ -1497,39 +1667,48 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # codon_dists: maps from group to a codon-distance matrix.
         # The codon distance matrix is complex, where real is mu
         # and imag is sigma.
-        self._dump_intermediate('codon-dists', codon_dists)
+        self._dump_intermediate("codon-dists", codon_dists)
 
-        return {'group_sizes': group_sizes}
+        return {"group_sizes": group_sizes}
 
     def _plot_results(self, pool: mp.pool.Pool):
-        LOGGER.info(f'Plotting results...')
+        LOGGER.info(f"Plotting results...")
         async_results = []
 
         # Expected codon dists
-        codon_dists = self._load_intermediate('codon-dists', True)
+        codon_dists = self._load_intermediate("codon-dists", True)
         if codon_dists is not None:
             for group_idx, d2_matrix in codon_dists.items():
                 # When plotting, use d instead of d^2 for better dynamic range.
                 d_matrix = np.sqrt(d2_matrix)
                 args = (group_idx, [d_matrix])
-                async_results.append(pool.apply_async(
-                    PointwiseCodonDistanceAnalyzer._plot_codon_distances,
-                    args=args,
-                    kwds=dict(out_dir=self.out_dir.joinpath('codon-dists'),
-                              titles=[''],
-                              vmin=None, vmax=None,  # should consider scale
-                              annotate_mu=True, plot_std=True)
-                ))
+                async_results.append(
+                    pool.apply_async(
+                        PointwiseCodonDistanceAnalyzer._plot_codon_distances,
+                        args=args,
+                        kwds=dict(
+                            out_dir=self.out_dir.joinpath("codon-dists"),
+                            titles=[""],
+                            vmin=None,
+                            vmax=None,  # should consider scale
+                            annotate_mu=True,
+                            plot_std=True,
+                        ),
+                    )
+                )
 
         # Wait for plotting to complete. Each function returns a path
         _ = self._handle_async_results(async_results, collect=True)
 
     @staticmethod
     def _codon_dists_single_subgroup(
-            group_idx: str, subgroup_idx: str,
-            df_subgroup: pd.DataFrame,
-            ref_angle_cols: list, query_angle_cols: list,
-            bs_niter, bs_randstate
+        group_idx: str,
+        subgroup_idx: str,
+        df_subgroup: pd.DataFrame,
+        ref_angle_cols: list,
+        query_angle_cols: list,
+        bs_niter,
+        bs_randstate,
     ):
         tstart = time.time()
 
@@ -1539,28 +1718,34 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         def convert_angles_col(col_val: Union[str, float]):
             # Col val is a string like '-123.456;-12.34' or nan
-            angles = map(float, str.split(str(col_val), ';'))
+            angles = map(float, str.split(str(col_val), ";"))
             return map(math.radians, angles)
 
-        def extract_dihedrals(row: pd.Series) \
-                -> Tuple[List[Dihedral], List[Dihedral]]:
+        def extract_dihedrals(row: pd.Series) -> Tuple[List[Dihedral], List[Dihedral]]:
             # row contains phi,psi columns for ref and query. Each column
             # contains multiple values (but the same number).
-            refs = it.starmap(Dihedral.from_rad, zip(
-                convert_angles_col(row[ref_phi_col]),
-                convert_angles_col(row[ref_psi_col])
-            ))
-            queries = it.starmap(Dihedral.from_rad, zip(
-                convert_angles_col(row[query_phi_col]),
-                convert_angles_col(row[query_psi_col])
-            ))
+            refs = it.starmap(
+                Dihedral.from_rad,
+                zip(
+                    convert_angles_col(row[ref_phi_col]),
+                    convert_angles_col(row[ref_psi_col]),
+                ),
+            )
+            queries = it.starmap(
+                Dihedral.from_rad,
+                zip(
+                    convert_angles_col(row[query_phi_col]),
+                    convert_angles_col(row[query_psi_col]),
+                ),
+            )
 
             return list(refs), list(queries)
 
         # Transform into a dataframe with two columns,
         # each column containing a list of reference or query Dihedrals angles.
-        df_angles = df_subgroup.apply(extract_dihedrals, axis=1, raw=False,
-                                      result_type='expand')
+        df_angles = df_subgroup.apply(
+            extract_dihedrals, axis=1, raw=False, result_type="expand"
+        )
 
         # Now we have for each match, a list of dihedrals of ref and query
         # groups.
@@ -1590,8 +1775,10 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         std = np.nanstd(dists2)
         elapsed = time.time() - tstart
 
-        LOGGER.info(f'Calculated codon-dists for {group_idx=}, '
-                    f'{subgroup_idx=}, n_matches={len(df_subgroup)}, '
-                    f'{elapsed=:.2f}s')
+        LOGGER.info(
+            f"Calculated codon-dists for {group_idx=}, "
+            f"{subgroup_idx=}, n_matches={len(df_subgroup)}, "
+            f"{elapsed=:.2f}s"
+        )
 
         return mean, std

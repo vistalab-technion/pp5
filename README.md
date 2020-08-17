@@ -49,7 +49,7 @@ of proteins structure.
    Therefore, running programs installed into the conda env (e.g. `python`) will
    run the version from the env since it appears in the `$PATH` before any other
    installed version.
-   
+
    To check what conda environments you have and which is active, run
    ```shell
    conda env list
@@ -58,7 +58,7 @@ of proteins structure.
     ```shell
     pytest
     ```
-   
+
 ## Examples
 
 ### Using the CLI

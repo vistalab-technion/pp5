@@ -21,17 +21,17 @@ from pp5.codons import ACIDS, CODON_RE, ACIDS_1TO3, CODON_TABLE
 
 LOGGER = logging.getLogger(__name__)
 
-PP5_MPL_STYLE = str(pp5.CFG_DIR.joinpath('pp5_plotstyle.rc.ini'))
+PP5_MPL_STYLE = str(pp5.CFG_DIR.joinpath("pp5_plotstyle.rc.ini"))
 
 
 def ramachandran(
-        pdist: Union[ndarray, List[ndarray]],
-        legend_label: Union[str, List[str]],
-        title: str = None,
-        ax: Axes = None,
-        style: str = PP5_MPL_STYLE,
-        outfile: Union[Path, str] = None,
-        **colormesh_kw
+    pdist: Union[ndarray, List[ndarray]],
+    legend_label: Union[str, List[str]],
+    title: str = None,
+    ax: Axes = None,
+    style: str = PP5_MPL_STYLE,
+    outfile: Union[Path, str] = None,
+    **colormesh_kw,
 ) -> Optional[Tuple[Figure, Axes]]:
     """
     Creates a Ramachandran plot from dihedral angle probabilities.
@@ -71,37 +71,36 @@ def ramachandran(
             fig, ax = ax.figure, ax
 
         n_bins = p.shape[0]
-        grid = np.linspace(-180., 180, endpoint=False, num=n_bins)
-        colormesh_args = dict(shading='gouraud')
+        grid = np.linspace(-180.0, 180, endpoint=False, num=n_bins)
+        colormesh_args = dict(shading="gouraud")
         colormesh_args.update(colormesh_kw)
 
-        if 'cmap' not in colormesh_args:
-            cmaps = ['Reds', 'Blues', 'Greens', 'Greys']
+        if "cmap" not in colormesh_args:
+            cmaps = ["Reds", "Blues", "Greens", "Greys"]
         else:
-            cmaps = [colormesh_args.pop('cmap')]
+            cmaps = [colormesh_args.pop("cmap")]
 
-        if 'alpha' not in colormesh_args:
+        if "alpha" not in colormesh_args:
             alphas = np.linspace(0.8, 0.1, num=len(pdist), endpoint=False)
         else:
-            alphas = [colormesh_args.pop('alpha')]
+            alphas = [colormesh_args.pop("alpha")]
 
         for i, p in enumerate(pdist):
             cmap = cmaps[i % len(cmaps)]
             alpha = alphas[i % len(alphas)]
 
             # Transpose because in a Ramachandram plot phi is the x-axis
-            ax.pcolormesh(grid, grid, p.T, cmap=cmap, alpha=alpha,
-                          **colormesh_kw)
+            ax.pcolormesh(grid, grid, p.T, cmap=cmap, alpha=alpha, **colormesh_kw)
 
-        legend_colors = ['darkred', 'darkblue', 'darkgreen', 'grey']
+        legend_colors = ["darkred", "darkblue", "darkgreen", "grey"]
         legend_handles = []
         for i in range(len(pdist)):
             color = legend_colors[i % len(legend_colors)]
             label = legend_label[i]
             legend_handles.append(patches.Patch(color=color, label=label))
 
-        ax.set_xlabel(r'$\varphi$')
-        ax.set_ylabel(r'$\psi$')
+        ax.set_xlabel(r"$\varphi$")
+        ax.set_ylabel(r"$\psi$")
         ticks = np.linspace(-180, 180, endpoint=True, num=7)
         ax.set_xticks(ticks)
         ax.set_yticks(ticks)
@@ -118,13 +117,17 @@ def ramachandran(
 
 
 def multi_heatmap(
-        datas: Union[np.ndarray, List[np.ndarray]],
-        row_labels: List[str] = None, col_labels: List[str] = None,
-        titles: List[str] = None,
-        fig_size=None, fig_rows=1,
-        vmin: float = None, vmax: float = None,
-        data_annotation_fn: Callable[[int, int, int], str] = None,
-        style=PP5_MPL_STYLE, outfile: Union[Path, str] = None,
+    datas: Union[np.ndarray, List[np.ndarray]],
+    row_labels: List[str] = None,
+    col_labels: List[str] = None,
+    titles: List[str] = None,
+    fig_size=None,
+    fig_rows=1,
+    vmin: float = None,
+    vmax: float = None,
+    data_annotation_fn: Callable[[int, int, int], str] = None,
+    style=PP5_MPL_STYLE,
+    outfile: Union[Path, str] = None,
 ) -> Optional[Tuple[Figure, Iterable[Axes]]]:
     """
     Plots multiple 2D heatmaps horizontally next to each other while
@@ -170,11 +173,11 @@ def multi_heatmap(
     if isinstance(fig_size, (int, float)):
         fig_size = (fig_cols * fig_size, fig_rows * fig_size)
     elif isinstance(fig_size, (list, tuple)):
-        assert len(fig_size) == 2, 'Invalid figsize'
+        assert len(fig_size) == 2, "Invalid figsize"
         assert all(isinstance(x, (int, float)) for x in fig_size)
     elif fig_size is not None:
         # None will use default from style
-        raise ValueError(f'Invalid fig_size: {fig_size}')
+        raise ValueError(f"Invalid fig_size: {fig_size}")
 
     with mpl.style.context(style, after_reset=False):
         fig, ax = plt.subplots(fig_rows, fig_cols, figsize=fig_size)
@@ -196,23 +199,30 @@ def multi_heatmap(
             if titles:
                 ax[i].set_title(titles[i])
 
-            ax[i].tick_params(top=True, bottom=False, labeltop=True,
-                              labelbottom=False)
-            plt.setp(ax[i].get_xticklabels(),
-                     rotation=45, ha='left', rotation_mode='anchor')
-            ax[i].set_xticks(np.arange(data.shape[1] + 1) - .5, minor=True)
-            ax[i].set_yticks(np.arange(data.shape[0] + 1) - .5, minor=True)
-            ax[i].grid(which="minor", color="w", linestyle='-', linewidth=.5)
+            ax[i].tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
+            plt.setp(
+                ax[i].get_xticklabels(), rotation=45, ha="left", rotation_mode="anchor"
+            )
+            ax[i].set_xticks(np.arange(data.shape[1] + 1) - 0.5, minor=True)
+            ax[i].set_yticks(np.arange(data.shape[0] + 1) - 0.5, minor=True)
+            ax[i].grid(which="minor", color="w", linestyle="-", linewidth=0.5)
             ax[i].tick_params(which="minor", bottom=False, left=False)
 
             if data_annotation_fn is not None:
                 rc_ind = it.product(range(data.shape[0]), range(data.shape[1]))
                 for r, c in rc_ind:
                     annotation = str(data_annotation_fn(i, r, c))
-                    ax[i].text(c, r, annotation, ha="center", va="center",
-                               color="w", fontdict={'size': 'xx-small'})
+                    ax[i].text(
+                        c,
+                        r,
+                        annotation,
+                        ha="center",
+                        va="center",
+                        color="w",
+                        fontdict={"size": "xx-small"},
+                    )
 
-        fig.colorbar(im, ax=ax, orientation='vertical', pad=0.05, shrink=0.7)
+        fig.colorbar(im, ax=ax, orientation="vertical", pad=0.05, shrink=0.7)
 
     if outfile is not None:
         savefig(fig, outfile, style=style)
@@ -222,14 +232,17 @@ def multi_heatmap(
 
 
 def multi_bar(
-        data: Dict[str, np.ndarray],
-        xticklabels: List[str] = None,
-        xlabel: str = None, ylabel: str = None,
-        cmap: Union[str, mpl.colors.Colormap] = None,
-        total_width=0.9, single_width=1.,
-        ax: Axes = None,
-        fig_size: Tuple[int, int] = None,
-        style=PP5_MPL_STYLE, outfile: Union[Path, str] = None,
+    data: Dict[str, np.ndarray],
+    xticklabels: List[str] = None,
+    xlabel: str = None,
+    ylabel: str = None,
+    cmap: Union[str, mpl.colors.Colormap] = None,
+    total_width=0.9,
+    single_width=1.0,
+    ax: Axes = None,
+    fig_size: Tuple[int, int] = None,
+    style=PP5_MPL_STYLE,
+    outfile: Union[Path, str] = None,
 ) -> Optional[Tuple[Figure, Axes]]:
     """
     Plots multiple bar-plots with grouping of each data point.
@@ -283,7 +296,7 @@ def multi_bar(
         # Get a list of colors so that we give each data series it's own
         # color when plotting the bars.
         if cmap is None:
-            colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+            colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
         else:
             colors = plt.cm.get_cmap(cmap).colors
 
@@ -295,9 +308,7 @@ def multi_bar(
 
             for x, y in enumerate(values):
                 barcontainer = ax.bar(
-                    [x + x_offset], [y],
-                    width=bar_width * single_width,
-                    color=color
+                    [x + x_offset], [y], width=bar_width * single_width, color=color
                 )
 
             # Add a handle to the last drawn bar, which we'll need for the
@@ -309,7 +320,7 @@ def multi_bar(
             ax.set_xticklabels(xticklabels, rotation=45)
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
-        ax.grid(axis='y')
+        ax.grid(axis="y")
         ax.legend(bars, data.keys())
 
     if outfile is not None:
@@ -320,15 +331,23 @@ def multi_bar(
 
 
 def rainbow(
-        data: List[Tuple[float, float, float, float]],
-        group_labels: List[str], point_labels: List[str] = None,
-        all_groups: List[str] = None,
-        xlabel: str = None, ylabel: str = None, title=None,
-        cmap: Union[str, mpl.colors.Colormap] = 'gist_rainbow',
-        alpha: float = 0.5, with_regression=False,
-        error_ellipse=False, normalize=False, err_scale: float = 1.,
-        ax: Axes = None, fig_size: Tuple[int, int] = None,
-        style=PP5_MPL_STYLE, outfile: Union[Path, str] = None,
+    data: List[Tuple[float, float, float, float]],
+    group_labels: List[str],
+    point_labels: List[str] = None,
+    all_groups: List[str] = None,
+    xlabel: str = None,
+    ylabel: str = None,
+    title=None,
+    cmap: Union[str, mpl.colors.Colormap] = "gist_rainbow",
+    alpha: float = 0.5,
+    with_regression=False,
+    error_ellipse=False,
+    normalize=False,
+    err_scale: float = 1.0,
+    ax: Axes = None,
+    fig_size: Tuple[int, int] = None,
+    style=PP5_MPL_STYLE,
+    outfile: Union[Path, str] = None,
 ) -> Optional[Tuple[Figure, Axes]]:
     """
     A rainbow plot represents teh relation between two variables where is also
@@ -423,8 +442,18 @@ def rainbow(
                 ell.set_color(color)
                 patch_list.append(ell)
             else:
-                ax.errorbar(x, y, yerr, xerr, ecolor=color, fmt='o',
-                            mfc=color, mec='k', mew=.2, ms=1.5)
+                ax.errorbar(
+                    x,
+                    y,
+                    yerr,
+                    xerr,
+                    ecolor=color,
+                    fmt="o",
+                    mfc=color,
+                    mec="k",
+                    mew=0.2,
+                    ms=1.5,
+                )
             if point_labels is not None:
                 ax.text(x, y, point_labels[i], fontsize=4)
 
@@ -450,26 +479,27 @@ def rainbow(
                 ss_tot = np.sum((y - np.mean(y)) ** 2)
                 ss_res = np.sum((y - reg_y) ** 2)
                 rsq = 1 - ss_res / ss_tot if ss_tot > 0 else np.inf
-                reg_label = rf'$R^2={rsq:.2f}$'
-                yerr = ax.plot(X[:, 0], reg_y, 'k:', linewidth=1., label=reg_label)
+                reg_label = rf"$R^2={rsq:.2f}$"
+                yerr = ax.plot(X[:, 0], reg_y, "k:", linewidth=1.0, label=reg_label)
                 legend_handles.append(yerr[0])
             except np.linalg.LinAlgError as e:
-                LOGGER.warning(f'Failed to fit regression line for rainbow, '
-                               f'{group_labels=}, {point_labels=}')
+                LOGGER.warning(
+                    f"Failed to fit regression line for rainbow, "
+                    f"{group_labels=}, {point_labels=}"
+                )
 
         # Set axes properties
         xmin, xmax = np.min(xy_vals[:, 0]), np.max(xy_vals[:, 0])
         ymin, ymax = np.min(xy_vals[:, 1]), np.max(xy_vals[:, 1])
-        xlim = 1 * np.array([-.1, .1]) + [xmin, xmax]
-        ylim = 1 * np.array([-.1, .1]) + [ymin, ymax]
+        xlim = 1 * np.array([-0.1, 0.1]) + [xmin, xmax]
+        ylim = 1 * np.array([-0.1, 0.1]) + [ymin, ymax]
         ax.set_xlim(xlim), ax.set_ylim(ylim)
         xyticks = np.linspace(0, 1, num=11, endpoint=True)
         ax.set_xticks(xyticks), ax.set_yticks(xyticks)
         ax.grid()
         ax.set_xlabel(xlabel), ax.set_ylabel(ylabel), ax.set_title(title)
-        ax.legend(handles=legend_handles, loc='center left',
-                  fontsize='x-small')
-        ax.set_aspect('equal')
+        ax.legend(handles=legend_handles, loc="center left", fontsize="x-small")
+        ax.set_aspect("equal")
         fig.tight_layout()
 
     if outfile is not None:
@@ -479,8 +509,9 @@ def rainbow(
     return fig, ax
 
 
-def savefig(fig: plt.Figure, outfile: Union[Path, str],
-            close=True, style=PP5_MPL_STYLE) -> Path:
+def savefig(
+    fig: plt.Figure, outfile: Union[Path, str], close=True, style=PP5_MPL_STYLE
+) -> Path:
     """
     Saves a figure to file.
     :param fig: Figure to save
@@ -503,7 +534,7 @@ def savefig(fig: plt.Figure, outfile: Union[Path, str],
     with mpl.style.context(style, after_reset=False):
         fig.savefig(str(outfile), format=fmt)
 
-    LOGGER.info(f'Wrote {outfile}')
+    LOGGER.info(f"Wrote {outfile}")
     if close:
         plt.close(fig)
 

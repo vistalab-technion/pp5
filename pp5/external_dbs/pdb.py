@@ -10,8 +10,7 @@ from collections import OrderedDict
 from math import cos, sin, radians as rad, degrees as deg
 import logging
 from pathlib import Path
-from typing import NamedTuple, Type, Dict, List, Set, Union, Tuple, Optional, \
-    Iterable
+from typing import NamedTuple, Type, Dict, List, Set, Union, Tuple, Optional, Iterable
 import itertools as it
 
 import pandas as pd
@@ -21,26 +20,27 @@ import numpy as np
 from Bio import PDB as PDB
 from Bio.PDB import Structure as PDBRecord, MMCIF2Dict
 from Bio.PDB.DSSP import dssp_dict_from_pdb_file
-from Bio.PDB.PDBExceptions import PDBConstructionWarning, \
-    PDBConstructionException
+from Bio.PDB.PDBExceptions import PDBConstructionWarning, PDBConstructionException
 from Bio.PDB.Polypeptide import standard_aa_names
 
 import pp5
 from pp5 import PDB_DIR, get_resource_path
 from pp5.utils import remote_dl, requests_retry, JSONCacheableMixin
 
-PDB_ID_PATTERN = re.compile(r'^(?P<id>[0-9][\w]{3})(?::(?:'
-                            r'(?P<chain>[a-z])|(?P<entity>[0-9])'
-                            r'))?$',
-                            re.IGNORECASE | re.ASCII)
+PDB_ID_PATTERN = re.compile(
+    r"^(?P<id>[0-9][\w]{3})(?::(?:" r"(?P<chain>[a-z])|(?P<entity>[0-9])" r"))?$",
+    re.IGNORECASE | re.ASCII,
+)
 
 STANDARD_ACID_NAMES = set(standard_aa_names)
 
-PDB_SEARCH_URL = 'https://www.rcsb.org/pdb/rest/search'
+PDB_SEARCH_URL = "https://www.rcsb.org/pdb/rest/search"
 PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
-PDB_TO_UNP_URL_TEMPLATE = r"https://www.rcsb.org/pdb/rest/customReport" \
-                          r"?pdbids={}&customReportColumns=uniprotAcc" \
-                          r"&service=wsfile&format=csv"
+PDB_TO_UNP_URL_TEMPLATE = (
+    r"https://www.rcsb.org/pdb/rest/customReport"
+    r"?pdbids={}&customReportColumns=uniprotAcc"
+    r"&service=wsfile&format=csv"
+)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -74,7 +74,7 @@ def split_id_with_entity(pdb_id):
     if not match:
         raise ValueError(f"Invalid PDB id format: {pdb_id}")
 
-    return match.group('id'), match.group('chain'), match.group('entity')
+    return match.group("id"), match.group("chain"), match.group("entity")
 
 
 def pdb_download(pdb_id: str, pdb_dir=PDB_DIR) -> Path:
@@ -87,7 +87,7 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR) -> Path:
     pdb_id, chain_id = split_id(pdb_id)
 
     pdb_id = pdb_id.lower()
-    filename = get_resource_path(pdb_dir, f'{pdb_id}.cif')
+    filename = get_resource_path(pdb_dir, f"{pdb_id}.cif")
     url = PDB_DOWNLOAD_URL_TEMPLATE.format(pdb_id)
     return remote_dl(url, filename, uncompress=True, skip_existing=True)
 
@@ -122,7 +122,7 @@ def pdb_dict(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> dict:
     """
     pdb_id, chain_id = split_id(pdb_id)
     # No need to re-parse the file if we have a matching struct dict
-    if struct_d and struct_d['_entry.id'][0].upper() == pdb_id:
+    if struct_d and struct_d["_entry.id"][0].upper() == pdb_id:
         return struct_d
 
     filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
@@ -153,11 +153,10 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
     try:
         with warnings.catch_warnings(record=True) as ws:
             warnings.simplefilter("ignore")
-            dssp_dict, keys = dssp_dict_from_pdb_file(str(path), DSSP='mkdssp')
+            dssp_dict, keys = dssp_dict_from_pdb_file(str(path), DSSP="mkdssp")
             if len(ws) > 0:
                 for w in ws:
-                    LOGGER.warning(f'Got DSSP warning for {pdb_id}: '
-                                   f'{w.message}')
+                    LOGGER.warning(f"Got DSSP warning for {pdb_id}: " f"{w.message}")
     except Exception as e:
         raise RuntimeError(f"Failed to get secondary structure for {pdb_id}")
 
@@ -219,16 +218,17 @@ class PDB2UNP(JSONCacheableMixin, object):
         only one unless the entry is chimeric.
         """
         if not chain_id or chain_id.upper() not in self.chain_to_unp_xrefs:
-            raise ValueError(f'No Uniprot ID for chain {chain_id} of'
-                             f' {self.pdb_id}')
+            raise ValueError(f"No Uniprot ID for chain {chain_id} of" f" {self.pdb_id}")
 
         if self.is_chimeric(chain_id):
-            msg = f'{self.pdb_id} is chimeric at chain {chain_id}, ' \
-                  f'possible Uniprot IDs: ' \
-                  f'{self.get_all_chain_unp_ids(chain_id)}.'
+            msg = (
+                f"{self.pdb_id} is chimeric at chain {chain_id}, "
+                f"possible Uniprot IDs: "
+                f"{self.get_all_chain_unp_ids(chain_id)}."
+            )
             if strict:
                 raise ValueError(msg)
-            LOGGER.warning(f'{msg} Returning first ID.')
+            LOGGER.warning(f"{msg} Returning first ID.")
 
         for unp_id in self.chain_to_unp_xrefs[chain_id.upper()]:
             return unp_id
@@ -271,7 +271,7 @@ class PDB2UNP(JSONCacheableMixin, object):
         :param out_dir: Output directory.
         :return: The path of the written file.
         """
-        filename = f'{self.pdb_id}.json'
+        filename = f"{self.pdb_id}.json"
         return self.to_cache(out_dir, filename, indent=None)
 
     def __getitem__(self, chain_id: str):
@@ -289,7 +289,7 @@ class PDB2UNP(JSONCacheableMixin, object):
         return chain_id.upper() in self.chain_to_unp_xrefs
 
     def __repr__(self):
-        return f'PDB2UNP({self.pdb_id})={self.get_chain_to_unp_ids()}'
+        return f"PDB2UNP({self.pdb_id})={self.get_chain_to_unp_ids()}"
 
     @staticmethod
     def query_all_uniprot_ids(pdb_id: str) -> Dict[str, List[str]]:
@@ -303,27 +303,29 @@ class PDB2UNP(JSONCacheableMixin, object):
         url_pdb_id = pdb_id.replace(":", ".")
         url = PDB_TO_UNP_URL_TEMPLATE.format(url_pdb_id)
         try:
-            headers = {'Accept-Encoding': 'identity'}
+            headers = {"Accept-Encoding": "identity"}
             with requests_retry().get(url, stream=True, headers=headers) as r:
                 r.raise_for_status()
                 df = pd.read_csv(r.raw, header=0, na_filter=False, dtype=str)
         except (requests.RequestException, ValueError) as e:
             raise ValueError(
                 f"Failed to run PDB custom query with {pdb_id} for "
-                f"Uniprot IDs: {e.__class__.__name__}={e}") from None
+                f"Uniprot IDs: {e.__class__.__name__}={e}"
+            ) from None
 
         # Split each unp column value by '#' because in cases
         # where there are multiple Uniprot IDs for a single CHAIN, this is
         # how they're separated (e.g. 3SG4:A).
-        chains = df['chainId']
-        unp_ids = map(lambda x: x.upper().split("#"), df['uniprotAcc'])
+        chains = df["chainId"]
+        unp_ids = map(lambda x: x.upper().split("#"), df["uniprotAcc"])
         unp_ids = map(lambda x: list(filter(lambda y: len(y), x)), unp_ids)
         chain_to_unp_ids = {k.upper(): v for k, v in zip(chains, unp_ids) if v}
         return chain_to_unp_ids
 
     @staticmethod
-    def parse_all_uniprot_xrefs(pdb_id: str, struct_d: dict = None) \
-            -> Dict[str, Dict[str, List[tuple]]]:
+    def parse_all_uniprot_xrefs(
+        pdb_id: str, struct_d: dict = None
+    ) -> Dict[str, Dict[str, List[tuple]]]:
         """
         Parses the Uniprot cross references and sequence ranges from a PDB
         file of a given PDB ID.
@@ -338,48 +340,50 @@ class PDB2UNP(JSONCacheableMixin, object):
 
         # Go over referenced DBs and take all uniprot IDs
         unp_ids = set()
-        if '_struct_ref.db_name' in struct_d:
-            for i, db_name in enumerate(struct_d['_struct_ref.db_name']):
-                if db_name.lower() == 'unp':
-                    unp_ids.add(struct_d['_struct_ref.pdbx_db_accession'][i])
+        if "_struct_ref.db_name" in struct_d:
+            for i, db_name in enumerate(struct_d["_struct_ref.db_name"]):
+                if db_name.lower() == "unp":
+                    unp_ids.add(struct_d["_struct_ref.pdbx_db_accession"][i])
 
         # Get Uniprot cross-refs from the PDB file. Map is
         # chain -> unp -> [ (s1,e1), (s2, e2), ... ]
         chain_to_unp_xrefs: Dict[str, Dict[str, List[tuple]]] = {}
 
-        if not unp_ids or '_struct_ref_seq.pdbx_db_accession' not in struct_d:
+        if not unp_ids or "_struct_ref_seq.pdbx_db_accession" not in struct_d:
             return chain_to_unp_xrefs
 
-        for i, curr_id in enumerate(
-                struct_d['_struct_ref_seq.pdbx_db_accession']):
+        for i, curr_id in enumerate(struct_d["_struct_ref_seq.pdbx_db_accession"]):
             curr_id = curr_id.upper()
 
             # In case the xref DB id is not from Uniprot
             if curr_id not in unp_ids:
                 continue
 
-            if '_struct_ref_seq.pdbx_strand_id' not in struct_d:
+            if "_struct_ref_seq.pdbx_strand_id" not in struct_d:
                 continue
 
-            curr_chain = struct_d['_struct_ref_seq.pdbx_strand_id'][i].upper()
+            curr_chain = struct_d["_struct_ref_seq.pdbx_strand_id"][i].upper()
 
             d = OrderedDict()
             curr_chain_xrefs = chain_to_unp_xrefs.setdefault(curr_chain, d)
             curr_chain_unp_ranges = curr_chain_xrefs.setdefault(curr_id, [])
 
-            if '_struct_ref_seq.seq_align_beg' not in struct_d or \
-                    '_struct_ref_seq.seq_align_end' not in struct_d:
+            if (
+                "_struct_ref_seq.seq_align_beg" not in struct_d
+                or "_struct_ref_seq.seq_align_end" not in struct_d
+            ):
                 continue
 
-            ref_start = int(struct_d['_struct_ref_seq.seq_align_beg'][i])
-            ref_end = int(struct_d['_struct_ref_seq.seq_align_end'][i])
+            ref_start = int(struct_d["_struct_ref_seq.seq_align_beg"][i])
+            ref_end = int(struct_d["_struct_ref_seq.seq_align_end"][i])
             curr_chain_unp_ranges.append((ref_start, ref_end))
 
         return chain_to_unp_xrefs
 
     @classmethod
-    def pdb_id_to_unp_id(cls, pdb_id: str, strict=True, cache=False,
-                         struct_d: dict = None) -> str:
+    def pdb_id_to_unp_id(
+        cls, pdb_id: str, strict=True, cache=False, struct_d: dict = None
+    ) -> str:
         """
         Given a PDB ID, returns a single Uniprot id for it.
         :param pdb_id: PDB ID, with optional chain. If provided chain will
@@ -403,12 +407,15 @@ class PDB2UNP(JSONCacheableMixin, object):
 
         if not chain_id:
             if len(all_unp_ids) > 1:
-                msg = f"Multiple Uniprot IDs exists for {pdb_id}, and no " \
-                      f"chain specified."
+                msg = (
+                    f"Multiple Uniprot IDs exists for {pdb_id}, and no "
+                    f"chain specified."
+                )
                 if strict:
                     raise ValueError(msg)
-                LOGGER.warning(f'{msg} Returning the first Uniprot ID '
-                               f"from the first chain.")
+                LOGGER.warning(
+                    f"{msg} Returning the first Uniprot ID " f"from the first chain."
+                )
 
             for chain_id, unp_ids in pdb2unp.get_chain_to_unp_ids().items():
                 return unp_ids[0]
@@ -416,8 +423,7 @@ class PDB2UNP(JSONCacheableMixin, object):
         return pdb2unp.get_unp_id(chain_id, strict=strict)
 
     @classmethod
-    def from_pdb(cls, pdb_id: str, cache=False, struct_d: dict = None) \
-            -> PDB2UNP:
+    def from_pdb(cls, pdb_id: str, cache=False, struct_d: dict = None) -> PDB2UNP:
         """
         Create a PDB2UNP mapping from a given PDB ID.
         :param pdb_id: The PDB ID to map for. Chain will be ignored if present.
@@ -437,12 +443,11 @@ class PDB2UNP(JSONCacheableMixin, object):
         return pdb2unp
 
     @classmethod
-    def from_cache(cls,
-                   pdb_id,
-                   cache_dir: Union[str, Path] = pp5.PDB2UNP_DIR) \
-            -> Optional[PDB2UNP]:
+    def from_cache(
+        cls, pdb_id, cache_dir: Union[str, Path] = pp5.PDB2UNP_DIR
+    ) -> Optional[PDB2UNP]:
         pdb_id, _ = split_id(pdb_id)
-        filename = f'{pdb_id}.json'
+        filename = f"{pdb_id}.json"
         return super(PDB2UNP, cls).from_cache(cache_dir, filename)
 
 
@@ -468,61 +473,58 @@ class PDBMetadata(object):
                 return default
             if isinstance(val, list):
                 val = val[0]
-            if not val or val == '?':
+            if not val or val == "?":
                 return default
             try:
                 return convert_to(val)
             except ValueError:
                 return default
 
-        title = _meta('_struct.title')
-        description = _meta('_entity.pdbx_description')
+        title = _meta("_struct.title")
+        description = _meta("_entity.pdbx_description")
 
-        src_org = _meta('_entity_src_nat.pdbx_organism_scientific')
+        src_org = _meta("_entity_src_nat.pdbx_organism_scientific")
         if not src_org:
-            src_org = _meta('_entity_src_gen.pdbx_gene_src_scientific_name')
+            src_org = _meta("_entity_src_gen.pdbx_gene_src_scientific_name")
 
-        src_org_id = _meta('_entity_src_nat.pdbx_ncbi_taxonomy_id', int)
+        src_org_id = _meta("_entity_src_nat.pdbx_ncbi_taxonomy_id", int)
         if not src_org_id:
-            src_org_id = \
-                _meta('_entity_src_gen.pdbx_gene_src_ncbi_taxonomy_id', int)
+            src_org_id = _meta("_entity_src_gen.pdbx_gene_src_ncbi_taxonomy_id", int)
 
-        host_org = _meta('_entity_src_gen.pdbx_host_org_scientific_name')
-        host_org_id = _meta('_entity_src_gen.pdbx_host_org_ncbi_taxonomy_id',
-                            int)
-        resolution = _meta('_refine.ls_d_res_high', float)
-        resolution_low = _meta('_refine.ls_d_res_low', float)
-        r_free = _meta('_refine.ls_R_factor_R_free', float)
-        r_work = _meta('_refine.ls_R_factor_R_work', float)
-        space_group = _meta('_symmetry.space_group_name_H-M')
+        host_org = _meta("_entity_src_gen.pdbx_host_org_scientific_name")
+        host_org_id = _meta("_entity_src_gen.pdbx_host_org_ncbi_taxonomy_id", int)
+        resolution = _meta("_refine.ls_d_res_high", float)
+        resolution_low = _meta("_refine.ls_d_res_low", float)
+        r_free = _meta("_refine.ls_R_factor_R_free", float)
+        r_work = _meta("_refine.ls_R_factor_R_work", float)
+        space_group = _meta("_symmetry.space_group_name_H-M")
 
         # Find ligands
         ligands = set()
-        for i, chemical_type in enumerate(struct_d['_chem_comp.id']):
-            if chemical_type.lower() == 'hoh':
+        for i, chemical_type in enumerate(struct_d["_chem_comp.id"]):
+            if chemical_type.lower() == "hoh":
                 continue
             if chemical_type not in STANDARD_ACID_NAMES:
                 ligands.add(chemical_type)
-        ligands = str.join(',', ligands)
+        ligands = str.join(",", ligands)
 
         # Crystal growth details
-        cg_ph = _meta('_exptl_crystal_grow.pH', float)
-        cg_temp = _meta('_exptl_crystal_grow.temp', float)
+        cg_ph = _meta("_exptl_crystal_grow.pH", float)
+        cg_temp = _meta("_exptl_crystal_grow.temp", float)
 
         # Map each chain to entity id, and entity to 1-letter sequence.
         chain_entities, entity_seq = {}, {}
-        for i, entity_id in enumerate(struct_d['_entity_poly.entity_id']):
-            if not struct_d['_entity_poly.type'][i].startswith('polypeptide'):
+        for i, entity_id in enumerate(struct_d["_entity_poly.entity_id"]):
+            if not struct_d["_entity_poly.type"][i].startswith("polypeptide"):
                 continue
 
             entity_id = int(entity_id)
-            chains_str = struct_d['_entity_poly.pdbx_strand_id'][i]
-            for chain in chains_str.split(','):
+            chains_str = struct_d["_entity_poly.pdbx_strand_id"][i]
+            for chain in chains_str.split(","):
                 chain_entities[chain] = entity_id
 
-            seq_str: str = \
-                struct_d['_entity_poly.pdbx_seq_one_letter_code_can'][i]
-            seq_str = seq_str.replace('\n', '')
+            seq_str: str = struct_d["_entity_poly.pdbx_seq_one_letter_code_can"][i]
+            seq_str = seq_str.replace("\n", "")
             entity_seq[entity_id] = seq_str
 
         self.pdb_id: str = pdb_id
@@ -575,10 +577,10 @@ class PDBUnitCell(object):
         """
         d = pdb_dict(pdb_id, struct_d=struct_d)
         try:
-            a, b = d['_cell.length_a'], d['_cell.length_b']
-            c = d['_cell.length_c']
-            alpha, beta = d['_cell.angle_alpha'], d['_cell.angle_beta']
-            gamma = d['_cell.angle_gamma']
+            a, b = d["_cell.length_a"], d["_cell.length_b"]
+            c = d["_cell.length_c"]
+            alpha, beta = d["_cell.angle_alpha"], d["_cell.angle_beta"]
+            gamma = d["_cell.angle_gamma"]
             a, b, c = float(a[0]), float(b[0]), float(c[0])
             alpha, beta = float(alpha[0]), float(beta[0])
             gamma = float(gamma[0])
@@ -597,8 +599,13 @@ class PDBUnitCell(object):
         cos_gamma, sin_gamma = cos(rad(self.gamma)), sin(rad(self.gamma))
 
         # Volume
-        factor = math.sqrt(1 - cos_alpha ** 2 - cos_beta ** 2 - cos_gamma ** 2
-                           + 2 * cos_alpha * cos_beta * cos_gamma)
+        factor = math.sqrt(
+            1
+            - cos_alpha ** 2
+            - cos_beta ** 2
+            - cos_gamma ** 2
+            + 2 * cos_alpha * cos_beta * cos_gamma
+        )
         self.vol = self.a * self.b * self.c * factor
 
         # Reciprocal lengths
@@ -607,12 +614,9 @@ class PDBUnitCell(object):
         self.c_r = self.a * self.b * sin_gamma / self.vol
 
         # Reciprocal angles
-        cos_alpha_r = (cos_beta * cos_gamma - cos_alpha) / (sin_beta *
-                                                            sin_gamma)
-        cos_beta_r = (cos_gamma * cos_alpha - cos_beta) / (sin_gamma *
-                                                           sin_alpha)
-        cos_gamma_r = (cos_alpha * cos_beta - cos_gamma) / (sin_alpha *
-                                                            sin_beta)
+        cos_alpha_r = (cos_beta * cos_gamma - cos_alpha) / (sin_beta * sin_gamma)
+        cos_beta_r = (cos_gamma * cos_alpha - cos_beta) / (sin_gamma * sin_alpha)
+        cos_gamma_r = (cos_alpha * cos_beta - cos_gamma) / (sin_alpha * sin_beta)
         self.alpha_r = deg(math.acos(cos_alpha_r))
         self.beta_r = deg(math.acos(cos_beta_r))
         self.gamma_r = deg(math.acos(cos_gamma_r))
@@ -624,10 +628,14 @@ class PDBUnitCell(object):
         # Reciprocal lattice: 1/length
 
         # A: Transformation from fractional to Cartesian coordinates
-        self.A = np.array([[self.a, self.b * cos_gamma, self.c * cos_beta],
-                           [0, self.b * sin_gamma,
-                            -self.c * sin_beta * cos_alpha_r],
-                           [0, 0, 1 / self.c_r]], dtype=np.float32)
+        self.A = np.array(
+            [
+                [self.a, self.b * cos_gamma, self.c * cos_beta],
+                [0, self.b * sin_gamma, -self.c * sin_beta * cos_alpha_r],
+                [0, 0, 1 / self.c_r],
+            ],
+            dtype=np.float32,
+        )
 
         # A^-1: Transformation from Cartesian to fractional coordinates
         self.Ainv = np.linalg.inv(self.A)
@@ -640,8 +648,10 @@ class PDBUnitCell(object):
         self.Binv = np.linalg.inv(self.B)
 
         # Fix precision issues
-        [np.round(a, decimals=15, out=a) for a in (self.A, self.Ainv,
-                                                   self.B, self.Binv)]
+        [
+            np.round(a, decimals=15, out=a)
+            for a in (self.A, self.Ainv, self.B, self.Binv)
+        ]
 
     def direct_lattice_to_cartesian(self, x: np.ndarray):
         assert 0 < x.ndim < 3
@@ -651,9 +661,9 @@ class PDBUnitCell(object):
             return np.dot(self.B, np.dot(x, self.B.T))
 
     def __repr__(self):
-        abc = f'(a={self.a:.1f},b={self.b:.1f},c={self.c:.1f})'
-        ang = f'(α={self.alpha:.1f},β={self.beta:.1f},γ={self.gamma:.1f})'
-        return f'[{self.pdb_id}]{abc}{ang}'
+        abc = f"(a={self.a:.1f},b={self.b:.1f},c={self.c:.1f})"
+        ang = f"(α={self.alpha:.1f},β={self.beta:.1f},γ={self.gamma:.1f})"
+        return f"[{self.pdb_id}]{abc}{ang}"
 
 
 class PDBQuery(abc.ABC):
@@ -665,9 +675,10 @@ class PDBQuery(abc.ABC):
     See documentation here:
     https://www.rcsb.org/pages/webservices/rest-search#search
     """
-    TAG_QUERY = 'orgPdbQuery'
-    TAG_QUERY_TYPE = 'queryType'
-    TAG_DESCRIPTION = 'description'
+
+    TAG_QUERY = "orgPdbQuery"
+    TAG_QUERY_TYPE = "queryType"
+    TAG_DESCRIPTION = "description"
 
     @abc.abstractmethod
     def to_xml(self):
@@ -685,19 +696,20 @@ class PDBQuery(abc.ABC):
         Executes the query on PDB.
         :return: A list of PDB IDs for proteins matching the query.
         """
-        header = {'Content-Type': 'application/x-www-form-urlencoded'}
+        header = {"Content-Type": "application/x-www-form-urlencoded"}
         query = self.to_xml()
 
         pdb_ids = []
-        LOGGER.info(f'Executing PDB query: {self.description()}')
+        LOGGER.info(f"Executing PDB query: {self.description()}")
         try:
             # Use many retries as this is an unreliable API
-            with requests_retry(retries=10, backoff=0.2). \
-                    post(PDB_SEARCH_URL, query, headers=header) as response:
+            with requests_retry(retries=10, backoff=0.2).post(
+                PDB_SEARCH_URL, query, headers=header
+            ) as response:
                 response.raise_for_status()
                 pdb_ids = response.text.split()
         except requests.RequestException as e:
-            LOGGER.error(f'Failed to query PDB: {e.__class__.__name__}={e}')
+            LOGGER.error(f"Failed to query PDB: {e.__class__.__name__}={e}")
 
         return pdb_ids
 
@@ -710,18 +722,19 @@ class PDBCompositeQuery(PDBQuery):
     A composite query is composed of multiple regular PDBQueries.
     It creates a query that represents "query1 AND query2 AND ... queryN".
     """
-    TAG_COMPOSITE = 'orgPdbCompositeQuery'
-    TAG_REFINEMENT = 'queryRefinement'
-    TAG_REFINEMENT_LEVEL = 'queryRefinementLevel'
-    TAG_CONJ_TYPE = 'conjunctionType'
+
+    TAG_COMPOSITE = "orgPdbCompositeQuery"
+    TAG_REFINEMENT = "queryRefinement"
+    TAG_REFINEMENT_LEVEL = "queryRefinementLevel"
+    TAG_CONJ_TYPE = "conjunctionType"
 
     def __init__(self, *queries: PDBQuery):
         super().__init__()
         self.queries = queries
 
     def description(self):
-        descriptions = [f'({q.description()})' for q in self.queries]
-        return str.join(' AND ', descriptions)
+        descriptions = [f"({q.description()})" for q in self.queries]
+        return str.join(" AND ", descriptions)
 
     def to_xml(self):
         doc, tag, text, line = yattag.Doc().ttl()
@@ -732,7 +745,7 @@ class PDBCompositeQuery(PDBQuery):
                     line(self.TAG_REFINEMENT_LEVEL, i)
 
                     if i > 0:
-                        line(self.TAG_CONJ_TYPE, 'and')
+                        line(self.TAG_CONJ_TYPE, "and")
 
                     # Insert XML from regular query as-is
                     doc.asis(query.to_xml())
@@ -744,12 +757,13 @@ class PDBResolutionQuery(PDBQuery):
     """
     Query PDB for structures within a range of X-ray resolutions.
     """
-    RES_QUERY_TYPE = 'org.pdb.query.simple.ResolutionQuery'
-    TAG_RES_COMP = 'refine.ls_d_res_high.comparator'
-    TAG_RES_MIN = 'refine.ls_d_res_high.min'
-    TAG_RES_MAX = 'refine.ls_d_res_high.max'
 
-    def __init__(self, min_res=0., max_res=pp5.get_config('DEFAULT_RES')):
+    RES_QUERY_TYPE = "org.pdb.query.simple.ResolutionQuery"
+    TAG_RES_COMP = "refine.ls_d_res_high.comparator"
+    TAG_RES_MIN = "refine.ls_d_res_high.min"
+    TAG_RES_MAX = "refine.ls_d_res_high.max"
+
+    def __init__(self, min_res=0.0, max_res=pp5.get_config("DEFAULT_RES")):
         """
         :param min_res: Minimal Xray-diffraction resolution value.
         :param max_res: Maximal Xray-diffraction resolution value.
@@ -759,7 +773,7 @@ class PDBResolutionQuery(PDBQuery):
         self.max_res = max_res
 
     def description(self):
-        return f'Resolution between {self.min_res} and {self.max_res}'
+        return f"Resolution between {self.min_res} and {self.max_res}"
 
     def to_xml(self):
         doc, tag, text, line = yattag.Doc().ttl()
@@ -767,7 +781,7 @@ class PDBResolutionQuery(PDBQuery):
         with tag(self.TAG_QUERY):
             line(self.TAG_QUERY_TYPE, self.RES_QUERY_TYPE)
             line(self.TAG_DESCRIPTION, self.description())
-            line(self.TAG_RES_COMP, 'between')
+            line(self.TAG_RES_COMP, "between")
             line(self.TAG_RES_MIN, self.min_res)
             line(self.TAG_RES_MAX, self.max_res)
 
@@ -778,15 +792,26 @@ class PDBExpressionSystemQuery(PDBQuery):
     """
     Query PDB for structures with a specified expression system.
     """
-    COMP_TYPES = {'contains', 'equals', 'startswith', 'endswith',
-                  '!contains', '!startswith', '!endswith'}
 
-    EXPR_SYS_QUERY_TYPE = 'org.pdb.query.simple.ExpressionOrganismQuery'
-    TAG_COMP = 'entity_src_gen.pdbx_host_org_scientific_name.comparator'
-    TAG_NAME = 'entity_src_gen.pdbx_host_org_scientific_name.value'
+    COMP_TYPES = {
+        "contains",
+        "equals",
+        "startswith",
+        "endswith",
+        "!contains",
+        "!startswith",
+        "!endswith",
+    }
 
-    def __init__(self, expr_sys: str = pp5.get_config('DEFAULT_EXPR_SYS'),
-                 expr_sys_comp_type: str = 'contains'):
+    EXPR_SYS_QUERY_TYPE = "org.pdb.query.simple.ExpressionOrganismQuery"
+    TAG_COMP = "entity_src_gen.pdbx_host_org_scientific_name.comparator"
+    TAG_NAME = "entity_src_gen.pdbx_host_org_scientific_name.value"
+
+    def __init__(
+        self,
+        expr_sys: str = pp5.get_config("DEFAULT_EXPR_SYS"),
+        expr_sys_comp_type: str = "contains",
+    ):
         """
         :param expr_sys: Name of expression system (organism).
         :param expr_sys_comp_type: How to compare the specific name to PDB
@@ -795,12 +820,14 @@ class PDBExpressionSystemQuery(PDBQuery):
         super().__init__()
         self.expr_sys = expr_sys
         if expr_sys_comp_type not in self.COMP_TYPES:
-            raise ValueError(f"Unknown comparison type {expr_sys_comp_type}, "
-                             f"must be one of {self.COMP_TYPES}.")
+            raise ValueError(
+                f"Unknown comparison type {expr_sys_comp_type}, "
+                f"must be one of {self.COMP_TYPES}."
+            )
         self.comp_type = expr_sys_comp_type
 
     def description(self):
-        return f'Expression system {self.comp_type} {self.expr_sys}'
+        return f"Expression system {self.comp_type} {self.expr_sys}"
 
     def to_xml(self):
         doc, tag, text, line = yattag.Doc().ttl()
@@ -815,13 +842,13 @@ class PDBExpressionSystemQuery(PDBQuery):
 
 
 class PDBUniprotIdQuery(PDBQuery):
-    UNP_QUERY_TYPE = 'org.pdb.query.simple.UpAccessionIdQuery'
-    TAG_ACCESSION_ID_LIST = 'accessionIdList'
+    UNP_QUERY_TYPE = "org.pdb.query.simple.UpAccessionIdQuery"
+    TAG_ACCESSION_ID_LIST = "accessionIdList"
 
     def __init__(self, unp_ids: Union[str, Iterable[str]]):
         super().__init__()
         if isinstance(unp_ids, str):
-            unp_ids = unp_ids.split(',')
+            unp_ids = unp_ids.split(",")
 
         self.unp_ids = [u.strip().upper() for u in unp_ids]
 
@@ -831,12 +858,12 @@ class PDBUniprotIdQuery(PDBQuery):
         with tag(self.TAG_QUERY):
             line(self.TAG_QUERY_TYPE, self.UNP_QUERY_TYPE)
             line(self.TAG_DESCRIPTION, self.description())
-            line(self.TAG_ACCESSION_ID_LIST, str.join(',', self.unp_ids))
+            line(self.TAG_ACCESSION_ID_LIST, str.join(",", self.unp_ids))
 
         return doc.getvalue()
 
     def description(self):
-        return f'Uniprot id in {self.unp_ids}'
+        return f"Uniprot id in {self.unp_ids}"
 
 
 class PDBSequenceQuery(PDBQuery):
@@ -846,54 +873,63 @@ class PDBSequenceQuery(PDBQuery):
     See documentation here:
     https://www.rcsb.org/pages/help/advancedsearch/sequence
     """
-    TOOL_TYPES = {'blast', 'psiblast'}
 
-    SEQUENCE_QUERY_TYPE = 'org.pdb.query.simple.SequenceQuery'
-    TAG_STRUCTURE_ID = 'structureId'
-    TAG_CHAIN_ID = 'chainId'
-    TAG_SEQUENCE = 'sequence'
-    TAG_ECUTOFF = 'eValueCutoff'
-    TAG_MASK_LOW_COMP = 'maskLowComplexity'
-    TAG_IDENTITY_CUTOFF = 'sequenceIdentityCutoff'
+    TOOL_TYPES = {"blast", "psiblast"}
 
-    def __init__(self, pdb_id: str = None, sequence: str = None,
-                 search_tool: str = 'blast', e_cutoff=10.0,
-                 mask_low_complexity=True, identity_cutoff=0.):
+    SEQUENCE_QUERY_TYPE = "org.pdb.query.simple.SequenceQuery"
+    TAG_STRUCTURE_ID = "structureId"
+    TAG_CHAIN_ID = "chainId"
+    TAG_SEQUENCE = "sequence"
+    TAG_ECUTOFF = "eValueCutoff"
+    TAG_MASK_LOW_COMP = "maskLowComplexity"
+    TAG_IDENTITY_CUTOFF = "sequenceIdentityCutoff"
+
+    def __init__(
+        self,
+        pdb_id: str = None,
+        sequence: str = None,
+        search_tool: str = "blast",
+        e_cutoff=10.0,
+        mask_low_complexity=True,
+        identity_cutoff=0.0,
+    ):
         both = pdb_id and sequence
         neither = not pdb_id and not sequence
         if both or neither:
-            raise ValueError('Must provide either pdb_id sequence')
+            raise ValueError("Must provide either pdb_id sequence")
 
         self.pdb_id = pdb_id
         self.sequence = sequence
         self.search_tool = search_tool
         self.e_cutoff = e_cutoff
-        self.mask_low_complexity = 'yes' if mask_low_complexity else 'no'
+        self.mask_low_complexity = "yes" if mask_low_complexity else "no"
         self.identity_cutoff = identity_cutoff
 
         if pdb_id:
             self.pdb_id, self.chain_id = split_id(pdb_id)
             if not self.chain_id:
-                raise ValueError('Must provide chain info for BLAST query')
+                raise ValueError("Must provide chain info for BLAST query")
         else:
             if len(self.sequence) < 12:
-                raise ValueError('Sequence length for BLAST query must be'
-                                 'at least 12 residues')
+                raise ValueError(
+                    "Sequence length for BLAST query must be" "at least 12 residues"
+                )
 
     def description(self):
         if self.pdb_id:
-            seq_str = f'Structure:Chain = {self.pdb_id}:{self.chain_id}'
+            seq_str = f"Structure:Chain = {self.pdb_id}:{self.chain_id}"
         else:
             n = 10
-            groups = [self.sequence[i:i + n]
-                      for i in range(0, len(self.sequence), n)]
+            groups = [self.sequence[i : i + n] for i in range(0, len(self.sequence), n)]
             seq_str = str.join(" ", groups)
 
-        return f'Sequence Search ({seq_str}, ' \
-               f'Expectation Value = {self.e_cutoff:.1f}, ' \
-               f'Sequence Identity = {self.identity_cutoff:.0f}, ' \
-               f'Search Tool = {self.search_tool}, ' \
-               f'Mask Low Complexity={self.mask_low_complexity})'
+        return (
+            f"Sequence Search ({seq_str}, "
+            f"Expectation Value = {self.e_cutoff:.1f}, "
+            f"Sequence Identity = {self.identity_cutoff:.0f}, "
+            f"Search Tool = {self.search_tool}, "
+            f"Mask Low Complexity={self.mask_low_complexity})"
+        )
 
     def to_xml(self):
         doc, tag, text, line = yattag.Doc().ttl()
@@ -937,11 +973,12 @@ class CustomMMCIFParser(PDB.MMCIFParser):
                 self._mmcif_dict = MMCIF2Dict.MMCIF2Dict(filename)
             else:
                 self._mmcif_dict = mmcif_dict
-                id_from_struct_d = self._mmcif_dict['_entry.id'][0]
+                id_from_struct_d = self._mmcif_dict["_entry.id"][0]
                 if not id_from_struct_d.lower() == structure_id.lower():
                     raise PDBConstructionException(
                         "PDB ID mismatch between provided struct dict and "
-                        "desired structure id")
+                        "desired structure id"
+                    )
 
             self._build_structure(structure_id)
             self._structure_builder.set_header(self._get_header())

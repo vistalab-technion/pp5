@@ -24,10 +24,12 @@ import pp5
 LOGGER = logging.getLogger(__name__)
 
 
-def requests_retry(retries: int = None,
-                   backoff: float = 0.1,
-                   status_forcelist: tuple = (413, 429, 500, 502, 503, 504),
-                   session: requests.Session = None, ):
+def requests_retry(
+    retries: int = None,
+    backoff: float = 0.1,
+    status_forcelist: tuple = (413, 429, 500, 502, 503, 504),
+    session: requests.Session = None,
+):
     """
     Creates a requests.Session configured to retry a request in case of
     failure.
@@ -44,19 +46,22 @@ def requests_retry(retries: int = None,
     :return: A session object.
     """
     if retries is None:
-        retries = pp5.get_config('REQUEST_RETRIES')
+        retries = pp5.get_config("REQUEST_RETRIES")
 
     session = session or requests.Session()
 
     # Randomize backoff a bit (20%)
-    delta = random.uniform(-backoff * .2, backoff * .2)
+    delta = random.uniform(-backoff * 0.2, backoff * 0.2)
     backoff += delta
 
     # Docs for Retry are here:
     # https://urllib3.readthedocs.io/en/latest/reference/urllib3.util.html
     retry = Retry(
         # Number of retries for various error types
-        total=retries, read=retries, connect=retries, redirect=retries,
+        total=retries,
+        read=retries,
+        connect=retries,
+        redirect=retries,
         # Retry on any HTTP verb, including POST
         method_whitelist=False,
         # List of status codes to retry for
@@ -65,13 +70,14 @@ def requests_retry(retries: int = None,
         backoff_factor=backoff,
     )
     adapter = HTTPAdapter(max_retries=retry)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
     return session
 
 
-def remote_dl(url: str, save_path: str, uncompress=False,
-              skip_existing=False, retries: int = None) -> Path:
+def remote_dl(
+    url: str, save_path: str, uncompress=False, skip_existing=False, retries: int = None
+) -> Path:
     """
     Downloads contents of a remote file and saves it into a local file.
     :param url: The url to download from.
@@ -88,21 +94,21 @@ def remote_dl(url: str, save_path: str, uncompress=False,
             LOGGER.debug(f"File {save_path} exists, skipping download...")
             return Path(save_path)
 
-    req_headers = {'Accept-Encoding': 'gzip, identity'}
-    with requests_retry(retries=retries) \
-            .get(url, stream=True, headers=req_headers) as r:
+    req_headers = {"Accept-Encoding": "gzip, identity"}
+    with requests_retry(retries=retries).get(
+        url, stream=True, headers=req_headers
+    ) as r:
         r.raise_for_status()
         if 300 <= r.status_code < 400:
-            raise HTTPError(f"Redirect {r.status_code} for url{url}",
-                            response=r)
+            raise HTTPError(f"Redirect {r.status_code} for url{url}", response=r)
 
-        if 'gzip' in r.headers.get('Content-Encoding', ''):
+        if "gzip" in r.headers.get("Content-Encoding", ""):
             uncompress = True
 
         save_dir = Path().joinpath(*Path(save_path).parts[:-1])
         os.makedirs(save_dir, exist_ok=True)
 
-        with open(save_path, 'wb') as out_handle:
+        with open(save_path, "wb") as out_handle:
             try:
                 if uncompress:
                     in_handle = gzip.GzipFile(fileobj=r.raw)
@@ -119,7 +125,7 @@ def remote_dl(url: str, save_path: str, uncompress=False,
 
 def deep_walk(obj, path=(), memo=None):
     str_types = (str, bytes)
-    iteritems = lambda mapping: getattr(mapping, 'iteritems', mapping.items)()
+    iteritems = lambda mapping: getattr(mapping, "iteritems", mapping.items)()
 
     if memo is None:
         memo = set()
@@ -128,7 +134,7 @@ def deep_walk(obj, path=(), memo=None):
         iterator = iteritems
     elif isinstance(obj, (Sequence, Set)) and not isinstance(obj, str_types):
         iterator = enumerate
-    elif hasattr(obj, '__dict__'):
+    elif hasattr(obj, "__dict__"):
         iterator = lambda x: x.__dict__.items()
 
     if iterator:
@@ -154,8 +160,9 @@ def is_interactive():
 
 
 @contextlib.contextmanager
-def out_redirected(stdout_stderr='stdout', to=os.devnull,
-                   standard_fds_only=True, no_interactive=True):
+def out_redirected(
+    stdout_stderr="stdout", to=os.devnull, standard_fds_only=True, no_interactive=True
+):
     """
     Redirects stdout/stderr in a way that also affects C libraries called
     from python code.
@@ -165,18 +172,18 @@ def out_redirected(stdout_stderr='stdout', to=os.devnull,
     See also:
     https://eli.thegreenplace.net/2015/redirecting-all-kinds-of-stdout-in-python/
     """
-    assert stdout_stderr in {'stdout', 'stderr'}
+    assert stdout_stderr in {"stdout", "stderr"}
 
     # In interactive python, don't redirect by changing file-descriptors
     # because this will crash the interactive shell (which also uses these
     # files). Use the regular contextlib context managers.
     if no_interactive and is_interactive():
-        if stdout_stderr == 'stdout':
+        if stdout_stderr == "stdout":
             redirect_fn = contextlib.redirect_stdout
         else:
             redirect_fn = contextlib.redirect_stderr
 
-        with open(to, 'w') as file:
+        with open(to, "w") as file:
             with redirect_fn(file):
                 yield
         return
@@ -184,9 +191,11 @@ def out_redirected(stdout_stderr='stdout', to=os.devnull,
     fd = getattr(sys, stdout_stderr).fileno()
 
     # Loggers which log to the stream being redirected must be modified
-    logging_handlers = [h for h in logging.root.handlers
-                        if isinstance(h, logging.StreamHandler)
-                        and h.stream.fileno() == fd]
+    logging_handlers = [
+        h
+        for h in logging.root.handlers
+        if isinstance(h, logging.StreamHandler) and h.stream.fileno() == fd
+    ]
 
     def _redirect(to_stream):
         old_stream = getattr(sys, stdout_stderr)
@@ -194,7 +203,7 @@ def out_redirected(stdout_stderr='stdout', to=os.devnull,
         old_stream.close()
 
         os.dup2(to_stream.fileno(), fd)  # fd writes to 'to' file
-        new_stream = os.fdopen(fd, 'w')
+        new_stream = os.fdopen(fd, "w")
         setattr(sys, stdout_stderr, new_stream)  # Python writes to fd
 
         for lh in logging_handlers:
@@ -206,9 +215,10 @@ def out_redirected(stdout_stderr='stdout', to=os.devnull,
 
     # By default we don't want to change any non-standard file descriptors,
     # so we only change 1 and 2
-    if standard_fds_only and \
-            not ((stdout_stderr == 'stdout' and fd == 1) or
-                 (stdout_stderr == 'stderr' and fd == 2)):
+    if standard_fds_only and not (
+        (stdout_stderr == "stdout" and fd == 1)
+        or (stdout_stderr == "stderr" and fd == 2)
+    ):
         LOGGER.warning(f"None standard fd {stdout_stderr}={fd}")
         yield
 
@@ -216,8 +226,8 @@ def out_redirected(stdout_stderr='stdout', to=os.devnull,
     # The advantage is that this affect non-python code in this process,
     # such as compiled C libraries.
     else:
-        with os.fdopen(os.dup(fd), 'w') as old_stdout:
-            with open(to, 'w') as file:
+        with os.fdopen(os.dup(fd), "w") as old_stdout:
+            with open(to, "w") as file:
                 _redirect(to_stream=file)
             try:
                 yield  # allow code to be run with the redirected stdout
@@ -236,7 +246,7 @@ def elapsed_seconds_to_dhms(elapsed_sec: float):
     dt = datetime(1, 1, 1) + timedelta(seconds=elapsed_sec)
     d, h, m, s = dt.day - 1, dt.hour, dt.minute, dt.second
 
-    return f'{d:02d}+{h:02d}:{m:02d}:{s:02d}'
+    return f"{d:02d}+{h:02d}:{m:02d}:{s:02d}"
 
 
 def sort_dict(d: dict, by_value=True, selector: Callable[[Any], Any] = None):
@@ -272,10 +282,9 @@ class JSONCacheableMixin(object):
     def __setstate__(self, state):
         self.__dict__.update(state)
 
-    def to_cache(self,
-                 cache_dir: Union[str, Path],
-                 filename: Union[str, Path],
-                 **json_kws) -> Path:
+    def to_cache(
+        self, cache_dir: Union[str, Path], filename: Union[str, Path], **json_kws
+    ) -> Path:
         """
         Write the object to a human-readable text file (json) which
         can also be loaded later using from_cache.
@@ -286,16 +295,14 @@ class JSONCacheableMixin(object):
         filepath = pp5.get_resource_path(cache_dir, filename)
         os.makedirs(str(filepath.parent), exist_ok=True)
 
-        with open(str(filepath), 'w', encoding='utf-8') as f:
+        with open(str(filepath), "w", encoding="utf-8") as f:
             json.dump(self.__getstate__(), f, **json_kws)
 
-        LOGGER.info(f'Wrote {self} to {filepath}')
+        LOGGER.info(f"Wrote {self} to {filepath}")
         return filepath
 
     @classmethod
-    def from_cache(cls,
-                   cache_dir: Union[str, Path],
-                   filename: Union[str, Path]):
+    def from_cache(cls, cache_dir: Union[str, Path], filename: Union[str, Path]):
         """
         Load the object from a cached file.
         :param cache_dir: Directory of cached file.
@@ -308,13 +315,12 @@ class JSONCacheableMixin(object):
         obj = None
         if filepath.is_file():
             try:
-                with open(str(filepath), 'r', encoding='utf-8') as f:
+                with open(str(filepath), "r", encoding="utf-8") as f:
                     state_dict = json.load(f)
                     obj = cls.__new__(cls)
                     obj.__setstate__(state_dict)
             except Exception as e:
-                LOGGER.warning(
-                    f'Failed to load cached {cls.__name__} {filepath} {e}')
+                LOGGER.warning(f"Failed to load cached {cls.__name__} {filepath} {e}")
         return obj
 
 
@@ -323,6 +329,7 @@ class ReprJSONEncoder(JSONEncoder):
     A JSONEncoder that converts an object to it's representation string in
     case it's not serializable.
     """
+
     def default(self, o: Any) -> Any:
         try:
             return repr(o)

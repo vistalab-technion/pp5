@@ -12,7 +12,7 @@ def codon2aac(codon: str):
     corresponding amino acid.
     """
     aa = CODON_TABLE[codon]
-    return f'{aa}-{codon}'.upper()
+    return f"{aa}-{codon}".upper()
 
 
 CODON_TABLE = CodonTable.standard_dna_table.forward_table
@@ -24,8 +24,9 @@ AA_CODONS = sorted(codon2aac(c) for c in CODONS)
 
 ACIDS = sorted(set([aac[0] for aac in AA_CODONS]))
 ACIDS_1TO3 = IUPACData.protein_letters_1to3
-ACIDS_1TO1AND3 = {aa: f'{aa} ({ACIDS_1TO3[aa]})' for aa in ACIDS}
+ACIDS_1TO1AND3 = {aa: f"{aa} ({ACIDS_1TO3[aa]})" for aa in ACIDS}
 
-CODON_RE = re.compile(rf'^(?:(?P<aa>[{str.join("", ACIDS)}])-)?'
-                      rf'(?P<codon>{str.join("|", CODONS)})$',
-                      re.VERBOSE | re.IGNORECASE)
+CODON_RE = re.compile(
+    rf'^(?:(?P<aa>[{str.join("", ACIDS)}])-)?' rf'(?P<codon>{str.join("|", CODONS)})$',
+    re.VERBOSE | re.IGNORECASE,
+)

@@ -22,16 +22,17 @@ class FileServer(socketserver.TCPServer):
 
         self.port = self.get_free_port()
         self.last_request = []
-        self.server_thread = Thread(target=self.serve_forever,
-                                    daemon=True, name='httpd')
+        self.server_thread = Thread(
+            target=self.serve_forever, daemon=True, name="httpd"
+        )
 
-        super().__init__(('', self.port), Handler)
+        super().__init__(("", self.port), Handler)
         self.server_thread.start()
 
     @classmethod
     def get_free_port(cls):
         with socket.socket(socket.AF_INET, type=socket.SOCK_STREAM) as s:
-            s.bind(('localhost', 0))
+            s.bind(("localhost", 0))
             address, port = s.getsockname()
         return port
 
@@ -41,11 +42,11 @@ class FileServer(socketserver.TCPServer):
 
     def finish_request(self, request, client_address):
         handler = self.RequestHandlerClass(request, client_address, self)
-        self.last_request = handler.requestline.split(' ')
-        print('###', self.last_request)
+        self.last_request = handler.requestline.split(" ")
+        print("###", self.last_request)
 
     def file_url(self, file_name):
-        return f'http://localhost:{self.port}/{file_name}'
+        return f"http://localhost:{self.port}/{file_name}"
 
     def last_http_verb(self):
         return self.last_request[0] if self.last_request else None
@@ -68,5 +69,3 @@ def has_internet():
     except:
         pass
     return False
-
-

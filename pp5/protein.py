@@ -7,8 +7,18 @@ import warnings
 import enum
 import pickle
 from pathlib import Path
-from typing import List, Tuple, Dict, Iterator, Callable, Any, Union, \
-    Iterable, Optional, Set
+from typing import (
+    List,
+    Tuple,
+    Dict,
+    Iterator,
+    Callable,
+    Any,
+    Union,
+    Iterable,
+    Optional,
+    Set,
+)
 from collections import OrderedDict, Counter
 import itertools as it
 
@@ -22,9 +32,13 @@ from pytest import approx
 
 import pp5
 from pp5.codons import CODON_TABLE, STOP_CODONS
-from pp5.dihedral import Dihedral, DihedralAnglesEstimator, \
-    DihedralAnglesUncertaintyEstimator, DihedralAnglesMonteCarloEstimator, \
-    AtomLocationUncertainty
+from pp5.dihedral import (
+    Dihedral,
+    DihedralAnglesEstimator,
+    DihedralAnglesUncertaintyEstimator,
+    DihedralAnglesMonteCarloEstimator,
+    AtomLocationUncertainty,
+)
 from pp5.external_dbs import pdb, unp, ena
 from pp5.external_dbs.pdb import PDBRecord, PDBQuery
 from pp5.external_dbs.unp import UNPRecord
@@ -38,16 +52,16 @@ with warnings.catch_warnings():
 
 BLOSUM62 = substitution_matrices.load("BLOSUM62")
 BLOSUM80 = substitution_matrices.load("BLOSUM80")
-UNKNOWN_AA = 'X'
-UNKNOWN_CODON = '---'
+UNKNOWN_AA = "X"
+UNKNOWN_CODON = "---"
 
 LOGGER = logging.getLogger(__name__)
 
 
 def _tagged_filepath(pdb_id: str, out_dir: Path, suffix: str, tag: str):
-    tag = f'-{tag}' if tag else ''
+    tag = f"-{tag}" if tag else ""
     filename = f'{pdb_id.replace(":", "_").upper()}{tag}'
-    filepath = out_dir.joinpath(f'{filename}.{suffix}')
+    filepath = out_dir.joinpath(f"{filename}.{suffix}")
     return filepath
 
 
@@ -70,29 +84,38 @@ class ResidueRecord(object):
     - secondary: single-letter secondary structure code
     """
 
-    def __init__(self, res_id: Union[str, int], name: str,
-                 codon: str, codon_score: float,
-                 codon_opts: Union[Iterable[str], str],
-                 angles: Dihedral, bfactor: float, secondary: str):
+    def __init__(
+        self,
+        res_id: Union[str, int],
+        name: str,
+        codon: str,
+        codon_score: float,
+        codon_opts: Union[Iterable[str], str],
+        angles: Dihedral,
+        bfactor: float,
+        secondary: str,
+    ):
         self.res_id, self.name = str(res_id).strip(), name
         self.codon, self.codon_score = codon, codon_score
         if isinstance(codon_opts, str):
             self.codon_opts = codon_opts
         else:
-            self.codon_opts = str.join('/', codon_opts)
+            self.codon_opts = str.join("/", codon_opts)
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
 
     def as_dict(self, skip_omega=False):
         d = self.__dict__.copy()
         # Replace angles object with the angles themselves
-        d.pop('angles')
+        d.pop("angles")
         a = self.angles
         d.update(a.as_dict(degrees=True, with_std=True, skip_omega=skip_omega))
         return d
 
     def __repr__(self):
-        return f'{self.name}{self.res_id:<4s} [{self.codon}]' \
-               f'[{self.secondary}] {self.angles} b={self.bfactor:.2f}'
+        return (
+            f"{self.name}{self.res_id:<4s} [{self.codon}]"
+            f"[{self.secondary}] {self.angles} b={self.bfactor:.2f}"
+        )
 
     def __eq__(self, other):
         if self is other:
@@ -126,15 +149,24 @@ class ResidueMatch(ResidueRecord):
     """
 
     @classmethod
-    def from_residue(cls, query_res: ResidueRecord,
-                     query_idx: int,
-                     match_type: ResidueMatchType,
-                     ang_dist: float, context: int):
-        return cls(query_idx, match_type, ang_dist, context,
-                   **query_res.__dict__)
+    def from_residue(
+        cls,
+        query_res: ResidueRecord,
+        query_idx: int,
+        match_type: ResidueMatchType,
+        ang_dist: float,
+        context: int,
+    ):
+        return cls(query_idx, match_type, ang_dist, context, **query_res.__dict__)
 
-    def __init__(self, query_idx: int, match_type: ResidueMatchType,
-                 ang_dist: float, context: int, **res_rec_args):
+    def __init__(
+        self,
+        query_idx: int,
+        match_type: ResidueMatchType,
+        ang_dist: float,
+        context: int,
+        **res_rec_args,
+    ):
         self.idx = query_idx
         self.type = match_type
         self.ang_dist = ang_dist
@@ -142,8 +174,10 @@ class ResidueMatch(ResidueRecord):
         super().__init__(**res_rec_args)
 
     def __repr__(self):
-        return f'[{self.idx}] {self.type.name}, ' \
-               f'diff={self.ang_dist:.2f}, context={self.context}'
+        return (
+            f"[{self.idx}] {self.type.name}, "
+            f"diff={self.ang_dist:.2f}, context={self.context}"
+        )
 
 
 class ResidueMatchGroup(object):
@@ -152,10 +186,15 @@ class ResidueMatchGroup(object):
     that match at a specific residue which is coded by the same codon.
     """
 
-    def __init__(self, unp_id: str, codon: str,
-                 match_group: Dict[str, ResidueMatch],
-                 precs: Dict[str, ProteinRecord],
-                 avg_phipsi: Dihedral, ang_dist: float):
+    def __init__(
+        self,
+        unp_id: str,
+        codon: str,
+        match_group: Dict[str, ResidueMatch],
+        precs: Dict[str, ProteinRecord],
+        avg_phipsi: Dihedral,
+        ang_dist: float,
+    ):
 
         self.unp_id = unp_id
         self.codon = codon
@@ -169,19 +208,13 @@ class ResidueMatchGroup(object):
         self.ang_dist = ang_dist
 
         # Save information about the structures in this group
-        vs = (
-            (m.idx, m.res_id, m.context, m.angles)
-            for m in match_group.values()
-        )
-        self.idxs, self.res_ids, self.contexts, angles = [
-            tuple(z) for z in zip(*vs)
-        ]
+        vs = ((m.idx, m.res_id, m.context, m.angles) for m in match_group.values())
+        self.idxs, self.res_ids, self.contexts, angles = [tuple(z) for z in zip(*vs)]
         self.curr_phis = tuple(a.phi_deg for a in angles)
         self.curr_psis = tuple(a.psi_deg for a in angles)
 
         vs = (
-            (m.type, m.name, m.secondary, m.codon_opts,)
-            for m in match_group.values()
+            (m.type, m.name, m.secondary, m.codon_opts,) for m in match_group.values()
         )
         types, names, secondaries, opts = [set(z) for z in zip(*vs)]
 
@@ -204,20 +237,24 @@ class ResidueMatchGroup(object):
         # Get alternative possible codon options. Remove the
         # group codon to prevent redundancy.  Note that
         # UNKNOWN_CODON is a possibility, we leave it in.
-        self.codon_opts = set(it.chain(*[o.split('/') for o in opts]))
+        self.codon_opts = set(it.chain(*[o.split("/") for o in opts]))
         self.codon_opts.remove(codon)
 
         # Get information about the residues around the match:
         # codons and angles in the previous and next residues of each structure
         d = {
-            'prev_codons': [], 'prev_phis': [], 'prev_psis': [],
-            'next_codons': [], 'next_phis': [], 'next_psis': [],
+            "prev_codons": [],
+            "prev_phis": [],
+            "prev_psis": [],
+            "next_codons": [],
+            "next_phis": [],
+            "next_psis": [],
         }
         for pdb_id, match in match_group.items():
             prec = precs[pdb_id]
             prec_idx_range = range(0, len(prec))
 
-            for prevnext, offset in [('prev', -1), ('next', 1)]:
+            for prevnext, offset in [("prev", -1), ("next", 1)]:
                 i = match.idx + offset
 
                 if i in prec_idx_range:
@@ -225,27 +262,29 @@ class ResidueMatchGroup(object):
                     prevnext_phi = prec[i].angles.phi_deg
                     prevnext_psi = prec[i].angles.psi_deg
                 else:
-                    prevnext_codon = ''
+                    prevnext_codon = ""
                     prevnext_phi, prevnext_psi = math.nan, math.nan
 
-                d[f'{prevnext}_codons'].append(prevnext_codon)
-                d[f'{prevnext}_phis'].append(prevnext_phi)
-                d[f'{prevnext}_psis'].append(prevnext_psi)
+                d[f"{prevnext}_codons"].append(prevnext_codon)
+                d[f"{prevnext}_phis"].append(prevnext_phi)
+                d[f"{prevnext}_psis"].append(prevnext_psi)
 
         for k, v in d.items():
             self.__setattr__(k, tuple(v))
 
     def __repr__(self):
-        return f'[{self.unp_id}, {self.codon}] {self.match_type.name} ' \
-               f'{self.avg_phipsi}, n={self.group_size}, ' \
-               f'ang_dist={self.ang_dist:.2f}'
+        return (
+            f"[{self.unp_id}, {self.codon}] {self.match_type.name} "
+            f"{self.avg_phipsi}, n={self.group_size}, "
+            f"ang_dist={self.ang_dist:.2f}"
+        )
 
     def as_dict(self, join_sequences=False, key_prefix=None):
-        p = f'{key_prefix}_' if key_prefix else ''
+        p = f"{key_prefix}_" if key_prefix else ""
 
         def _str(x):
             if isinstance(x, float):
-                return f'{x:.3f}'
+                return f"{x:.3f}"
             return str(x)
 
         def _join(sequence: Union[set, list, tuple]):
@@ -253,40 +292,50 @@ class ResidueMatchGroup(object):
                 return sequence
 
             if isinstance(sequence, (set,)):
-                sep = '/'
+                sep = "/"
             elif isinstance(sequence, (list, tuple)):
-                sep = ';'
+                sep = ";"
             else:
-                raise ValueError('Unexpected sequence type')
+                raise ValueError("Unexpected sequence type")
 
             return str.join(sep, map(_str, sequence))
 
         group_avg_phipsi = {
-            f'{p}{k}': v
-            for k, v in self.avg_phipsi.as_dict(degrees=True, skip_omega=True,
-                                                with_std=True).items()
+            f"{p}{k}": v
+            for k, v in self.avg_phipsi.as_dict(
+                degrees=True, skip_omega=True, with_std=True
+            ).items()
         }
 
         d = {
-            f'{p}type': self.match_type.name,
-            f'{p}unp_id': self.unp_id,
-            f'{p}codon': self.codon,
-            f'{p}name': self.name,
-            f'{p}secondary': self.secondary,
-            f'{p}group_size': self.group_size,
+            f"{p}type": self.match_type.name,
+            f"{p}unp_id": self.unp_id,
+            f"{p}codon": self.codon,
+            f"{p}name": self.name,
+            f"{p}secondary": self.secondary,
+            f"{p}group_size": self.group_size,
             **group_avg_phipsi,
-            f'{p}ang_dist': self.ang_dist,
-            f'{p}norm_factor': self.norm_factor,
+            f"{p}ang_dist": self.ang_dist,
+            f"{p}norm_factor": self.norm_factor,
         }
 
         sequence_attributes = [
-            'pdb_ids', 'idxs', 'res_ids', 'contexts',
-            'prev_phis', 'curr_phis', 'next_phis',
-            'prev_psis', 'curr_psis', 'next_psis',
-            'codon_opts', 'prev_codons', 'next_codons',
+            "pdb_ids",
+            "idxs",
+            "res_ids",
+            "contexts",
+            "prev_phis",
+            "curr_phis",
+            "next_phis",
+            "prev_psis",
+            "curr_psis",
+            "next_psis",
+            "codon_opts",
+            "prev_codons",
+            "next_codons",
         ]
         for attr in sequence_attributes:
-            d[f'{p}{attr}'] = _join(self.__getattribute__(attr))
+            d[f"{p}{attr}"] = _join(self.__getattribute__(attr))
 
         return d
 
@@ -306,11 +355,13 @@ class ProteinRecord(object):
     PDB structures with the same Uniprot id and possible slightly
     different AAs.
     """
-    _SKIP_SERIALIZE = ['_unp_rec', '_pdb_rec', '_pdb_dict', '_pp']
+
+    _SKIP_SERIALIZE = ["_unp_rec", "_pdb_rec", "_pdb_dict", "_pp"]
 
     @staticmethod
-    def from_cache(pdb_id, cache_dir: Union[str, Path] = None, tag=None) \
-            -> Optional[ProteinRecord]:
+    def from_cache(
+        pdb_id, cache_dir: Union[str, Path] = None, tag=None
+    ) -> Optional[ProteinRecord]:
         """
         Loads a cached ProteinRecord, if it exists.
         :param pdb_id: PDB ID with chain.
@@ -322,25 +373,31 @@ class ProteinRecord(object):
         if not isinstance(cache_dir, (str, Path)):
             cache_dir = pp5.PREC_DIR
 
-        path = _tagged_filepath(pdb_id, cache_dir, 'prec', tag)
+        path = _tagged_filepath(pdb_id, cache_dir, "prec", tag)
         filename = path.name
         path = pp5.get_resource_path(cache_dir, filename)
         prec = None
         if path.is_file():
             try:
-                with open(str(path), 'rb') as f:
+                with open(str(path), "rb") as f:
                     prec = pickle.load(f)
             except Exception as e:
                 # If we can't unpickle, probably the code changed since
                 # saving this object. We'll just return None, so that a new
                 # prec will be created and stored.
-                LOGGER.warning(f'Failed to load cached ProteinRecord {path}')
+                LOGGER.warning(f"Failed to load cached ProteinRecord {path}")
         return prec
 
     @classmethod
-    def from_pdb(cls, pdb_id: str, pdb_dict=None,
-                 cache=False, cache_dir=pp5.PREC_DIR,
-                 strict_pdb_xref=True, **kw_for_init) -> ProteinRecord:
+    def from_pdb(
+        cls,
+        pdb_id: str,
+        pdb_dict=None,
+        cache=False,
+        cache_dir=pp5.PREC_DIR,
+        strict_pdb_xref=True,
+        **kw_for_init,
+    ) -> ProteinRecord:
         """
         Given a PDB id, finds the corresponding Uniprot id, and returns a
         ProteinRecord object for that protein.
@@ -381,13 +438,14 @@ class ProteinRecord(object):
                         numeric_chain = True
                     else:
                         raise ProteinInitError(
-                            f'No matching chain found for entity '
-                            f'{entity_id} in PDB structure {pdb_id}')
+                            f"No matching chain found for entity "
+                            f"{entity_id} in PDB structure {pdb_id}"
+                        )
 
-                pdb_id = f'{pdb_id}:{chain_id}'
+                pdb_id = f"{pdb_id}:{chain_id}"
 
             elif chain_id:
-                pdb_id = f'{pdb_id}:{chain_id}'
+                pdb_id = f"{pdb_id}:{chain_id}"
 
             if cache and chain_id:
                 prec = cls.from_cache(pdb_id, cache_dir)
@@ -401,20 +459,31 @@ class ProteinRecord(object):
                 pdb_id, strict=strict_pdb_xref, cache=True, struct_d=pdb_dict
             )
 
-            prec = cls(unp_id, pdb_id, pdb_dict=pdb_dict,
-                       numeric_chain=numeric_chain, **kw_for_init)
+            prec = cls(
+                unp_id,
+                pdb_id,
+                pdb_dict=pdb_dict,
+                numeric_chain=numeric_chain,
+                **kw_for_init,
+            )
             if cache_dir:
                 prec.save(out_dir=cache_dir)
 
             return prec
         except Exception as e:
-            raise ProteinInitError(f"Failed to create protein record for "
-                                   f"pdb_id={pdb_id}: {e}") from e
+            raise ProteinInitError(
+                f"Failed to create protein record for " f"pdb_id={pdb_id}: {e}"
+            ) from e
 
     @classmethod
-    def from_unp(cls, unp_id: str, cache=False, cache_dir=pp5.PREC_DIR,
-                 xref_selector: Callable[[unp.UNPPDBXRef], Any] = None,
-                 **kw_for_init) -> ProteinRecord:
+    def from_unp(
+        cls,
+        unp_id: str,
+        cache=False,
+        cache_dir=pp5.PREC_DIR,
+        xref_selector: Callable[[unp.UNPPDBXRef], Any] = None,
+        **kw_for_init,
+    ) -> ProteinRecord:
         """
         Creates a ProteinRecord from a Uniprot ID.
         The PDB structure with best resolution will be used.
@@ -433,7 +502,7 @@ class ProteinRecord(object):
         try:
             xrefs = unp.find_pdb_xrefs(unp_id)
             xrefs = sorted(xrefs, key=xref_selector)
-            pdb_id = f'{xrefs[0].pdb_id}:{xrefs[0].chain_id}'
+            pdb_id = f"{xrefs[0].pdb_id}:{xrefs[0].chain_id}"
 
             if cache:
                 prec = cls.from_cache(pdb_id, cache_dir=cache_dir)
@@ -446,12 +515,21 @@ class ProteinRecord(object):
 
             return prec
         except Exception as e:
-            raise ProteinInitError(f"Failed to create protein record for "
-                                   f"unp_id={unp_id}") from e
+            raise ProteinInitError(
+                f"Failed to create protein record for " f"unp_id={unp_id}"
+            ) from e
 
-    def __init__(self, unp_id: str, pdb_id: str, pdb_dict: dict = None,
-                 dihedral_est_name='erp', dihedral_est_args: dict = None,
-                 max_ena=None, strict_unp_xref=True, numeric_chain=False):
+    def __init__(
+        self,
+        unp_id: str,
+        pdb_id: str,
+        pdb_dict: dict = None,
+        dihedral_est_name="erp",
+        dihedral_est_args: dict = None,
+        max_ena=None,
+        strict_unp_xref=True,
+        numeric_chain=False,
+    ):
         """
         Initialize a protein record from both Uniprot and PDB ids.
         To initialize a protein from Uniprot id or PDB id only, use the
@@ -482,7 +560,7 @@ class ProteinRecord(object):
             raise ProteinInitError("Must provide both Uniprot and PDB IDs")
 
         unp_id = unp_id.upper()
-        LOGGER.info(f'{unp_id}: Initializing protein record...')
+        LOGGER.info(f"{unp_id}: Initializing protein record...")
         self.__setstate__({})
 
         self.unp_id = unp_id
@@ -493,20 +571,20 @@ class ProteinRecord(object):
         self.strict_unp_xref = strict_unp_xref
         self.numeric_chain = numeric_chain
         self.pdb_base_id, self.pdb_chain_id = self._find_pdb_xref(pdb_id)
-        self.pdb_id = f'{self.pdb_base_id}:{self.pdb_chain_id}'
+        self.pdb_id = f"{self.pdb_base_id}:{self.pdb_chain_id}"
         if pdb_dict:
             self._pdb_dict = pdb_dict
 
         self.pdb_meta = pdb.PDBMetadata(self.pdb_id, struct_d=self.pdb_dict)
         if not self.pdb_meta.resolution:
-            raise ProteinInitError(f'Unknown resolution for {pdb_id}')
+            raise ProteinInitError(f"Unknown resolution for {pdb_id}")
 
         LOGGER.info(
-            f'{self}: {self.pdb_meta.description}, '
-            f'org={self.pdb_meta.src_org} ({self.pdb_meta.src_org_id}), '
-            f'expr={self.pdb_meta.host_org} ({self.pdb_meta.host_org_id}), '
-            f'res={self.pdb_meta.resolution:.2f}Å, '
-            f'entity_id={self.pdb_meta.chain_entities[self.pdb_chain_id]}'
+            f"{self}: {self.pdb_meta.description}, "
+            f"org={self.pdb_meta.src_org} ({self.pdb_meta.src_org_id}), "
+            f"expr={self.pdb_meta.host_org} ({self.pdb_meta.host_org_id}), "
+            f"res={self.pdb_meta.resolution:.2f}Å, "
+            f"entity_id={self.pdb_meta.chain_entities[self.pdb_chain_id]}"
         )
 
         # Make sure the structure is sane. See e.g. 1FFK.
@@ -526,7 +604,7 @@ class ProteinRecord(object):
         # Even though we're working with one PDB chain, the results is a
         # list of multiple Polypeptide objects because we split them at
         # non-standard residues (HETATM atoms in PDB).
-        pdb_aa_seq, aa_ids, angles, bfactors, sstructs = '', [], [], [], []
+        pdb_aa_seq, aa_ids, angles, bfactors, sstructs = "", [], [], [], []
         for i, pp in enumerate(self.polypeptides):
             curr_start_idx = pp[0].get_id()[1]
             curr_end_idx = pp[-1].get_id()[1]
@@ -542,21 +620,19 @@ class ProteinRecord(object):
                 aa_ids.extend(range(prev_end_idx + 1, curr_start_idx))
                 angles.extend([Dihedral.empty()] * gap_len)
                 bfactors.extend([math.nan] * gap_len)
-                sstructs.extend(['-'] * gap_len)
+                sstructs.extend(["-"] * gap_len)
 
             pdb_aa_seq += str(pp.get_sequence())
             aa_ids.extend([str.join("", map(str, res.get_id())) for res in pp])
             angles.extend(dihedral_est.estimate(pp))
             bfactors.extend(bfactor_est.mean_uncertainty(pp, True))
             res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
-            sss = (ss_dict.get(res_id, '-') for res_id in res_ids)
+            sss = (ss_dict.get(res_id, "-") for res_id in res_ids)
             sstructs.extend(sss)
 
         # Find the best matching DNA for our AA sequence via pairwise alignment
         # between the PDB AA sequence and translated DNA sequences.
-        dna_seq_record, idx_to_codons = self._find_dna_alignment(
-            pdb_aa_seq, max_ena
-        )
+        dna_seq_record, idx_to_codons = self._find_dna_alignment(pdb_aa_seq, max_ena)
         dna_seq = str(dna_seq_record.seq)
         self.ena_id = dna_seq_record.id
 
@@ -575,10 +651,14 @@ class ProteinRecord(object):
             codon_opts = codon_counts.keys()
 
             rr = ResidueRecord(
-                res_id=aa_ids[i], name=pdb_aa_seq[i],
-                codon=best_codon, codon_score=codon_score,
-                codon_opts=codon_opts, angles=angles[i],
-                bfactor=bfactors[i], secondary=sstructs[i],
+                res_id=aa_ids[i],
+                name=pdb_aa_seq[i],
+                codon=best_codon,
+                codon_score=codon_score,
+                codon_opts=codon_opts,
+                angles=angles[i],
+                bfactor=bfactors[i],
+                secondary=sstructs[i],
             )
             residue_recs.append(rr)
 
@@ -622,7 +702,7 @@ class ProteinRecord(object):
         :return: DNA nucleotide sequence. This is the full DNA sequence which,
         after translation, best-matches to the PDB AA sequence.
         """
-        return SeqRecord(Seq(self._dna_seq), self.ena_id, '', '')
+        return SeqRecord(Seq(self._dna_seq), self.ena_id, "", "")
 
     @property
     def protein_seq(self) -> SeqRecord:
@@ -633,7 +713,7 @@ class ProteinRecord(object):
         unknown AA. This happens if the PDB entry contains non-standard AAs
         and we chose to ignore such AAs.
         """
-        return SeqRecord(Seq(self._protein_seq), self.pdb_id, '', '')
+        return SeqRecord(Seq(self._protein_seq), self.pdb_id, "", "")
 
     @property
     def codons(self) -> List[str]:
@@ -678,7 +758,7 @@ class ProteinRecord(object):
         data = [res_rec.as_dict(skip_omega=True) for res_rec in self]
         return pd.DataFrame(data)
 
-    def to_csv(self, out_dir=pp5.out_subdir('prec'), tag=None):
+    def to_csv(self, out_dir=pp5.out_subdir("prec"), tag=None):
         """
         Writes the ProteinRecord as a CSV file.
         Filename will be <PDB_ID>_<CHAIN_ID>_<TAG>.csv.
@@ -689,15 +769,21 @@ class ProteinRecord(object):
         :param tag: Optional extra tag to add to filename.
         :return: The path to the written file.
         """
-        filepath = _tagged_filepath(self.pdb_id, out_dir, 'csv', tag)
+        filepath = _tagged_filepath(self.pdb_id, out_dir, "csv", tag)
         df = self.to_dataframe()
-        df.to_csv(filepath, na_rep='nan', header=True, index=False,
-                  encoding='utf-8', float_format='%.3f')
+        df.to_csv(
+            filepath,
+            na_rep="nan",
+            header=True,
+            index=False,
+            encoding="utf-8",
+            float_format="%.3f",
+        )
 
-        LOGGER.info(f'Wrote {self} to {filepath}')
+        LOGGER.info(f"Wrote {self} to {filepath}")
         return filepath
 
-    def save(self, out_dir=pp5.data_subdir('prec'), tag=None):
+    def save(self, out_dir=pp5.data_subdir("prec"), tag=None):
         """
         Write the ProteinRecord to a binary file which can later to
         re-loaded into memory, recreating the ProteinRecord.
@@ -705,20 +791,21 @@ class ProteinRecord(object):
         :param tag: Optional extra tag to add to filename.
         :return: The path to the written file.
         """
-        filepath = _tagged_filepath(self.pdb_id, out_dir, 'prec', tag)
+        filepath = _tagged_filepath(self.pdb_id, out_dir, "prec", tag)
         filepath = pp5.get_resource_path(filepath.parent, filepath.name)
         os.makedirs(filepath.parent, exist_ok=True)
 
-        with open(str(filepath), 'wb') as f:
+        with open(str(filepath), "wb") as f:
             pickle.dump(self, f, protocol=4)
 
-        LOGGER.info(f'Wrote {self} to {filepath}')
+        LOGGER.info(f"Wrote {self} to {filepath}")
         return filepath
 
-    def _find_dna_alignment(self, pdb_aa_seq: str, max_ena: int) \
-            -> Tuple[SeqRecord, Dict[int, str]]:
+    def _find_dna_alignment(
+        self, pdb_aa_seq: str, max_ena: int
+    ) -> Tuple[SeqRecord, Dict[int, str]]:
         # Find cross-refs in ENA
-        ena_molecule_types = ('mrna', 'genomic_dna')
+        ena_molecule_types = ("mrna", "genomic_dna")
         ena_ids = unp.find_ena_xrefs(self.unp_rec, ena_molecule_types)
 
         # Map id to sequence by fetching from ENA API
@@ -729,23 +816,23 @@ class ProteinRecord(object):
             except IOError as e:
                 LOGGER.warning(f"{self}: Invalid ENA id {ena_id}")
             if max_ena is not None and i > max_ena:
-                LOGGER.warning(f"{self}: Over {max_ena} ENA ids, "
-                               f"skipping")
+                LOGGER.warning(f"{self}: Over {max_ena} ENA ids, " f"skipping")
                 break
 
-        aligner = PairwiseAligner(substitution_matrix=BLOSUM80,
-                                  open_gap_score=-10, extend_gap_score=-0.5)
+        aligner = PairwiseAligner(
+            substitution_matrix=BLOSUM80, open_gap_score=-10, extend_gap_score=-0.5
+        )
         alignments = []
         for seq in ena_seqs:
             # Handle case of DNA sequence with incomplete codons
             if len(seq) % 3 != 0:
                 if seq[-3:].seq in STOP_CODONS:
-                    seq = seq[-3 * (len(seq) // 3):]
+                    seq = seq[-3 * (len(seq) // 3) :]
                 else:
-                    seq = seq[:3 * (len(seq) // 3)]
+                    seq = seq[: 3 * (len(seq) // 3)]
 
             # Translate to AA sequence and align to the PDB sequence
-            translated = seq.translate(stop_symbol='')
+            translated = seq.translate(stop_symbol="")
             alignment = aligner.align(pdb_aa_seq, translated.seq)
             alignments.append((seq, alignment))
 
@@ -758,12 +845,14 @@ class ProteinRecord(object):
         # Print best-matching alignment
         best_ena, best_alignments = sorted_alignments[0]
         best_alignment = best_alignments[0]
-        LOGGER.info(f'{self}: ENA ID = {best_ena.id}')
-        LOGGER.info(f'{self}: Translated DNA to PDB alignment '
-                    f'(norm_score='
-                    f'{best_alignments.score / len(pdb_aa_seq):.2f}, '
-                    f'num={len(best_alignments)})\n'
-                    f'{str(best_alignment).strip()}')
+        LOGGER.info(f"{self}: ENA ID = {best_ena.id}")
+        LOGGER.info(
+            f"{self}: Translated DNA to PDB alignment "
+            f"(norm_score="
+            f"{best_alignments.score / len(pdb_aa_seq):.2f}, "
+            f"num={len(best_alignments)})\n"
+            f"{str(best_alignment).strip()}"
+        )
 
         # Map each AA to a dict of (codon->count)
         idx_to_codons = {}
@@ -781,7 +870,7 @@ class ProteinRecord(object):
 
                 for offset, k in enumerate(range(dna_aa_start, dna_aa_stop)):
                     k *= 3
-                    codon = dna_seq[k:k + 3]
+                    codon = dna_seq[k : k + 3]
                     pdb_idx = offset + pdb_aa_start
 
                     # Skip "unknown" AAs - we put them there to represent
@@ -816,11 +905,11 @@ class ProteinRecord(object):
                 # requested.
                 ref_chain_id = ent_id
             else:
-                ref_chain_id = ''
+                ref_chain_id = ""
 
         ref_pdb_id, ref_chain_id = ref_pdb_id.upper(), ref_chain_id.upper()
 
-        xrefs = unp.find_pdb_xrefs(self.unp_rec, method='x-ray')
+        xrefs = unp.find_pdb_xrefs(self.unp_rec, method="x-ray")
 
         # We'll sort the PDB entries according to multiple criteria based on
         # the resolution, number of chains and sequence length.
@@ -842,12 +931,12 @@ class ProteinRecord(object):
             elif not ref_chain_id:
                 raise ProteinInitError(f"{msg} and no chain provided in ref")
             else:
-                LOGGER.warning(f'{msg}, using ref {ref_pdb_id}:{ref_chain_id}')
+                LOGGER.warning(f"{msg}, using ref {ref_pdb_id}:{ref_chain_id}")
                 return ref_pdb_id, ref_chain_id
 
         # Get best match according to sort key and return its id.
         xref = xrefs[0]
-        LOGGER.info(f'{self.unp_id}: PDB XREF = {xref}')
+        LOGGER.info(f"{self.unp_id}: PDB XREF = {xref}")
 
         pdb_id = xref.pdb_id.upper()
         chain_id = xref.chain_id.upper()
@@ -855,8 +944,10 @@ class ProteinRecord(object):
         # Make sure we have a match with the Uniprot id. Id chain wasn't
         # specified, match only PDB ID, otherwise, both must match.
         if pdb_id != ref_pdb_id:
-            msg = f"Reference PDB ID {ref_pdb_id} not found as " \
-                  f"cross-reference for protein {self.unp_id}"
+            msg = (
+                f"Reference PDB ID {ref_pdb_id} not found as "
+                f"cross-reference for protein {self.unp_id}"
+            )
             if self.strict_unp_xref:
                 raise ProteinInitError(msg)
             else:
@@ -864,9 +955,11 @@ class ProteinRecord(object):
                 pdb_id = ref_pdb_id
 
         if ref_chain_id and chain_id != ref_chain_id:
-            msg = f"Reference chain {ref_chain_id} of PDB ID {ref_pdb_id} not" \
-                  f"found as cross-reference for protein {self.unp_id}. " \
-                  f"Did you mean chain {chain_id}?"
+            msg = (
+                f"Reference chain {ref_chain_id} of PDB ID {ref_pdb_id} not"
+                f"found as cross-reference for protein {self.unp_id}. "
+                f"Did you mean chain {chain_id}?"
+            )
             if self.strict_unp_xref:
                 raise ProteinInitError(msg)
             else:
@@ -879,23 +972,23 @@ class ProteinRecord(object):
         est_name = est_name.lower() if est_name else est_name
         est_args = {} if est_args is None else est_args
 
-        if not est_name in {None, '', 'erp', 'mc'}:
-            raise ProteinInitError(
-                f'Unknown dihedral estimation method {est_name}')
+        if not est_name in {None, "", "erp", "mc"}:
+            raise ProteinInitError(f"Unknown dihedral estimation method {est_name}")
 
         unit_cell = pdb.PDBUnitCell(self.pdb_id, struct_d=self.pdb_dict)
         args = dict(isotropic=False, n_samples=100, skip_omega=True)
         args.update(est_args)
 
-        if est_name == 'mc':
+        if est_name == "mc":
             d_est = DihedralAnglesMonteCarloEstimator(unit_cell, **args)
-        elif est_name == 'erp':
+        elif est_name == "erp":
             d_est = DihedralAnglesUncertaintyEstimator(unit_cell, **args)
         else:
             d_est = DihedralAnglesEstimator(**args)
 
-        b_est = AtomLocationUncertainty(backbone_only=True, unit_cell=None,
-                                        isotropic=True)
+        b_est = AtomLocationUncertainty(
+            backbone_only=True, unit_cell=None, isotropic=True
+        )
         return d_est, b_est
 
     def __iter__(self) -> Iterator[ResidueRecord]:
@@ -905,7 +998,7 @@ class ProteinRecord(object):
         return self._residue_recs[item]
 
     def __repr__(self):
-        return f'({self.unp_id}, {self.pdb_id})'
+        return f"({self.unp_id}, {self.pdb_id})"
 
     def __getstate__(self):
         # Prevent serializing Bio objects
@@ -950,16 +1043,20 @@ class ProteinGroup(object):
     This class allows creation of Pairwise and Pointwise datasets for the
     structures in the group.
     """
-    DEFAULT_EXPR_SYS = pp5.get_config('DEFAULT_EXPR_SYS')
-    DEFAULT_RES = pp5.get_config('DEFAULT_RES')
+
+    DEFAULT_EXPR_SYS = pp5.get_config("DEFAULT_EXPR_SYS")
+    DEFAULT_RES = pp5.get_config("DEFAULT_RES")
 
     @classmethod
-    def from_pdb_ref(cls, ref_pdb_id: str,
-                     expr_sys_query: Union[str, PDBQuery] = DEFAULT_EXPR_SYS,
-                     resolution_query: Union[float, PDBQuery] = DEFAULT_RES,
-                     blast_e_cutoff: float = 1.,
-                     blast_identity_cutoff: float = 30.,
-                     **kw_for_init) -> ProteinGroup:
+    def from_pdb_ref(
+        cls,
+        ref_pdb_id: str,
+        expr_sys_query: Union[str, PDBQuery] = DEFAULT_EXPR_SYS,
+        resolution_query: Union[float, PDBQuery] = DEFAULT_RES,
+        blast_e_cutoff: float = 1.0,
+        blast_identity_cutoff: float = 30.0,
+        **kw_for_init,
+    ) -> ProteinGroup:
         """
         Creates a ProteinGroup given a reference PDB ID.
         Performs a query combining expression system, resolution and
@@ -981,7 +1078,7 @@ class ProteinGroup(object):
         ref_pdb_id = ref_pdb_id.upper()
         ref_pdb_base_id, ref_chain = pdb.split_id(ref_pdb_id)
         if not ref_chain:
-            raise ValueError('Must provide chain for reference')
+            raise ValueError("Must provide chain for reference")
 
         if isinstance(expr_sys_query, str):
             expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys_query)
@@ -990,8 +1087,9 @@ class ProteinGroup(object):
             resolution_query = pdb.PDBResolutionQuery(max_res=resolution_query)
 
         sequence_query = pdb.PDBSequenceQuery(
-            pdb_id=ref_pdb_id, e_cutoff=blast_e_cutoff,
-            identity_cutoff=blast_identity_cutoff
+            pdb_id=ref_pdb_id,
+            e_cutoff=blast_e_cutoff,
+            identity_cutoff=blast_identity_cutoff,
         )
 
         composite_query = pdb.PDBCompositeQuery(
@@ -999,26 +1097,31 @@ class ProteinGroup(object):
         )
 
         pdb_entities = set(composite_query.execute())
-        LOGGER.info(f'Initializing ProteinGroup for {ref_pdb_id} with '
-                    f'{len(pdb_entities)} query results...')
+        LOGGER.info(
+            f"Initializing ProteinGroup for {ref_pdb_id} with "
+            f"{len(pdb_entities)} query results..."
+        )
 
         pgroup = cls.from_query_ids(ref_pdb_id, pdb_entities, **kw_for_init)
-        LOGGER.info(f'{pgroup}: '
-                    f'#unp_ids={pgroup.num_unique_proteins} '
-                    f'#structures={pgroup.num_query_structs} '
-                    f'#matches={pgroup.num_matches}')
+        LOGGER.info(
+            f"{pgroup}: "
+            f"#unp_ids={pgroup.num_unique_proteins} "
+            f"#structures={pgroup.num_query_structs} "
+            f"#matches={pgroup.num_matches}"
+        )
 
         return pgroup
 
     @classmethod
-    def from_query_ids(cls, ref_pdb_id: str, query_pdb_ids: Iterable[str],
-                       **kw_for_init) -> ProteinGroup:
+    def from_query_ids(
+        cls, ref_pdb_id: str, query_pdb_ids: Iterable[str], **kw_for_init
+    ) -> ProteinGroup:
         return cls(ref_pdb_id, query_pdb_ids, **kw_for_init)
 
     @classmethod
-    def from_structures_csv(cls, ref_pdb_id: str,
-                            indir=pp5.out_subdir('pgroup'), tag=None,
-                            **kw_for_init) -> ProteinGroup:
+    def from_structures_csv(
+        cls, ref_pdb_id: str, indir=pp5.out_subdir("pgroup"), tag=None, **kw_for_init
+    ) -> ProteinGroup:
         """
         Creates a ProteinGroup based on the structures specified in the CSV
         group file. This file is the one generated by to_csv with
@@ -1029,24 +1132,31 @@ class ProteinGroup(object):
         :param kw_for_init: Extra args for the ProteinGroup __init__()
         :return: A ProteinGroup
         """
-        tag = f'structs-{tag}' if tag else 'structs'
-        filepath = _tagged_filepath(ref_pdb_id, indir, 'csv', tag)
+        tag = f"structs-{tag}" if tag else "structs"
+        filepath = _tagged_filepath(ref_pdb_id, indir, "csv", tag)
         if not filepath.is_file():
-            raise ProteinInitError(f'ProteinGroup structure CSV not found:'
-                                   f'{filepath}')
+            raise ProteinInitError(
+                f"ProteinGroup structure CSV not found:" f"{filepath}"
+            )
         df = pd.read_csv(filepath, header=0, index_col=0)
-        query_pdb_ids = list(df['pdb_id'])
+        query_pdb_ids = list(df["pdb_id"])
         return cls.from_query_ids(ref_pdb_id, query_pdb_ids, **kw_for_init)
 
-    def __init__(self, ref_pdb_id: str, query_pdb_ids: Iterable[str],
-                 context_len: int = 1, prec_cache=False,
-                 sa_outlier_cutoff: float = 2.,
-                 sa_max_all_atom_rmsd: float = 2.,
-                 sa_min_aligned_residues: int = 50,
-                 b_max: float = math.inf,
-                 angle_aggregation='circ',
-                 strict_pdb_xref=True, strict_unp_xref=False,
-                 parallel=True):
+    def __init__(
+        self,
+        ref_pdb_id: str,
+        query_pdb_ids: Iterable[str],
+        context_len: int = 1,
+        prec_cache=False,
+        sa_outlier_cutoff: float = 2.0,
+        sa_max_all_atom_rmsd: float = 2.0,
+        sa_min_aligned_residues: int = 50,
+        b_max: float = math.inf,
+        angle_aggregation="circ",
+        strict_pdb_xref=True,
+        strict_unp_xref=False,
+        parallel=True,
+    ):
         """
         Creates a ProteinGroup based on a reference PDB ID, and a sequence of
         query PDB IDs. Structural alignment will be performed, and some
@@ -1081,14 +1191,14 @@ class ProteinGroup(object):
         self.ref_pdb_id = ref_pdb_id.upper()
         self.ref_pdb_base_id, self.ref_pdb_chain = pdb.split_id(ref_pdb_id)
         if not self.ref_pdb_chain:
-            raise ProteinInitError('ProteinGroup reference structure must '
-                                   'specify the chain id.')
+            raise ProteinInitError(
+                "ProteinGroup reference structure must " "specify the chain id."
+            )
 
         ref_pdb_dict = pdb.pdb_dict(self.ref_pdb_base_id)
-        ref_pdb_meta = pdb.PDBMetadata(self.ref_pdb_base_id,
-                                       struct_d=ref_pdb_dict)
+        ref_pdb_meta = pdb.PDBMetadata(self.ref_pdb_base_id, struct_d=ref_pdb_dict)
         if self.ref_pdb_chain not in ref_pdb_meta.chain_entities:
-            raise ProteinInitError(f'Unknown PDB entity for {self.ref_pdb_id}')
+            raise ProteinInitError(f"Unknown PDB entity for {self.ref_pdb_id}")
 
         self.ref_pdb_entity = ref_pdb_meta.chain_entities[self.ref_pdb_chain]
 
@@ -1105,14 +1215,14 @@ class ProteinGroup(object):
         self.strict_unp_xref = strict_unp_xref
 
         angle_aggregation_methods = {
-            'circ': self._aggregate_fn_circ,
-            'frechet': self._aggregate_fn_frechet,
-            'max_res': self._aggregate_fn_best_res
+            "circ": self._aggregate_fn_circ,
+            "frechet": self._aggregate_fn_frechet,
+            "max_res": self._aggregate_fn_best_res,
         }
         if angle_aggregation not in angle_aggregation_methods:
             raise ProteinInitError(
-                f'Unknown aggregation method: {angle_aggregation}, '
-                f'must be one of {tuple(angle_aggregation_methods.keys())}'
+                f"Unknown aggregation method: {angle_aggregation}, "
+                f"must be one of {tuple(angle_aggregation_methods.keys())}"
             )
         self.angle_aggregation = angle_aggregation
         aggregation_fn = angle_aggregation_methods[angle_aggregation]
@@ -1120,28 +1230,27 @@ class ProteinGroup(object):
         # Make sure that the query IDs are valid
         query_pdb_ids = list(query_pdb_ids)  # to allow multiple iteration
         if not query_pdb_ids:
-            raise ProteinInitError('No query PDB IDs provided')
+            raise ProteinInitError("No query PDB IDs provided")
         try:
-            split_ids = [pdb.split_id_with_entity(query_id)
-                         for query_id in query_pdb_ids]
+            split_ids = [
+                pdb.split_id_with_entity(query_id) for query_id in query_pdb_ids
+            ]
 
             # Make sure all query ids have either chain or entity
             if not all(map(lambda x: x[1] or x[2], split_ids)):
-                raise ValueError('Must specify chain or entity for all '
-                                 'structures')
+                raise ValueError("Must specify chain or entity for all " "structures")
 
             # If there's no entry for the reference, add it
             if not any(map(lambda x: x[0] == self.ref_pdb_base_id, split_ids)):
                 query_pdb_ids.insert(0, self.ref_pdb_id)
 
-            ref_with_entity = f'{self.ref_pdb_base_id}:{self.ref_pdb_entity}'
+            ref_with_entity = f"{self.ref_pdb_base_id}:{self.ref_pdb_entity}"
 
             def is_ref(q_pdb_id: str):
                 q_pdb_id = q_pdb_id.upper()
                 # Check if query is identical to teh reference structure. We
                 # need to check both with chain and entity.
-                return q_pdb_id == ref_with_entity or \
-                       q_pdb_id == self.ref_pdb_id
+                return q_pdb_id == ref_with_entity or q_pdb_id == self.ref_pdb_id
 
             def sort_key(q_pdb_id: str):
                 return not is_ref(q_pdb_id), q_pdb_id
@@ -1164,7 +1273,8 @@ class ProteinGroup(object):
             raise ProteinInitError(str(e)) from None
 
         self.ref_prec = ProteinRecord.from_pdb(
-            self.ref_pdb_id, cache=self.prec_cache,
+            self.ref_pdb_id,
+            cache=self.prec_cache,
             strict_pdb_xref=self.strict_pdb_xref,
             strict_unp_xref=self.strict_unp_xref,
             pdb_dict=ref_pdb_dict,
@@ -1201,8 +1311,10 @@ class ProteinGroup(object):
             self.query_pdb_to_prec[q_prec.pdb_id] = q_prec
             self.query_pdb_to_sa[q_prec.pdb_id] = q_alignment
 
-        LOGGER.info(f'{self}: Grouping matches with angle_aggregation='
-                    f'{self.angle_aggregation}')
+        LOGGER.info(
+            f"{self}: Grouping matches with angle_aggregation="
+            f"{self.angle_aggregation}"
+        )
         self.ref_groups = self._group_matches(aggregation_fn)
 
     @property
@@ -1250,9 +1362,7 @@ class ProteinGroup(object):
         """
 
         # Make sure to include reference...
-        res = {
-            self.ref_prec.unp_id: {self.ref_pdb_id}
-        }
+        res = {self.ref_prec.unp_id: {self.ref_pdb_id}}
 
         for q_pdb_id, q_prec in self.query_pdb_to_prec.items():
             q_unp_id = q_prec.unp_id
@@ -1292,17 +1402,16 @@ class ProteinGroup(object):
         if with_neighbors:
             # Currently we use a default context of 1 residue before and after.
             # We can change this index later on if more/less context is needed.
-            idx = zip(range(0, n_ref - 2), range(1, n_ref - 1),
-                      range(2, n_ref))
+            idx = zip(range(0, n_ref - 2), range(1, n_ref - 1), range(2, n_ref))
         else:
             idx = zip(range(n_ref))  # produces [(0,), (1,) ...]
 
         if with_ref_id:
             curr_index_base = (self.ref_prec.unp_id,)
-            df_index_names = ['unp_id', 'ref_idx', 'names']
+            df_index_names = ["unp_id", "ref_idx", "names"]
         else:
             curr_index_base = tuple()
-            df_index_names = ['ref_idx', 'names']
+            df_index_names = ["ref_idx", "names"]
 
         for iii in idx:
             # Get VARIANTS at these indices
@@ -1313,27 +1422,29 @@ class ProteinGroup(object):
 
             # We index the resulting dataframe by (unp_id, location, AA names)
             ref_idx = iii[0] + len(iii) // 2  # use central index
-            names = str.join('', [v.name for v in vgroups])
+            names = str.join("", [v.name for v in vgroups])
             curr_index = curr_index_base + (ref_idx, names)
 
             # Get match group data from consecutive variant groups
             curr_data = {}
             for j, vgroup in enumerate(vgroups):
                 # Relative idx is e.g. -1/+0/+1, relative to ref_idx
-                rel_idx = f'{j - len(iii) // 2:+0d}' if len(iii) > 1 else ''
+                rel_idx = f"{j - len(iii) // 2:+0d}" if len(iii) > 1 else ""
                 angles = {
-                    f'{k}{rel_idx}': v for k, v in
-                    vgroup.avg_phipsi.as_dict(
+                    f"{k}{rel_idx}": v
+                    for k, v in vgroup.avg_phipsi.as_dict(
                         degrees=True, skip_omega=True, with_std=True
                     ).items()
                 }
-                curr_data.update({
-                    f'codon{rel_idx}': vgroup.codon,
-                    f'codon_opts{rel_idx}': str.join('/', vgroup.codon_opts),
-                    f'secondary{rel_idx}': str.join('/', vgroup.secondary),
-                    f'group_size{rel_idx}': vgroup.group_size,
-                    **angles
-                })
+                curr_data.update(
+                    {
+                        f"codon{rel_idx}": vgroup.codon,
+                        f"codon_opts{rel_idx}": str.join("/", vgroup.codon_opts),
+                        f"secondary{rel_idx}": str.join("/", vgroup.secondary),
+                        f"group_size{rel_idx}": vgroup.group_size,
+                        **angles,
+                    }
+                )
 
             df_index.append(curr_index)
             df_data.append(curr_data)
@@ -1370,8 +1481,8 @@ class ProteinGroup(object):
                     other_groups.append(group)
             assert ref_group is not None
 
-            ref_data = ref_group.as_dict(join_sequences=True, key_prefix='ref')
-            ref_data.pop('ref_type')  # Always VARIANT
+            ref_data = ref_group.as_dict(join_sequences=True, key_prefix="ref")
+            ref_data.pop("ref_type")  # Always VARIANT
 
             for match_group in other_groups:
                 data = ref_data.copy()
@@ -1379,7 +1490,7 @@ class ProteinGroup(object):
                 df_data.append(data)
                 df_index.append(ref_idx)
 
-        df_index = pd.Index(data=df_index, name='ref_idx')
+        df_index = pd.Index(data=df_index, name="ref_idx")
         df = pd.DataFrame(data=df_data, index=df_index)
         return df
 
@@ -1399,11 +1510,11 @@ class ProteinGroup(object):
 
             for match_group in grouped_matches:
                 data = match_group.as_dict(join_sequences=True)
-                idx = (ref_idx, data.pop('unp_id'), data.pop('codon'))
+                idx = (ref_idx, data.pop("unp_id"), data.pop("codon"))
                 df_index.append(idx)
                 df_data.append(data)
 
-        df_index_names = ['ref_idx', 'unp_id', 'codon']
+        df_index_names = ["ref_idx", "unp_id", "codon"]
         df_index = pd.MultiIndex.from_tuples(df_index, names=df_index_names)
         df = pd.DataFrame(data=df_data, index=df_index)
         return df
@@ -1420,14 +1531,14 @@ class ProteinGroup(object):
             for query_pdb_id, match in matches.items():
                 q_prec = self.query_pdb_to_prec[query_pdb_id]
 
-                data = {'unp_id': q_prec.unp_id}
+                data = {"unp_id": q_prec.unp_id}
                 data.update(match.as_dict(skip_omega=True))
-                data['type'] = match.type.name  # change from number to name
+                data["type"] = match.type.name  # change from number to name
 
                 df_data.append(data)
                 df_index.append((ref_idx, query_pdb_id))
 
-        idx_names = ['ref_idx', 'query_pdb_id']
+        idx_names = ["ref_idx", "query_pdb_id"]
         df_index = pd.MultiIndex.from_tuples(df_index, names=idx_names)
         df = pd.DataFrame(data=df_data, index=df_index)
         return df
@@ -1441,35 +1552,42 @@ class ProteinGroup(object):
         for q_pdb_id in self.query_pdb_ids:
             q_prec = self.query_pdb_to_prec[q_pdb_id]
             q_alignment = self.query_pdb_to_sa[q_pdb_id]
-            data.append({
-                'unp_id': q_prec.unp_id, 'pdb_id': q_prec.pdb_id,
-                'resolution': q_prec.pdb_meta.resolution,
-                'struct_rmse': q_alignment.rmse,
-                'n_stars': q_alignment.n_stars,
-                'seq_len': len(q_alignment.ungapped_seq_2),  # seq2 is query
-                'description': q_prec.pdb_meta.description,
-                'src_org': q_prec.pdb_meta.src_org,
-                'src_org_id': q_prec.pdb_meta.src_org_id,
-                'host_org': q_prec.pdb_meta.host_org,
-                'host_org_id': q_prec.pdb_meta.host_org_id,
-                'ligands': q_prec.pdb_meta.ligands,
-                'space_group': q_prec.pdb_meta.space_group,
-                'r_free': q_prec.pdb_meta.r_free,
-                'r_work': q_prec.pdb_meta.r_work,
-                'cg_ph': q_prec.pdb_meta.cg_ph,
-                'cg_temp': q_prec.pdb_meta.cg_temp,
-            })
+            data.append(
+                {
+                    "unp_id": q_prec.unp_id,
+                    "pdb_id": q_prec.pdb_id,
+                    "resolution": q_prec.pdb_meta.resolution,
+                    "struct_rmse": q_alignment.rmse,
+                    "n_stars": q_alignment.n_stars,
+                    "seq_len": len(q_alignment.ungapped_seq_2),  # seq2 is query
+                    "description": q_prec.pdb_meta.description,
+                    "src_org": q_prec.pdb_meta.src_org,
+                    "src_org_id": q_prec.pdb_meta.src_org_id,
+                    "host_org": q_prec.pdb_meta.host_org,
+                    "host_org_id": q_prec.pdb_meta.host_org_id,
+                    "ligands": q_prec.pdb_meta.ligands,
+                    "space_group": q_prec.pdb_meta.space_group,
+                    "r_free": q_prec.pdb_meta.r_free,
+                    "r_work": q_prec.pdb_meta.r_work,
+                    "cg_ph": q_prec.pdb_meta.cg_ph,
+                    "cg_temp": q_prec.pdb_meta.cg_temp,
+                }
+            )
 
         df = pd.DataFrame(data)
-        df['ref_group'] = df['unp_id'] == self.ref_prec.unp_id
-        df = df.astype({'src_org_id': "Int32", 'host_org_id': "Int32"})
-        df.sort_values(by=['ref_group', 'unp_id', 'struct_rmse'],
-                       ascending=[False, True, True], inplace=True,
-                       ignore_index=True)
+        df["ref_group"] = df["unp_id"] == self.ref_prec.unp_id
+        df = df.astype({"src_org_id": "Int32", "host_org_id": "Int32"})
+        df.sort_values(
+            by=["ref_group", "unp_id", "struct_rmse"],
+            ascending=[False, True, True],
+            inplace=True,
+            ignore_index=True,
+        )
         return df
 
-    def to_csv(self, out_dir=pp5.out_subdir('pgroup'), types=('all',),
-               tag=None) -> Dict[str, Path]:
+    def to_csv(
+        self, out_dir=pp5.out_subdir("pgroup"), types=("all",), tag=None
+    ) -> Dict[str, Path]:
         """
         Writes one or more CSV files describing this protein group.
         :param out_dir: Output directory.
@@ -1485,61 +1603,70 @@ class ProteinGroup(object):
         """
 
         df_funcs = {
-            'structs': self.to_struct_dataframe,
-            'residues': self.to_residue_dataframe,
-            'groups': self.to_groups_dataframe,
-            'pairwise': self.to_pairwise_dataframe
+            "structs": self.to_struct_dataframe,
+            "residues": self.to_residue_dataframe,
+            "groups": self.to_groups_dataframe,
+            "pairwise": self.to_pairwise_dataframe,
         }
 
         os.makedirs(str(out_dir), exist_ok=True)
         if isinstance(types, str):
             types = [types]
 
-        if not types or types[0] == 'all':
+        if not types or types[0] == "all":
             types = df_funcs.keys()
 
         filepaths = {}
         for csv_type in types:
             df_func = df_funcs.get(csv_type)
             if not df_func:
-                LOGGER.warning(f'{self}: Unknown ProteinGroup CSV type'
-                               f' {csv_type}')
+                LOGGER.warning(f"{self}: Unknown ProteinGroup CSV type" f" {csv_type}")
                 continue
 
             df = df_func()
-            tt = f'{csv_type}-{tag}' if tag else csv_type
-            filepath = _tagged_filepath(self.ref_pdb_id, out_dir, 'csv', tt)
+            tt = f"{csv_type}-{tag}" if tag else csv_type
+            filepath = _tagged_filepath(self.ref_pdb_id, out_dir, "csv", tt)
 
-            df.to_csv(filepath, na_rep='', header=True, index=True,
-                      encoding='utf-8', float_format='%.3f')
+            df.to_csv(
+                filepath,
+                na_rep="",
+                header=True,
+                index=True,
+                encoding="utf-8",
+                float_format="%.3f",
+            )
 
             filepaths[csv_type] = filepath
 
-        LOGGER.info(f'Wrote {self} to {list(map(str, filepaths.values()))}')
+        LOGGER.info(f"Wrote {self} to {list(map(str, filepaths.values()))}")
         return filepaths
 
     def _align_query_residues_to_ref(self, q_pdb_id: str):
         try:
             return self._align_query_residues_to_ref_inner(q_pdb_id)
         except Exception as e:
-            LOGGER.error(f"Failed to align pgroup reference "
-                         f"{self.ref_pdb_id} to query {q_pdb_id}: "
-                         f"{e.__class__.__name__}: {e}", exc_info=e)
+            LOGGER.error(
+                f"Failed to align pgroup reference "
+                f"{self.ref_pdb_id} to query {q_pdb_id}: "
+                f"{e.__class__.__name__}: {e}",
+                exc_info=e,
+            )
             return None
 
     def _align_query_residues_to_ref_inner(
-            self, q_pdb_id: str
-    ) -> Optional[Tuple[ProteinRecord, StructuralAlignment,
-                        Dict[int, Dict[str, ResidueMatch]]]]:
+        self, q_pdb_id: str
+    ) -> Optional[
+        Tuple[ProteinRecord, StructuralAlignment, Dict[int, Dict[str, ResidueMatch]]]
+    ]:
         try:
             q_prec = ProteinRecord.from_pdb(
-                q_pdb_id, cache=self.prec_cache,
+                q_pdb_id,
+                cache=self.prec_cache,
                 strict_pdb_xref=self.strict_pdb_xref,
                 strict_unp_xref=self.strict_unp_xref,
             )
         except ProteinInitError as e:
-            LOGGER.error(f'{self}: Failed to create prec for query structure:'
-                         f' {e}')
+            LOGGER.error(f"{self}: Failed to create prec for query structure:" f" {e}")
             return None
 
         alignment = self._struct_align_filter(q_prec)
@@ -1570,20 +1697,20 @@ class ProteinGroup(object):
 
         # Context size is the number of stars required on EACH SIDE of a match
         ctx = self.context_size
-        stars_ctx = '*' * self.context_size
+        stars_ctx = "*" * self.context_size
 
         matches = OrderedDict()
         for i in range(ctx, n - ctx):
             # Check that context around i has only stars
             point = stars[i]
-            pre, post = stars[i - ctx:i], stars[i + 1:i + 1 + ctx]
+            pre, post = stars[i - ctx : i], stars[i + 1 : i + 1 + ctx]
             if pre != stars_ctx or post != stars_ctx:
                 continue
 
             # We allow the AA at the match point to differ (mutation and
             # alteration), but if it's the same AA we require a star there
             # (structural alignment as well as sequence alignment)
-            if r_seq_pymol[i] == q_seq_pymol[i] and point != '*':
+            if r_seq_pymol[i] == q_seq_pymol[i] and point != "*":
                 continue
 
             # We allow them to differ, but both must be an aligned AA,
@@ -1621,19 +1748,19 @@ class ProteinGroup(object):
             unp_match = self.ref_prec.unp_id == q_prec.unp_id
             aa_match = r_res.name == q_res.name
             codon_match = r_res.codon == q_res.codon
-            match_type = self._match_type(pdb_match, unp_match, aa_match,
-                                          codon_match)
+            match_type = self._match_type(pdb_match, unp_match, aa_match, codon_match)
             if match_type is None:
                 continue
 
             # Calculate angle distance between match and reference
-            ang_dist = Dihedral.flat_torus_distance(r_res.angles, q_res.angles,
-                                                    degrees=True)
+            ang_dist = Dihedral.flat_torus_distance(
+                r_res.angles, q_res.angles, degrees=True
+            )
 
             # Calculate full context length
             context_len = 0
             for d in range(1, min(i, n - 1 - i)):
-                if stars[i - d] == stars[i + d] == '*':
+                if stars[i - d] == stars[i + d] == "*":
                     context_len += 1
                 else:
                     break
@@ -1647,8 +1774,9 @@ class ProteinGroup(object):
 
         return q_prec, alignment, matches
 
-    def _struct_align_filter(self, q_prec: ProteinRecord) \
-            -> Optional[StructuralAlignment]:
+    def _struct_align_filter(
+        self, q_prec: ProteinRecord
+    ) -> Optional[StructuralAlignment]:
         """
         Performs structural alignment between the query and the reference
         structure. Rejects query structures which do not conform to the
@@ -1659,35 +1787,42 @@ class ProteinGroup(object):
         q_pdb_id = q_prec.pdb_id
         try:
             sa = StructuralAlignment.from_pdb(
-                self.ref_pdb_id, q_pdb_id, cache=True,
-                outlier_rejection_cutoff=self.sa_outlier_cutoff
+                self.ref_pdb_id,
+                q_pdb_id,
+                cache=True,
+                outlier_rejection_cutoff=self.sa_outlier_cutoff,
             )
         except Exception as e:
-            LOGGER.warning(f'{self}: Rejecting {q_pdb_id} due to failed '
-                           f'structural alignment: {e.__class__.__name__} {e}')
+            LOGGER.warning(
+                f"{self}: Rejecting {q_pdb_id} due to failed "
+                f"structural alignment: {e.__class__.__name__} {e}"
+            )
             return None
 
         if sa.rmse > self.sa_max_all_atom_rmsd:
             LOGGER.info(
-                f'{self}: Rejecting {q_pdb_id} due to insufficient structural '
-                f'similarity, RMSE={sa.rmse:.3f}')
+                f"{self}: Rejecting {q_pdb_id} due to insufficient structural "
+                f"similarity, RMSE={sa.rmse:.3f}"
+            )
             return None
 
         if sa.n_stars < self.sa_min_aligned_residues:
-            LOGGER.info(f'{self}: Rejecting {q_pdb_id} due to insufficient '
-                        f'aligned residues, n_stars={sa.n_stars}')
+            LOGGER.info(
+                f"{self}: Rejecting {q_pdb_id} due to insufficient "
+                f"aligned residues, n_stars={sa.n_stars}"
+            )
             return None
 
         return sa
 
     @staticmethod
-    def _align_pymol_to_prec(prec: ProteinRecord, pymol_seq: str) \
-            -> Dict[int, int]:
+    def _align_pymol_to_prec(prec: ProteinRecord, pymol_seq: str) -> Dict[int, int]:
         sa_r_seq = StructuralAlignment.ungap(pymol_seq)
 
         # Align prec and pymol sequences
-        aligner = PairwiseAligner(substitution_matrix=BLOSUM80,
-                                  open_gap_score=-10, extend_gap_score=-0.5)
+        aligner = PairwiseAligner(
+            substitution_matrix=BLOSUM80, open_gap_score=-10, extend_gap_score=-0.5
+        )
         rr_alignments = aligner.align(prec.protein_seq.seq, sa_r_seq)
 
         # Take the alignment with shortest path (fewer gap openings)
@@ -1701,16 +1836,16 @@ class ProteinGroup(object):
         for j in range(len(rr_idx_prec)):
             prec_start, prec_end = rr_idx_prec[j]
             pymol_start, pymol_end = rr_idx_pymol[j]
-            pymol_to_prec.update(zip(
-                range(pymol_start, pymol_end + 1),
-                range(prec_start, prec_end + 1)
-            ))
+            pymol_to_prec.update(
+                zip(range(pymol_start, pymol_end + 1), range(prec_start, prec_end + 1))
+            )
 
         return pymol_to_prec
 
     @staticmethod
-    def _match_type(pdb_match: bool, unp_match: bool, aa_match: bool,
-                    codon_match: bool) -> Optional[ResidueMatchType]:
+    def _match_type(
+        pdb_match: bool, unp_match: bool, aa_match: bool, codon_match: bool
+    ) -> Optional[ResidueMatchType]:
         if pdb_match:
             match_type = ResidueMatchType.REFERENCE
         elif unp_match:
@@ -1731,8 +1866,9 @@ class ProteinGroup(object):
                 match_type = ResidueMatchType.MUTATION
         return match_type
 
-    def _group_matches(self, aggregate_fn: Callable[[Dict], Dihedral]) \
-            -> Dict[int, List[ResidueMatchGroup]]:
+    def _group_matches(
+        self, aggregate_fn: Callable[[Dict], Dihedral]
+    ) -> Dict[int, List[ResidueMatchGroup]]:
         """
         Groups the matches of each reference residue into subgroups by their
         unp_id and codon, and computes an aggregate angle statistic based on
@@ -1787,20 +1923,27 @@ class ProteinGroup(object):
                     ref_group_avg_phipsi, group_avg_phipsi, degrees=True
                 )
 
-                group_precs = {pdb_id: self.query_pdb_to_prec[pdb_id]
-                               for pdb_id in match_group.keys()}
+                group_precs = {
+                    pdb_id: self.query_pdb_to_prec[pdb_id]
+                    for pdb_id in match_group.keys()
+                }
 
                 # Store the aggregate info
                 ref_res_groups = grouped_matches.setdefault(ref_res_idx, [])
                 ref_res_groups.append(
-                    ResidueMatchGroup(unp_id, codon, match_group, group_precs,
-                                      group_avg_phipsi, group_ang_dist)
+                    ResidueMatchGroup(
+                        unp_id,
+                        codon,
+                        match_group,
+                        group_precs,
+                        group_avg_phipsi,
+                        group_ang_dist,
+                    )
                 )
 
         return grouped_matches
 
-    def _aggregate_fn_best_res(self, match_group: Dict[str, ResidueMatch]) \
-            -> Dihedral:
+    def _aggregate_fn_best_res(self, match_group: Dict[str, ResidueMatch]) -> Dihedral:
         """
         Aggregator which selects the angles from the best resolution
         structure in a match group.
@@ -1815,8 +1958,7 @@ class ProteinGroup(object):
         return match_group[q_pdb_id_best_res].angles
 
     @staticmethod
-    def _aggregate_fn_frechet(
-            match_group: Dict[str, ResidueMatch]) -> Dihedral:
+    def _aggregate_fn_frechet(match_group: Dict[str, ResidueMatch]) -> Dihedral:
         """
         Aggregator which computes the Frechet mean of the dihedral angles in
         the group.
@@ -1824,9 +1966,7 @@ class ProteinGroup(object):
         :return: The Frechet mean of the dihedral angles in
         the group.
         """
-        return Dihedral.frechet_centroid(
-            *[m.angles for m in match_group.values()]
-        )
+        return Dihedral.frechet_centroid(*[m.angles for m in match_group.values()])
 
     @staticmethod
     def _aggregate_fn_circ(match_group: Dict[str, ResidueMatch]) -> Dihedral:
@@ -1836,9 +1976,7 @@ class ProteinGroup(object):
         :param match_group: Match group dict, keys are query pdb_ids.
         :return: The mean of the dihedral angles in the group.
         """
-        return Dihedral.circular_centroid(
-            *[m.angles for m in match_group.values()]
-        )
+        return Dihedral.circular_centroid(*[m.angles for m in match_group.values()])
 
     def __getitem__(self, ref_idx: int):
         """
@@ -1848,4 +1986,4 @@ class ProteinGroup(object):
         return self.ref_groups.get(ref_idx)
 
     def __repr__(self):
-        return f'{self.__class__.__name__} {self.ref_pdb_id}'
+        return f"{self.__class__.__name__} {self.ref_pdb_id}"

@@ -22,13 +22,12 @@ calc_dihedral2 = DihedralAnglesEstimator.calc_dihedral2
 
 def random_angles(n=100, low=-np.pi, high=np.pi):
     phi_psi = np.random.uniform(low, high, size=(n, 2))
-    angles = [Dihedral.from_rad(phi, psi, 0.) for phi, psi in phi_psi]
+    angles = [Dihedral.from_rad(phi, psi, 0.0) for phi, psi in phi_psi]
     return angles
 
 
 @numba.jit(nopython=True)
-def calc_dihedral_naive(v1: ndarray, v2: ndarray,
-                        v3: ndarray, v4: ndarray):
+def calc_dihedral_naive(v1: ndarray, v2: ndarray, v3: ndarray, v4: ndarray):
     """
     Calculates the dihedral angle defined by four 3d points.
     Uses naive approach, should be slow.
@@ -40,7 +39,7 @@ def calc_dihedral_naive(v1: ndarray, v2: ndarray,
         """
         v1_n = v1 / np.linalg.norm(v1)
         v2_n = v2 / np.linalg.norm(v2)
-        cos = np.maximum(np.minimum(np.dot(v1_n, v2_n), 1.), -1.)
+        cos = np.maximum(np.minimum(np.dot(v1_n, v2_n), 1.0), -1.0)
         return np.arccos(cos)
 
     ab = v1 - v2
@@ -61,7 +60,6 @@ def calc_dihedral_naive(v1: ndarray, v2: ndarray,
 
 
 class TestRawDihedralAngleCalculation(object):
-
     def test_manual(self):
         # This test case is based on
         # https://stackoverflow.com/a/34245697/1230403
@@ -82,7 +80,7 @@ class TestRawDihedralAngleCalculation(object):
 
     def test_compare_to_naive(self):
         for i in range(1000):
-            vs = [np.random.standard_normal((3,)) * 10. for _ in range(4)]
+            vs = [np.random.standard_normal((3,)) * 10.0 for _ in range(4)]
             expected = calc_dihedral_naive(*vs)
             assert calc_dihedral2(*vs) == approx(expected)
 
@@ -108,7 +106,12 @@ class TestPerformance(object):
 
 
 class TestDihedralAnglesVsPyMOL(object):
-    TEST_PDB_IDS = ['3O18:A', '4GXE', '1KTP', '4GY3', ]  # 3O18:B problmatic
+    TEST_PDB_IDS = [
+        "3O18:A",
+        "4GXE",
+        "1KTP",
+        "4GY3",
+    ]  # 3O18:B problmatic
 
     @contextlib.contextmanager
     def pymol_structure_chains(self, pdb_id):
@@ -119,9 +122,9 @@ class TestDihedralAnglesVsPyMOL(object):
             yield pdb_id
         finally:
             # * is widcard
-            pymol.delete(f'{pdb_id}*')
+            pymol.delete(f"{pdb_id}*")
 
-    @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
+    @pytest.mark.parametrize("pdb_id", TEST_PDB_IDS)
     def test_basic_estimator(self, pdb_id):
         estimator = dihedral.DihedralAnglesEstimator()
         self._compare_to_pymol(pdb_id, estimator)
@@ -136,7 +139,7 @@ class TestDihedralAnglesVsPyMOL(object):
                 if pdb_chain and pdb_chain != curr_chain:
                     continue
 
-                pymol_obj_id = f'{pdb_id}_{curr_chain}'
+                pymol_obj_id = f"{pdb_id}_{curr_chain}"
                 pymol_angles_dict = pymol.phi_psi(pymol_obj_id)
                 pymol_angles = list(pymol_angles_dict.values())
 
@@ -156,7 +159,7 @@ class TestDihedralAnglesVsPyMOL(object):
 
                 j = 0
                 for i, phi_psi in enumerate(pymol_angles):
-                    msg = f'{pdb_id}:{curr_chain} @ {i}'
+                    msg = f"{pdb_id}:{curr_chain} @ {i}"
                     pp5_phi_psi = pp5_angles[j].phi_deg, pp5_angles[j].psi_deg
 
                     try:
@@ -177,7 +180,7 @@ class TestDihedralAnglesVsPyMOL(object):
 
 
 class TestDihedralAnglesEstimators(object):
-    TEST_PDB_IDS = ['5jdt', '3ajo', '1b0y', '2wur']
+    TEST_PDB_IDS = ["5jdt", "3ajo", "1b0y", "2wur"]
 
     @classmethod
     def setup_class(cls):
@@ -211,17 +214,17 @@ class TestDihedralAnglesEstimators(object):
                     assert ang.psi == approx(bio_psi, **kw)
                     assert ang.psi_deg == approx(bio_psi_deg, **kw)
 
-    @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
+    @pytest.mark.parametrize("pdb_id", TEST_PDB_IDS)
     def test_basic_estimator(self, pdb_id):
         estimator = dihedral.DihedralAnglesEstimator()
         self._compare_with_estimator(pdb_id, estimator)
 
-    @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
+    @pytest.mark.parametrize("pdb_id", TEST_PDB_IDS)
     def test_uncertainty_estimator(self, pdb_id):
         estimator = dihedral.DihedralAnglesUncertaintyEstimator()
         self._compare_with_estimator(pdb_id, estimator)
 
-    @pytest.mark.parametrize('pdb_id', TEST_PDB_IDS)
+    @pytest.mark.parametrize("pdb_id", TEST_PDB_IDS)
     def test_montecarlo_estimator(self, pdb_id):
         unit_cell = pdb.PDBUnitCell(pdb_id)
         estimator = dihedral.DihedralAnglesMonteCarloEstimator(unit_cell)
@@ -256,28 +259,28 @@ class TestInit:
         assert d.omega_std is None
 
     def test_from_rad(self):
-        d = dihedral.Dihedral.from_rad(.12, (-.34, -.056), .78)
+        d = dihedral.Dihedral.from_rad(0.12, (-0.34, -0.056), 0.78)
 
-        assert d.phi == approx(.12)
+        assert d.phi == approx(0.12)
         assert d.phi_std is None
-        assert d.psi == approx(-.34)
-        assert d.psi_std == approx(-.056)
-        assert d.omega == approx(.78)
+        assert d.psi == approx(-0.34)
+        assert d.psi_std == approx(-0.056)
+        assert d.omega == approx(0.78)
         assert d.omega_std is None
 
-        assert d.phi_deg == approx(degrees(.12))
+        assert d.phi_deg == approx(degrees(0.12))
         assert d.phi_std_deg is None
-        assert d.psi_deg == approx(degrees(-.34))
-        assert d.psi_std_deg == approx(degrees(-.056))
-        assert d.omega_deg == approx(degrees(.78))
+        assert d.psi_deg == approx(degrees(-0.34))
+        assert d.psi_std_deg == approx(degrees(-0.056))
+        assert d.omega_deg == approx(degrees(0.78))
         assert d.omega_std_deg is None
 
     def test_from_rad_with_default(self):
-        d = dihedral.Dihedral.from_rad(-.12, .34)
+        d = dihedral.Dihedral.from_rad(-0.12, 0.34)
 
-        assert d.phi == approx(-.12)
+        assert d.phi == approx(-0.12)
         assert d.phi_std is None
-        assert d.psi == approx(.34)
+        assert d.psi == approx(0.34)
         assert d.psi_std is None
         assert d.omega == approx(np.pi)
         assert d.omega_std is None
@@ -288,9 +291,9 @@ class TestInit:
 
         # Make sure _std properties return None
         for d in (d1, d2):
-            for n in ('phi', 'psi', 'omega'):
-                assert getattr(d, f'{n}_std') is None
-                assert getattr(d, f'{n}_std_deg') is None
+            for n in ("phi", "psi", "omega"):
+                assert getattr(d, f"{n}_std") is None
+                assert getattr(d, f"{n}_std_deg") is None
 
     def test_out_of_range_degrees(self):
         d1 = dihedral.Dihedral.from_deg(400, -1000, 182)
@@ -303,8 +306,7 @@ class TestInit:
         assert d1.omega_deg == approx(-178)
 
     def test_out_of_range_radians(self):
-        d1 = dihedral.Dihedral.from_rad(math.pi * 1.25, math.pi * 30,
-                                        -9 * math.pi)
+        d1 = dihedral.Dihedral.from_rad(math.pi * 1.25, math.pi * 30, -9 * math.pi)
 
         assert d1.phi == approx(math.radians(-135))
         assert d1.phi_deg == approx(-135)
@@ -321,77 +323,79 @@ class TestDihedralEq:
         assert d1 == d2
 
     def test_eq_rad(self):
-        d1 = dihedral.Dihedral.from_rad(1., 1.5, 3.)
-        d2 = dihedral.Dihedral.from_rad(1., 1.5, 3.)
+        d1 = dihedral.Dihedral.from_rad(1.0, 1.5, 3.0)
+        d2 = dihedral.Dihedral.from_rad(1.0, 1.5, 3.0)
         assert d1 == d2
 
     def test_eq_deg_rad(self):
-        d1 = dihedral.Dihedral.from_deg(degrees(1.), degrees(1.5), degrees(3.))
-        d2 = dihedral.Dihedral.from_rad(1., 1.5, 3.)
+        d1 = dihedral.Dihedral.from_deg(degrees(1.0), degrees(1.5), degrees(3.0))
+        d2 = dihedral.Dihedral.from_rad(1.0, 1.5, 3.0)
         assert d1 == d2
 
     def test_zero(self):
-        d1 = dihedral.Dihedral.from_deg(0., 0., 0.)
-        d2 = dihedral.Dihedral.from_rad(0., 0., 0.)
+        d1 = dihedral.Dihedral.from_deg(0.0, 0.0, 0.0)
+        d2 = dihedral.Dihedral.from_rad(0.0, 0.0, 0.0)
         assert d1 == d2
 
     def test_nan(self):
-        d1 = dihedral.Dihedral.from_rad(math.nan, 0., 0.)
-        d2 = dihedral.Dihedral.from_deg(math.nan, 0., 0.)
+        d1 = dihedral.Dihedral.from_rad(math.nan, 0.0, 0.0)
+        d2 = dihedral.Dihedral.from_deg(math.nan, 0.0, 0.0)
         assert d1 == d2
-        d1 = dihedral.Dihedral.from_deg(0., math.nan, 0.)
-        d2 = dihedral.Dihedral.from_rad(0., math.nan, 0.)
+        d1 = dihedral.Dihedral.from_deg(0.0, math.nan, 0.0)
+        d2 = dihedral.Dihedral.from_rad(0.0, math.nan, 0.0)
         assert d1 == d2
-        d1 = dihedral.Dihedral.from_deg(1., 2., math.nan)
-        d2 = dihedral.Dihedral.from_deg(1., 2., math.nan)
+        d1 = dihedral.Dihedral.from_deg(1.0, 2.0, math.nan)
+        d2 = dihedral.Dihedral.from_deg(1.0, 2.0, math.nan)
         assert d1 == d2
 
     def test_std(self):
-        d1 = dihedral.Dihedral.from_deg([1., 0.1], [2., 0.2], math.nan)
-        d2 = dihedral.Dihedral.from_deg([1., 0.1], [2., 0.2], math.nan)
+        d1 = dihedral.Dihedral.from_deg([1.0, 0.1], [2.0, 0.2], math.nan)
+        d2 = dihedral.Dihedral.from_deg([1.0, 0.1], [2.0, 0.2], math.nan)
         assert d1 == d2
 
 
 class TestAsDict:
-
     def test_1(self):
         a = dihedral.Dihedral.from_deg(30, 45, 90)
         d = a.as_dict(degrees=False, skip_omega=False, with_std=False)
 
         assert len(d) == 3
-        assert d['phi'] == radians(30)
-        assert d['psi'] == radians(45)
-        assert d['omega'] == radians(90)
+        assert d["phi"] == radians(30)
+        assert d["psi"] == radians(45)
+        assert d["omega"] == radians(90)
 
     def test_2(self):
         a = dihedral.Dihedral.from_deg((30, 0.1), (45, 0.2), 90)
         d = a.as_dict(degrees=False, skip_omega=False, with_std=True)
 
         assert len(d) == 6
-        assert d['phi'] == radians(30)
-        assert d['phi_std'] == radians(0.1)
-        assert d['psi'] == radians(45)
-        assert d['psi_std'] == radians(0.2)
-        assert d['omega'] == radians(90)
-        assert d['omega_std'] is None
+        assert d["phi"] == radians(30)
+        assert d["phi_std"] == radians(0.1)
+        assert d["psi"] == radians(45)
+        assert d["psi_std"] == radians(0.2)
+        assert d["omega"] == radians(90)
+        assert d["omega_std"] is None
 
     def test_3(self):
         a = dihedral.Dihedral.from_deg((30, 0.1), (45, 0.2), (90, 0.3))
         d = a.as_dict(degrees=True, skip_omega=True, with_std=True)
 
         assert len(d) == 4
-        assert d['phi'] == approx(30)
-        assert d['phi_std'] == approx(0.1)
-        assert d['psi'] == approx(45)
-        assert d['psi_std'] == approx(0.2)
+        assert d["phi"] == approx(30)
+        assert d["phi_std"] == approx(0.1)
+        assert d["psi"] == approx(45)
+        assert d["psi_std"] == approx(0.2)
 
 
 class TestWraparoundDiff(object):
     TEST_CASES = [
-        ((170, -170), 20), ((180, -180), 0), ((-20, 30), 50), ((30, 30), 0),
+        ((170, -170), 20),
+        ((180, -180), 0),
+        ((-20, 30), 50),
+        ((30, 30), 0),
     ]
 
-    @pytest.mark.parametrize(('angles', 'expected'), TEST_CASES)
+    @pytest.mark.parametrize(("angles", "expected"), TEST_CASES)
     def test_wraparound_diff(self, angles, expected):
         a1, a2 = angles
         a1, a2 = math.radians(a1), math.radians(a2)
@@ -407,12 +411,12 @@ class TestFlatTorusDistance:
     TEST_CASES = [
         ((170, 170), (-170, -170), 20 * math.sqrt(2)),
         ((-170, 170), (170, -170), 20 * math.sqrt(2)),
-        ((0, 173), (0, -177), 10.),
-        ((172, 0), (-178, 0), 10.),
+        ((0, 173), (0, -177), 10.0),
+        ((172, 0), (-178, 0), 10.0),
         ((5, 5), (-5, -5), 10 * math.sqrt(2)),
     ]
 
-    @pytest.mark.parametrize(('a1', 'a2', 'expected_dist'), TEST_CASES)
+    @pytest.mark.parametrize(("a1", "a2", "expected_dist"), TEST_CASES)
     def test_1(self, a1, a2, expected_dist):
         a1 = Dihedral.from_deg(*a1, 0)
         a2 = Dihedral.from_deg(*a2, 0)
@@ -425,7 +429,7 @@ class TestFlatTorusDistance:
             for a1, a2 in zip(random_angles(1000), random_angles(1000))
         ]
 
-        assert max(diffs) == approx(0.)
+        assert max(diffs) == approx(0.0)
 
 
 class TestCentroids:
@@ -460,26 +464,25 @@ class TestCentroids:
     ]
 
     @staticmethod
-    def _compre_centroid(phi, psi, phi_expected, psi_expected,
-                         centroid_fn, compare_type='mean', tol=1e-2):
-        assert len(phi) == len(psi), 'test case error'
+    def _compre_centroid(
+        phi, psi, phi_expected, psi_expected, centroid_fn, compare_type="mean", tol=1e-2
+    ):
+        assert len(phi) == len(psi), "test case error"
 
         angs = [Dihedral.from_deg(phi[i], psi[i], 0) for i in range(len(psi))]
         res: Dihedral = centroid_fn(*angs)
 
-        if compare_type == 'mean':
+        if compare_type == "mean":
             phi_actual = res.phi_deg
             psi_actual = res.psi_deg
-        elif compare_type == 'std':
+        elif compare_type == "std":
             phi_actual = res.phi_std_deg
             psi_actual = res.psi_std_deg
         else:
-            raise ValueError(f'unexpected type {compare_type}')
+            raise ValueError(f"unexpected type {compare_type}")
 
-        phis = f'phis={[a.phi_deg for a in angs]}, ' \
-               f'e={phi_expected}, a={phi_actual}'
-        psis = f'psis={[a.psi_deg for a in angs]}, ' \
-               f'e={psi_expected}, a={psi_actual}'
+        phis = f"phis={[a.phi_deg for a in angs]}, " f"e={phi_expected}, a={phi_actual}"
+        psis = f"psis={[a.psi_deg for a in angs]}, " f"e={psi_expected}, a={psi_actual}"
 
         def diff_ang(a1, a2):
             return np.degrees(np.arccos(np.cos(np.radians(a1 - a2))))
@@ -487,34 +490,32 @@ class TestCentroids:
         assert diff_ang(phi_expected, phi_actual) == approx(0, abs=tol), phis
         assert diff_ang(psi_expected, psi_actual) == approx(0, abs=tol), psis
 
-    @pytest.mark.parametrize(('phi', 'psi', 'phi_exp', 'psi_exp'),
-                             MEAN_TESTS_FRECHET)
+    @pytest.mark.parametrize(("phi", "psi", "phi_exp", "psi_exp"), MEAN_TESTS_FRECHET)
     def test_frechet_mean(self, phi, psi, phi_exp, psi_exp):
         self._compre_centroid(
-            phi, psi, phi_exp, psi_exp,
-            Dihedral.frechet_centroid, 'mean', tol=1e-2)
+            phi, psi, phi_exp, psi_exp, Dihedral.frechet_centroid, "mean", tol=1e-2
+        )
 
-    @pytest.mark.parametrize(('phi', 'psi', 'phi_exp', 'psi_exp'), STD_TESTS)
+    @pytest.mark.parametrize(("phi", "psi", "phi_exp", "psi_exp"), STD_TESTS)
     def test_frechet_std(self, phi, psi, phi_exp, psi_exp):
         self._compre_centroid(
-            phi, psi, phi_exp, psi_exp,
-            Dihedral.frechet_centroid, 'std', tol=1e-1)
+            phi, psi, phi_exp, psi_exp, Dihedral.frechet_centroid, "std", tol=1e-1
+        )
 
-    @pytest.mark.parametrize(('phi', 'psi', 'phi_exp', 'psi_exp'),
-                             MEAN_TESTS_CIRC)
+    @pytest.mark.parametrize(("phi", "psi", "phi_exp", "psi_exp"), MEAN_TESTS_CIRC)
     def test_circ_mean(self, phi, psi, phi_exp, psi_exp):
         self._compre_centroid(
-            phi, psi, phi_exp, psi_exp,
-            Dihedral.circular_centroid, 'mean', tol=1e-2)
+            phi, psi, phi_exp, psi_exp, Dihedral.circular_centroid, "mean", tol=1e-2
+        )
 
-    @pytest.mark.parametrize(('phi', 'psi', 'phi_exp', 'psi_exp'), STD_TESTS)
+    @pytest.mark.parametrize(("phi", "psi", "phi_exp", "psi_exp"), STD_TESTS)
     def test_circ_std(self, phi, psi, phi_exp, psi_exp):
         self._compre_centroid(
-            phi, psi, phi_exp, psi_exp,
-            Dihedral.circular_centroid, 'std', tol=1e-1)
+            phi, psi, phi_exp, psi_exp, Dihedral.circular_centroid, "std", tol=1e-1
+        )
 
     @pytest.mark.repeat(10)
-    @pytest.mark.parametrize('n', [1, 2, 4, 8, 16, 32, 64])
+    @pytest.mark.parametrize("n", [1, 2, 4, 8, 16, 32, 64])
     def test_compare_frechet_circ(self, n):
         # These methods are only roughly equivalent for angles in a small
         # angular section. Can either reduce width of section or increase
@@ -529,14 +530,18 @@ class TestCentroids:
         cf = Dihedral.frechet_centroid(*angles)
         cc = Dihedral.circular_centroid(*angles)
 
-        phis = f'phis={[f"{a.phi_deg:.2f}" for a in angles]}, ' \
-               f'f={cf.phi_deg:.2f}±{cf.phi_std_deg:.2f}, ' \
-               f'c={cc.phi_deg:.2f}±{cc.phi_std_deg:.2f} ' \
-               f'low={low:.2f}, high={high:.2f}'
-        psis = f'psis={[f"{a.psi_deg:.2f}" for a in angles]}, ' \
-               f'f={cf.psi_deg:.2f}±{cf.psi_std_deg:.2f}, ' \
-               f'c={cc.psi_deg:.2f}±{cc.psi_std_deg:.2f}, ' \
-               f'low={low:.2f}, high={high:.2f}'
+        phis = (
+            f'phis={[f"{a.phi_deg:.2f}" for a in angles]}, '
+            f"f={cf.phi_deg:.2f}±{cf.phi_std_deg:.2f}, "
+            f"c={cc.phi_deg:.2f}±{cc.phi_std_deg:.2f} "
+            f"low={low:.2f}, high={high:.2f}"
+        )
+        psis = (
+            f'psis={[f"{a.psi_deg:.2f}" for a in angles]}, '
+            f"f={cf.psi_deg:.2f}±{cf.psi_std_deg:.2f}, "
+            f"c={cc.psi_deg:.2f}±{cc.psi_std_deg:.2f}, "
+            f"low={low:.2f}, high={high:.2f}"
+        )
 
         def diff_ang(a1, a2):
             return np.degrees(np.arccos(np.cos(np.radians(a1 - a2))))
@@ -554,26 +559,34 @@ class TestCentroids:
 
     def test_benchmark_frechet_controid_numba(self, benchmark):
         benchmark.pedantic(
-            Dihedral.frechet_centroid, args=random_angles(1000),
-            rounds=10, iterations=50, warmup_rounds=1,
+            Dihedral.frechet_centroid,
+            args=random_angles(1000),
+            rounds=10,
+            iterations=50,
+            warmup_rounds=1,
         )
 
     def test_benchmark_frechet_centroid_python(self, benchmark):
         benchmark.pedantic(
-            Dihedral.frechet_centroid, args=random_angles(1000),
+            Dihedral.frechet_centroid,
+            args=random_angles(1000),
             kwargs=dict(metric_fn=Dihedral._mean_sq_metric_s1.py_func),
-            rounds=10, iterations=50, warmup_rounds=1,
+            rounds=10,
+            iterations=50,
+            warmup_rounds=1,
         )
 
     def test_benchmark_circular_controid(self, benchmark):
         benchmark.pedantic(
-            Dihedral.circular_centroid, args=random_angles(1000),
-            rounds=10, iterations=50, warmup_rounds=1,
+            Dihedral.circular_centroid,
+            args=random_angles(1000),
+            rounds=10,
+            iterations=50,
+            warmup_rounds=1,
         )
 
 
 class TestDihedralKDE(object):
-
     def setup(self):
         self.kde = dihedral.DihedralKDE()
 

@@ -13,8 +13,9 @@ from pp5.utils import remote_dl
 import logging
 
 UNP_URL_TEMPLATE = r"https://www.uniprot.org/uniprot/{}.txt"
-UNP_REPLACE_TEMPLATE = r"https://www.uniprot.org/uniprot/?query=replaces:{}" \
-                       r"&format=list"
+UNP_REPLACE_TEMPLATE = (
+    r"https://www.uniprot.org/uniprot/?query=replaces:{}" r"&format=list"
+)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -36,7 +37,7 @@ def replacement_ids(unp_id: str):
 
 def unp_download(unp_id: str, unp_dir=UNP_DIR) -> Path:
     url = UNP_URL_TEMPLATE.format(unp_id)
-    filename = get_resource_path(unp_dir, f'{unp_id}.txt')
+    filename = get_resource_path(unp_dir, f"{unp_id}.txt")
 
     try:
         return remote_dl(url, filename, skip_existing=True)
@@ -64,11 +65,12 @@ def unp_record(unp_id: str, unp_dir=UNP_DIR) -> UNPRecord:
     filename = unp_download(unp_id, unp_dir)
 
     try:
-        with open(str(filename), 'r') as local_handle:
+        with open(str(filename), "r") as local_handle:
             return Bio.SwissProt.read(local_handle)
     except ValueError as e:
-        raise ValueError(f'Failed to read Uniprot record {unp_id} from file '
-                         f'{filename}')
+        raise ValueError(
+            f"Failed to read Uniprot record {unp_id} from file " f"{filename}"
+        )
 
 
 def as_record(unp_id_or_rec: Union[UNPRecord, str]):
@@ -83,8 +85,9 @@ def as_record(unp_id_or_rec: Union[UNPRecord, str]):
         return unp_record(unp_id_or_rec)
 
 
-def find_ena_xrefs(unp: Union[UNPRecord, str], molecule_types: Iterable[str]) \
-        -> List[str]:
+def find_ena_xrefs(
+    unp: Union[UNPRecord, str], molecule_types: Iterable[str]
+) -> List[str]:
     """
     Find EMBL ENA cross-references to specific molecule types in a Uniprot
     record.
@@ -102,7 +105,7 @@ def find_ena_xrefs(unp: Union[UNPRecord, str], molecule_types: Iterable[str]) \
         molecule_types = (molecule_types,)
     molecule_types = {t.lower() for t in molecule_types}
 
-    embl_refs = (x for x in cross_refs if x[0].lower() == 'embl')
+    embl_refs = (x for x in cross_refs if x[0].lower() == "embl")
     for dbname, id1, id2, comment, molecule_type in embl_refs:
         molecule_type = molecule_type.lower()
         if molecule_type in molecule_types and id2 and len(id2) > 3:
@@ -115,6 +118,7 @@ class UNPPDBXRef(NamedTuple):
     """
     Represents a PDB cross-ref within a Uniprot record
     """
+
     pdb_id: str
     chain_id: str
     seq_len: int
@@ -122,12 +126,13 @@ class UNPPDBXRef(NamedTuple):
     resolution: float
 
     def __repr__(self):
-        return f'{self.pdb_id}:{self.chain_id} (res={self.resolution:.2f}Å, ' \
-               f'len={self.seq_len})'
+        return (
+            f"{self.pdb_id}:{self.chain_id} (res={self.resolution:.2f}Å, "
+            f"len={self.seq_len})"
+        )
 
 
-def find_pdb_xrefs(unp: Union[UNPRecord, str], method='x-ray') \
-        -> List[UNPPDBXRef]:
+def find_pdb_xrefs(unp: Union[UNPRecord, str], method="x-ray") -> List[UNPPDBXRef]:
     """
     Find PDB cross-references with a specific methods type in a Uniprot
     record.
@@ -140,18 +145,18 @@ def find_pdb_xrefs(unp: Union[UNPRecord, str], method='x-ray') \
 
     # PDB cross refs are ('PDB', id, method, resolution, chains)
     # E.g: ('PDB', '5EWX', 'X-ray', '2.60 A', 'A/B=1-35, A/B=38-164')
-    pdb_xrefs = (x for x in cross_refs if x[0].lower() == 'pdb')
-    pdb_xrefs = (x for x in pdb_xrefs if x[2].lower() == 'x-ray')
+    pdb_xrefs = (x for x in cross_refs if x[0].lower() == "pdb")
+    pdb_xrefs = (x for x in pdb_xrefs if x[2].lower() == "x-ray")
 
     def split_xref_chains(xref_chains: str):
         # Example xref_chains format
         # A/B/C=1-100,A/B/C=110-121,X/Y/Z=122-200
         # Returns a dict from chain name to it's length in residues
         res = {}
-        for chain_str in xref_chains.split(','):
-            chain_names, chain_seqs = chain_str.split('=')
-            seq_start, seq_end = chain_seqs.split('-')
-            for chain_name in chain_names.split('/'):
+        for chain_str in xref_chains.split(","):
+            chain_names, chain_seqs = chain_str.split("=")
+            seq_start, seq_end = chain_seqs.split("-")
+            for chain_name in chain_names.split("/"):
                 chain_name = chain_name.strip()
                 res.setdefault(chain_name, 0)
                 res[chain_name] += int(seq_end) - int(seq_start)
@@ -166,7 +171,8 @@ def find_pdb_xrefs(unp: Union[UNPRecord, str], method='x-ray') \
                 xref = UNPPDBXRef(pdb_id, chain, seq_len, method, resolution)
                 res.append(xref)
         except ValueError as e:
-            LOGGER.warning(f"Failed to parse PDB xref for {pdb_id} in "
-                           f"{unp_rec.accessions}")
+            LOGGER.warning(
+                f"Failed to parse PDB xref for {pdb_id} in " f"{unp_rec.accessions}"
+            )
 
     return res

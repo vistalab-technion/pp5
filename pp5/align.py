@@ -29,23 +29,22 @@ from pp5.utils import out_redirected, JSONCacheableMixin
 
 # Suppress messages from pymol upon import
 _prev_sigint_handler = signal.getsignal(signal.SIGINT)
-with out_redirected('stderr'), contextlib.redirect_stdout(sys.stderr):
+with out_redirected("stderr"), contextlib.redirect_stdout(sys.stderr):
     # Suppress pymol messages about license and about running without GUI
     from pymol import cmd as pymol
 
-    pymol.delete('all')
+    pymol.delete("all")
 
 # pymol messes up the SIGINT handler (Ctrl-C), so restore it to what is was
 signal.signal(signal.SIGINT, _prev_sigint_handler)
 
 LOGGER = logging.getLogger(__name__)
 
-PYMOL_SA_GAP_SYMBOLS = {'-', '?'}
+PYMOL_SA_GAP_SYMBOLS = {"-", "?"}
 
 
 def multiseq_align(
-        seqs: Iterable[SeqRecord] = None, in_file=None, out_file=None,
-        **clustal_kw
+    seqs: Iterable[SeqRecord] = None, in_file=None, out_file=None, **clustal_kw
 ) -> MSA:
     """
     Aligns multiple Sequences using ClustalOmega.
@@ -72,15 +71,18 @@ def multiseq_align(
         if not in_file:
             raise ValueError("Must provide seqs, in_file or both.")
         elif not os.path.isfile(in_file):
-            raise ValueError(f"If not providing seqs, in_file={in_file} "
-                             f"must exist.")
+            raise ValueError(
+                f"If not providing seqs, in_file={in_file} " f"must exist."
+            )
 
     default_args = {
-        'verbose': False, 'force': True, 'auto': True,
-        'outfmt': 'clustal', # 'output-order': 'input-order'
+        "verbose": False,
+        "force": True,
+        "auto": True,
+        "outfmt": "clustal",  # 'output-order': 'input-order'
     }
     if out_file is not None:
-        default_args['outfile'] = out_file
+        default_args["outfile"] = out_file
 
     # Override defaults with user customizations
     default_args.update(clustal_kw)
@@ -90,50 +92,56 @@ def multiseq_align(
         # Convert seqs to single fasta
         with io.StringIO() as seqs_io:
             for seq in seqs:
-                SeqIO.write(seq, seqs_io, 'fasta')
+                SeqIO.write(seq, seqs_io, "fasta")
 
             # Write to clustal input file
-            with open(in_file, 'wt') as infile_handle:
+            with open(in_file, "wt") as infile_handle:
                 infile_handle.write(seqs_io.getvalue())
 
     if in_file:  # Run clustal, with file as input
         cline.infile = in_file
         child_proc = subprocess.Popen(
-            args=str(cline).split(' '),
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            args=str(cline).split(" "),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
     else:  # Run clustal with stdin as input
-        cline.infile = '-'  # '-' is stdin
+        cline.infile = "-"  # '-' is stdin
         child_proc = subprocess.Popen(
-            args=str(cline).split(' '), stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            args=str(cline).split(" "),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
 
         # Write the sequences directly to subprocess' stdin, and close it
         with child_proc.stdin as child_in_handle:
-            SeqIO.write(seqs, child_in_handle, 'fasta')
+            SeqIO.write(seqs, child_in_handle, "fasta")
 
     LOGGER.info(cline)
     # Read from the subprocess stdout or output file.
     with child_proc.stdout as child_out_handle:
         if not out_file:
-            msa_result = AlignIO.read(child_out_handle, 'clustal')
+            msa_result = AlignIO.read(child_out_handle, "clustal")
         else:
             child_proc.wait(timeout=1 * 60)
-            with open(out_file, 'r') as out_handle:
-                msa_result = AlignIO.read(out_handle, 'clustal')
+            with open(out_file, "r") as out_handle:
+                msa_result = AlignIO.read(out_handle, "clustal")
 
     with child_proc.stderr as child_err_handle:
         err = child_err_handle.read()
         if err:
-            LOGGER.warning(f'ClustalOmega error: {err}')
+            LOGGER.warning(f"ClustalOmega error: {err}")
 
     return msa_result
 
 
 class StructuralAlignment(JSONCacheableMixin, object):
-    def __init__(self, pdb_id_1: str, pdb_id_2: str,
-                 outlier_rejection_cutoff: float = 2.):
+    def __init__(
+        self, pdb_id_1: str, pdb_id_2: str, outlier_rejection_cutoff: float = 2.0
+    ):
         self.pdb_id_1 = pdb_id_1.upper()
         self.pdb_id_2 = pdb_id_2.upper()
         self.outlier_rejection_cutoff = outlier_rejection_cutoff
@@ -144,7 +152,7 @@ class StructuralAlignment(JSONCacheableMixin, object):
 
         self.aligned_seq_1 = str(mseq[0].seq)
         self.aligned_seq_2 = str(mseq[1].seq)
-        self.aligned_stars: str = mseq.column_annotations['clustal_consensus']
+        self.aligned_stars: str = mseq.column_annotations["clustal_consensus"]
 
     @property
     def ungapped_seq_1(self):
@@ -172,8 +180,8 @@ class StructuralAlignment(JSONCacheableMixin, object):
 
     @staticmethod
     def _cache_filename(pdb_id_1: str, pdb_id_2: str) -> str:
-        basename = f'{pdb_id_1}-{pdb_id_2}'.replace(":", "_").upper()
-        filename = f'{basename}.json'
+        basename = f"{pdb_id_1}-{pdb_id_2}".replace(":", "_").upper()
+        filename = f"{basename}.json"
         return filename
 
     @staticmethod
@@ -185,19 +193,24 @@ class StructuralAlignment(JSONCacheableMixin, object):
         :return: The sequence without gap symbols.
         """
         for gap_symbol in PYMOL_SA_GAP_SYMBOLS:
-            seq = seq.replace(gap_symbol, '')
+            seq = seq.replace(gap_symbol, "")
         return seq
 
     def __repr__(self):
-        return f'{self.__class__.__name__}' \
-               f'({self.pdb_id_1}, {self.pdb_id_2}): ' \
-               f'rmse={self.rmse:.2f}, ' \
-               f'nstars={self.n_stars}/{len(self.ungapped_seq_1)}'
+        return (
+            f"{self.__class__.__name__}"
+            f"({self.pdb_id_1}, {self.pdb_id_2}): "
+            f"rmse={self.rmse:.2f}, "
+            f"nstars={self.n_stars}/{len(self.ungapped_seq_1)}"
+        )
 
     @classmethod
-    def from_cache(cls, pdb_id_1: str, pdb_id_2: str,
-                   cache_dir: Union[str, Path] = pp5.ALIGNMENT_DIR) \
-            -> Optional[StructuralAlignment]:
+    def from_cache(
+        cls,
+        pdb_id_1: str,
+        pdb_id_2: str,
+        cache_dir: Union[str, Path] = pp5.ALIGNMENT_DIR,
+    ) -> Optional[StructuralAlignment]:
         filename = cls._cache_filename(pdb_id_1, pdb_id_2)
         return super(StructuralAlignment, cls).from_cache(cache_dir, filename)
 
@@ -213,9 +226,9 @@ class StructuralAlignment(JSONCacheableMixin, object):
         return sa
 
     @staticmethod
-    def structural_align(pdb_id1: str, pdb_id2: str,
-                         outlier_rejection_cutoff: float = 2.) -> \
-            Tuple[float, int, MSA]:
+    def structural_align(
+        pdb_id1: str, pdb_id2: str, outlier_rejection_cutoff: float = 2.0
+    ) -> Tuple[float, int, MSA]:
         """
         Aligns two structures using PyMOL, both in terms of pairwise sequence
         alignment and in terms of structural superposition.
@@ -240,47 +253,58 @@ class StructuralAlignment(JSONCacheableMixin, object):
                 base_id, chain_id = pdb.split_id(pdb_id)
                 path = pdb.pdb_download(base_id)
 
-                object_id = f'{base_id}-{i}'  # in case both ids are equal
-                with out_redirected('stdout'):  # suppress pymol printouts
+                object_id = f"{base_id}-{i}"  # in case both ids are equal
+                with out_redirected("stdout"):  # suppress pymol printouts
                     pymol.load(str(path), object=object_id, quiet=1)
 
                 # If a chain was specified we need to tell PyMOL to create an
                 # object for each chain.
                 if chain_id:
                     pymol.split_chains(object_id)
-                    align_ids.append(f'{object_id}_{chain_id}')
+                    align_ids.append(f"{object_id}_{chain_id}")
                 else:
                     align_ids.append(object_id)
 
             # Compute the structural alignment
             src, tgt = align_ids
-            align_obj_name = f'align_{src}_{tgt}'
+            align_obj_name = f"align_{src}_{tgt}"
 
-            rmse, n_aligned_atoms, n_cycles, rmse_pre, \
-            n_aligned_atoms_pre, alignment_score, n_aligned_residues = \
-                pymol.align(src, tgt, object=align_obj_name,
-                            cutoff=outlier_rejection_cutoff)
+            (
+                rmse,
+                n_aligned_atoms,
+                n_cycles,
+                rmse_pre,
+                n_aligned_atoms_pre,
+                alignment_score,
+                n_aligned_residues,
+            ) = pymol.align(
+                src, tgt, object=align_obj_name, cutoff=outlier_rejection_cutoff
+            )
 
             # Save the sequence alignment to a file and load it to get the
             # match symbols for each AA (i.e., "take me to the stars"...)
             tmpdir = Path(tempfile.gettempdir())
-            tmp_outfile = tmpdir.joinpath(f'{align_obj_name}.aln')
+            tmp_outfile = tmpdir.joinpath(f"{align_obj_name}.aln")
             pymol.save(tmp_outfile, align_obj_name)
-            mseq = AlignIO.read(tmp_outfile, 'clustal')
+            mseq = AlignIO.read(tmp_outfile, "clustal")
 
             # Check if we have enough matches above the cutoff
-            stars_seq = mseq.column_annotations['clustal_consensus']
-            n_stars = len([m for m in re.finditer(r'\*', stars_seq)])
+            stars_seq = mseq.column_annotations["clustal_consensus"]
+            n_stars = len([m for m in re.finditer(r"\*", stars_seq)])
 
-            LOGGER.info(f'Structural alignment {pdb_id1} to {pdb_id2}, '
-                        f'RMSE={rmse:.2f}\n'
-                        f'{str(mseq[0].seq)}\n'
-                        f'{stars_seq}\n'
-                        f'{str(mseq[1].seq)}')
+            LOGGER.info(
+                f"Structural alignment {pdb_id1} to {pdb_id2}, "
+                f"RMSE={rmse:.2f}\n"
+                f"{str(mseq[0].seq)}\n"
+                f"{stars_seq}\n"
+                f"{str(mseq[1].seq)}"
+            )
             return rmse, n_stars, mseq
         except pymol.QuietException as e:
-            msg = f'Failed to structurally-align {pdb_id1} to {pdb_id2} ' \
-                  f'with cutoff {outlier_rejection_cutoff}: {e}'
+            msg = (
+                f"Failed to structurally-align {pdb_id1} to {pdb_id2} "
+                f"with cutoff {outlier_rejection_cutoff}: {e}"
+            )
             raise ValueError(msg) from None
         finally:
             # Need to clean up the objects we created inside PyMOL
@@ -288,7 +312,7 @@ class StructuralAlignment(JSONCacheableMixin, object):
             # (here '*' is a wildcard)
             for pdb_id in [pdb_id1, pdb_id2]:
                 base_id, chain_id = pdb.split_id(pdb_id)
-                pymol.delete(f'{base_id}*')
+                pymol.delete(f"{base_id}*")
 
             # Remove alignment object in PyMOL
             if align_obj_name:
@@ -303,44 +327,50 @@ class ProteinBLAST(object):
     """
     Runs BLAST queries of protein sequences against a local PDB database.
     """
-    BLAST_DB_NAME = 'pdbaa'
 
-    BLAST_FTP_URL = 'ftp.ncbi.nlm.nih.gov'
-    BLAST_FTP_DB_FILENAME = f'{BLAST_DB_NAME}.tar.gz'
-    BLAST_FTP_DB_FILE_PATH = f'/blast/db/{BLAST_FTP_DB_FILENAME}'
+    BLAST_DB_NAME = "pdbaa"
+
+    BLAST_FTP_URL = "ftp.ncbi.nlm.nih.gov"
+    BLAST_FTP_DB_FILENAME = f"{BLAST_DB_NAME}.tar.gz"
+    BLAST_FTP_DB_FILE_PATH = f"/blast/db/{BLAST_FTP_DB_FILENAME}"
 
     BLAST_OUTPUT_FIELDS = {
-        'query_pdb_id': 'qacc',
-        'target_pdb_id': 'sacc',
-        'alignment_length': 'length',
-        'query_start': 'qstart',
-        'query_end': 'qend',
-        'target_start': 'sstart',
-        'target_end': 'send',
-        'score': 'score',
-        'e_value': 'evalue',
-        'percent_identity': 'pident',
+        "query_pdb_id": "qacc",
+        "target_pdb_id": "sacc",
+        "alignment_length": "length",
+        "query_start": "qstart",
+        "query_end": "qend",
+        "target_start": "sstart",
+        "target_end": "send",
+        "score": "score",
+        "e_value": "evalue",
+        "percent_identity": "pident",
     }
 
-    BLAST_OUTPUT_CONVERTERS = {
-        'target_pdb_id': lambda x: x.replace("_", ":")
-    }
+    BLAST_OUTPUT_CONVERTERS = {"target_pdb_id": lambda x: x.replace("_", ":")}
 
     BLAST_MATRIX_NAMES = {
-        'BLOSUM80', 'BLOSUM62', 'BLOSUM50', 'BLOSUM45', 'BLOSUM90',
-        'PAM250', 'PAM30', 'PAM70',
-        'IDENTITY',
+        "BLOSUM80",
+        "BLOSUM62",
+        "BLOSUM50",
+        "BLOSUM45",
+        "BLOSUM90",
+        "PAM250",
+        "PAM30",
+        "PAM70",
+        "IDENTITY",
     }
 
-    def __init__(self,
-                 evalue_cutoff: float = 1.,
-                 identity_cutoff: float = 30.,
-                 matrix_name: str = 'BLOSUM62',
-                 max_alignments=None,
-                 db_name: str = BLAST_DB_NAME,
-                 db_dir: Path = pp5.BLASTDB_DIR,
-                 db_autoupdate_days=None,
-                 ):
+    def __init__(
+        self,
+        evalue_cutoff: float = 1.0,
+        identity_cutoff: float = 30.0,
+        matrix_name: str = "BLOSUM62",
+        max_alignments=None,
+        db_name: str = BLAST_DB_NAME,
+        db_dir: Path = pp5.BLASTDB_DIR,
+        db_autoupdate_days=None,
+    ):
         """
         Initializes a ProteinBLAST instance. This instance is meant to be
         used for multiple BLAST queries with the same parameters and against a
@@ -361,29 +391,36 @@ class ProteinBLAST(object):
         """
 
         if evalue_cutoff <= 0:
-            raise ValueError(f'Invalid evalue cutoff: {evalue_cutoff}, '
-                             f'must be >= 0.')
+            raise ValueError(
+                f"Invalid evalue cutoff: {evalue_cutoff}, " f"must be >= 0."
+            )
 
         if not 0 <= identity_cutoff < 100:
-            raise ValueError(f'Invalid identity cutoff: {identity_cutoff}, '
-                             f'must be in [0,100).')
+            raise ValueError(
+                f"Invalid identity cutoff: {identity_cutoff}, " f"must be in [0,100)."
+            )
 
         if matrix_name not in self.BLAST_MATRIX_NAMES:
-            raise ValueError(f'Invalid matrix name {matrix_name}, must be '
-                             f'one of {self.BLAST_MATRIX_NAMES}.')
+            raise ValueError(
+                f"Invalid matrix name {matrix_name}, must be "
+                f"one of {self.BLAST_MATRIX_NAMES}."
+            )
 
         # Check that the base database was downloaded (we expect that the
         # archive is not deleted after download)
         if not db_dir.joinpath(self.BLAST_FTP_DB_FILENAME).is_file():
-            LOGGER.info(f'Local BLAST DB {self.BLAST_DB_NAME} not found, '
-                        f'downloading...')
+            LOGGER.info(
+                f"Local BLAST DB {self.BLAST_DB_NAME} not found, " f"downloading..."
+            )
             self.blastdb_download(blastdb_dir=db_dir)
         elif db_autoupdate_days is not None:
             delta_days = self.blastdb_remote_timedelta(blastdb_dir=db_dir).days
             if delta_days >= db_autoupdate_days:
-                LOGGER.info(f'Local BLAST DB {self.BLAST_DB_NAME} is out of '
-                            f'date by {delta_days} days compared to '
-                            f'latest version, downloading...')
+                LOGGER.info(
+                    f"Local BLAST DB {self.BLAST_DB_NAME} is out of "
+                    f"date by {delta_days} days compared to "
+                    f"latest version, downloading..."
+                )
                 self.blastdb_download(blastdb_dir=db_dir)
 
         self.evalue_cutoff = evalue_cutoff
@@ -403,8 +440,9 @@ class ProteinBLAST(object):
         """
         pdb_id, chain_id = pdb.split_id(query_pdb_id)
         if not chain_id:
-            raise ValueError(f'Must specify a chain for BLAST alignment, '
-                             f'got {query_pdb_id}')
+            raise ValueError(
+                f"Must specify a chain for BLAST alignment, " f"got {query_pdb_id}"
+            )
 
         meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
 
@@ -429,45 +467,53 @@ class ProteinBLAST(object):
         # Construct the command-line for the blastp executable
         out_fields = str.join(" ", self.BLAST_OUTPUT_FIELDS.values())
         cline = [
-            f'blastp', f'-db={self.db_dir.joinpath(self.db_name)}',
-            f'-query=-',
-            f'-outfmt=7 delim=, {out_fields}',
-            f'-evalue={self.evalue_cutoff}',
-            f'-matrix={self.matrix_name}'
+            f"blastp",
+            f"-db={self.db_dir.joinpath(self.db_name)}",
+            f"-query=-",
+            f"-outfmt=7 delim=, {out_fields}",
+            f"-evalue={self.evalue_cutoff}",
+            f"-matrix={self.matrix_name}",
         ]
         if self.max_alignments:
-            cline.append(f'-num_alignments={self.max_alignments}')
+            cline.append(f"-num_alignments={self.max_alignments}")
 
         # Execute
         child_proc = subprocess.Popen(
-            args=cline, stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding='utf-8'
+            args=cline,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
         )
 
         # Write the query sequence directly to subprocess' stdin, and close it
         with child_proc.stdin as child_in_handle:
-            SeqIO.write(seqrec, child_in_handle, 'fasta')
+            SeqIO.write(seqrec, child_in_handle, "fasta")
 
         # Parse results from blastp into a dataframe
         df = pd.read_csv(
-            child_proc.stdout, header=None, engine='c', comment='#',
+            child_proc.stdout,
+            header=None,
+            engine="c",
+            comment="#",
             names=self.BLAST_OUTPUT_FIELDS.keys(),
             converters=self.BLAST_OUTPUT_CONVERTERS,
             # Drop the query id column and make target id the index
-            index_col='target_pdb_id', usecols=lambda c: c != 'query_pdb_id'
+            index_col="target_pdb_id",
+            usecols=lambda c: c != "query_pdb_id",
         )
 
         # Filter by identity
-        idx = df['percent_identity'] >= self.identity_cutoff
+        idx = df["percent_identity"] >= self.identity_cutoff
         df = df[idx]
-        df.sort_values(by='percent_identity', ascending=False, inplace=True)
+        df.sort_values(by="percent_identity", ascending=False, inplace=True)
 
         # Handle errors
         with child_proc.stderr as child_err_handle:
             err = child_err_handle.read()
             if err:
-                raise ValueError(f'BLAST error: {err}')
+                raise ValueError(f"BLAST error: {err}")
 
         # Wait to prevent zombificaition: should return immediately
         # TODO: Maybe use Popen.communicate instead of this and the above.
@@ -476,8 +522,7 @@ class ProteinBLAST(object):
         return df
 
     @classmethod
-    def blastdb_remote_timedelta(cls, blastdb_dir=pp5.BLASTDB_DIR) \
-            -> timedelta:
+    def blastdb_remote_timedelta(cls, blastdb_dir=pp5.BLASTDB_DIR) -> timedelta:
         """
         :param blastdb_dir: Directory of local BLAST database.
         :return: Delta-time between the latest remote BLAST DB and the
@@ -489,9 +534,9 @@ class ProteinBLAST(object):
         try:
             with ftplib.FTP(cls.BLAST_FTP_URL) as ftp:
                 ftp.login()
-                mdtm = ftp.voidcmd(f'MDTM {cls.BLAST_FTP_DB_FILE_PATH}')
+                mdtm = ftp.voidcmd(f"MDTM {cls.BLAST_FTP_DB_FILE_PATH}")
                 mdtm = mdtm[4:].strip()
-                remote_db_timestamp = datetime.strptime(mdtm, '%Y%m%d%H%M%S')
+                remote_db_timestamp = datetime.strptime(mdtm, "%Y%m%d%H%M%S")
 
             if local_db.is_file():
                 local_db_timestamp = os.path.getmtime(str(local_db))
@@ -502,8 +547,9 @@ class ProteinBLAST(object):
             delta_time = remote_db_timestamp - local_db_timestamp
             return delta_time
         except ftplib.all_errors as e:
-            raise IOError(f"FTP error while retrieving remote DB timestamp: "
-                          f"{e}") from None
+            raise IOError(
+                f"FTP error while retrieving remote DB timestamp: " f"{e}"
+            ) from None
 
     @classmethod
     def blastdb_download(cls, blastdb_dir=pp5.BLASTDB_DIR) -> Path:
@@ -519,21 +565,29 @@ class ProteinBLAST(object):
             with ftplib.FTP(cls.BLAST_FTP_URL) as ftp:
                 ftp.login()
                 remote_db_size = ftp.size(cls.BLAST_FTP_DB_FILE_PATH)
-                mdtm = ftp.voidcmd(f'MDTM {cls.BLAST_FTP_DB_FILE_PATH}')
+                mdtm = ftp.voidcmd(f"MDTM {cls.BLAST_FTP_DB_FILE_PATH}")
                 mdtm = mdtm[4:].strip()
-                remote_db_timestamp = datetime.strptime(mdtm, '%Y%m%d%H%M%S')
+                remote_db_timestamp = datetime.strptime(mdtm, "%Y%m%d%H%M%S")
 
-                with tqdm(total=remote_db_size, file=sys.stdout,
-                          unit_scale=True, unit_divisor=1024, unit='B',
-                          desc=f'Downloading {local_db} from '
-                               f'{cls.BLAST_FTP_URL}...') as pbar:
-                    with open(str(local_db), 'wb') as f:
+                with tqdm(
+                    total=remote_db_size,
+                    file=sys.stdout,
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    unit="B",
+                    desc=f"Downloading {local_db} from " f"{cls.BLAST_FTP_URL}...",
+                ) as pbar:
+                    with open(str(local_db), "wb") as f:
+
                         def callback(b):
                             pbar.update(len(b))
                             f.write(b)
 
-                        ftp.retrbinary(f'RETR {cls.BLAST_FTP_DB_FILE_PATH}',
-                                       callback=callback, blocksize=1024 * 1)
+                        ftp.retrbinary(
+                            f"RETR {cls.BLAST_FTP_DB_FILE_PATH}",
+                            callback=callback,
+                            blocksize=1024 * 1,
+                        )
 
         except ftplib.all_errors as e:
             raise IOError(f"Failed to download BLAST DB file: {e}") from None
@@ -549,9 +603,13 @@ class ProteinBLAST(object):
         return local_db
 
     @classmethod
-    def create_db_subset_alias(cls, pdb_ids: Iterable[str],
-                               alias_name: str, source_name=BLAST_DB_NAME,
-                               blastdb_dir=pp5.BLASTDB_DIR):
+    def create_db_subset_alias(
+        cls,
+        pdb_ids: Iterable[str],
+        alias_name: str,
+        source_name=BLAST_DB_NAME,
+        blastdb_dir=pp5.BLASTDB_DIR,
+    ):
         """
         Creates a BLAST database which is a subset of the main (full) database.
         Useful for running multiple BLAST queries against a smalled subset
@@ -566,31 +624,37 @@ class ProteinBLAST(object):
 
         # Check that the base database was downloaded.
         if not blastdb_dir.joinpath(cls.BLAST_FTP_DB_FILENAME).is_file():
-            LOGGER.info(f'Local BLAST DB {cls.BLAST_DB_NAME} not found, '
-                        f'downloading...')
+            LOGGER.info(
+                f"Local BLAST DB {cls.BLAST_DB_NAME} not found, " f"downloading..."
+            )
             cls.blastdb_download(blastdb_dir=blastdb_dir)
 
-        aliases_dir = blastdb_dir.joinpath('aliases')
-        source_rel_alias = Path('..').joinpath(source_name)
+        aliases_dir = blastdb_dir.joinpath("aliases")
+        source_rel_alias = Path("..").joinpath(source_name)
         os.makedirs(aliases_dir, exist_ok=True)
-        seqid_file = aliases_dir.joinpath(f'{alias_name}.ids')
+        seqid_file = aliases_dir.joinpath(f"{alias_name}.ids")
 
         dbcmd_cline = [
-            'blastdbcmd', f'-db={blastdb_dir.joinpath(source_name)}',
-            '-outfmt=%a', '-entry_batch=-'
+            "blastdbcmd",
+            f"-db={blastdb_dir.joinpath(source_name)}",
+            "-outfmt=%a",
+            "-entry_batch=-",
         ]
 
         # First we must create a simple text file with the PDB IDs.
         # We need to use blastdbcmd to convert the given PDB IDs (which may
         # not contain a chain) into the accession IDs which exist in the
         # source BLAST database (which must contain a chain).
-        with open(seqid_file, mode='w', encoding='utf-8') as pdb_id_file:
+        with open(seqid_file, mode="w", encoding="utf-8") as pdb_id_file:
             # Run the dbcmd tool
             LOGGER.info(str.join(" ", dbcmd_cline))
             sproc = subprocess.Popen(
-                args=dbcmd_cline, stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, encoding='utf-8'
+                args=dbcmd_cline,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
             )
 
             # Pass the given PDB IDs to the dbcmd's stdin
@@ -613,13 +677,15 @@ class ProteinBLAST(object):
                 # Only warn on errors, since it's possible some of the IDs
                 # don't exist in the blast database and it's safe to ignore.
                 for err in serr:
-                    if 'Skipped' in err:
+                    if "Skipped" in err:
                         skipped_ids.add(err.split()[-1])
                     else:
-                        raise ValueError(f'blastdbcmd: {err}')
+                        raise ValueError(f"blastdbcmd: {err}")
             if skipped_ids:
-                logging.warning(f'blastdbcmd skipped {len(skipped_ids)} IDs '
-                                f'for alias DB {alias_name}: {skipped_ids}')
+                logging.warning(
+                    f"blastdbcmd skipped {len(skipped_ids)} IDs "
+                    f"for alias DB {alias_name}: {skipped_ids}"
+                )
 
             # It already compleated, perform wait to reap the process
             sproc.wait(timeout=5)
@@ -630,16 +696,21 @@ class ProteinBLAST(object):
         # continue to exists even after the alias is created, otherwise
         # running BLAST won't work.
         aliastool_cline = [
-            'blastdb_aliastool',
-            f'-db={source_rel_alias}', f'-out={alias_name}',
-            f'-seqidlist={seqid_file.name}',
+            "blastdb_aliastool",
+            f"-db={source_rel_alias}",
+            f"-out={alias_name}",
+            f"-seqidlist={seqid_file.name}",
         ]
 
         LOGGER.info(str.join(" ", aliastool_cline))
         sproc = subprocess.Popen(
-            args=aliastool_cline, cwd=aliases_dir, stdin=None,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding='utf-8'
+            args=aliastool_cline,
+            cwd=aliases_dir,
+            stdin=None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
         )
 
         # Should complete immediately
@@ -649,7 +720,7 @@ class ProteinBLAST(object):
         with sproc.stderr as serr, sproc.stdout as sout:
             out = str.strip(sout.read() + serr.read())
             if sproc.returncode > 0:
-                raise ValueError(f'blastdb_aliastool: {out}')
+                raise ValueError(f"blastdb_aliastool: {out}")
             LOGGER.info(out)
 
         return str(aliases_dir.relative_to(blastdb_dir).joinpath(alias_name))
