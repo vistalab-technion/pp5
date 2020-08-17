@@ -19,6 +19,9 @@ dependencies:
   - pytest-benchmark
   - pytest-repeat
   - pytest-xdist
+  - pytest-cov
+  - pre-commit
+  - black
   - tqdm
   - matplotlib
   - numba
