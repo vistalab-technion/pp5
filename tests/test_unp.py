@@ -24,10 +24,10 @@ class TestUNPDownload:
         assert path == self.TEMP_PATH.joinpath(f'{test_id}.txt')
 
     def test_unp_download_with_redirect(self):
-        # This UNP id causes a redirect to P62707
+        # This UNP id causes a redirect to a few replacement ids.
         test_id = 'P31217'
         replacement_id = unp.replacement_ids(test_id)[0]
-        assert replacement_id == 'P62707'
+        assert replacement_id in ['P62707', 'P62708', 'P62709', 'P62710']
 
         path = unp.unp_download(test_id, unp_dir=self.TEMP_PATH)
 
