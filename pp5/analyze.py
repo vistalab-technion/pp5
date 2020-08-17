@@ -1265,7 +1265,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         output.
         :param out_dir: Path to output directory. Defaults to <dataset_dir>/results.
         :param pairwise_filename: Filename of the pairwise dataset.
-        :param condition_on_ss: Whether to group pairwise matches by sencondary
+        :param condition_on_ss: Whether to group pairwise matches by secondary
         structure and analyse each SS group separately.
         :param consolidate_ss: Dict mapping from DSSP secondary structure to
         the consolidated SS types used in this analysis.
@@ -1316,18 +1316,13 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Load just a single row to get all column names, then group them by
         # their types
         all_cols = list(pd.read_csv(self.input_file, nrows=1).columns)
-        float_list_cols = [c for c in all_cols
-                           if any_in(('phis', 'psis'), c)]
-        int_list_cols = [c for c in all_cols
-                         if any_in(('contexts', 'idxs',), c)]
-        str_list_cols = [c for c in all_cols
-                         if any_in(('res_ids', 'codons'), c)]
+        float_list_cols = [c for c in all_cols if any_in(('phis', 'psis'), c)]
+        int_list_cols = [c for c in all_cols if any_in(('contexts', 'idxs',), c)]
+        str_list_cols = [c for c in all_cols if any_in(('res_ids', 'codons'), c)]
         list_cols = float_list_cols + int_list_cols + str_list_cols
         float_cols = [c for c in all_cols
-                      if any_in(('phi', 'psi', 'norm'), c)
-                      and c not in float_list_cols]
-        str_cols = [c for c in all_cols
-                    if c not in list_cols and c not in float_cols]
+                      if any_in(('phi', 'psi', 'norm'), c) and c not in float_list_cols]
+        str_cols = [c for c in all_cols if c not in list_cols and c not in float_cols]
 
         # Make sure we got all columns
         if len(all_cols) != len(list_cols) + len(float_cols) + len(str_cols):
