@@ -1038,7 +1038,12 @@ class ProteinGroup(object):
     A group is defined by a reference structure.
     All proteins in the group are aligned to the reference and different
     residue pairs are created. The pairs have different types based on the
-    properties of the alignment (variant/same/silent/mutation/alteration).
+    properties of the alignment:
+        - VARIANT: Same UNP ID, same codon (but different PDB structure)
+        - SAME: Different UNP ID, same codon
+        - SILENT: Different UNP ID, different codon but same AA (silent mutation)
+        - MUTATION: Different UNP ID, different codon and different AA
+        - ALTERATION: Same UNP ID, but different codon and different AA
 
     This class allows creation of Pairwise and Pointwise datasets for the
     structures in the group.

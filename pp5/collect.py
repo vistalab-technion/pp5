@@ -346,7 +346,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         """
         Collects ProteinGroup reference structures based on a PDB query
         results.
-        :param resolution: Resolution cutoff value in Angstorms.
+        :param resolution: Resolution cutoff value in Angstroms.
         :param expr_sys: Expression system name.
         :param evalue_cutoff: Maximal expectation value allowed for BLAST
         matches when searching for proteins to include in pgroups.
