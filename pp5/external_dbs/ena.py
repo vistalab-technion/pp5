@@ -1,13 +1,12 @@
+import logging
 from pathlib import Path
 
 from Bio import SeqIO as SeqIO
-from Bio.SeqRecord import SeqRecord
 from requests import RequestException
+from Bio.SeqRecord import SeqRecord
 
 from pp5 import ENA_DIR, get_resource_path
 from pp5.utils import remote_dl
-
-import logging
 
 ENA_URL_TEMPLATE = r"https://www.ebi.ac.uk/ena/browser/api/fasta/{}"
 LOGGER = logging.getLogger(__name__)

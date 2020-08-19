@@ -1,31 +1,31 @@
-import math
 import os
-import pickle
 import re
-import itertools as it
-import logging
-import multiprocessing as mp
-import shutil
+import math
 import time
+import pickle
+import shutil
+import logging
+import itertools as it
+import multiprocessing as mp
 from abc import ABC
-from multiprocessing.pool import AsyncResult
+from typing import Dict, List, Tuple, Union, Callable, Iterable, Optional
 from pathlib import Path
-from typing import Union, Dict, Callable, Optional, List, Tuple, Iterable
+from multiprocessing.pool import AsyncResult
 
 import numpy as np
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.style
-import matplotlib.pyplot
 import sklearn.manifold as manifold
+import matplotlib.pyplot
 
-from pp5.collect import ParallelDataCollector
-from pp5.dihedral import DihedralKDE, Dihedral
 import pp5.plot
-from pp5.parallel import yield_async_results
 from pp5.plot import PP5_MPL_STYLE
 from pp5.utils import sort_dict
-from pp5.codons import AA_CODONS, N_CODONS, codon2aac, CODON_RE, ACIDS, ACIDS_1TO1AND3
+from pp5.codons import ACIDS, CODON_RE, N_CODONS, AA_CODONS, ACIDS_1TO1AND3, codon2aac
+from pp5.collect import ParallelDataCollector
+from pp5.dihedral import Dihedral, DihedralKDE
+from pp5.parallel import yield_async_results
 
 LOGGER = logging.getLogger(__name__)
 

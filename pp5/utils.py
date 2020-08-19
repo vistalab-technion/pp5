@@ -1,23 +1,23 @@
-import gzip
-import importlib
-import json
-import logging
 import os
-import random
 import sys
-from collections.abc import Mapping, Set, Sequence
+import gzip
+import json
+import random
+import logging
+import importlib
 import contextlib
-from datetime import datetime, timedelta
 from io import UnsupportedOperation
 from json import JSONEncoder
+from typing import Any, Union, Callable
 from pathlib import Path
-from typing import Union, Callable, Any
+from datetime import datetime, timedelta
+from collections.abc import Set, Mapping, Sequence
 
 import requests
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
 from IPython import get_ipython
 from requests import HTTPError
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 import pp5
 

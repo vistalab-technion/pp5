@@ -1,17 +1,17 @@
 import os
+import math
 import random
 import string
 from urllib.request import urlopen
-import math
 
 import pandas as pd
 import pytest
-from Bio.PDB.PDBExceptions import PDBConstructionException
 from pytest import approx
+from Bio.PDB.PDBExceptions import PDBConstructionException
 
-import pp5.external_dbs.pdb as pdb
 import tests
 import tests.utils
+import pp5.external_dbs.pdb as pdb
 
 NO_INTERNET = not tests.utils.has_internet()
 

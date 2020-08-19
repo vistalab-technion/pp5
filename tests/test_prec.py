@@ -1,10 +1,11 @@
 import pickle
+
 import pytest
 
 import pp5
+from tests import get_tmp_path
 from pp5.protein import ProteinRecord, ProteinInitError
 from pp5.external_dbs import unp
-from tests import get_tmp_path
 
 
 class TestFromUnp:

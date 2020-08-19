@@ -1,19 +1,19 @@
-import argparse
 import os
 import re
-import logging.config
 import inspect
+import argparse
+import logging.config
+from typing import Any, Dict, List, Callable
 from pathlib import Path
-from typing import Callable, List, Dict, Any
 
 import pp5
 from pp5.analyze import (
-    PointwiseCodonDistanceAnalyzer,
-    PairwiseCodonDistanceAnalyzer,
     CodonDistanceAnalyzer,
+    PairwiseCodonDistanceAnalyzer,
+    PointwiseCodonDistanceAnalyzer,
 )
-from pp5.protein import ProteinRecord, ProteinGroup
-from pp5.collect import ProteinRecordCollector, ProteinGroupCollector
+from pp5.collect import ProteinGroupCollector, ProteinRecordCollector
+from pp5.protein import ProteinGroup, ProteinRecord
 
 _LOG = logging.getLogger(__name__)
 _CFG_PREFIX_ = "_CFG_"

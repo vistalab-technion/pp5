@@ -1,7 +1,6 @@
 import re
 
-from Bio.Data import CodonTable
-from Bio.Data import IUPACData
+from Bio.Data import IUPACData, CodonTable
 
 
 def codon2aac(codon: str):

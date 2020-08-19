@@ -1,31 +1,34 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 import abc
+import json
 import math
-import warnings
-from collections import OrderedDict
-from math import cos, sin, radians as rad, degrees as deg
 import logging
-from pathlib import Path
-from typing import NamedTuple, Type, Dict, List, Set, Union, Tuple, Optional, Iterable
+import warnings
 import itertools as it
+from math import cos, sin
+from math import degrees as deg
+from math import radians as rad
+from typing import Set, Dict, List, Type, Tuple, Union, Iterable, Optional, NamedTuple
+from pathlib import Path
+from collections import OrderedDict
 
-import pandas as pd
-import requests
-import yattag
 import numpy as np
+import pandas as pd
+import yattag
+import requests
 from Bio import PDB as PDB
-from Bio.PDB import Structure as PDBRecord, MMCIF2Dict
+from Bio.PDB import Structure as PDBRecord
+from Bio.PDB import MMCIF2Dict
 from Bio.PDB.DSSP import dssp_dict_from_pdb_file
-from Bio.PDB.PDBExceptions import PDBConstructionWarning, PDBConstructionException
 from Bio.PDB.Polypeptide import standard_aa_names
+from Bio.PDB.PDBExceptions import PDBConstructionWarning, PDBConstructionException
 
 import pp5
 from pp5 import PDB_DIR, get_resource_path
-from pp5.utils import remote_dl, requests_retry, JSONCacheableMixin
+from pp5.utils import JSONCacheableMixin, remote_dl, requests_retry
 
 PDB_ID_PATTERN = re.compile(
     r"^(?P<id>[0-9][\w]{3})(?::(?:" r"(?P<chain>[a-z])|(?P<entity>[0-9])" r"))?$",

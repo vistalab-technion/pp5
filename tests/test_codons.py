@@ -1,6 +1,6 @@
 import pytest
 
-from pp5.codons import CODON_RE, CODONS, AA_CODONS
+from pp5.codons import CODONS, CODON_RE, AA_CODONS
 
 
 class TestCodonRe:

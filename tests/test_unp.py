@@ -1,8 +1,8 @@
 import pytest
 
-import pp5.external_dbs.unp as unp
 import tests
 import tests.utils
+import pp5.external_dbs.unp as unp
 
 NO_INTERNET = not tests.utils.has_internet()
 

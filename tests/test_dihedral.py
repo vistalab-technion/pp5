@@ -1,21 +1,20 @@
-import contextlib
 import math
-from math import radians, degrees
+import contextlib
+from math import degrees, radians
 
 import numba
 import numpy as np
-from numpy import ndarray
 import pytest
+from numpy import ndarray
+from pytest import approx
 from Bio.PDB import PPBuilder
 
-import tests
-from pp5.external_dbs import pdb
-from pp5 import dihedral
-from pp5.dihedral import Dihedral
-from pp5.dihedral import DihedralAnglesEstimator
-
 import pymol.cmd as pymol
-from pytest import approx
+
+import tests
+from pp5 import dihedral
+from pp5.dihedral import Dihedral, DihedralAnglesEstimator
+from pp5.external_dbs import pdb
 
 calc_dihedral2 = DihedralAnglesEstimator.calc_dihedral2
 

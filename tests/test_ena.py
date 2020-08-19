@@ -1,9 +1,8 @@
 import pytest
 
-import pp5.external_dbs.ena as ena
-
 import tests
 import tests.utils
+import pp5.external_dbs.ena as ena
 
 NO_INTERNET = not tests.utils.has_internet()
 

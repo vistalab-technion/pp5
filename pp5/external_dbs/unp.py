@@ -1,16 +1,15 @@
+import logging
+from typing import Set, List, Union, Iterable, NamedTuple
 from pathlib import Path
-from typing import Set, List, Iterable, NamedTuple, Union
 from urllib.parse import urlsplit
 
 import requests
 import Bio.SwissProt
-from Bio.SwissProt import Record as UNPRecord
 from requests import HTTPError
+from Bio.SwissProt import Record as UNPRecord
 
 from pp5 import UNP_DIR, get_resource_path
 from pp5.utils import remote_dl
-
-import logging
 
 UNP_URL_TEMPLATE = r"https://www.uniprot.org/uniprot/{}.txt"
 UNP_REPLACE_TEMPLATE = (

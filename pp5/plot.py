@@ -1,19 +1,18 @@
-import itertools as it
 import os
 import re
-from typing import Union, List, Tuple, Callable, Optional, Iterable, Dict
-from pathlib import Path
 import logging
+import itertools as it
+from typing import Dict, List, Tuple, Union, Callable, Iterable, Optional
+from pathlib import Path
 
 import numpy as np
-from numpy import ndarray
-
 import matplotlib as mpl
+import matplotlib.style
+import matplotlib.colors
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.collections as collections
-import matplotlib.style
-import matplotlib.colors
+from numpy import ndarray
 from matplotlib.pyplot import Axes, Figure
 
 import pp5

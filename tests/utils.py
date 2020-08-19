@@ -1,7 +1,7 @@
 import socket
 import socketserver
-from http.server import SimpleHTTPRequestHandler
 from threading import Thread
+from http.server import SimpleHTTPRequestHandler
 
 
 class FileServer(socketserver.TCPServer):

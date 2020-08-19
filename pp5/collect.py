@@ -1,26 +1,26 @@
+import os
 import abc
 import json
-import logging
-import multiprocessing as mp
-import os
+import time
 import socket
 import string
-import time
+import logging
 import zipfile
+import multiprocessing as mp
+from pprint import pformat
+from typing import Any, Dict, List, Callable, Iterable, Optional, NamedTuple
+from pathlib import Path
 from dataclasses import dataclass
 from multiprocessing.pool import AsyncResult
-from pathlib import Path
-from pprint import pformat
-from typing import Callable, Optional, List, Iterable, NamedTuple, Dict, Any
 
 import pandas as pd
 
 import pp5
 import pp5.parallel
 from pp5.align import ProteinBLAST
+from pp5.utils import ReprJSONEncoder, elapsed_seconds_to_dhms
+from pp5.protein import ProteinGroup, ProteinRecord, ProteinInitError
 from pp5.external_dbs import pdb, unp
-from pp5.protein import ProteinRecord, ProteinInitError, ProteinGroup
-from pp5.utils import elapsed_seconds_to_dhms, ReprJSONEncoder
 
 LOGGER = logging.getLogger(__name__)
 

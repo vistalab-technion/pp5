@@ -1,31 +1,32 @@
 from __future__ import annotations
+
 import io
-import logging
-import signal
 import os
 import re
-import subprocess
 import sys
+import ftplib
+import signal
+import logging
 import tarfile
 import tempfile
 import contextlib
-import ftplib
-from datetime import datetime, timedelta
+import subprocess
+from typing import Tuple, Union, Iterable, Optional
 from pathlib import Path
-from typing import Iterable, Tuple, Optional, Union
+from datetime import datetime, timedelta
 
 import pandas as pd
+from Bio import SeqIO, AlignIO
+from tqdm import tqdm
+from Bio.Seq import Seq
+from Bio.AlignIO import MultipleSeqAlignment as MSA
 from Bio.Alphabet import generic_protein
 from Bio.SeqRecord import SeqRecord
-from Bio import AlignIO, SeqIO
-from Bio.AlignIO import MultipleSeqAlignment as MSA
 from Bio.Align.Applications import ClustalOmegaCommandline
-from Bio.Seq import Seq
-from tqdm import tqdm
 
 import pp5
+from pp5.utils import JSONCacheableMixin, out_redirected
 from pp5.external_dbs import pdb
-from pp5.utils import out_redirected, JSONCacheableMixin
 
 # Suppress messages from pymol upon import
 _prev_sigint_handler = signal.getsignal(signal.SIGINT)

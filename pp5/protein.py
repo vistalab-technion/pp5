@@ -1,50 +1,50 @@
 from __future__ import annotations
 
-import logging
-import math
 import os
-import warnings
 import enum
+import math
 import pickle
-from pathlib import Path
+import logging
+import warnings
+import itertools as it
 from typing import (
+    Any,
+    Set,
+    Dict,
     List,
     Tuple,
-    Dict,
-    Iterator,
-    Callable,
-    Any,
     Union,
+    Callable,
     Iterable,
+    Iterator,
     Optional,
-    Set,
 )
-from collections import OrderedDict, Counter
-import itertools as it
+from pathlib import Path
+from collections import Counter, OrderedDict
 
 import pandas as pd
-from Bio.Align import PairwiseAligner
-from Bio.PDB import PPBuilder
-from Bio.PDB.Polypeptide import Polypeptide
-from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
 from pytest import approx
+from Bio.PDB import PPBuilder
+from Bio.Seq import Seq
+from Bio.Align import PairwiseAligner
+from Bio.SeqRecord import SeqRecord
+from Bio.PDB.Polypeptide import Polypeptide
 
 import pp5
+from pp5.align import PYMOL_SA_GAP_SYMBOLS as PSA_GAP
+from pp5.align import StructuralAlignment
 from pp5.codons import CODON_TABLE, STOP_CODONS
 from pp5.dihedral import (
     Dihedral,
-    DihedralAnglesEstimator,
-    DihedralAnglesUncertaintyEstimator,
-    DihedralAnglesMonteCarloEstimator,
     AtomLocationUncertainty,
+    DihedralAnglesEstimator,
+    DihedralAnglesMonteCarloEstimator,
+    DihedralAnglesUncertaintyEstimator,
 )
-from pp5.external_dbs import pdb, unp, ena
-from pp5.external_dbs.pdb import PDBRecord, PDBQuery
-from pp5.external_dbs.unp import UNPRecord
-from pp5.align import StructuralAlignment
-from pp5.align import PYMOL_SA_GAP_SYMBOLS as PSA_GAP
 from pp5.parallel import global_pool
+from pp5.external_dbs import ena, pdb, unp
+from pp5.external_dbs.pdb import PDBQuery, PDBRecord
+from pp5.external_dbs.unp import UNPRecord
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")

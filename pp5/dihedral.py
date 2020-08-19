@@ -4,17 +4,17 @@ import math
 from math import nan
 from typing import List, Optional
 
-import Bio.PDB as PDB
 import numba
 import numpy as np
-import uncertainties.unumpy as unumpy
+import Bio.PDB as PDB
 import uncertainties.umath as umath
-from Bio.PDB.Atom import Atom
-from Bio.PDB.Polypeptide import Polypeptide
-from Bio.PDB.Residue import Residue
+import uncertainties.unumpy as unumpy
 from numpy import ndarray
 from pytest import approx
+from Bio.PDB.Atom import Atom
 from scipy.optimize import minimize_scalar
+from Bio.PDB.Residue import Residue
+from Bio.PDB.Polypeptide import Polypeptide
 
 from pp5.external_dbs.pdb import PDBUnitCell
 

@@ -1,8 +1,7 @@
 import os
-
 import gzip
-import filecmp
 import time
+import filecmp
 
 import pytest
 import requests
