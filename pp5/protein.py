@@ -1253,7 +1253,7 @@ class ProteinGroup(object):
 
             def is_ref(q_pdb_id: str):
                 q_pdb_id = q_pdb_id.upper()
-                # Check if query is identical to teh reference structure. We
+                # Check if query is identical to the reference structure. We
                 # need to check both with chain and entity.
                 return q_pdb_id == ref_with_entity or q_pdb_id == self.ref_pdb_id
 
@@ -1785,8 +1785,8 @@ class ProteinGroup(object):
         """
         Performs structural alignment between the query and the reference
         structure. Rejects query structures which do not conform to the
-        requires structural alignment parameters.
-        :param q_pdb_id: Query PDB ID.
+        required structural alignment parameters.
+        :param q_prec: ProteinRecord of query structure.
         :return: Alignment object, or None if query was rejected.
         """
         q_pdb_id = q_prec.pdb_id
@@ -1851,6 +1851,15 @@ class ProteinGroup(object):
     def _match_type(
         pdb_match: bool, unp_match: bool, aa_match: bool, codon_match: bool
     ) -> Optional[ResidueMatchType]:
+        """
+        Determines the type of match to assigns to a pair of matching residues,
+        based on what they have in common.
+        :param pdb_match: Whether their PDB ID is the same.
+        :param unp_match: Whether their UNP ID is the same.
+        :param aa_match: Whether they represent the same AA.
+        :param codon_match: Whether they are encoded by the same codon.
+        :return: Type of match, or None if it's not a match.
+        """
         if pdb_match:
             match_type = ResidueMatchType.REFERENCE
         elif unp_match:

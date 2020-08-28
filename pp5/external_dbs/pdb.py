@@ -239,7 +239,7 @@ class PDB2UNP(JSONCacheableMixin, object):
     def is_chimeric(self, chain_id: str) -> bool:
         """
         :param chain_id: A chain in the PDB structure.
-        :return: Whether the sequence in the given chain is chimerics,
+        :return: Whether the sequence in the given chain is chimeric,
         i.e. is composed of regions from different proteins.
         """
         return len(self.chain_to_unp_xrefs[chain_id.upper()]) > 1
@@ -550,7 +550,12 @@ class PDBMetadata(object):
         # mapping from entity_id to sequence
         self.entity_sequence: Dict[int, str] = entity_seq
 
-    def get_chain(self, entity_id: int):
+    def get_chain(self, entity_id: int) -> Optional[str]:
+        """
+        :param entity_id: An ID of one of the entities in this structure.
+        :return: One of the chains from teh structure belonging to this entity id,
+        or None if this is not a valid entity if for the given structure.
+        """
         chains = [c for c, e in self.chain_entities.items() if e == entity_id]
         if not chains:
             return None

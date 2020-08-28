@@ -269,7 +269,6 @@ class StructuralAlignment(JSONCacheableMixin, object):
             # Compute the structural alignment
             src, tgt = align_ids
             align_obj_name = f"align_{src}_{tgt}"
-
             (
                 rmse,
                 n_aligned_atoms,
