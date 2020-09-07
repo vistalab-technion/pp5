@@ -448,7 +448,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         kde_k3=0.0,
         bs_niter=1,
         bs_randstate=None,
-        bs_limit_n=False,
+        bs_fixed_n: str = None,
         n_parallel_kdes: int = 8,
         out_tag: str = None,
     ):
@@ -480,9 +480,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param kde_k3: KDE joint concentration parameter.
         :param bs_niter: Number of bootstrap iterations.
         :param bs_randstate: Random state for bootstrap.
-        :param bs_limit_n: Whether to limit number of samples in each
-        bootstrap iteration for each subgroup, to the number of samples in the
-        smallest subgroup.
+        :param bs_fixed_n: Whether to fix number of samples in each
+        bootstrap iteration for each subgroup to the number of samples in the
+        smallest subgroup ('min'), largest subgroup ('max') or no limit ('').
         :param n_parallel_kdes: Number of parallel bootstrapped KDE
         calculations to run simultaneously.
         By default it will be equal to the number of available CPU cores.
@@ -505,6 +505,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if condition_on_prev not in {"codon", "aa", ""}:
             raise ValueError(f"invalid condition_on_prev: {condition_on_prev}")
 
+        if bs_fixed_n not in {None, "", "min", "max"}:
+            raise ValueError(f"invalid bs_fixed_n: {bs_fixed_n}")
+
         self.condition_on_prev = condition_on_prev
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
@@ -526,7 +529,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
-        self.bs_limit_n = bs_limit_n
+        self.bs_fixed_n = bs_fixed_n
         self.n_parallel_kdes = n_parallel_kdes
 
     def _collection_functions(
@@ -798,16 +801,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             # Find smallest subgroup
             subgroup_lens = [len(df_s) for _, df_s in df_subgroups]
-            min_idx = np.argmin(subgroup_lens)
-            min_len = subgroup_lens[min_idx]
+            min_idx, max_idx = np.argmin(subgroup_lens), np.argmax(subgroup_lens)
+            min_len, max_len = subgroup_lens[min_idx], subgroup_lens[max_idx]
 
             # Calculates number of samples in each bootstrap iteration:
             # We either take all samples in each subgroup, or the number of
             # samples in the smallest subgroup.
-            if self.bs_limit_n:
+            if not self.bs_fixed_n:
+                bs_nsamples = subgroup_lens
+            elif self.bs_fixed_n == "min":
                 bs_nsamples = [min_len] * len(subgroup_lens)
             else:
-                bs_nsamples = subgroup_lens
+                bs_nsamples = [max_len] * len(subgroup_lens)
 
             # Run bootstrapped KDE estimation for all subgroups in parallel
             subprocess_args = (
