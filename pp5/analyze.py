@@ -22,7 +22,15 @@ import matplotlib.pyplot
 import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
 from pp5.utils import sort_dict
-from pp5.codons import ACIDS, CODON_RE, N_CODONS, AA_CODONS, ACIDS_1TO1AND3, codon2aac
+from pp5.codons import (
+    ACIDS,
+    CODON_RE,
+    N_CODONS,
+    AA_CODONS,
+    SYN_CODON_IDX,
+    ACIDS_1TO1AND3,
+    codon2aac,
+)
 from pp5.collect import ParallelDataCollector
 from pp5.dihedral import Dihedral, DihedralKDE
 from pp5.parallel import yield_async_results
@@ -989,7 +997,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                             vmin=None,
                             vmax=None,  # should consider scale
                             annotate_mu=True,
-                            plot_std=True,
+                            plot_std=False,
+                            block_diagonal=True,
                         ),
                     )
                 )
@@ -1047,6 +1056,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                             vmax=None,  # should consider scale
                             annotate_mu=True,
                             plot_std=False,
+                            block_diagonal=True,
                         ),
                     )
                 )
@@ -1146,6 +1156,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         vmax: float = None,
         annotate_mu=True,
         plot_std=False,
+        block_diagonal=False,
     ):
         LOGGER.info(f"Plotting codon distances for {group_idx}")
 
@@ -1173,12 +1184,22 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Here we plot a separate distance matrix for mu and for sigma.
         fig_filenames = []
         for avg_std, d2 in zip(("avg", "std"), (d2_mu, d2_sigma)):
+
+            # Use annotations for the standard deviation
             if avg_std == "std":
                 ann_fn = None
                 if not plot_std:
                     continue
             else:
                 ann_fn = quartile_ann_fn if annotate_mu else None
+
+            # Plot only the block-diagonal structure, i.e. synonymous codons
+            # To do this, we set the non-synonymous to nan.
+            if block_diagonal:
+                ii, jj = zip(*SYN_CODON_IDX)
+                mask = np.full_like(d2[0], fill_value=np.nan)
+                mask[ii, jj] = 1.0
+                d2 = [mask * d2i for d2i in d2]
 
             fig_filename = out_dir.joinpath(f"{group_idx}-{avg_std}.png")
 
