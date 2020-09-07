@@ -433,6 +433,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         consolidate_ss=DSSP_TO_SS_TYPE.copy(),
         strict_ss=True,
         strict_codons=True,
+        cross_residue=False,
         kde_nbins=128,
         kde_k1=30.0,
         kde_k2=30.0,
@@ -463,6 +464,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param strict_ss: Enforce no ambiguous secondary structure in any residue.
         :param strict_codons: Enforce only one known codon per residue
         (reject residues where DNA matching was ambiguous).
+        :param cross_residue: Whether to calculate pointwise distributions and codon
+            distances for cross-residue angles, i.e. (phi+0,phi-1).
         :param kde_nbins: Number of angle binds for KDE estimation.
         :param kde_k1: KDE concentration parameter for phi.
         :param kde_k2: KDE concentration parameter for psi.
@@ -500,7 +503,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.strict_ss = strict_ss
         self.strict_codons = strict_codons
 
-        self.angle_pairs = [(f"phi+0", f"psi+0"), (f"phi+0", f"psi-1")]
+        self.angle_pairs = [(f"phi+0", f"psi+0")]
+        if cross_residue:
+            self.angle_pairs += [(f"phi+0", f"psi-1")]
         self.angle_cols = sorted(set(it.chain(*self.angle_pairs)))
         self.codon_cols = [f"codon-1", f"codon+0"]
         self.codon_opts_cols = [f"codon_opts-1", f"codon_opts+0"]
