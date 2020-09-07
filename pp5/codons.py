@@ -1,4 +1,6 @@
 import re
+import itertools as it
+from typing import Tuple, Sequence
 
 from Bio.Data import IUPACData, CodonTable
 
@@ -28,4 +30,11 @@ ACIDS_1TO1AND3 = {aa: f"{aa} ({ACIDS_1TO3[aa]})" for aa in ACIDS}
 CODON_RE = re.compile(
     rf'^(?:(?P<aa>[{str.join("", ACIDS)}])-)?' rf'(?P<codon>{str.join("|", CODONS)})$',
     re.VERBOSE | re.IGNORECASE,
+)
+
+#: Pairs of synonymous codons indices
+SYN_CODON_IDX: Sequence[Tuple[int, int]] = tuple(
+    (i, j)
+    for i, j in it.product(range(N_CODONS), range(N_CODONS))
+    if AA_CODONS[i][0] == AA_CODONS[j][0]
 )
