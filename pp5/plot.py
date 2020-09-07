@@ -204,7 +204,7 @@ def multi_heatmap(
             )
             ax[i].set_xticks(np.arange(data.shape[1] + 1) - 0.5, minor=True)
             ax[i].set_yticks(np.arange(data.shape[0] + 1) - 0.5, minor=True)
-            ax[i].grid(which="minor", color="w", linestyle="-", linewidth=0.5)
+            ax[i].grid(which="minor", color=(0.9,) * 3, linestyle="-", linewidth=0.5)
             ax[i].tick_params(which="minor", bottom=False, left=False)
 
             if data_annotation_fn is not None:
