@@ -337,3 +337,7 @@ class ReprJSONEncoder(JSONEncoder):
             pass
         # Let the base class default method raise the TypeError
         return JSONEncoder.default(self, o)
+
+
+class ProteinInitError(ValueError):
+    pass

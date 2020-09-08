@@ -17,9 +17,10 @@ import pandas as pd
 
 import pp5
 import pp5.parallel
+from pp5.prec import ProteinRecord
 from pp5.align import ProteinBLAST
-from pp5.utils import ReprJSONEncoder, elapsed_seconds_to_dhms
-from pp5.protein import ProteinGroup, ProteinRecord, ProteinInitError
+from pp5.utils import ReprJSONEncoder, ProteinInitError, elapsed_seconds_to_dhms
+from pp5.pgroup import ProteinGroup
 from pp5.external_dbs import pdb, unp
 
 LOGGER = logging.getLogger(__name__)

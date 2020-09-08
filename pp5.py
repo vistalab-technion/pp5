@@ -7,13 +7,14 @@ from typing import Any, Dict, List, Callable
 from pathlib import Path
 
 import pp5
+from pp5.prec import ProteinRecord
+from pp5.pgroup import ProteinGroup
 from pp5.analyze import (
     CodonDistanceAnalyzer,
     PairwiseCodonDistanceAnalyzer,
     PointwiseCodonDistanceAnalyzer,
 )
 from pp5.collect import ProteinGroupCollector, ProteinRecordCollector
-from pp5.protein import ProteinGroup, ProteinRecord
 
 _LOG = logging.getLogger(__name__)
 _CFG_PREFIX_ = "_CFG_"

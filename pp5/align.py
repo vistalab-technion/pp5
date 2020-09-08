@@ -19,6 +19,7 @@ import pandas as pd
 from Bio import SeqIO, AlignIO
 from tqdm import tqdm
 from Bio.Seq import Seq
+from Bio.Align import substitution_matrices
 from Bio.AlignIO import MultipleSeqAlignment as MSA
 from Bio.Alphabet import generic_protein
 from Bio.SeqRecord import SeqRecord
@@ -724,3 +725,7 @@ class ProteinBLAST(object):
             LOGGER.info(out)
 
         return str(aliases_dir.relative_to(blastdb_dir).joinpath(alias_name))
+
+
+BLOSUM62 = substitution_matrices.load("BLOSUM62")
+BLOSUM80 = substitution_matrices.load("BLOSUM80")

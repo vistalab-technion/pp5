@@ -4,7 +4,8 @@ import pytest
 
 import pp5
 from tests import get_tmp_path
-from pp5.protein import ProteinRecord, ProteinInitError
+from pp5.prec import ProteinRecord
+from pp5.utils import ProteinInitError
 from pp5.external_dbs import unp
 
 
