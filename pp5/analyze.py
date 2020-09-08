@@ -782,6 +782,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         return {**ss_counts}
 
     def _codons_dists(self, pool: mp.pool.Pool) -> dict:
+        group_sizes = self._load_intermediate("group-sizes")
         prev_codon_col, curr_codon_col = self.codon_cols
 
         # We currently only support one type of metric
@@ -804,6 +805,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         )
 
         codon_dists, codon_dkdes = {}, {}
+        aa_dists, aa_dkdes = {}, {}
         dkde_asyncs: Dict[str, AsyncResult] = {}
         dist_asyncs: Dict[str, AsyncResult] = {}
         for i, (group_idx, df_group) in enumerate(df_groups):
@@ -866,9 +868,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     LOGGER.error(f"[{i}] No KDE result in {result_group_idx}")
                     continue
 
-                # Remove async result so we dont see it next time
                 LOGGER.info(f"[{i}] Collected KDEs for {result_group_idx}")
                 collected_dkde_results[result_group_idx] = group_dkde_result
+
+                # Remove async result so we dont see it next time (mark as collected)
                 del dkde_asyncs[result_group_idx]
 
                 # We only collect one result here, unless we are in the last
@@ -889,12 +892,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 for subgroup_idx, subgroup_bs_dkdes in group_dkde_result:
                     bs_codon_dkdes[subgroup_idx] = subgroup_bs_dkdes
 
+                subgroup_sizes = group_sizes[result_group_idx]["subgroups"]
+
                 # Run distance matrix calculation in parallel
                 dist_asyncs[result_group_idx] = pool.apply_async(
-                    self._codon_dists_single_group,
+                    self._dkde_dists_single_group,
                     args=(
                         result_group_idx,
                         bs_codon_dkdes,
+                        subgroup_sizes,
                         self.angle_pairs,
                         dist_metric,
                     ),
@@ -914,13 +920,22 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
             for result_group_idx, group_dist_result in dists_results_iter:
                 if group_dist_result is None:
-                    LOGGER.error(f"[{i}] No cdist in {result_group_idx}")
+                    LOGGER.error(f"[{i}] No dists in {result_group_idx}")
                     continue
 
-                LOGGER.info(f"[{i}] Collected cdist matrix {result_group_idx}")
-                group_d2_matrices, group_codon_dkdes = group_dist_result
-                codon_dists[result_group_idx] = group_d2_matrices
+                LOGGER.info(f"[{i}] Collected dist matrices in {result_group_idx}")
+                (
+                    group_codon_d2s,
+                    group_codon_dkdes,
+                    group_aa_d2s,
+                    group_aa_dkdes,
+                ) = group_dist_result
+                codon_dists[result_group_idx] = group_codon_d2s
                 codon_dkdes[result_group_idx] = group_codon_dkdes
+                aa_dists[result_group_idx] = group_aa_d2s
+                aa_dkdes[result_group_idx] = group_aa_dkdes
+
+                # Remove async result so we dont see it next time (mark as collected)
                 del dist_asyncs[result_group_idx]
 
                 # If we're in the last group, collect everything
@@ -938,13 +953,24 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # and imag is sigma
         self._dump_intermediate("codon-dists", codon_dists)
 
+        # aa_dists: Same as codon dists, but keys are AAs
+        self._dump_intermediate("aa-dists", aa_dists)
+
         # codon_dkdes: maps from group to a dict where keys are codons.
         # For each codon we have a list of KDEs, one for each angle pair.
         self._dump_intermediate("codon-dkdes", codon_dkdes)
 
+        # aa_dkdes: Same as codon_dkdes, but keys are AAs
+        self._dump_intermediate("aa-dkdes", aa_dkdes)
+
         return {}
 
     def _codon_dists_expected(self, pool: mp.pool.Pool) -> dict:
+        # To obtain the final expected distance matrices, we calculate the expectation
+        # using the likelihood of the prev codon or aa so that conditioning is only
+        # on SS. Then we also take the expectation over the different SS types to
+        # obtain a distance matrix of any SS type.
+
         # Load map of likelihoods, depending on the type of previous
         # conditioning (ss->codon or AA->probability)
         if self.condition_on_prev == "codon":
@@ -954,42 +980,54 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         else:
             likelihoods = None
 
-        # Load the calculated codon-dists matrices. The loaded dict
-        # maps from  (prev_codon/AA, SS) to a list of distance matrices
-        codon_dists: dict = self._load_intermediate("codon-dists")
+        # Load map of likelihoods of secondary structures.
+        ss_likelihoods: dict = self._load_intermediate("ss-likelihoods")
 
-        # This dict will hold the final expected distance matrices (i.e. we
-        # calculate the expectation using the likelihood of the prev codon
-        # or aa). Note that we actually have one matrix per angle pair.
-        codon_dists_exp = {}
-        for group_idx, d2_matrices in codon_dists.items():
-            assert len(d2_matrices) == len(self.angle_pairs)
-            codon_or_aa, ss_type = group_idx.split("_")
+        def _dists_expected(dists):
+            # dists maps from group index to a list of distance matrices (one per
+            # ange pair)
 
-            if ss_type not in codon_dists_exp:
-                defaults = [np.zeros_like(d2) for d2 in d2_matrices]
-                codon_dists_exp[ss_type] = defaults
+            # This dict will hold the final expected distance matrices (i.e. we
+            # calculate the expectation using the likelihood of the prev codon
+            # or aa). Note that we actually have one matrix per angle pair.
+            dists_exp = {}
+            for group_idx, d2_matrices in dists.items():
+                assert len(d2_matrices) == len(self.angle_pairs)
+                codon_or_aa, ss_type = group_idx.split("_")
 
-            for i, d2 in enumerate(d2_matrices):
-                p = likelihoods[ss_type][codon_or_aa] if likelihoods else 1.0
-                # Don't sum nan's because they kill the entire cell
-                d2 = np.nan_to_num(d2, copy=False, nan=0.0)
-                codon_dists_exp[ss_type][i] += p * d2
+                if ss_type not in dists_exp:
+                    defaults = [np.zeros_like(d2) for d2 in d2_matrices]
+                    dists_exp[ss_type] = defaults
 
-        # Now we also take the expectation over all SS types to produce one
-        # averaged distance matrix, but only if we actually conditioned on it
-        if self.condition_on_ss:
-            ss_likelihoods: dict = self._load_intermediate("ss-likelihoods")
-            defaults = [np.zeros_like(d2) for d2 in d2_matrices]
-            codon_dists_exp[SS_TYPE_ANY] = defaults
-            for ss_type, d2_matrices in codon_dists_exp.items():
-                if ss_type == SS_TYPE_ANY:
-                    continue
-                p = ss_likelihoods[ss_type]
                 for i, d2 in enumerate(d2_matrices):
-                    codon_dists_exp[SS_TYPE_ANY][i] += p * d2
+                    p = likelihoods[ss_type][codon_or_aa] if likelihoods else 1.0
+                    # Don't sum nan's because they kill the entire cell
+                    d2 = np.nan_to_num(d2, copy=False, nan=0.0)
+                    dists_exp[ss_type][i] += p * d2
 
-        self._dump_intermediate("codon-dists-exp", codon_dists_exp)
+            # Now we also take the expectation over all SS types to produce one
+            # averaged distance matrix, but only if we actually conditioned on it
+            if self.condition_on_ss:
+                defaults = [np.zeros_like(d2) for d2 in d2_matrices]
+                dists_exp[SS_TYPE_ANY] = defaults
+                for ss_type, d2_matrices in dists_exp.items():
+                    if ss_type == SS_TYPE_ANY:
+                        continue
+                    p = ss_likelihoods[ss_type]
+                    for i, d2 in enumerate(d2_matrices):
+                        dists_exp[SS_TYPE_ANY][i] += p * d2
+
+            return dists_exp
+
+        for aa_codon in {"codon", "aa"}:
+            # Load the calculated dists matrices. The loaded dict maps from group
+            # index (prev_codon/AA, SS) to a list of distance matrices for each
+            # angle pair.
+            dists: dict = self._load_intermediate(f"{aa_codon}-dists")
+            dists_exp = _dists_expected(dists)
+            del dists
+            self._dump_intermediate(f"{aa_codon}-dists-exp", dists_exp)
+
         return {}
 
     def _plot_results(self, pool: mp.pool.Pool):
@@ -1001,30 +1039,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         async_results = []
 
-        # Expected codon dists
-        codon_dists_exp = self._load_intermediate("codon-dists-exp", False)
-        if codon_dists_exp is not None:
-            for ss_type, d2_matrices in codon_dists_exp.items():
-                args = (ss_type, d2_matrices)
-                async_results.append(
-                    pool.apply_async(
-                        self._plot_codon_distances,
-                        args=args,
-                        kwds=dict(
-                            out_dir=self.out_dir.joinpath("codon-dists-exp"),
-                            titles=ap_labels,
-                            vmin=None,
-                            vmax=None,  # should consider scale
-                            annotate_mu=True,
-                            plot_std=False,
-                            block_diagonal=True,
-                        ),
-                    )
-                )
-            del codon_dists_exp, d2_matrices
-
         # Codon likelihoods
-        codon_likelihoods = self._load_intermediate("codon-likelihoods", False)
+        codon_likelihoods = self._load_intermediate("codon-likelihoods", True)
         if codon_likelihoods is not None:
             async_results.append(
                 pool.apply_async(
@@ -1036,7 +1052,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             del codon_likelihoods
 
         # AA likelihoods
-        aa_likelihoods = self._load_intermediate("aa-likelihoods", False)
+        aa_likelihoods = self._load_intermediate("aa-likelihoods", True)
         if aa_likelihoods is not None:
             async_results.append(
                 pool.apply_async(
@@ -1048,7 +1064,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             del aa_likelihoods
 
         # Dihedral KDEs of full dataset
-        full_dkde: dict = self._load_intermediate("full-dkde", False)
+        full_dkde: dict = self._load_intermediate("full-dkde", True)
         if full_dkde is not None:
             async_results.append(
                 pool.apply_async(
@@ -1059,46 +1075,58 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
             del full_dkde
 
-        # Codon distance matrices
-        codon_dists: dict = self._load_intermediate("codon-dists", False)
-        if codon_dists is not None:
-            for group_idx, d2_matrices in codon_dists.items():
-                args = (group_idx, d2_matrices)
+        # Expected dists: we have four type of distance matrices: per codon or per AA
+        # and regular (per group=prev-codon/AA+SS) or expected (per SS).
+        for aa_codon, dist_type in it.product(["aa", "codon"], ["", "-exp"]):
+            dists = self._load_intermediate(f"{aa_codon}-dists{dist_type}", True)
+            if dists is None:
+                continue
+
+            out_dir = self.out_dir.joinpath(f"{aa_codon}-dists{dist_type}")
+            labels = AA_CODONS if aa_codon == "codon" else ACIDS
+            block_diagonal = SYN_CODON_IDX if aa_codon == "codon" else None
+            for group_idx, d2_matrices in dists.items():
                 async_results.append(
                     pool.apply_async(
-                        self._plot_codon_distances,
-                        args=args,
+                        self._plot_d2_matrices,
                         kwds=dict(
-                            out_dir=self.out_dir.joinpath("codon-dists"),
+                            group_idx=group_idx,
+                            d2_matrices=d2_matrices,
+                            out_dir=out_dir,
                             titles=ap_labels,
+                            labels=labels,
                             vmin=None,
                             vmax=None,  # should consider scale
                             annotate_mu=True,
                             plot_std=False,
-                            block_diagonal=True,
+                            block_diagonal=block_diagonal,
                         ),
                     )
                 )
-            del codon_dists, d2_matrices
+            del dists, d2_matrices
 
-        # Dihedral KDEs of each codon in each group
-        codon_dkdes: dict = self._load_intermediate("codon-dkdes", False)
-        group_sizes: dict = self._load_intermediate("group-sizes", False)
-        if codon_dkdes is not None:
-            for group_idx, dkdes in codon_dkdes.items():
+        # Averaged Dihedral KDEs of each codon in each group
+        group_sizes: dict = self._load_intermediate("group-sizes", True)
+        for aa_codon in ["aa", "codon"]:
+            avg_dkdes: dict = self._load_intermediate(f"{aa_codon}-dkdes", True)
+            if avg_dkdes is None:
+                continue
+            for group_idx, dkdes in avg_dkdes.items():
                 subgroup_sizes = group_sizes[group_idx]["subgroups"]
-                args = (group_idx, subgroup_sizes, dkdes)
+
                 async_results.append(
                     pool.apply_async(
-                        self._plot_codon_dkdes,
-                        args=args,
+                        self._plot_dkdes,
                         kwds=dict(
-                            out_dir=self.out_dir.joinpath("codon-dkdes"),
+                            group_idx=group_idx,
+                            subgroup_sizes=subgroup_sizes,
+                            dkdes=dkdes,
+                            out_dir=self.out_dir.joinpath(f"{aa_codon}-dkdes"),
                             angle_pair_labels=ap_labels,
                         ),
                     )
                 )
-            del codon_dkdes, group_sizes, dkdes
+            del avg_dkdes, dkdes
 
         # Wait for plotting to complete. Each function returns a path
         fig_paths = self._handle_async_results(async_results, collect=True)
@@ -1166,18 +1194,19 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         return str(fig_filename)
 
     @staticmethod
-    def _plot_codon_distances(
+    def _plot_d2_matrices(
         group_idx: str,
         d2_matrices: List[np.ndarray],
         titles: List[str],
+        labels: List[str],
         out_dir: Path,
         vmin: float = None,
         vmax: float = None,
         annotate_mu=True,
         plot_std=False,
-        block_diagonal=False,
+        block_diagonal=None,
     ):
-        LOGGER.info(f"Plotting codon distances for {group_idx}")
+        LOGGER.info(f"Plotting distances for {group_idx}")
 
         # d2_matrices contains a matrix for each analyzed angle pair.
         # Split the mu and sigma from the complex d2 matrices
@@ -1212,10 +1241,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             else:
                 ann_fn = quartile_ann_fn if annotate_mu else None
 
-            # Plot only the block-diagonal structure, i.e. synonymous codons
-            # To do this, we set the non-synonymous to nan.
+            # Plot only the block-diagonal structure, e.g. synonymous codons.
+            # The block_diagonal variable contains a list of tuples with the indices
+            # of the desired block diagonal structure. The rest is set to nan.
             if block_diagonal:
-                ii, jj = zip(*SYN_CODON_IDX)
+                ii, jj = zip(*block_diagonal)
                 mask = np.full_like(d2[0], fill_value=np.nan)
                 mask[ii, jj] = 1.0
                 d2 = [mask * d2i for d2i in d2]
@@ -1224,8 +1254,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             pp5.plot.multi_heatmap(
                 d2,
-                AA_CODONS,
-                AA_CODONS,
+                row_labels=labels,
+                col_labels=labels,
                 titles=titles,
                 fig_size=20,
                 vmin=vmin,
@@ -1240,24 +1270,32 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         return fig_filenames
 
     @staticmethod
-    def _plot_codon_dkdes(
+    def _plot_dkdes(
         group_idx: str,
         subgroup_sizes: Dict[str, int],
-        codon_dkdes: Dict[str, List[np.ndarray]],
+        dkdes: Dict[str, List[np.ndarray]],
         angle_pair_labels: List[str],
         out_dir: Path,
     ):
         # Plot the kdes and distance matrices
         LOGGER.info(f"Plotting KDEs for {group_idx}")
 
+        N = len(dkdes)
+        fig_cols = int(np.ceil(np.sqrt(N)))
+        fig_rows = int(np.ceil(N / fig_cols))
+
         with mpl.style.context(PP5_MPL_STYLE):
             vmin, vmax = 0.0, 5e-4
             fig, ax = mpl.pyplot.subplots(
-                8, 8, figsize=(40, 40), sharex="all", sharey="all"
+                fig_rows,
+                fig_cols,
+                figsize=(5 * fig_cols, 5 * fig_rows),
+                sharex="all",
+                sharey="all",
             )
             ax: np.ndarray[mpl.pyplot.Axes] = np.reshape(ax, -1)
 
-            for i, (codon, dkdes) in enumerate(codon_dkdes.items()):
+            for i, (codon, dkdes) in enumerate(dkdes.items()):
                 title = f"{codon} ({subgroup_sizes.get(codon, 0)})"
                 if not dkdes:
                     ax[i].set_title(title)
@@ -1347,35 +1385,98 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         return subgroup_idx, bs_dkdes
 
     @staticmethod
-    def _codon_dists_single_group(
+    def _dkde_dists_single_group(
         group_idx: str,
         bs_codon_dkdes: Dict[str, List[np.ndarray]],
+        subgroup_sizes: Dict[str, int],
         angle_pairs: list,
         kde_dist_metric: Callable,
     ):
+        # Calculates the distance matrix for codons and AAs in each group.
+        # Also averages the bootstrapped KDEs to obtain a single KDE estimate per
+        # codon or AA in the group.
+
         tstart = time.time()
+        # Codon distance matrix and average codon KDEs
+        codon_d2s = PointwiseCodonDistanceAnalyzer._dkde_dists_pairwise(
+            bs_codon_dkdes, angle_pairs, kde_dist_metric
+        )
+        codon_dkdes = PointwiseCodonDistanceAnalyzer._dkde_average(
+            bs_codon_dkdes, angle_pairs,
+        )
+        LOGGER.info(
+            f"Calculated codon distance matrix and average KDE for {group_idx} "
+            f"({time.time() - tstart:.1f}s)..."
+        )
+
+        # AA distance matrix and average AA KDEs
+        # First, we compute a weighted sum of the codon dkdes to obtain AA dkdes.
+        tstart = time.time()
+        bs_aa_dkdes = {aac[0]: [0] * len(angle_pairs) for aac in bs_codon_dkdes.keys()}
+        for aa in ACIDS:
+            # Total number of samples in from all subgroups (codons) of this AA
+            n_aa_samples = subgroup_sizes[aa]
+            for aac, bs_dkdes in bs_codon_dkdes.items():
+                if aac[0] != aa:
+                    continue
+                if subgroup_sizes[aac] == 0:
+                    continue
+
+                # Empirical probability of this codon subgroup within it's AA
+                p = subgroup_sizes[aac] / n_aa_samples
+
+                # Weighted sum of codon dkdes belonging to the current AA
+                for pair_idx in range(len(angle_pairs)):
+                    bs_aa_dkdes[aa][pair_idx] += p * bs_codon_dkdes[aac][pair_idx]
+
+        # Now, we apply the pairwise distance between pairs of AA KDEs, as for the
+        # codons
+        aa_d2s = PointwiseCodonDistanceAnalyzer._dkde_dists_pairwise(
+            bs_aa_dkdes, angle_pairs, kde_dist_metric
+        )
+        aa_dkdes = PointwiseCodonDistanceAnalyzer._dkde_average(
+            bs_aa_dkdes, angle_pairs,
+        )
+        LOGGER.info(
+            f"Calculated AA distance matrix and average KDE for {group_idx} "
+            f"({time.time() - tstart:.1f}s)..."
+        )
+
+        return codon_d2s, codon_dkdes, aa_d2s, aa_dkdes
+
+    @staticmethod
+    def _dkde_dists_pairwise(
+        bs_dkdes: Dict[str, List[np.ndarray]],
+        angle_pairs: List[str],
+        kde_dist_metric: Callable,
+    ):
+        # Calculate a distance matrix based on the distance between each pair of
+        # subgroups (codons or AAs) for which we have a multiple bootstrapped KDEs.
+
+        dkde_names = list(bs_dkdes.keys())
+        N = len(dkde_names)
 
         # Calculate distance matrix
         d2_matrices = []
         for pair_idx in range(len(angle_pairs)):
-            # For each angle pair we have N_CODONS dkde matrices,
+            # For each angle pair we have N dkde matrices,
             # so we compute the distance between each such pair.
             # We use a complex array to store mu as the real part and sigma
             # as the imaginary part in a single array.
-            d2_mat = np.full((N_CODONS, N_CODONS), np.nan, np.complex64)
+            d2_mat = np.full((N, N), np.nan, np.complex64)
 
-            codon_pairs = it.product(enumerate(AA_CODONS), enumerate(AA_CODONS))
-            for (i, ci), (j, cj) in codon_pairs:
-                if bs_codon_dkdes[ci] is None:
+            dkde_pairs = it.product(enumerate(dkde_names), enumerate(dkde_names))
+            for (i, ci), (j, cj) in dkde_pairs:
+                if bs_dkdes[ci] is None:
                     continue
 
-                if j < i or bs_codon_dkdes[cj] is None:
+                if j < i or bs_dkdes[cj] is None:
                     continue
 
                 # Get the two dihedral KDEs arrays to compare, each is of
                 # shape (B, N, N) due to bootstrapping B times
-                dkde1 = bs_codon_dkdes[ci][pair_idx]
-                dkde2 = bs_codon_dkdes[cj][pair_idx]
+                dkde1 = bs_dkdes[ci][pair_idx]
+                dkde2 = bs_dkdes[cj][pair_idx]
 
                 # If ci is cj, randomize the order of the KDEs when
                 # comparing, so that different bootstrapped KDEs are
@@ -1394,12 +1495,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             d2_matrices.append(d2_mat)
 
-        # Average the codon KDEs from all bootstraps for each codon,
-        # so that we can save a single KDE per codon. Note that this KDE will also
+        return d2_matrices
+
+    @staticmethod
+    def _dkde_average(
+        bs_dkdes: Dict[str, List[np.ndarray]], angle_pairs: List[str],
+    ):
+        # Average the KDEs from all bootstraps, so that we can save a single KDE
+        # per subgroup (codon or AA). Note that this KDE will also
         # include the variance in each bin, so we'll save as a complex matrix where
         # real is the KDE value and imag is the std.
-        codon_dkdes = {c: [] for c in AA_CODONS}
-        for codon, bs_dkde in bs_codon_dkdes.items():
+        avg_dkdes = {c: [] for c in bs_dkdes.keys()}
+        for subgroup, bs_dkde in bs_dkdes.items():
             if bs_dkde is None:
                 continue
             for pair_idx in range(len(angle_pairs)):
@@ -1407,14 +1514,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # bootstrapping. Average it over the bootstrap dimension
                 mean_dkde = np.nanmean(bs_dkde[pair_idx], axis=0, dtype=np.float32)
                 std_dkde = np.nanstd(bs_dkde[pair_idx], axis=0, dtype=np.float32)
-                codon_dkdes[codon].append(mean_dkde + 1j * std_dkde)
+                avg_dkdes[subgroup].append(mean_dkde + 1j * std_dkde)
 
-        tend = time.time()
-        LOGGER.info(
-            f"Calculated distance matrix for {group_idx} " f"({tend - tstart:.1f}s)..."
-        )
-
-        return d2_matrices, codon_dkdes
+        return avg_dkdes
 
     @staticmethod
     def _kde_dist_metric_l2(kde1: np.ndarray, kde2: np.ndarray):
@@ -1729,11 +1831,12 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 args = (group_idx, [d_matrix])
                 async_results.append(
                     pool.apply_async(
-                        PointwiseCodonDistanceAnalyzer._plot_codon_distances,
+                        PointwiseCodonDistanceAnalyzer._plot_d2_matrices,
                         args=args,
                         kwds=dict(
                             out_dir=self.out_dir.joinpath("codon-dists"),
                             titles=[""],
+                            labels=AA_CODONS,
                             vmin=None,
                             vmax=None,  # should consider scale
                             annotate_mu=True,
