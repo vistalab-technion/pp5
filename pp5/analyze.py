@@ -730,12 +730,26 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_groups = df_processed.groupby(by=self.condition_col)
         for group_idx, df_group in df_groups:
             df_subgroups = df_group.groupby(curr_codon_col)
+
+            # Not all codon may exist as subgroups. Default to zero and count each
+            # existing subgroup.
+            subgroup_sizes = {aac: 0 for aac in AA_CODONS}
+            for aac, df_sub in df_subgroups:
+                subgroup_sizes[aac] = len(df_sub)
+
+            # Count size of each AA subgroup
+            for aa in ACIDS:
+                n_aa_samples = sum(
+                    [size for aac, size in subgroup_sizes.items() if aac[0] == aa]
+                )
+                subgroup_sizes[aa] = n_aa_samples
+
+            # Count size of each codon subgroup
             group_sizes[group_idx] = {
                 "total": len(df_group),
-                "subgroups": sort_dict(
-                    {idx_sub: len(df_sub) for idx_sub, df_sub in df_subgroups}
-                ),
+                "subgroups": sort_dict(subgroup_sizes),
             }
+
         group_sizes = sort_dict(group_sizes, selector=lambda g: g["total"])
         self._dump_intermediate("group-sizes", group_sizes)
 
