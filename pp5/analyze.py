@@ -381,8 +381,7 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
             for aa_codon in ("aa", "codon")
         }
 
-        d_scale = 1e3
-        s_scale = 0.25
+        scale = 1e3
         alpha = 0.5
         mds = manifold.MDS(
             n_components=2,
@@ -400,6 +399,7 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
         group_labels = {"aa": ACIDS, "codon": [aac[0] for aac in AA_CODONS]}
         point_labels = {"aa": list(ACIDS_1TO1AND3.values()), "codon": AA_CODONS}
         with_legend = {"aa": False, "codon": True}
+        std_scales = {"aa": 1.0, "codon": 1.0}
 
         for ss_type, aa_codon in it.product(SS_TYPES, cdists_pointwise.keys()):
             LOGGER.info(f"Plotting {aa_codon} pointwise MDS rainbows for {ss_type}...")
@@ -417,8 +417,8 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
                         mu_d2[i, j] - 0.5 * mu_d2[i, i] - 0.5 * mu_d2[j, j]
                     )
 
-            D *= d_scale
-            S *= d_scale
+            D *= scale
+            S *= scale
             X = mds.fit_transform(D)
 
             # Plot
@@ -433,7 +433,7 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
                 all_groups=ACIDS_1TO1AND3,
                 title=ss_type,
                 alpha=alpha,
-                err_scale=s_scale,
+                err_scale=std_scales[aa_codon],
                 error_ellipse=True,
                 normalize=True,
                 with_groups_legend=with_legend[aa_codon],
