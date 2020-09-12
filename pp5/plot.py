@@ -413,8 +413,10 @@ def rainbow(
 
     # Scale x,y to [0,1]
     if normalize:
+        # Remove minimal value in each axis separately, but scale both axes with same
+        # factor in order to preserve aspect ratio.
         xy_vals -= np.min(xy_vals, axis=0)
-        xymax = np.max(xy_vals, axis=0) + 1e-12
+        xymax = np.max(xy_vals) + 1e-12
         xy_vals /= xymax
         err_vals /= xymax
 
