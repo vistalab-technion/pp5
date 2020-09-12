@@ -343,7 +343,7 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
             for aa in ACIDS + ["ALL"]:
                 d = corr_data[ss_type][aa]
                 title = f"{aa}_{ss_type}" if aa != "ALL" else f"{ss_type}"
-                fig_dir = "rainbow-dists-aa" if aa != "ALL" else "rainbow-dists"
+                fig_dir = "rainbow-dists-aa-codon" if aa != "ALL" else "rainbow-dists"
                 fig_dir = self.out_dir.joinpath(fig_dir)
                 fig_file = fig_dir.joinpath(f"{title}.pdf")
 
@@ -374,12 +374,17 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
         return {}
 
     def _plot_mds_rainbows(self, pool: mp.pool.Pool) -> dict:
-        cdists_pointwise = self.pointwise_analyzer._load_intermediate("codon-dists-exp")
+        cdists_pointwise = {
+            aa_codon: self.pointwise_analyzer._load_intermediate(
+                f"{aa_codon}-dists-exp"
+            )
+            for aa_codon in ("aa", "codon")
+        }
 
         d_scale = 1e3
         s_scale = 0.25
         alpha = 0.5
-        mds_args = dict(
+        mds = manifold.MDS(
             n_components=2,
             metric=True,
             n_init=10,
@@ -390,19 +395,24 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
             n_jobs=-1,
             random_state=42,
         )
-        mds = manifold.MDS(**mds_args)
 
-        for ss_type in SS_TYPES:
-            LOGGER.info(f"Plotting pointwise MDS rainbows for {ss_type}...")
-            mu_d2 = np.real(cdists_pointwise[ss_type][0])
-            std_d2 = np.imag(cdists_pointwise[ss_type][0])
+        # Configure plotting a bit differently for AA and codon rainbow plots
+        group_labels = {"aa": ACIDS, "codon": [aac[0] for aac in AA_CODONS]}
+        point_labels = {"aa": list(ACIDS_1TO1AND3.values()), "codon": AA_CODONS}
+        with_legend = {"aa": False, "codon": True}
+
+        for ss_type, aa_codon in it.product(SS_TYPES, cdists_pointwise.keys()):
+            LOGGER.info(f"Plotting {aa_codon} pointwise MDS rainbows for {ss_type}...")
+            mu_d2 = np.real(cdists_pointwise[aa_codon][ss_type][0])
+            std_d2 = np.imag(cdists_pointwise[aa_codon][ss_type][0])
 
             # Compute correction for distance estimate
-            S = np.zeros((N_CODONS, 1), dtype=np.float32)
-            D = np.zeros((N_CODONS, N_CODONS), dtype=np.float32)
-            for i in range(N_CODONS):
+            N = mu_d2.shape[0]
+            S = np.zeros((N, 1), dtype=np.float32)
+            D = np.zeros((N, N), dtype=np.float32)
+            for i in range(N):
                 S[i] = np.sqrt(0.25 * mu_d2[i, i])
-                for j in range(N_CODONS):
+                for j in range(N):
                     D[i, j] = np.sqrt(
                         mu_d2[i, j] - 0.5 * mu_d2[i, i] - 0.5 * mu_d2[j, j]
                     )
@@ -413,19 +423,20 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
 
             # Plot
             rainbow_data = np.hstack((X, S, S))
-            group_labels = [aac[0] for aac in AA_CODONS]
-            point_labels = AA_CODONS
-            fig_file = self.out_dir.joinpath("rainbow-mds", f"{ss_type}.pdf")
+            fig_file = self.out_dir.joinpath(
+                f"rainbow-mds-{aa_codon}", f"{ss_type}.pdf"
+            )
             pp5.plot.rainbow(
                 rainbow_data,
-                group_labels,
-                point_labels,
+                group_labels=group_labels[aa_codon],
+                point_labels=point_labels[aa_codon],
                 all_groups=ACIDS_1TO1AND3,
                 title=ss_type,
                 alpha=alpha,
                 err_scale=s_scale,
                 error_ellipse=True,
                 normalize=True,
+                with_groups_legend=with_legend[aa_codon],
                 outfile=fig_file,
             )
 
