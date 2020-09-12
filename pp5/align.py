@@ -9,6 +9,7 @@ import signal
 import logging
 import tarfile
 import tempfile
+import warnings
 import contextlib
 import subprocess
 from typing import Tuple, Union, Iterable, Optional
@@ -16,10 +17,14 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 import pandas as pd
-from Bio import SeqIO, AlignIO
+from Bio import SeqIO, AlignIO, BiopythonExperimentalWarning
 from tqdm import tqdm
 from Bio.Seq import Seq
-from Bio.Align import substitution_matrices
+
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", BiopythonExperimentalWarning)
+    from Bio.Align import substitution_matrices
+
 from Bio.AlignIO import MultipleSeqAlignment as MSA
 from Bio.Alphabet import generic_protein
 from Bio.SeqRecord import SeqRecord
