@@ -343,6 +343,7 @@ def rainbow(
     error_ellipse=False,
     normalize=False,
     err_scale: float = 1.0,
+    with_groups_legend=True,
     ax: Axes = None,
     fig_size: Tuple[int, int] = None,
     style=PP5_MPL_STYLE,
@@ -354,37 +355,40 @@ def rainbow(
     (1) an ellipse centered at the location of the point (the width of which could
     represent e.g. confidence intervals); or (2) a point with horizontal and vertical
     error bars. The color of the ellipse/bars denotes the group the point belongs to.
+
     :param data: List of tuples (x,y,e1,e2) where (x,y) is the point location
-    and (e1,e2) its horizontal and vertical errors (e.g. std).
-    The e2 is optional, and if omitted will be set equal to e1.
-    Note that all tuples must either include e2 or not.
+        and (e1,e2) its horizontal and vertical errors (e.g. std).
+        The e2 is optional, and if omitted will be set equal to e1.
+        Note that all tuples must either include e2 or not.
     :param group_labels: The name of the group each point belongs to.
-    Should be same length as data.
+        Should be same length as data.
     :param point_labels: A string to print inside the ellipse of each point
-    to display additional data about it. Should be same length as data.
+        to display additional data about it. Should be same length as data.
     :param all_groups: Names of all possible groups. If None, then the set
-    of group names in the group_labels will be used.
+        of group names in the group_labels will be used.
     :param xlabel: x-axis label.
     :param ylabel: y-axis label.
     :param title: Axis title.
     :param cmap: Colormap to use. Will be discretized evenly so that a
-    different color is assigned to each group. By default assigns the
-    colors of the rainbow!
+        different color is assigned to each group. By default assigns the
+        colors of the rainbow!
     :param alpha: Transparency level of the ellipses. Should be in [0, 1].
     :param with_regression: If true, a simple linear regression line will be
-    calculated and plotted on the data, with a correlation coefficient shown.
+        calculated and plotted on the data, with a correlation coefficient shown.
     :param error_ellipse: Whether to plot each point as a dot with errorbars (False)
-    or as an Ellipse with error radii (True).
+        or as an Ellipse with error radii (True).
     :param normalize: If True, each data column will be normalized to dynamic range
-    [0,1]. The errors will then be normalized by the same normalization factor.
+        [0,1]. The errors will then be normalized by the same normalization factor.
     :param err_scale: Scale factor to apply to the errors to reduce
-    overlap. Applied after normalization.
+        overlap. Applied after normalization.
     :param ax: Axis to plot on.
+    :param with_groups_legend: Whether to include a legend with one entry per group.
+        It will be populated from the data in all_groups.
     :param fig_size: Size of figure to create if no axis given.
     :param style: Style name or style file path.
     :param outfile: Optional path to write output figure to.
     :return: If figure was written to file, return nothing. Otherwise
-    returns Tuple of figure, axes objects.
+        returns Tuple of figure, axes objects.
     """
     assert len(data) == len(group_labels) > 0
 
@@ -454,7 +458,7 @@ def rainbow(
                     ms=1.5,
                 )
             if point_labels is not None:
-                ax.text(x, y, point_labels[i], fontsize=4)
+                ax.text(x, y, point_labels[i], fontsize=6)
 
         if patch_list:
             pc = mpl.collections.PatchCollection(patch_list, match_original=True)
@@ -497,7 +501,8 @@ def rainbow(
         ax.set_xticks(xyticks), ax.set_yticks(xyticks)
         ax.grid()
         ax.set_xlabel(xlabel), ax.set_ylabel(ylabel), ax.set_title(title)
-        ax.legend(handles=legend_handles, loc="center left", fontsize="x-small")
+        if with_groups_legend:
+            ax.legend(handles=legend_handles, loc="center left", fontsize="x-small")
         ax.set_aspect("equal")
         fig.tight_layout()
 
