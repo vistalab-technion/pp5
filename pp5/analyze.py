@@ -1827,6 +1827,29 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # and imag is sigma.
         self._dump_intermediate("codon-dists", codon_dists)
 
+        # Apply correction to distance estimates based on the measured variance.
+        ii, jj = np.triu_indices(N_CODONS, k=1)  # k=1 means don't include main diagonal
+        for group_idx, _ in df_groups:
+            d2_mat = codon_dists[group_idx]
+            d2_mu, d2_sigma = np.real(d2_mat), np.imag(d2_mat)
+
+            # Correction: delta12 = d12 - 0.5 * (d11 + d22)
+            d2_mu[ii, jj] = d2_mu[ii, jj] - 0.5 * (d2_mu[ii, ii] + d2_mu[jj, jj])
+            d2_mu[jj, ii] = d2_mu[ii, jj]
+
+            codon_dists[group_idx] = d2_mu + 1j * d2_sigma
+
+            # TODO: This correction procedure is naïve, we'll need to replace it with
+            #       fitting a metric.
+            if np.any(d2_mu < 0):
+                LOGGER.warning(
+                    f"NEGATIVE corrected d^2 for {group_idx}, min={np.nanmin(d2_mu)}, "
+                    f"neg_avg={np.nanmean(d2_mu[d2_mu<0])}"
+                )
+
+        # Dump corrected version
+        self._dump_intermediate("codon-dists-corrected", codon_dists)
+
         return {"group_sizes": group_sizes}
 
     def _plot_results(self, pool: mp.pool.Pool):
@@ -1834,24 +1857,28 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         async_results = []
 
         # Expected codon dists
-        codon_dists = self._load_intermediate("codon-dists", True)
-        if codon_dists is not None:
+        for result_name in ("codon-dists", "codon-dists-corrected"):
+            codon_dists = self._load_intermediate(result_name, True)
+            if codon_dists is None:
+                continue
             for group_idx, d2_matrix in codon_dists.items():
+                d2_mu, d2_sigma = np.real(d2_matrix), np.imag(d2_matrix)
                 # When plotting, use d instead of d^2 for better dynamic range.
-                d_matrix = np.sqrt(d2_matrix)
-                args = (group_idx, [d_matrix])
+                d_mu = np.sqrt(d2_mu)
+
                 async_results.append(
                     pool.apply_async(
                         PointwiseCodonDistanceAnalyzer._plot_d2_matrices,
-                        args=args,
                         kwds=dict(
-                            out_dir=self.out_dir.joinpath("codon-dists"),
+                            group_idx=group_idx,
+                            d2_matrices=[d_mu + 1j * d2_sigma],
+                            out_dir=self.out_dir.joinpath(result_name),
                             titles=[""],
                             labels=AA_CODONS,
                             vmin=None,
                             vmax=None,  # should consider scale
                             annotate_mu=True,
-                            plot_std=True,
+                            plot_std=False,
                         ),
                     )
                 )
