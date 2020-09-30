@@ -168,17 +168,33 @@ class BvMMixtureDiscreteDistribution(object):
         return samples
 
     def plot(
-        self, sample_size=0, ramachandran_kw: dict = {}, scatter_kw: dict = {}
+        self,
+        samples: Union[np.ndarray, int] = None,
+        ramachandran_kw: dict = {},
+        scatter_kw: dict = {},
     ) -> Tuple[Figure, Axes]:
         """
         Plots the mixture distribution, optionally with samples from it plotted on top.
-        :param sample_size: Number of samples to plot on top top the distribution.
-            Default is zero, so only distribution is plotted.
+        :param samples: Either the number of samples to plot on top top the
+            distribution, or a (N,2) array of the samples themselves to plot.
+            By default, only the distribution is plotted.
         :param ramachandran_kw: Keyword args for configuring the PDF plot. See the
             documentation of `meth`:pp5.plot.ramachandran:.
         :param scatter_kw: Keyword args for matplotlib's `meth`:plt.scatter:.
         :return: The figure and axes of the plot.
         """
+
+        if isinstance(samples, np.ndarray):
+            if not (np.ndim(samples) == 2 and samples.shape[1] == 2):
+                raise ValueError("Invalid shape for samples. Should be (N, 2).")
+        elif isinstance(samples, int):
+            if samples > 0:
+                samples = self.sample(n=samples)
+            else:
+                samples = None
+        else:
+            if samples is not None:
+                raise ValueError("Unsupported type for samples")
 
         # Set defaults and override with user prefs
         ramachandran_kw = {**dict(grid_2pi=self.two_pi, figsize=4), **ramachandran_kw}
@@ -189,8 +205,8 @@ class BvMMixtureDiscreteDistribution(object):
         )
         ax: Axes
 
-        if sample_size:
-            samples = np.degrees(self.sample(sample_size))
+        if samples is not None:
+            samples = np.degrees(samples)
             xlim, ylim = ax.get_xlim(), ax.get_ylim()
             scatter = ax.scatter(x=samples[:, 0], y=samples[:, 1], **scatter_kw)
 
