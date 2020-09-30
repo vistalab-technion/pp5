@@ -27,8 +27,10 @@ def ramachandran(
     pdist: Union[ndarray, List[ndarray]],
     legend_label: Union[str, List[str]],
     title: str = None,
+    grid_2pi: bool = False,
     ax: Axes = None,
     style: str = PP5_MPL_STYLE,
+    figsize: float = None,
     outfile: Union[Path, str] = None,
     **colormesh_kw,
 ) -> Optional[Tuple[Figure, Axes]]:
@@ -42,8 +44,10 @@ def ramachandran(
     :param legend_label: Label for legend. Can be a list with the same
     number of elements as pdist.
     :param title: Optional title for axes.
+    :param grid_2pi: Whether the data grid is [0, 2pi) (True) or [-pi, pi) (False, default).
     :param ax: Axes to plot onto. If None, a new figure will be created.
     :param style: Matplotlib style to apply (name or filename).
+    :param figsize: Size in inches of figure in both directions. None means use default.
     :param colormesh_kw: Extra keyword args for matplotlib's pcolormesh()
     function.
     :param outfile: Optional path to write output figure to.
@@ -65,12 +69,14 @@ def ramachandran(
 
     with mpl.style.context(style, after_reset=False):
         if ax is None:
-            fig, ax = plt.subplots(1, 1)
+            figsize = (figsize,) * 2 if figsize is not None else None
+            fig, ax = plt.subplots(1, 1, figsize=figsize)
         else:
             fig, ax = ax.figure, ax
 
         n_bins = p.shape[0]
-        grid = np.linspace(-180.0, 180, endpoint=False, num=n_bins)
+        grid_range = (0.0, 360.0) if grid_2pi else (-180.0, 180.0)
+        grid = np.linspace(*grid_range, endpoint=False, num=n_bins)
         colormesh_args = dict(shading="gouraud")
         colormesh_args.update(colormesh_kw)
 
@@ -100,7 +106,7 @@ def ramachandran(
 
         ax.set_xlabel(r"$\varphi$")
         ax.set_ylabel(r"$\psi$")
-        ticks = np.linspace(-180, 180, endpoint=True, num=7)
+        ticks = np.linspace(*grid_range, endpoint=True, num=7)
         ax.set_xticks(ticks)
         ax.set_yticks(ticks)
         ax.grid()
