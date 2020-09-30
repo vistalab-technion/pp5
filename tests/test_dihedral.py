@@ -11,7 +11,6 @@ from Bio.PDB import PPBuilder
 
 import pymol.cmd as pymol
 
-import tests
 from pp5 import dihedral
 from pp5.dihedral import Dihedral, DihedralAnglesEstimator
 from pp5.external_dbs import pdb
@@ -575,7 +574,7 @@ class TestCentroids:
             warmup_rounds=1,
         )
 
-    def test_benchmark_circular_controid(self, benchmark):
+    def test_benchmark_circular_centroid(self, benchmark):
         benchmark.pedantic(
             Dihedral.circular_centroid,
             args=random_angles(1000),
@@ -583,15 +582,3 @@ class TestCentroids:
             iterations=50,
             warmup_rounds=1,
         )
-
-
-class TestDihedralKDE(object):
-    def setup(self):
-        self.kde = dihedral.DihedralKDE()
-
-    def test_1(self):
-        phi_psi = np.random.uniform(-np.pi, np.pi, size=(1000, 2))
-        p = self.kde.estimate(phi_psi[:, 0], phi_psi[:, 1])
-
-        assert p.shape == (self.kde.n_bins, self.kde.n_bins)
-        assert p.dtype == self.kde.dtype

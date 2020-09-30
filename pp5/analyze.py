@@ -32,8 +32,9 @@ from pp5.codons import (
     codon2aac,
 )
 from pp5.collect import ParallelDataCollector
-from pp5.dihedral import Dihedral, DihedralKDE
+from pp5.dihedral import Dihedral
 from pp5.parallel import yield_async_results
+from pp5.vonmises import BvMKernelDensityEstimator
 
 LOGGER = logging.getLogger(__name__)
 
@@ -1331,7 +1332,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
     @staticmethod
     def _dihedral_kde_single_group(group_idx, df_group, angle_pairs, kde_args):
-        kde = DihedralKDE(**kde_args)
+        kde = BvMKernelDensityEstimator(**kde_args)
 
         # Creates 2D KDE for each angle pair
         dkdes = []
