@@ -15,6 +15,9 @@ UNP_URL_TEMPLATE = r"https://www.uniprot.org/uniprot/{}.txt"
 UNP_REPLACE_TEMPLATE = (
     r"https://www.uniprot.org/uniprot/?query=replaces:{}" r"&format=list"
 )
+UNP_ORG_TEMPLACE = (
+    r"https://www.uniprot.org/uniprot/?query=gene:{}" r"&format=list"
+)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -31,6 +34,22 @@ def replacement_ids(unp_id: str):
     ids = replaces.text.split()
     if not ids:
         raise ValueError(f"UNP id {unp_id} has no replacements")
+    return ids
+
+
+def unp_ids_from_orf(orf_id: str):
+    """
+    Retrieves uniprot IDs corresponding to a gene ID.
+    :param orf_id: ORF ID of a gene.
+    :param reviewed: Whether to filter only reviewed entries.
+    :return: A list of PDB ids corresponding to the gene.
+    """
+    orf_url = UNP_ORG_TEMPLACE.format(orf_id)
+    orf = requests.get(orf_url)
+    orf.raise_for_status()
+    ids = orf.text.split()
+    if not ids:
+        raise ValueError(f"ORF id {orf_id} has no unp IDs")
     return ids
 
 
