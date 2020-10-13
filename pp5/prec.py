@@ -531,6 +531,7 @@ class ProteinRecord(object):
         :param tag: Optional extra tag to add to filename.
         :return: The path to the written file.
         """
+        os.makedirs(out_dir, exist_ok=True)
         filepath = pdb_tagged_filepath(self.pdb_id, out_dir, "csv", tag)
         df = self.to_dataframe()
         df.to_csv(
