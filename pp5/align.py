@@ -26,7 +26,6 @@ with warnings.catch_warnings():
     from Bio.Align import substitution_matrices
 
 from Bio.AlignIO import MultipleSeqAlignment as MSA
-from Bio.Alphabet import generic_protein
 from Bio.SeqRecord import SeqRecord
 from Bio.Align.Applications import ClustalOmegaCommandline
 
@@ -466,7 +465,9 @@ class ProteinBLAST(object):
         :return: A dataframe with the BLAST results. Column names are the
         non-id keys in BLAST_OUTPUT_FIELDS, and the index is the target_pdb_id.
         """
-        seqrec = SeqRecord(Seq(seq, alphabet=generic_protein), id=seq_id)
+        seqrec = SeqRecord(
+            Seq(seq), id=seq_id, annotations={"molecule_type": "protein"}
+        )
         return self._run_blastp(seqrec)
 
     def _run_blastp(self, seqrec: SeqRecord):
