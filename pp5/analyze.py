@@ -1424,7 +1424,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # AA distance matrix and average AA KDEs
         # First, we compute a weighted sum of the codon dkdes to obtain AA dkdes.
         tstart = time.time()
-        bs_aa_dkdes = {aac[0]: [0] * len(angle_pairs) for aac in bs_codon_dkdes.keys()}
+        bs_aa_dkdes = {aac[0]: None for aac in bs_codon_dkdes.keys()}
         for aa in ACIDS:
             # Total number of samples in from all subgroups (codons) of this AA
             n_aa_samples = subgroup_sizes[aa]
@@ -1436,6 +1436,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
                 # Empirical probability of this codon subgroup within it's AA
                 p = subgroup_sizes[aac] / n_aa_samples
+
+                # Initialize KDE of each angle pair to zero so we can accumulate
+                if bs_aa_dkdes[aa] is None:
+                    bs_aa_dkdes[aa] = [0] * len(angle_pairs)
 
                 # Weighted sum of codon dkdes belonging to the current AA
                 for pair_idx in range(len(angle_pairs)):
