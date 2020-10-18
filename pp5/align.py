@@ -504,7 +504,7 @@ class ProteinBLAST(object):
             header=None,
             engine="c",
             comment="#",
-            names=self.BLAST_OUTPUT_FIELDS.keys(),
+            names=list(self.BLAST_OUTPUT_FIELDS.keys()),
             converters=self.BLAST_OUTPUT_CONVERTERS,
             # Drop the query id column and make target id the index
             index_col="target_pdb_id",
