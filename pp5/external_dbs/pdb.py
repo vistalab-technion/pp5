@@ -44,6 +44,10 @@ PDB_TO_UNP_URL_TEMPLATE = (
     r"?pdbids={}&customReportColumns=uniprotAcc"
     r"&service=wsfile&format=csv"
 )
+
+# New API
+PDB_SEARCH_API_URL = "https://search.rcsb.org/rcsbsearch/v1/query"
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -794,6 +798,36 @@ class PDBResolutionQuery(PDBQuery):
             line(self.TAG_RES_MAX, self.max_res)
 
         return doc.getvalue()
+
+
+class PDBSourceTaxonomyIdQuery(PDBQuery):
+    """
+    Query for PDB structures with a specified host organism, specified as a taxonomy ID.
+    """
+
+    def __init__(
+        self, taxonomy_id: int = pp5.get_config("DEFAULT_SOURCE_TAXID"), t: int = 1,
+    ):
+        self.taxonomy_id = taxonomy_id
+        self.t = t
+
+    SOURCE_TAX_ID_QUERY_TYPE = "org.pdb.query.simple.TreeEntityQuery"
+    TAG_TAXID = "n"
+    TAG_T = "t"  # Don't know what this tag is, but it's required.
+
+    def to_xml(self):
+        doc, tag, text, line = yattag.Doc().ttl()
+
+        with tag(self.TAG_QUERY):
+            line(self.TAG_QUERY_TYPE, self.SOURCE_TAX_ID_QUERY_TYPE)
+            line(self.TAG_DESCRIPTION, self.description())
+            line(self.TAG_TAXID, self.taxonomy_id)
+            line(self.TAG_T, self.t)
+
+        return doc.getvalue()
+
+    def description(self):
+        return f"Source organism TaxonomyID={self.taxonomy_id}"
 
 
 class PDBExpressionSystemQuery(PDBQuery):

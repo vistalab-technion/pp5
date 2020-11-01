@@ -294,6 +294,15 @@ class TestPDBQueries:
 
         assert len(pdb_ids) > 17100
 
+    def test_source_organism_taxonomy_id_query(self):
+        expr_sys = "Escherichia coli BL21(DE3)"
+        comp_type = "equals"
+
+        query = pdb.PDBSourceTaxonomyIdQuery(taxonomy_id=28384)
+        pdb_ids = query.execute()
+
+        assert len(pdb_ids) >= 7941
+
     def test_composite_query(self):
         query = pdb.PDBCompositeQuery(
             pdb.PDBExpressionSystemQuery("Escherichia coli BL21(DE3)"),
