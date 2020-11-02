@@ -16,7 +16,7 @@ import pp5
 from pp5.prec import ProteinRecord, ResidueRecord
 from pp5.align import BLOSUM80
 from pp5.align import PYMOL_SA_GAP_SYMBOLS as PSA_GAP
-from pp5.align import StructuralAlignment
+from pp5.align import ProteinBLAST, StructuralAlignment
 from pp5.utils import ProteinInitError
 from pp5.codons import UNKNOWN_AA, UNKNOWN_CODON
 from pp5.dihedral import Dihedral
@@ -51,9 +51,9 @@ class ProteinGroup(object):
     def from_pdb_ref(
         cls,
         ref_pdb_id: str,
+        resolution_cutoff: float = pp5.get_config("DEFAULT_RES"),
         expr_sys: Optional[str] = pp5.get_config("DEFAULT_EXPR_SYS"),
         source_taxid: Optional[int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
-        resolution_cutoff: Optional[float] = pp5.get_config("DEFAULT_RES"),
         blast_e_cutoff: float = 1.0,
         blast_identity_cutoff: float = 30.0,
         **kw_for_init,
@@ -66,12 +66,12 @@ class ProteinGroup(object):
         query.
 
         :param ref_pdb_id: PDB ID of reference structure. Should include chain.
+        :param resolution_cutoff: Resolution query or a number specifying the
+            maximal resolution value.
         :param expr_sys: Expression system query object or a a string
             containing the organism name.
         :param source_taxid: Source organism query object, or an int representing
             the desired taxonomy id.
-        :param resolution_cutoff: Resolution query or a number specifying the
-            maximal resolution value.
         :param blast_e_cutoff: Expectation value cutoff parameter for BLAST.
         :param blast_identity_cutoff: Identity cutoff parameter for BLAST.
         :param kw_for_init: Keyword args for ProteinGroup.__init__()
@@ -81,31 +81,55 @@ class ProteinGroup(object):
         ref_pdb_id = ref_pdb_id.upper()
         ref_pdb_base_id, ref_chain = pdb.split_id(ref_pdb_id)
         if not ref_chain:
-            raise ValueError("Must provide chain for reference")
+            raise ProteinInitError("Must provide chain for reference")
+        if not resolution_cutoff:
+            raise ProteinInitError("Must specify a resolution cutoff")
 
-        queries = []
+        queries = [pdb.PDBResolutionQuery(max_res=resolution_cutoff)]
         if expr_sys:
             queries.append(pdb.PDBExpressionSystemQuery(expr_sys))
         if source_taxid:
             queries.append(pdb.PDBSourceTaxonomyIdQuery(source_taxid))
-        if resolution_cutoff:
-            queries.append(pdb.PDBResolutionQuery(max_res=resolution_cutoff))
-        queries.append(
-            pdb.PDBSequenceQuery(
-                pdb_id=ref_pdb_id,
-                e_cutoff=blast_e_cutoff,
-                identity_cutoff=blast_identity_cutoff,
-            )
-        )
         composite_query = pdb.PDBCompositeQuery(*queries)
 
-        pdb_entities = set(composite_query.execute())
+        query_results = set(composite_query.execute())
         LOGGER.info(
-            f"Initializing ProteinGroup for {ref_pdb_id} with "
-            f"{len(pdb_entities)} query results..."
+            f"Got {len(query_results)} query initial results, running BLAST "
+            f"for sequence alignment to reference {ref_pdb_id}..."
         )
 
-        pgroup = cls.from_query_ids(ref_pdb_id, pdb_entities, **kw_for_init)
+        # Run BLAST to only keep structures with a sequence match to the reference
+        blast = ProteinBLAST(
+            evalue_cutoff=blast_e_cutoff,
+            identity_cutoff=blast_identity_cutoff,
+            db_autoupdate_days=7,
+        )
+        df_blast = blast.pdb(ref_pdb_id)
+
+        # BLAST returns PDB ID with chain, while the query returns PDB id without
+        # chain or with entities (depending on query composition).
+        # Need to strip the chain and entity in order to compare query to BLAST results.
+        blast_ids_no_chain = {
+            pdb.split_id(pdb_id)[0]: pdb_id for pdb_id in df_blast.index
+        }
+        query_ids_no_entity = [
+            pdb.split_id(pdb_entity)[0] for pdb_entity in query_results
+        ]
+
+        # Valid IDs are both in the query results (resolution, etc) AND are a
+        # sequence match to the reference
+        valid_pdb_ids = set.intersection(
+            set(blast_ids_no_chain.keys()), set(query_ids_no_entity)
+        )
+        # For the valid ids, get each PDB ID with its chain
+        valid_pdb_entities = [blast_ids_no_chain[pdb_id] for pdb_id in valid_pdb_ids]
+
+        LOGGER.info(
+            f"Initializing ProteinGroup for {ref_pdb_id} with "
+            f"{len(valid_pdb_entities)} query structures: "
+            f"{valid_pdb_entities}"
+        )
+        pgroup = cls.from_query_ids(ref_pdb_id, valid_pdb_entities, **kw_for_init)
         LOGGER.info(
             f"{pgroup}: "
             f"#unp_ids={pgroup.num_unique_proteins} "
