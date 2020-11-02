@@ -346,6 +346,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         evalue_cutoff: float = 1.0,
         identity_cutoff: float = 30.0,
         b_max: float = 30.0,
+        pre_p_reject: bool = False,
         out_dir=pp5.out_subdir("pgroup-collected"),
         pgroup_out_dir=pp5.out_subdir("pgroup"),
         write_pgroup_csvs=True,
@@ -361,25 +362,27 @@ class ProteinGroupCollector(ParallelDataCollector):
         :param expr_sys: Expression system name.
         :param source_taxid: Taxonomy ID of source organism.
         :param evalue_cutoff: Maximal expectation value allowed for BLAST
-        matches when searching for proteins to include in pgroups.
+            matches when searching for proteins to include in pgroups.
         :param identity_cutoff: Minimal percent sequence identity
-        allowed for BLAST matches when searching for proteins to include in
-        pgroups.
+            allowed for BLAST matches when searching for proteins to include in
+            pgroups.
         :param b_max: Maximal b-factor a residue can have
-        (backbone-atom average) in order for it to be included in a match
-        group. None means no limit.
+            (backbone-atom average) in order for it to be included in a match
+            group. None means no limit.
+        :param pre_p_reject: Whether to reject residue matches in pgroups, which are
+            before a Proline residue (in the AA sequence order)
         :param out_dir: Output directory for collection CSV files.
         :param pgroup_out_dir: Output directory for pgroup CSV files. Only
-        relevant if write_pgroup_csvs is True.
+            relevant if write_pgroup_csvs is True.
         :param write_pgroup_csvs: Whether to write each pgroup's CSV files.
-        Even if false, the collection files will still be writen.
+            Even if false, the collection files will still be writen.
         :param out_tag: Extra tag to add to the output file names.
         :param  ref_file: Path of collector CSV file with references.
-        Allows to skip the first and second collection steps (finding PDB
-        IDs for the reference structures) and immediately collect
-        ProteinGroups for the references in the file.
+            Allows to skip the first and second collection steps (finding PDB
+            IDs for the reference structures) and immediately collect
+            ProteinGroups for the references in the file.
         :param async_timeout: Timeout in seconds for each worker
-        process result, or None for no timeout.
+            process result, or None for no timeout.
         :param create_zip: Whether to create a zip file with all output files.
         """
         super().__init__(
@@ -400,6 +403,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
         self.b_max = b_max
+        self.pre_p_reject = pre_p_reject
 
         self.pgroup_out_dir = pgroup_out_dir
         self.write_pgroup_csvs = write_pgroup_csvs
@@ -538,7 +542,15 @@ class ProteinGroupCollector(ParallelDataCollector):
         for i, ref_pdb_id in enumerate(ref_pdb_ids):
             idx = (i, len(ref_pdb_ids))
             pgroup_out_dir = self.pgroup_out_dir if self.write_pgroup_csvs else None
-            args = (ref_pdb_id, blast, self.b_max, pgroup_out_dir, self.out_tag, idx)
+            args = (
+                ref_pdb_id,
+                blast,
+                self.b_max,
+                self.pre_p_reject,
+                pgroup_out_dir,
+                self.out_tag,
+                idx,
+            )
             r = pool.apply_async(_collect_single_pgroup, args=args)
             async_results.append(r)
 
@@ -751,13 +763,15 @@ def _collect_single_pgroup(
     ref_pdb_id: str,
     blast: ProteinBLAST,
     b_max: float,
+    pre_p_reject: bool,
     out_dir: Optional[Path],
     out_tag: str,
     idx: tuple,
 ) -> Optional[dict]:
     try:
         LOGGER.info(
-            f"Creating ProteinGroup for {ref_pdb_id} " f"({idx[0] + 1}/{idx[1]})"
+            f"Creating ProteinGroup for {ref_pdb_id}, {b_max=}, {pre_p_reject=} "
+            f"({idx[0] + 1}/{idx[1]})"
         )
 
         # Run BLAST to find query structures for the pgroup
@@ -770,6 +784,7 @@ def _collect_single_pgroup(
             ref_pdb_id,
             query_pdb_ids=df_blast.index,
             b_max=b_max,
+            pre_p_reject=pre_p_reject,
             parallel=False,
             prec_cache=True,
         )
