@@ -155,6 +155,7 @@ class ProteinGroup(object):
         sa_max_all_atom_rmsd: float = 2.0,
         sa_min_aligned_residues: int = 50,
         b_max: float = math.inf,
+        pre_p_reject: bool = False,
         angle_aggregation="circ",
         strict_pdb_xref=True,
         strict_unp_xref=False,
@@ -167,35 +168,37 @@ class ProteinGroup(object):
         :param ref_pdb_id: Reference structure PDB ID.
         :param query_pdb_ids: List of PDB IDs of query structures.
         :param context_len: Number of stars required around an aligmed AA
-        pair to consider that pair for a match.
+            pair to consider that pair for a match.
         :param prec_cache:  Whether to load ProteinRecords from cache if
-        available.
+            available.
         :param sa_outlier_cutoff: RMS cutoff for determining outliers in
-        structural alignment.
+            structural alignment.
         :param sa_max_all_atom_rmsd: Maximal allowed average RMSD
-        after structural alignment to include a structure in a group.
+            after structural alignment to include a structure in a group.
         :param sa_min_aligned_residues: Minimal number of aligned residues (stars)
         required to include a structure in a group.
         :param b_max: Maximal b-factor a residue can have
-        (backbone-atom average) in order for it to be included in a match
-        group.
+            (backbone-atom average) in order for it to be included in a match
+            group.
+        :param pre_p_reject: Whether to reject match if it's before a Proline residue
+            (in the AA sequence order)
         :param angle_aggregation: Method for angle-aggregation of matching
-        query residues of each reference residue. Options are
-        'circ' - Circular mean;
-        'frechet' - Frechet centroid;
-        'max_res' - No aggregation, take angle of maximal resolution structure
+            query residues of each reference residue. Options are
+            'circ' - Circular mean;
+            'frechet' - Frechet centroid;
+            'max_res' - No aggregation, take angle of maximal resolution structure
         :param strict_pdb_xref: Whether to require that the given PDB ID
-        maps uniquely to only one Uniprot ID.
+            maps uniquely to only one Uniprot ID.
         :param strict_unp_xref: Whether to require that there exist a PDB
-        cross-ref for the given Uniprot ID.
+            cross-ref for the given Uniprot ID.
         :param parallel: Whether to process query structures in parallel using
-        the global worker process pool.
+            the global worker process pool.
         """
         self.ref_pdb_id = ref_pdb_id.upper()
         self.ref_pdb_base_id, self.ref_pdb_chain = pdb.split_id(ref_pdb_id)
         if not self.ref_pdb_chain:
             raise ProteinInitError(
-                "ProteinGroup reference structure must " "specify the chain id."
+                "ProteinGroup reference structure must specify the chain id."
             )
 
         ref_pdb_dict = pdb.pdb_dict(self.ref_pdb_base_id)
@@ -213,6 +216,7 @@ class ProteinGroup(object):
         self.sa_max_all_atom_rmsd = sa_max_all_atom_rmsd
         self.sa_min_aligned_residues = sa_min_aligned_residues
         self.b_max = b_max
+        self.pre_p_reject = pre_p_reject
         self.prec_cache = prec_cache
         self.strict_pdb_xref = strict_pdb_xref
         self.strict_unp_xref = strict_unp_xref
@@ -241,7 +245,7 @@ class ProteinGroup(object):
 
             # Make sure all query ids have either chain or entity
             if not all(map(lambda x: x[1] or x[2], split_ids)):
-                raise ValueError("Must specify chain or entity for all " "structures")
+                raise ValueError("Must specify chain or entity for all structures")
 
             # If there's no entry for the reference, add it
             if not any(map(lambda x: x[0] == self.ref_pdb_base_id, split_ids)):
@@ -669,7 +673,7 @@ class ProteinGroup(object):
                 strict_unp_xref=self.strict_unp_xref,
             )
         except ProteinInitError as e:
-            LOGGER.error(f"{self}: Failed to create prec for query structure:" f" {e}")
+            LOGGER.error(f"{self}: Failed to create prec for query structure: {e}")
             return None
 
         alignment = self._struct_align_filter(q_prec)
@@ -740,6 +744,9 @@ class ProteinGroup(object):
             if r_res.codon == UNKNOWN_CODON or q_res.codon == UNKNOWN_CODON:
                 continue
             if r_res.bfactor > self.b_max or q_res.bfactor > self.b_max:
+                continue
+            if self.pre_p_reject and r_seq_pymol[i + 1] == "P":
+                # We optionally reject any pre-Proline matches
                 continue
 
             # Make sure we got from i to the correct residues in the precs
