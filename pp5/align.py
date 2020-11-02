@@ -145,15 +145,34 @@ def multiseq_align(
 
 
 class StructuralAlignment(JSONCacheableMixin, object):
+    """
+    Represents a Structural Alignment between two protein structures.
+    """
+
     def __init__(
-        self, pdb_id_1: str, pdb_id_2: str, outlier_rejection_cutoff: float = 2.0
+        self,
+        pdb_id_1: str,
+        pdb_id_2: str,
+        outlier_rejection_cutoff: float = 2.0,
+        backbone_only=False,
     ):
+        """
+        Aligns two structures and initializes an alignment object.
+
+        :param pdb_id_1: PDB ID of first structure. May include a chain.
+        :param pdb_id_2: PDB ID of second structure. May include a chain.
+        :param outlier_rejection_cutoff: Outlier rejection cutoff in RMS,
+            determines which residues are considered a structural match (star).
+        :param backbone_only: Whether to only align using backbone atoms from the two
+            structures.
+        """
         self.pdb_id_1 = pdb_id_1.upper()
         self.pdb_id_2 = pdb_id_2.upper()
         self.outlier_rejection_cutoff = outlier_rejection_cutoff
+        self.backbone_only = backbone_only
 
         self.rmse, self.n_stars, mseq = self.structural_align(
-            pdb_id_1, pdb_id_2, outlier_rejection_cutoff
+            pdb_id_1, pdb_id_2, outlier_rejection_cutoff, backbone_only
         )
 
         self.aligned_seq_1 = str(mseq[0].seq)
@@ -233,23 +252,27 @@ class StructuralAlignment(JSONCacheableMixin, object):
 
     @staticmethod
     def structural_align(
-        pdb_id1: str, pdb_id2: str, outlier_rejection_cutoff: float = 2.0
+        pdb_id1: str,
+        pdb_id2: str,
+        outlier_rejection_cutoff: float = 2.0,
+        backbone_only=False,
     ) -> Tuple[float, int, MSA]:
         """
         Aligns two structures using PyMOL, both in terms of pairwise sequence
         alignment and in terms of structural superposition.
-        :param pdb_id1: First structure id, which can include the chain id (e.g.
-        '1ABC:A').
+        :param pdb_id1: First structure id, which can include the chain id (e.g. '1ABC:A').
         :param pdb_id2: Second structure id, can include the chain id.
         :param outlier_rejection_cutoff: Outlier rejection cutoff in RMS,
-        determines which residues are considered a structural match (star).
+            determines which residues are considered a structural match (star).
+        :param backbone_only: Whether to only align using backbone atoms from the two
+            structures.
         :return: Tuple of (rmse, n_stars, mseq), where rmse is in Angstroms and
-        represents the average structural alignment error; n_stars is the number of
-        residues aligned within the cutoff (non outliers, marked with a star in
-        the clustal output); mseq is a multiple-sequence alignment object with the
-        actual alignment info of the two sequences.
-        Note that mseq.column_annotations['clustal_consensus'] contains the clustal
-        "stars" output.
+            represents the average structural alignment error; n_stars is the number of
+            residues aligned within the cutoff (non outliers, marked with a star in
+            the clustal output); mseq is a multiple-sequence alignment object with the
+            actual alignment info of the two sequences.
+            Note that mseq.column_annotations['clustal_consensus'] contains the clustal
+            "stars" output.
         """
         align_obj_name = None
         align_ids = []
@@ -267,9 +290,19 @@ class StructuralAlignment(JSONCacheableMixin, object):
                 # object for each chain.
                 if chain_id:
                     pymol.split_chains(object_id)
-                    align_ids.append(f"{object_id}_{chain_id}")
+                    object_id = f"{object_id}_{chain_id}"
+
+                # Create a selection of the backbone if we're aligning only backbones
+                # To to this we create a selection containing only atoms with the
+                # names N, C, CA
+                if backbone_only:
+                    align_selection_id = f"{object_id}_bb"
+                    selector = f"{object_id} and (name N+C+CA)"
+                    pymol.select(align_selection_id, selector)
                 else:
-                    align_ids.append(object_id)
+                    align_selection_id = object_id
+
+                align_ids.append(align_selection_id)
 
             # Compute the structural alignment
             src, tgt = align_ids
@@ -299,7 +332,7 @@ class StructuralAlignment(JSONCacheableMixin, object):
 
             LOGGER.info(
                 f"Structural alignment {pdb_id1} to {pdb_id2}, "
-                f"RMSE={rmse:.2f}\n"
+                f"RMSE={rmse:.2f}, {n_aligned_atoms=}, {n_aligned_residues=}\n"
                 f"{str(mseq[0].seq)}\n"
                 f"{stars_seq}\n"
                 f"{str(mseq[1].seq)}"
@@ -319,9 +352,10 @@ class StructuralAlignment(JSONCacheableMixin, object):
                 base_id, chain_id = pdb.split_id(pdb_id)
                 pymol.delete(f"{base_id}*")
 
-            # Remove alignment object in PyMOL
+            # Remove alignment objects in PyMOL
             if align_obj_name:
                 pymol.delete(align_obj_name)
+                pymol.delete("_align*")
 
             # Remove temporary file with the sequence alignment
             if tmp_outfile and tmp_outfile.is_file():
