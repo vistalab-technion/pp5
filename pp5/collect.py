@@ -259,7 +259,8 @@ class ProteinRecordCollector(ParallelDataCollector):
     def __init__(
         self,
         resolution: float,
-        expr_sys: str = ProteinGroup.DEFAULT_EXPR_SYS,
+        expr_sys: str = pp5.get_config("DEFAULT_EXPR_SYS"),
+        source_taxid: int = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         prec_init_args=None,
         out_dir: Path = pp5.out_subdir("prec-collected"),
         prec_out_dir: Path = pp5.out_subdir("prec"),
@@ -271,6 +272,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         in the local cache folder. Optionally also writes them to CSV.
         :param resolution: Resolution cutoff value in Angstroms.
         :param expr_sys: Expression system name.
+        :param source_taxid: Taxonomy ID of source organism.
         :param out_dir: Output folder for collected metadata.
         :param prec_out_dir: Output folder for prec CSV files.
         :param prec_init_args: Arguments for initializing each ProteinRecord
@@ -280,9 +282,13 @@ class ProteinRecordCollector(ParallelDataCollector):
             process result.
         """
         super().__init__(async_timeout=async_timeout, out_dir=out_dir, create_zip=False)
-        res_query = pdb.PDBResolutionQuery(max_res=resolution)
-        expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys=expr_sys)
-        self.query = pdb.PDBCompositeQuery(res_query, expr_sys_query)
+        queries = []
+        queries.append(pdb.PDBResolutionQuery(max_res=resolution))
+        if expr_sys:
+            queries.append(pdb.PDBExpressionSystemQuery(expr_sys=expr_sys))
+        if source_taxid:
+            queries.append(pdb.PDBSourceTaxonomyIdQuery(taxonomy_id=source_taxid))
+        self.query = pdb.PDBCompositeQuery(*queries)
 
         if prec_init_args:
             self.prec_init_args = prec_init_args
@@ -335,7 +341,8 @@ class ProteinGroupCollector(ParallelDataCollector):
     def __init__(
         self,
         resolution: float,
-        expr_sys: str = ProteinGroup.DEFAULT_EXPR_SYS,
+        expr_sys: str = pp5.get_config("DEFAULT_EXPR_SYS"),
+        source_taxid: int = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         evalue_cutoff: float = 1.0,
         identity_cutoff: float = 30.0,
         b_max: float = 30.0,
@@ -352,6 +359,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         results.
         :param resolution: Resolution cutoff value in Angstroms.
         :param expr_sys: Expression system name.
+        :param source_taxid: Taxonomy ID of source organism.
         :param evalue_cutoff: Maximal expectation value allowed for BLAST
         matches when searching for proteins to include in pgroups.
         :param identity_cutoff: Minimal percent sequence identity
@@ -381,9 +389,13 @@ class ProteinGroupCollector(ParallelDataCollector):
             create_zip=create_zip,
         )
 
-        res_query = pdb.PDBResolutionQuery(max_res=resolution)
-        expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys=expr_sys)
-        self.query = pdb.PDBCompositeQuery(res_query, expr_sys_query)
+        queries = []
+        queries.append(pdb.PDBResolutionQuery(max_res=resolution))
+        if expr_sys:
+            queries.append(pdb.PDBExpressionSystemQuery(expr_sys=expr_sys))
+        if source_taxid:
+            queries.append(pdb.PDBSourceTaxonomyIdQuery(taxonomy_id=source_taxid))
+        self.query = pdb.PDBCompositeQuery(*queries)
 
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff

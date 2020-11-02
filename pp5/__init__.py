@@ -19,7 +19,7 @@ _CONFIG = {
     # Default expression system for PDB queries
     "DEFAULT_EXPR_SYS": "Escherichia Coli",
     # Default expression system for PDB queries
-    "DEFAULT_SOURCE_TAXID": 9606,  # Homo Sapiens
+    "DEFAULT_SOURCE_TAXID": None,  # 9606 is Homo Sapiens
     # Default resolution for PDB queries
     "DEFAULT_RES": 1.8,
 }

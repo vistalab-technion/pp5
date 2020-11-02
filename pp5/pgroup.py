@@ -47,15 +47,13 @@ class ProteinGroup(object):
     structures in the group.
     """
 
-    DEFAULT_EXPR_SYS = pp5.get_config("DEFAULT_EXPR_SYS")
-    DEFAULT_RES = pp5.get_config("DEFAULT_RES")
-
     @classmethod
     def from_pdb_ref(
         cls,
         ref_pdb_id: str,
-        expr_sys_query: Union[str, PDBQuery] = DEFAULT_EXPR_SYS,
-        resolution_query: Union[float, PDBQuery] = DEFAULT_RES,
+        expr_sys: Optional[str] = pp5.get_config("DEFAULT_EXPR_SYS"),
+        source_taxid: Optional[int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
+        resolution_cutoff: Optional[float] = pp5.get_config("DEFAULT_RES"),
         blast_e_cutoff: float = 1.0,
         blast_identity_cutoff: float = 30.0,
         **kw_for_init,
@@ -68,10 +66,12 @@ class ProteinGroup(object):
         query.
 
         :param ref_pdb_id: PDB ID of reference structure. Should include chain.
-        :param expr_sys_query: Expression system query object or a a string
-        containing the organism name.
-        :param resolution_query: Resolution query or a number specifying the
-        maximal resolution value.
+        :param expr_sys: Expression system query object or a a string
+            containing the organism name.
+        :param source_taxid: Source organism query object, or an int representing
+            the desired taxonomy id.
+        :param resolution_cutoff: Resolution query or a number specifying the
+            maximal resolution value.
         :param blast_e_cutoff: Expectation value cutoff parameter for BLAST.
         :param blast_identity_cutoff: Identity cutoff parameter for BLAST.
         :param kw_for_init: Keyword args for ProteinGroup.__init__()
@@ -83,21 +83,21 @@ class ProteinGroup(object):
         if not ref_chain:
             raise ValueError("Must provide chain for reference")
 
-        if isinstance(expr_sys_query, str):
-            expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys_query)
-
-        if isinstance(resolution_query, (int, float)):
-            resolution_query = pdb.PDBResolutionQuery(max_res=resolution_query)
-
-        sequence_query = pdb.PDBSequenceQuery(
-            pdb_id=ref_pdb_id,
-            e_cutoff=blast_e_cutoff,
-            identity_cutoff=blast_identity_cutoff,
+        queries = []
+        if expr_sys:
+            queries.append(pdb.PDBExpressionSystemQuery(expr_sys))
+        if source_taxid:
+            queries.append(pdb.PDBSourceTaxonomyIdQuery(source_taxid))
+        if resolution_cutoff:
+            queries.append(pdb.PDBResolutionQuery(max_res=resolution_cutoff))
+        queries.append(
+            pdb.PDBSequenceQuery(
+                pdb_id=ref_pdb_id,
+                e_cutoff=blast_e_cutoff,
+                identity_cutoff=blast_identity_cutoff,
+            )
         )
-
-        composite_query = pdb.PDBCompositeQuery(
-            expr_sys_query, resolution_query, sequence_query
-        )
+        composite_query = pdb.PDBCompositeQuery(*queries)
 
         pdb_entities = set(composite_query.execute())
         LOGGER.info(
