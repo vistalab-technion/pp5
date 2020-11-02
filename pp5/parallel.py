@@ -7,7 +7,7 @@ import tempfile
 import contextlib
 import multiprocessing as mp
 import multiprocessing.pool
-from typing import T, Any, Dict, List, Tuple, Union, Iterator, Generator, ContextManager
+from typing import Any, Dict, List, Tuple, Union, TypeVar, Generator, ContextManager
 from pathlib import Path
 from multiprocessing.pool import AsyncResult
 
@@ -97,12 +97,15 @@ def pool(name: str, processes=None, context="spawn") -> ContextManager[mp.pool.P
         _remove_workers_dir(base_workers_dl_dir)
 
 
+_T = TypeVar("_T")
+
+
 def yield_async_results(
-    async_results: Union[Dict[T, AsyncResult], List[AsyncResult]],
+    async_results: Union[Dict[_T, AsyncResult], List[AsyncResult]],
     wait_time_sec=0.1,
     max_retries=None,
     re_raise=False,
-) -> Generator[Tuple[T, Any], None, None]:
+) -> Generator[Tuple[_T, Any], None, None]:
     """
 
     Waits for async results to be ready, and yields them.
