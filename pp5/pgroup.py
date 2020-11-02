@@ -801,6 +801,7 @@ class ProteinGroup(object):
                 q_pdb_id,
                 cache=True,
                 outlier_rejection_cutoff=self.sa_outlier_cutoff,
+                backbone_only=True,
             )
         except Exception as e:
             LOGGER.warning(
