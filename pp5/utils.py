@@ -159,6 +159,13 @@ def is_interactive():
     return ipy is not None
 
 
+def is_pytest():
+    """
+    :return: Whether we're currently running inside pytest
+    """
+    return "PYTEST_CURRENT_TEST" in os.environ
+
+
 @contextlib.contextmanager
 def out_redirected(
     stdout_stderr="stdout", to=os.devnull, standard_fds_only=True, no_interactive=True
@@ -174,10 +181,12 @@ def out_redirected(
     """
     assert stdout_stderr in {"stdout", "stderr"}
 
-    # In interactive python, don't redirect by changing file-descriptors
-    # because this will crash the interactive shell (which also uses these
-    # files). Use the regular contextlib context managers.
-    if no_interactive and is_interactive():
+    # In interactive python or in unit tests, don't redirect by changing
+    # file-descriptors # because this will crash the interactive shell
+    # (which also uses these files). In tests, this messed with pytest's capturing of
+    # stdout.
+    # Use the regular contextlib context managers.
+    if no_interactive and (is_interactive() or is_pytest()):
         if stdout_stderr == "stdout":
             redirect_fn = contextlib.redirect_stdout
         else:
