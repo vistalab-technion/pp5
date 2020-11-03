@@ -171,7 +171,7 @@ class StructuralAlignment(JSONCacheableMixin, object):
         self.outlier_rejection_cutoff = outlier_rejection_cutoff
         self.backbone_only = backbone_only
 
-        self.rmse, self.n_stars, mseq = self.structural_align(
+        self.rmse, self.n_stars, mseq = structural_align(
             pdb_id_1, pdb_id_2, outlier_rejection_cutoff, backbone_only
         )
 
@@ -250,116 +250,116 @@ class StructuralAlignment(JSONCacheableMixin, object):
         sa.save()
         return sa
 
-    @staticmethod
-    def structural_align(
-        pdb_id1: str,
-        pdb_id2: str,
-        outlier_rejection_cutoff: float = 2.0,
-        backbone_only=False,
-    ) -> Tuple[float, int, MSA]:
-        """
-        Aligns two structures using PyMOL, both in terms of pairwise sequence
-        alignment and in terms of structural superposition.
-        :param pdb_id1: First structure id, which can include the chain id (e.g. '1ABC:A').
-        :param pdb_id2: Second structure id, can include the chain id.
-        :param outlier_rejection_cutoff: Outlier rejection cutoff in RMS,
-            determines which residues are considered a structural match (star).
-        :param backbone_only: Whether to only align using backbone atoms from the two
-            structures.
-        :return: Tuple of (rmse, n_stars, mseq), where rmse is in Angstroms and
-            represents the average structural alignment error; n_stars is the number of
-            residues aligned within the cutoff (non outliers, marked with a star in
-            the clustal output); mseq is a multiple-sequence alignment object with the
-            actual alignment info of the two sequences.
-            Note that mseq.column_annotations['clustal_consensus'] contains the clustal
-            "stars" output.
-        """
-        align_obj_name = None
-        align_ids = []
-        tmp_outfile = None
-        try:
-            for i, pdb_id in enumerate([pdb_id1, pdb_id2]):
-                base_id, chain_id = pdb.split_id(pdb_id)
-                path = pdb.pdb_download(base_id)
 
-                object_id = f"{base_id}-{i}"  # in case both ids are equal
-                with out_redirected("stdout"):  # suppress pymol printouts
-                    pymol.load(str(path), object=object_id, quiet=1)
+def structural_align(
+    pdb_id1: str,
+    pdb_id2: str,
+    outlier_rejection_cutoff: float = 2.0,
+    backbone_only=False,
+) -> Tuple[float, int, MSA]:
+    """
+    Aligns two structures using PyMOL, both in terms of pairwise sequence
+    alignment and in terms of structural superposition.
+    :param pdb_id1: First structure id, which can include the chain id (e.g. '1ABC:A').
+    :param pdb_id2: Second structure id, can include the chain id.
+    :param outlier_rejection_cutoff: Outlier rejection cutoff in RMS,
+        determines which residues are considered a structural match (star).
+    :param backbone_only: Whether to only align using backbone atoms from the two
+        structures.
+    :return: Tuple of (rmse, n_stars, mseq), where rmse is in Angstroms and
+        represents the average structural alignment error; n_stars is the number of
+        residues aligned within the cutoff (non outliers, marked with a star in
+        the clustal output); mseq is a multiple-sequence alignment object with the
+        actual alignment info of the two sequences.
+        Note that mseq.column_annotations['clustal_consensus'] contains the clustal
+        "stars" output.
+    """
+    align_obj_name = None
+    align_ids = []
+    tmp_outfile = None
+    try:
+        for i, pdb_id in enumerate([pdb_id1, pdb_id2]):
+            base_id, chain_id = pdb.split_id(pdb_id)
+            path = pdb.pdb_download(base_id)
 
-                # If a chain was specified we need to tell PyMOL to create an
-                # object for each chain.
-                if chain_id:
-                    pymol.split_chains(object_id)
-                    object_id = f"{object_id}_{chain_id}"
+            object_id = f"{base_id}-{i}"  # in case both ids are equal
+            with out_redirected("stdout"):  # suppress pymol printouts
+                pymol.load(str(path), object=object_id, quiet=1)
 
-                # Create a selection of the backbone if we're aligning only backbones
-                # To to this we create a selection containing only atoms with the
-                # names N, C, CA
-                if backbone_only:
-                    align_selection_id = f"{object_id}_bb"
-                    selector = f"{object_id} and (name N+C+CA)"
-                    pymol.select(align_selection_id, selector)
-                else:
-                    align_selection_id = object_id
+            # If a chain was specified we need to tell PyMOL to create an
+            # object for each chain.
+            if chain_id:
+                pymol.split_chains(object_id)
+                object_id = f"{object_id}_{chain_id}"
 
-                align_ids.append(align_selection_id)
+            # Create a selection of the backbone if we're aligning only backbones
+            # To to this we create a selection containing only atoms with the
+            # names N, C, CA
+            if backbone_only:
+                align_selection_id = f"{object_id}_bb"
+                selector = f"{object_id} and (name N+C+CA)"
+                pymol.select(align_selection_id, selector)
+            else:
+                align_selection_id = object_id
 
-            # Compute the structural alignment
-            src, tgt = align_ids
-            align_obj_name = f"align_{src}_{tgt}"
-            (
-                rmse,
-                n_aligned_atoms,
-                n_cycles,
-                rmse_pre,
-                n_aligned_atoms_pre,
-                alignment_score,
-                n_aligned_residues,
-            ) = pymol.align(
-                src, tgt, object=align_obj_name, cutoff=outlier_rejection_cutoff
-            )
+            align_ids.append(align_selection_id)
 
-            # Save the sequence alignment to a file and load it to get the
-            # match symbols for each AA (i.e., "take me to the stars"...)
-            tmpdir = Path(tempfile.gettempdir())
-            tmp_outfile = tmpdir.joinpath(f"{align_obj_name}.aln")
-            pymol.save(tmp_outfile, align_obj_name)
-            mseq = AlignIO.read(tmp_outfile, "clustal")
+        # Compute the structural alignment
+        src, tgt = align_ids
+        align_obj_name = f"align_{src}_{tgt}"
+        (
+            rmse,
+            n_aligned_atoms,
+            n_cycles,
+            rmse_pre,
+            n_aligned_atoms_pre,
+            alignment_score,
+            n_aligned_residues,
+        ) = pymol.align(
+            src, tgt, object=align_obj_name, cutoff=outlier_rejection_cutoff
+        )
 
-            # Check if we have enough matches above the cutoff
-            stars_seq = mseq.column_annotations["clustal_consensus"]
-            n_stars = len([m for m in re.finditer(r"\*", stars_seq)])
+        # Save the sequence alignment to a file and load it to get the
+        # match symbols for each AA (i.e., "take me to the stars"...)
+        tmpdir = Path(tempfile.gettempdir())
+        tmp_outfile = tmpdir.joinpath(f"{align_obj_name}.aln")
+        pymol.save(tmp_outfile, align_obj_name)
+        mseq = AlignIO.read(tmp_outfile, "clustal")
 
-            LOGGER.info(
-                f"Structural alignment {pdb_id1} to {pdb_id2}, "
-                f"RMSE={rmse:.2f}, {n_aligned_atoms=}, {n_aligned_residues=}\n"
-                f"{str(mseq[0].seq)}\n"
-                f"{stars_seq}\n"
-                f"{str(mseq[1].seq)}"
-            )
-            return rmse, n_stars, mseq
-        except pymol.QuietException as e:
-            msg = (
-                f"Failed to structurally-align {pdb_id1} to {pdb_id2} "
-                f"with cutoff {outlier_rejection_cutoff}: {e}"
-            )
-            raise ValueError(msg) from None
-        finally:
-            # Need to clean up the objects we created inside PyMOL
-            # Remove PyMOL loaded structures and their chains
-            # (here '*' is a wildcard)
-            for pdb_id in [pdb_id1, pdb_id2]:
-                base_id, chain_id = pdb.split_id(pdb_id)
-                pymol.delete(f"{base_id}*")
+        # Check if we have enough matches above the cutoff
+        stars_seq = mseq.column_annotations["clustal_consensus"]
+        n_stars = len([m for m in re.finditer(r"\*", stars_seq)])
 
-            # Remove alignment objects in PyMOL
-            if align_obj_name:
-                pymol.delete(align_obj_name)
-                pymol.delete("_align*")
+        LOGGER.info(
+            f"Structural alignment {pdb_id1} to {pdb_id2}, "
+            f"RMSE={rmse:.2f}, {n_aligned_atoms=}, {n_aligned_residues=}\n"
+            f"{str(mseq[0].seq)}\n"
+            f"{stars_seq}\n"
+            f"{str(mseq[1].seq)}"
+        )
+        return rmse, n_stars, mseq
+    except pymol.QuietException as e:
+        msg = (
+            f"Failed to structurally-align {pdb_id1} to {pdb_id2} "
+            f"with cutoff {outlier_rejection_cutoff}: {e}"
+        )
+        raise ValueError(msg) from None
+    finally:
+        # Need to clean up the objects we created inside PyMOL
+        # Remove PyMOL loaded structures and their chains
+        # (here '*' is a wildcard)
+        for pdb_id in [pdb_id1, pdb_id2]:
+            base_id, chain_id = pdb.split_id(pdb_id)
+            pymol.delete(f"{base_id}*")
 
-            # Remove temporary file with the sequence alignment
-            if tmp_outfile and tmp_outfile.is_file():
-                os.remove(str(tmp_outfile))
+        # Remove alignment objects in PyMOL
+        if align_obj_name:
+            pymol.delete(align_obj_name)
+            pymol.delete("_align*")
+
+        # Remove temporary file with the sequence alignment
+        if tmp_outfile and tmp_outfile.is_file():
+            os.remove(str(tmp_outfile))
 
 
 class ProteinBLAST(object):
