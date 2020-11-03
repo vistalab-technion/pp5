@@ -256,6 +256,7 @@ def structural_align(
     pdb_id2: str,
     outlier_rejection_cutoff: float = 2.0,
     backbone_only=False,
+    **pymol_align_kwargs,
 ) -> Tuple[float, int, MSA]:
     """
     Aligns two structures using PyMOL, both in terms of pairwise sequence
@@ -316,7 +317,11 @@ def structural_align(
             alignment_score,
             n_aligned_residues,
         ) = pymol.align(
-            src, tgt, object=align_obj_name, cutoff=outlier_rejection_cutoff
+            src,
+            tgt,
+            object=align_obj_name,
+            cutoff=outlier_rejection_cutoff,
+            **pymol_align_kwargs,
         )
 
         # Save the sequence alignment to a file and load it to get the
@@ -331,8 +336,9 @@ def structural_align(
         n_stars = len([m for m in re.finditer(r"\*", stars_seq)])
 
         LOGGER.info(
-            f"Structural alignment {pdb_id1} to {pdb_id2}, "
-            f"RMSE={rmse:.2f}, {n_aligned_atoms=}, {n_aligned_residues=}\n"
+            f"Structural alignment {pdb_id1} to {pdb_id2}, {backbone_only=}, "
+            f"RMSE={rmse:.2f}, {n_aligned_atoms=}, {n_aligned_residues=}, "
+            f"{n_stars=}\n"
             f"{str(mseq[0].seq)}\n"
             f"{stars_seq}\n"
             f"{str(mseq[1].seq)}"
