@@ -104,19 +104,18 @@ class ParallelDataCollector(abc.ABC):
         for step_name, collect_fn in collection_functions.items():
             step_start_time = time.time()
 
+            step_status, step_message = "RUNNING", None
             with pp5.parallel.global_pool() as pool:
                 try:
                     step_meta = collect_fn(pool)
                     if step_meta:
                         self._collection_meta.update(step_meta)
-                    step_status = "SUCCESS"
-                    step_message = None
+                    step_status, step_message = "SUCCESS", None
                 except Exception as e:
                     LOGGER.error(
                         f"Unexpected exception in top-level " f"collect", exc_info=e
                     )
-                    step_status = "FAIL"
-                    step_message = f"{e}"
+                    step_status, step_message = "FAIL", f"{e}"
                 finally:
                     step_elapsed = time.time() - step_start_time
                     step_elapsed = elapsed_seconds_to_dhms(step_elapsed)
