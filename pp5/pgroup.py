@@ -155,7 +155,6 @@ class ProteinGroup(object):
         sa_max_all_atom_rmsd: float = 2.0,
         sa_min_aligned_residues: int = 50,
         b_max: float = math.inf,
-        pre_p_reject: bool = False,
         angle_aggregation="circ",
         strict_pdb_xref=True,
         strict_unp_xref=False,
@@ -180,8 +179,6 @@ class ProteinGroup(object):
         :param b_max: Maximal b-factor a residue can have
             (backbone-atom average) in order for it to be included in a match
             group.
-        :param pre_p_reject: Whether to reject match if it's before a Proline residue
-            (in the AA sequence order)
         :param angle_aggregation: Method for angle-aggregation of matching
             query residues of each reference residue. Options are
             'circ' - Circular mean;
@@ -216,7 +213,6 @@ class ProteinGroup(object):
         self.sa_max_all_atom_rmsd = sa_max_all_atom_rmsd
         self.sa_min_aligned_residues = sa_min_aligned_residues
         self.b_max = b_max
-        self.pre_p_reject = pre_p_reject
         self.prec_cache = prec_cache
         self.strict_pdb_xref = strict_pdb_xref
         self.strict_unp_xref = strict_unp_xref
@@ -745,9 +741,6 @@ class ProteinGroup(object):
             if r_res.codon == UNKNOWN_CODON or q_res.codon == UNKNOWN_CODON:
                 continue
             if r_res.bfactor > self.b_max or q_res.bfactor > self.b_max:
-                continue
-            if self.pre_p_reject and r_seq_pymol[i + 1] == "P":
-                # We optionally reject any pre-Proline matches
                 continue
 
             # Make sure we got from i to the correct residues in the precs

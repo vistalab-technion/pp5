@@ -345,7 +345,6 @@ class ProteinGroupCollector(ParallelDataCollector):
         evalue_cutoff: float = 1.0,
         identity_cutoff: float = 30.0,
         b_max: float = 30.0,
-        pre_p_reject: bool = False,
         out_dir=pp5.out_subdir("pgroup-collected"),
         pgroup_out_dir=pp5.out_subdir("pgroup"),
         write_pgroup_csvs=True,
@@ -368,8 +367,6 @@ class ProteinGroupCollector(ParallelDataCollector):
         :param b_max: Maximal b-factor a residue can have
             (backbone-atom average) in order for it to be included in a match
             group. None means no limit.
-        :param pre_p_reject: Whether to reject residue matches in pgroups, which are
-            before a Proline residue (in the AA sequence order)
         :param out_dir: Output directory for collection CSV files.
         :param pgroup_out_dir: Output directory for pgroup CSV files. Only
             relevant if write_pgroup_csvs is True.
@@ -402,7 +399,6 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
         self.b_max = b_max
-        self.pre_p_reject = pre_p_reject
 
         self.pgroup_out_dir = pgroup_out_dir
         self.write_pgroup_csvs = write_pgroup_csvs
@@ -545,7 +541,6 @@ class ProteinGroupCollector(ParallelDataCollector):
                 ref_pdb_id,
                 blast,
                 self.b_max,
-                self.pre_p_reject,
                 pgroup_out_dir,
                 self.out_tag,
                 idx,
@@ -762,14 +757,13 @@ def _collect_single_pgroup(
     ref_pdb_id: str,
     blast: ProteinBLAST,
     b_max: float,
-    pre_p_reject: bool,
     out_dir: Optional[Path],
     out_tag: str,
     idx: tuple,
 ) -> Optional[dict]:
     try:
         LOGGER.info(
-            f"Creating ProteinGroup for {ref_pdb_id}, {b_max=}, {pre_p_reject=} "
+            f"Creating ProteinGroup for {ref_pdb_id}, {b_max=} "
             f"({idx[0] + 1}/{idx[1]})"
         )
 
@@ -783,7 +777,6 @@ def _collect_single_pgroup(
             ref_pdb_id,
             query_pdb_ids=df_blast.index,
             b_max=b_max,
-            pre_p_reject=pre_p_reject,
             parallel=False,
             prec_cache=True,
         )
