@@ -614,6 +614,7 @@ class ProteinGroup(object):
             "residues": self.to_residue_dataframe,
             "groups": self.to_groups_dataframe,
             "pairwise": self.to_pairwise_dataframe,
+            "pointwise": self.to_pointwise_dataframe,
         }
 
         os.makedirs(str(out_dir), exist_ok=True)
