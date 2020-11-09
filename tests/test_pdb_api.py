@@ -105,3 +105,12 @@ class TestPDBAttributeSearchQuery:
         )
         results = query.execute()
         assert len(results) >= 35
+
+
+class TestPDBExpressionSystemQuery:
+    def test_1(self):
+        query = pdb_api.PDBExpressionSystemQuery(
+            expr_sys="Spodoptera", comparison_type="exact_match"
+        )
+        results = query.execute()
+        assert len(results) >= 7416

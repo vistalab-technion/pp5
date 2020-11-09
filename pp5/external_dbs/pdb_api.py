@@ -340,3 +340,19 @@ class PDBAttributeSearchQuery(PDBQuery):
                 f"'{self.attribute_value}'" or "",
             ],
         )
+
+
+class PDBExpressionSystemQuery(PDBAttributeSearchQuery):
+    def __init__(
+        self,
+        expr_sys: str = pp5.get_config("DEFAULT_EXPR_SYS"),
+        comparison_type: str = "contains_phrase",
+        **base_kwargs,
+    ):
+        super().__init__(
+            attribute_name="rcsb_entity_host_organism.taxonomy_lineage.name",
+            attribute_value=expr_sys,
+            comparison_type=comparison_type,
+            attribute_display_name="Expression System",
+            **base_kwargs,
+        )
