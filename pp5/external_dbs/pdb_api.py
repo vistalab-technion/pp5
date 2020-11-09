@@ -5,7 +5,7 @@ import abc
 import json
 import logging
 from enum import Enum
-from typing import Optional, Sequence
+from typing import Union, Optional, Sequence
 
 import requests
 
@@ -319,7 +319,7 @@ class PDBAttributeSearchQuery(PDBQuery):
     def __init__(
         self,
         attribute_name: str,
-        attribute_value: str = None,
+        attribute_value: Union[str, int, float] = None,
         comparison_type: str = "exists",
         attribute_display_name: str = None,
         negated: bool = False,
@@ -328,16 +328,17 @@ class PDBAttributeSearchQuery(PDBQuery):
         """
         :param attribute_name: Name of the attribute to search for. Must be a valid
             name from the list of supported PDB attributes.
-        :param attribute_value: The value of the search query.
+        :param attribute_value: The value of the search query. Should be a string or
+            a number depending on the type of the attribute.
         :param comparison_type: How to compare the attribute to the value. Must be
-            one of :obj:`TEXT_COMPARE_TYPES`.
+            one of :obj:`TEXT_COMPARE_TYPES` if the attribute is a string or
+            :obj:`COMPARISON_OPERATORS` if it is a number.
         :param attribute_display_name: A "friendly" name for the attribute for use
             in the description. Doesn't affect the query result in any way.
         :param negated: Whether to this query should be negated.
         :param base_kwargs: Arguments for the base :obj:`PDBQuery`.
         """
         super().__init__(**base_kwargs)
-        self._validate_text_comparison_type(comparison_type)
         if not attribute_name:
             raise ValueError(f"Invalid attribute name '{attribute_name}'")
 
@@ -351,6 +352,15 @@ class PDBAttributeSearchQuery(PDBQuery):
         else:
             if not attribute_value:
                 raise ValueError(f"Invalid attribute value '{attribute_value}'")
+
+        if isinstance(attribute_value, (int, float)):
+            self._validate_comparison_operator(comparison_type)
+        elif isinstance(attribute_value, str):
+            self._validate_text_comparison_type(comparison_type)
+        else:
+            raise ValueError(
+                f"Unsupported type for attribute value: {type(attribute_value)}"
+            )
 
         self.comparison_type = comparison_type
         self.attribute_name = attribute_name

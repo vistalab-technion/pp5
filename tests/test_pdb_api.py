@@ -88,13 +88,13 @@ class TestPDBUnstructuredQuery(object):
 class TestPDBAttributeSearchQuery:
     def test_numerical_field(self):
         query = pdb_api.PDBAttributeSearchQuery(
-            attribute_name="rcsb_entity_host_organism.taxonomy_lineage.id",
-            attribute_value="9606",
-            comparison_type="exact_match",
+            attribute_name="rcsb_entry_info.diffrn_resolution_high.value",
+            attribute_value=1.0,
+            comparison_type="less",
             return_type=pdb_api.PDBQuery.ReturnType.ENTRY,
         )
         results = query.execute()
-        assert len(results) >= 4184
+        assert len(results) >= 810
 
     def test_textual_field(self):
         query = pdb_api.PDBAttributeSearchQuery(
