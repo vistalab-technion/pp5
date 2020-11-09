@@ -104,6 +104,8 @@ class PDBQuery(abc.ABC):
         "equals",
     )
 
+    LOGICAL_OPERATORS = ("and", "or")
+
     class ReturnType(Enum):
         """
         Represents the types of results a query can return.
@@ -226,11 +228,53 @@ class PDBQuery(abc.ABC):
                 f"Comparison operator must be one of {self.COMPARISON_OPERATORS}"
             )
 
+    def _validate_logical_operator(self, logical_operator):
+        if logical_operator not in self.LOGICAL_OPERATORS:
+            raise ValueError(
+                f"Logical operator must be one of {self.LOGICAL_OPERATORS}"
+            )
+
     def __str__(self):
         return self.description()
 
     def __repr__(self):
         return f"{self.__class__}({self.__dict__})"
+
+
+class PDBCompositeQuery(PDBQuery):
+    """
+    A composite query is composed of multiple regular PDBQueries.
+    It creates a query that represents either "query1 AND query2 AND ... queryN" or
+    "query1 OR query2 OR ... queryN".
+    """
+
+    def __init__(
+        self, *queries: PDBQuery, logical_operator: str = "and", **base_kwargs
+    ):
+        """
+        :param queries: Sequence of queries to combine. Note that the return type of
+            these queries will be ignored. Set the return type on this query via the
+            base_kwargs.
+        :param logical_operator: The operator to combine with (and/or).
+        :param base_kwargs: Arguments for PDBQuery.
+        """
+        super().__init__(**base_kwargs)
+        self._validate_logical_operator(logical_operator)
+        self.queries = queries
+        self.logical_operator = logical_operator
+
+    def _raw_query_data(self) -> dict:
+        return {
+            "type": "group",
+            "logical_operator": self.logical_operator,
+            "nodes": [q._raw_query_data() for q in self.queries],
+        }
+
+    def description(self) -> str:
+        return str.join(
+            f" {self.logical_operator.upper()} ",
+            [f"({q.description()})" for q in self.queries],
+        )
 
 
 class PDBUnstructuredSearchQuery(PDBQuery):
@@ -370,6 +414,6 @@ class PDBSourceTaxonomyIdQuery(PDBAttributeSearchQuery):
             attribute_name="rcsb_entity_source_organism.taxonomy_lineage.id",
             attribute_value=str(taxonomy_id),
             comparison_type="exact_match",
-            attribute_display_name="Source Organism TaxonomyID",
+            attribute_display_name="Source Organism Taxonomy ID",
             **base_kwargs,
         )

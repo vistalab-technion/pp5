@@ -126,3 +126,27 @@ class TestPDBSourceTaxonomyIdQuery:
         query = pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=10981234)
         assert len(query.execute()) == 0
         assert query.count() == 0
+
+
+class TestPDBCompositeQuery:
+    def test_and(self):
+        query = pdb_api.PDBCompositeQuery(
+            pdb_api.PDBExpressionSystemQuery("Homo Sapiens", "contains_phrase"),
+            pdb_api.PDBSourceTaxonomyIdQuery(9606),
+            logical_operator="and",
+            return_type=pdb_api.PDBQuery.ReturnType.ENTRY,
+        )
+
+        results = query.execute()
+        assert len(results) >= 2753
+
+    def test_or(self):
+        query = pdb_api.PDBCompositeQuery(
+            pdb_api.PDBExpressionSystemQuery("Homo Sapiens", "contains_words"),
+            pdb_api.PDBExpressionSystemQuery("Spodoptera", "exact_match"),
+            logical_operator="or",
+            return_type=pdb_api.PDBQuery.ReturnType.ENTRY,
+        )
+
+        results = query.execute()
+        assert len(results) >= 9991
