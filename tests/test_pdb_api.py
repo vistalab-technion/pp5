@@ -55,3 +55,31 @@ class TestPDBQuery(object):
                 assert base_id
                 assert not chain_id
                 assert entity_id
+
+
+class TestPDBUnstructuredQuery(object):
+    def test_search_structure_name(self):
+        pdb_base_id = "4HHB"
+        query = pdb_api.PDBUnstructuredSearchQuery(
+            query_value=pdb_base_id, return_type=pdb_api.PDBQuery.ReturnType.CHAIN
+        )
+        results = query.execute()
+        # This structure has 4 chains
+        assert len(results) == 4
+        for result in results:
+            pdb_id, chain_id, entity_id = split_id_with_entity(result)
+            assert pdb_id == pdb_base_id
+            assert chain_id
+            assert not entity_id
+
+    @pytest.mark.parametrize(
+        # Values obtained by manually searching using the website
+        ["query_text", "min_results"],
+        [["X-Ray Diffraction", 163085], ["Spodoptera", 6041]],
+    )
+    def test_search_full_text(self, query_text, min_results):
+        query = pdb_api.PDBUnstructuredSearchQuery(
+            query_value=query_text, return_type=pdb_api.PDBQuery.ReturnType.ENTRY
+        )
+        results = query.execute()
+        assert len(results) >= min_results
