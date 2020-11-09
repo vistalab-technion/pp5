@@ -114,3 +114,15 @@ class TestPDBExpressionSystemQuery:
         )
         results = query.execute()
         assert len(results) >= 7416
+
+
+class TestPDBSourceTaxonomyIdQuery:
+    def test_existing(self):
+        query = pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=1098)
+        results = query.execute()
+        assert len(results) >= 4
+
+    def test_non_existing(self):
+        query = pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=10981234)
+        assert len(query.execute()) == 0
+        assert query.count() == 0

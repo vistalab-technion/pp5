@@ -360,3 +360,16 @@ class PDBExpressionSystemQuery(PDBAttributeSearchQuery):
             attribute_display_name="Expression System",
             **base_kwargs,
         )
+
+
+class PDBSourceTaxonomyIdQuery(PDBAttributeSearchQuery):
+    def __init__(
+        self, taxonomy_id: int = pp5.get_config("DEFAULT_SOURCE_TAXID"), **base_kwargs,
+    ):
+        super().__init__(
+            attribute_name="rcsb_entity_source_organism.taxonomy_lineage.id",
+            attribute_value=str(taxonomy_id),
+            comparison_type="exact_match",
+            attribute_display_name="Source Organism TaxonomyID",
+            **base_kwargs,
+        )
