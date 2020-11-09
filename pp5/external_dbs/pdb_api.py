@@ -401,12 +401,21 @@ class PDBAttributeSearchQuery(PDBQuery):
 
 
 class PDBExpressionSystemQuery(PDBAttributeSearchQuery):
+    """
+    Queries for structures by the name of the expression system.
+    """
+
     def __init__(
         self,
         expr_sys: str = pp5.get_config("DEFAULT_EXPR_SYS"),
         comparison_type: str = "contains_phrase",
         **base_kwargs,
     ):
+        """
+        :param expr_sys: The expression system name to search for.
+        :param comparison_type: How to compare.
+        :param base_kwargs: Args for PDBQuery.
+        """
         super().__init__(
             attribute_name="rcsb_entity_host_organism.taxonomy_lineage.name",
             attribute_value=expr_sys,
@@ -417,9 +426,17 @@ class PDBExpressionSystemQuery(PDBAttributeSearchQuery):
 
 
 class PDBSourceTaxonomyIdQuery(PDBAttributeSearchQuery):
+    """
+    Queries for structures by the taxonomy ID of the source system.
+    """
+
     def __init__(
         self, taxonomy_id: int = pp5.get_config("DEFAULT_SOURCE_TAXID"), **base_kwargs,
     ):
+        """
+        :param taxonomy_id: The taxonomy ID of the source organism.
+        :param base_kwargs: Args for PDBQuery.
+        """
         super().__init__(
             attribute_name="rcsb_entity_source_organism.taxonomy_lineage.id",
             attribute_value=str(taxonomy_id),
@@ -430,16 +447,26 @@ class PDBSourceTaxonomyIdQuery(PDBAttributeSearchQuery):
 
 
 class PDBXRayResolutionQuery(PDBCompositeQuery):
+    """
+    Queries for structures which were collected using X-Ray diffraction and with a
+    resolution up to a specified cutoff.
+    """
+
     def __init__(
         self,
-        res: float = pp5.get_config("DEFAULT_RES"),
+        resolution: float = pp5.get_config("DEFAULT_RES"),
         comparison_operator: str = "less_or_equal",
         **base_kwargs,
     ):
+        """
+        :param resolution: The resolution cutoff (threshold value).
+        :param comparison_operator: How to compare.
+        :param base_kwargs: Args for PDBQuery.
+        """
         super().__init__(
             PDBAttributeSearchQuery(
                 attribute_name="rcsb_entry_info.diffrn_resolution_high.value",
-                attribute_value=res,
+                attribute_value=resolution,
                 comparison_type=comparison_operator,
                 attribute_display_name="X-Ray Resolution",
             ),
