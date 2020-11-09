@@ -31,7 +31,7 @@ from pp5 import PDB_DIR, get_resource_path
 from pp5.utils import JSONCacheableMixin, remote_dl, requests_retry
 
 PDB_ID_PATTERN = re.compile(
-    r"^(?P<id>[0-9][\w]{3})(?::(?:" r"(?P<chain>[a-z])|(?P<entity>[0-9])" r"))?$",
+    r"^(?P<id>[0-9][\w]{3})(?::(?:" r"(?P<chain>[a-z]{1,2})|(?P<entity>[0-9]{1,2})))?$",
     re.IGNORECASE | re.ASCII,
 )
 
@@ -44,9 +44,6 @@ PDB_TO_UNP_URL_TEMPLATE = (
     r"?pdbids={}&customReportColumns=uniprotAcc"
     r"&service=wsfile&format=csv"
 )
-
-# New API
-PDB_SEARCH_API_URL = "https://search.rcsb.org/rcsbsearch/v1/query"
 
 LOGGER = logging.getLogger(__name__)
 

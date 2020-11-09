@@ -16,17 +16,36 @@ import pp5.external_dbs.pdb as pdb
 NO_INTERNET = not tests.utils.has_internet()
 
 
-def _random_pdb_id(with_chain=False, with_entity=False):
+def _random_pdb_id(id_type="plain", min_chain_len=1, max_chain_len=2) -> str:
+    """
+    Creates a random PDB id either as a base id only, with a chain or with an entity.
+    :param id_type: 'plain' (only base), 'chain' (with chain id), 'entity' (with
+        entity id).
+    :param min_chain_len: Minimal allowed length of a chain/entity id added.
+    :param max_chain_len: Maximal allowed length of a chain/entity id added.
+    :return: The generated id.
+    """
+
     base_id = str.join(
         "", [str(random.randrange(10))] + random.choices(string.ascii_letters, k=3)
     )
-    if with_chain:
-        return base_id + f":{random.choice(string.ascii_letters)}"
 
-    if with_entity:
-        return base_id + f":{random.choice(string.digits)}"
+    if id_type == "plain":
+        return base_id
+    elif id_type == "chain":
+        extra_chars = string.ascii_letters
+    elif id_type == "entity":
+        extra_chars = string.digits
+    else:
+        raise ValueError(f"Unexpected type: {id_type}")
 
-    return base_id
+    extra_letters = [
+        random.choice(extra_chars)
+        # Note: randint max is inclusive
+        for _ in range(random.randint(min_chain_len, max_chain_len))
+    ]
+
+    return base_id + f":{str.join('', extra_letters)}"
 
 
 class TestSplitID:
@@ -42,7 +61,7 @@ class TestSplitID:
 
     def test_split_with_chain(self):
         for _ in range(self.n):
-            full_id = _random_pdb_id(with_chain=True)
+            full_id = _random_pdb_id(id_type="chain")
             expected_id, expected_chain = full_id.split(":")
             id, chain = pdb.split_id(full_id)
             assert id == expected_id.upper(), full_id
@@ -50,7 +69,7 @@ class TestSplitID:
 
     def test_split_id_when_entity_given(self):
         for _ in range(self.n):
-            expected_id = _random_pdb_id(with_entity=True)
+            expected_id = _random_pdb_id(id_type="entity")
             id, chain = pdb.split_id(expected_id)
             expected_id = expected_id.split(":")[0]  # remove entity
             assert id == expected_id.upper(), expected_id
@@ -71,7 +90,7 @@ class TestSplitIDWithEntity:
 
     def test_split_with_chain(self):
         for _ in range(self.n):
-            full_id = _random_pdb_id(with_chain=True)
+            full_id = _random_pdb_id(id_type="chain")
             expected_id, expected_chain = full_id.split(":")
             id, chain, entity = pdb.split_id_with_entity(full_id)
             assert id == expected_id.upper(), full_id
@@ -80,7 +99,7 @@ class TestSplitIDWithEntity:
 
     def test_split_with_entity(self):
         for _ in range(self.n):
-            full_id = _random_pdb_id(with_entity=True)
+            full_id = _random_pdb_id(id_type="entity")
             expected_id, expected_entity = full_id.split(":")
             id, chain, entity = pdb.split_id_with_entity(full_id)
             assert id == expected_id.upper(), full_id
@@ -89,29 +108,35 @@ class TestSplitIDWithEntity:
 
     def test_doesnt_start_with_digit(self):
         for _ in range(self.n):
-            full_id = _random_pdb_id(with_chain=bool(random.randrange(2)))
+            full_id = _random_pdb_id(
+                id_type=random.choice(["plain", "chain", "entity"])
+            )
             invalid_id = f"{random.choice(string.ascii_letters)}{full_id[1:]}"
             with pytest.raises(ValueError) as exc_info:
                 pdb.split_id(invalid_id)
 
     def test_too_long(self):
         for _ in range(self.n):
-            full_id = _random_pdb_id(with_chain=bool(random.randrange(2)))
+            full_id = _random_pdb_id(
+                id_type=random.choice(["plain", "chain", "entity"])
+            )
             invalid_id = f"{str(random.randrange(10))}{full_id}"
             with pytest.raises(ValueError) as exc_info:
                 pdb.split_id(invalid_id)
 
     def test_chain_too_long(self):
         for _ in range(self.n):
-            full_id = _random_pdb_id(with_chain=True)
-            invalid_id = f"{full_id}{random.choice(string.ascii_letters)}"
+            invalid_id = _random_pdb_id(
+                id_type="chain", min_chain_len=3, max_chain_len=9
+            )
             with pytest.raises(ValueError) as exc_info:
                 pdb.split_id(invalid_id)
 
     def test_entity_too_long(self):
         for _ in range(self.n):
-            full_id = _random_pdb_id(with_entity=True)
-            invalid_id = f"{full_id}{random.choice(string.digits)}"
+            invalid_id = _random_pdb_id(
+                id_type="entity", min_chain_len=3, max_chain_len=9
+            )
             with pytest.raises(ValueError) as exc_info:
                 pdb.split_id(invalid_id)
 
