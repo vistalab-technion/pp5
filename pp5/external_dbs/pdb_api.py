@@ -46,13 +46,17 @@ def execute_raw_pdb_search_query(
         i.e. return_type, query, etc.
     :param raise_on_error: Whether to raise a :class:`PDBAPIException` if the query
         fails.
-    :return: A dict containing the response. If raise_on_error is False and there was
-        an error, None will be returned.
+    :return: A dict containing the response.
+        If there are no results from the query, None will be returned.
+        If raise_on_error is False and there was an error, None will be returned.
     """
     try:
         # Use many retries as this is an unreliable API
         with requests_retry().post(PDB_SEARCH_API_URL, data=query_json) as response:
             response.raise_for_status()
+            if response.status_code == 204:
+                # 204 means no results, not an error
+                return None
             return json.loads(response.text)
     except requests.RequestException as e:
         response = json.loads(e.response.text) if e.response is not None else None
