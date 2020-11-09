@@ -427,3 +427,27 @@ class PDBSourceTaxonomyIdQuery(PDBAttributeSearchQuery):
             attribute_display_name="Source Organism Taxonomy ID",
             **base_kwargs,
         )
+
+
+class PDBXRayResolutionQuery(PDBCompositeQuery):
+    def __init__(
+        self,
+        res: float = pp5.get_config("DEFAULT_RES"),
+        comparison_operator: str = "less_or_equal",
+        **base_kwargs,
+    ):
+        super().__init__(
+            PDBAttributeSearchQuery(
+                attribute_name="rcsb_entry_info.diffrn_resolution_high.value",
+                attribute_value=res,
+                comparison_type=comparison_operator,
+                attribute_display_name="X-Ray Resolution",
+            ),
+            PDBAttributeSearchQuery(
+                attribute_name="exptl.method",
+                attribute_value="X-RAY DIFFRACTION",
+                comparison_type="exact_match",
+                attribute_display_name="Method",
+            ),
+            **base_kwargs,
+        )

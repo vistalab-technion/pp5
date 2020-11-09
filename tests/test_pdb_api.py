@@ -150,3 +150,23 @@ class TestPDBCompositeQuery:
 
         results = query.execute()
         assert len(results) >= 9991
+
+    def test_nested_composites(self):
+        query = pdb_api.PDBCompositeQuery(
+            pdb_api.PDBExpressionSystemQuery("Homo sapiens", "exact_match"),
+            pdb_api.PDBXRayResolutionQuery(res=1.0, comparison_operator="less"),
+            logical_operator="or",
+            return_type=pdb_api.PDBQuery.ReturnType.ENTRY,
+        )
+
+        results = query.execute()
+        assert len(results) >= 4991
+
+
+class TestPDBXRayResolutionQuery:
+    def test_1(self):
+        query = pdb_api.PDBXRayResolutionQuery(
+            res=1.1, return_type=pdb_api.PDBQuery.ReturnType.ENTITY
+        )
+        results = query.execute()
+        assert len(results) >= 2798
