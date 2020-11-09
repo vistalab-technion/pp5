@@ -83,3 +83,25 @@ class TestPDBUnstructuredQuery(object):
         )
         results = query.execute()
         assert len(results) >= min_results
+
+
+class TestPDBAttributeSearchQuery:
+    def test_numerical_field(self):
+        query = pdb_api.PDBAttributeSearchQuery(
+            attribute_name="rcsb_entity_host_organism.taxonomy_lineage.id",
+            attribute_value="9606",
+            comparison_type="exact_match",
+            return_type=pdb_api.PDBQuery.ReturnType.ENTRY,
+        )
+        results = query.execute()
+        assert len(results) >= 4184
+
+    def test_textual_field(self):
+        query = pdb_api.PDBAttributeSearchQuery(
+            attribute_name="rcsb_entity_source_organism.taxonomy_lineage.name",
+            attribute_value="Spodoptera",
+            comparison_type="contains_words",
+            return_type=pdb_api.PDBQuery.ReturnType.ENTRY,
+        )
+        results = query.execute()
+        assert len(results) >= 35
