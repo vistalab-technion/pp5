@@ -227,3 +227,116 @@ class PDBQuery(abc.ABC):
 
     def __repr__(self):
         return f"{self.__class__}({self.__dict__})"
+
+
+class PDBUnstructuredSearchQuery(PDBQuery):
+    """
+    Represents an unstructured (basic) PDB search, i.e. a search that is performed
+    across all data fields.
+    """
+
+    def __init__(self, query_value: str, **base_kwargs):
+        """
+        :param query_value: The value to search for.
+        :param base_kwargs: Arguments for the base :obj:`PDBQuery`.
+        """
+        super().__init__(**base_kwargs)
+        if not query_value:
+            raise ValueError(f"Invalid query value '{query_value}'")
+        self.query_value = query_value
+
+    def _raw_query_data(self) -> dict:
+        return {
+            "type": "terminal",
+            "service": "text",
+            "parameters": {"value": self.query_value,},
+        }
+
+    def description(self) -> str:
+        return f"Unstructured Query: '{self.query_value}'"
+
+
+class PDBAttributeSearchQuery(PDBQuery):
+    """
+    Represents a PDB search query against an attribute's (field's) value.
+
+    Can search against any attribute and use and comparison operator.
+    See here for all attributes:
+    https://search.rcsb.org/search-attributes.html
+
+    See here for comparison operators:
+    https://search.rcsb.org/index.html#search-operators
+    """
+
+    def __init__(
+        self,
+        attribute_name: str,
+        attribute_value: str = None,
+        comparison_type: str = "exists",
+        attribute_display_name: str = None,
+        negated: bool = False,
+        **base_kwargs,
+    ):
+        """
+        :param attribute_name: Name of the attribute to search for. Must be a valid
+            name from the list of supported PDB attributes.
+        :param attribute_value: The value of the search query.
+        :param comparison_type: How to compare the attribute to the value. Must be
+            one of :obj:`TEXT_COMPARE_TYPES`.
+        :param attribute_display_name: A "friendly" name for the attribute for use
+            in the description. Doesn't affect the query result in any way.
+        :param negated: Whether to this query should be negated.
+        :param base_kwargs: Arguments for the base :obj:`PDBQuery`.
+        """
+        super().__init__(**base_kwargs)
+        self._validate_text_comparison_type(comparison_type)
+        if not attribute_name:
+            raise ValueError(f"Invalid attribute name '{attribute_name}'")
+
+        if comparison_type == "exists":
+            if attribute_value is not None:
+                # For 'exists', we don't need a value, otherwise it's required.
+                raise ValueError(
+                    f"Attribute value must be None for 'exists' query, got "
+                    f"'{attribute_value}'"
+                )
+        else:
+            if not attribute_value:
+                raise ValueError(f"Invalid attribute value '{attribute_value}'")
+
+        self.comparison_type = comparison_type
+        self.attribute_name = attribute_name
+        self.attribute_value = attribute_value
+        self.attribute_display_name = attribute_display_name
+        self._negated = negated
+
+    @property
+    def negated(self) -> bool:
+        return self._negated
+
+    @negated.setter
+    def negated(self, negated: bool):
+        self._negated = negated
+
+    def _raw_query_data(self) -> dict:
+        return {
+            "type": "terminal",
+            "service": "text",
+            "parameters": {
+                "operator": self.comparison_type,
+                "negation": self.negated,
+                "value": self.attribute_value,
+                "attribute": self.attribute_name,
+            },
+        }
+
+    def description(self) -> str:
+        return str.join(
+            " ",
+            [
+                self.attribute_display_name or self.attribute_name,
+                "NOT" if self.negated else "",
+                self.comparison_type.upper(),
+                f"'{self.attribute_value}'" or "",
+            ],
+        )
