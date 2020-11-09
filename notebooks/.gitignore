@@ -1,3 +1,6 @@
 # Ignore plots protuced by notebooks
 *.png
 *.pdf
+
+# Ignore everything by default, we'll explicitly add notebooks when needed
+*.ipynb
