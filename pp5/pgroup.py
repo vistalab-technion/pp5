@@ -21,8 +21,8 @@ from pp5.utils import ProteinInitError
 from pp5.codons import UNKNOWN_AA, UNKNOWN_CODON
 from pp5.dihedral import Dihedral
 from pp5.parallel import global_pool
-from pp5.external_dbs import pdb
-from pp5.external_dbs.pdb import PDBQuery, pdb_tagged_filepath
+from pp5.external_dbs import pdb, pdb_api
+from pp5.external_dbs.pdb import pdb_tagged_filepath
 
 LOGGER = logging.getLogger(__name__)
 
@@ -85,12 +85,17 @@ class ProteinGroup(object):
         if not resolution_cutoff:
             raise ProteinInitError("Must specify a resolution cutoff")
 
-        queries = [pdb.PDBResolutionQuery(max_res=resolution_cutoff)]
+        queries = [pdb_api.PDBXRayResolutionQuery(resolution=resolution_cutoff)]
         if expr_sys:
-            queries.append(pdb.PDBExpressionSystemQuery(expr_sys))
+            queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys))
         if source_taxid:
-            queries.append(pdb.PDBSourceTaxonomyIdQuery(source_taxid))
-        composite_query = pdb.PDBCompositeQuery(*queries)
+            queries.append(pdb_api.PDBSourceTaxonomyIdQuery(source_taxid))
+        composite_query = pdb_api.PDBCompositeQuery(
+            *queries,
+            logical_operator="and",
+            return_type=pdb_api.PDBQuery.ReturnType.ENTITY,
+            raise_on_error=False,
+        )
 
         query_results = set(composite_query.execute())
         LOGGER.info(

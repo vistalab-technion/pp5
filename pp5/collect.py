@@ -8,7 +8,7 @@ import logging
 import zipfile
 import multiprocessing as mp
 from pprint import pformat
-from typing import Any, Dict, List, Callable, Iterable, Optional, NamedTuple
+from typing import Dict, List, Callable, Iterable, Optional
 from pathlib import Path
 from dataclasses import dataclass
 from multiprocessing.pool import AsyncResult
@@ -21,7 +21,7 @@ from pp5.prec import ProteinRecord
 from pp5.align import ProteinBLAST
 from pp5.utils import ReprJSONEncoder, ProteinInitError, elapsed_seconds_to_dhms
 from pp5.pgroup import ProteinGroup
-from pp5.external_dbs import pdb, unp
+from pp5.external_dbs import pdb, unp, pdb_api
 
 LOGGER = logging.getLogger(__name__)
 
@@ -281,13 +281,17 @@ class ProteinRecordCollector(ParallelDataCollector):
             process result.
         """
         super().__init__(async_timeout=async_timeout, out_dir=out_dir, create_zip=False)
-        queries = []
-        queries.append(pdb.PDBResolutionQuery(max_res=resolution))
+        queries = [pdb_api.PDBXRayResolutionQuery(resolution=resolution)]
         if expr_sys:
-            queries.append(pdb.PDBExpressionSystemQuery(expr_sys=expr_sys))
+            queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys=expr_sys))
         if source_taxid:
-            queries.append(pdb.PDBSourceTaxonomyIdQuery(taxonomy_id=source_taxid))
-        self.query = pdb.PDBCompositeQuery(*queries)
+            queries.append(pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=source_taxid))
+        self.query = pdb_api.PDBCompositeQuery(
+            *queries,
+            logical_operator="and",
+            return_type=pdb_api.PDBQuery.ReturnType.ENTITY,
+            raise_on_error=False,
+        )
 
         if prec_init_args:
             self.prec_init_args = prec_init_args
@@ -388,13 +392,17 @@ class ProteinGroupCollector(ParallelDataCollector):
             create_zip=create_zip,
         )
 
-        queries = []
-        queries.append(pdb.PDBResolutionQuery(max_res=resolution))
+        queries = [pdb_api.PDBXRayResolutionQuery(resolution=resolution)]
         if expr_sys:
-            queries.append(pdb.PDBExpressionSystemQuery(expr_sys=expr_sys))
+            queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys=expr_sys))
         if source_taxid:
-            queries.append(pdb.PDBSourceTaxonomyIdQuery(taxonomy_id=source_taxid))
-        self.query = pdb.PDBCompositeQuery(*queries)
+            queries.append(pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=source_taxid))
+        self.query = pdb_api.PDBCompositeQuery(
+            *queries,
+            logical_operator="and",
+            return_type=pdb_api.PDBQuery.ReturnType.ENTITY,
+            raise_on_error=False,
+        )
 
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
