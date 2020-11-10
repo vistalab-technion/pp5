@@ -15,12 +15,19 @@ from pp5.utils import requests_retry
 LOGGER = logging.getLogger(__name__)
 PDB_SEARCH_API_URL = "https://search.rcsb.org/rcsbsearch/v1/query"
 
+PDB_ID_SEPARATORS = re.compile(r"[:._-]")
+
 
 class PDBAPIException(requests.RequestException):
-    def __init__(self, other: requests.RequestException, *args, **kwargs):
+    def __init__(self, source: requests.RequestException, *args, **kwargs):
         super().__init__(
-            *args, request=other.request, response=other.response, **kwargs
+            *args, request=source.request, response=source.response, **kwargs
         )
+        self.source = source
+
+    def __str__(self):
+        response = json.loads(self.response.text) if self.response is not None else None
+        return f"{self.source}: {response}"
 
 
 def execute_raw_pdb_search_query(
@@ -59,12 +66,11 @@ def execute_raw_pdb_search_query(
                 return None
             return json.loads(response.text)
     except requests.RequestException as e:
-        response = json.loads(e.response.text) if e.response is not None else None
-        LOGGER.error(
-            f"Failed to query PDB Search API: {e.__class__.__name__}={e}, {response=}"
-        )
+        new_e = PDBAPIException(e)
         if raise_on_error:
-            raise PDBAPIException(e) from None
+            raise new_e from None
+        else:
+            LOGGER.error(f"Failed to query PDB Search API: {new_e}")
     return None
 
 
@@ -191,9 +197,8 @@ class PDBQuery(abc.ABC):
 
         if raw_result:
             # Replace different separator types with ":"
-            id_separator_pattern = re.compile("[._-]")
             pdb_ids = tuple(
-                id_separator_pattern.sub(":", result["identifier"])
+                PDB_ID_SEPARATORS.sub(":", result["identifier"])
                 for result in raw_result["result_set"]
             )
         else:
