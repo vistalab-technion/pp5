@@ -468,7 +468,7 @@ class PDBAttributeSearchQuery(PDBQuery):
         return str.join(
             " ",
             [
-                self.attribute_display_name or self.attribute_name,
+                f"'{self.attribute_display_name or self.attribute_name}'",
                 "NOT" if self.negated else "",
                 self.comparison_type.upper(),
                 f"'{self.attribute_value}'" or "",
