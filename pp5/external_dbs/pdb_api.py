@@ -507,7 +507,9 @@ class PDBSourceTaxonomyIdQuery(PDBAttributeSearchQuery):
     """
 
     def __init__(
-        self, taxonomy_id: int = pp5.get_config("DEFAULT_SOURCE_TAXID"), **base_kwargs,
+        self,
+        taxonomy_id: Union[str, int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
+        **base_kwargs,
     ):
         """
         :param taxonomy_id: The taxonomy ID of the source organism.
@@ -530,7 +532,7 @@ class PDBXRayResolutionQuery(PDBCompositeQuery):
 
     def __init__(
         self,
-        resolution: float = pp5.get_config("DEFAULT_RES"),
+        resolution: Union[str, float] = pp5.get_config("DEFAULT_RES"),
         comparison_operator: str = "less_or_equal",
         **base_kwargs,
     ):
@@ -542,7 +544,7 @@ class PDBXRayResolutionQuery(PDBCompositeQuery):
         super().__init__(
             PDBAttributeSearchQuery(
                 attribute_name="rcsb_entry_info.diffrn_resolution_high.value",
-                attribute_value=resolution,
+                attribute_value=float(resolution),
                 comparison_type=comparison_operator,
                 attribute_display_name="X-Ray Resolution",
             ),
