@@ -13,6 +13,8 @@ import pp5
 from pp5.utils import requests_retry
 
 LOGGER = logging.getLogger(__name__)
+
+PDB_DATA_API_URL = "https://data.rcsb.org/rest/v1/core"
 PDB_SEARCH_API_URL = "https://search.rcsb.org/rcsbsearch/v1/query"
 
 PDB_ID_SEPARATORS = re.compile(r"[:._-]")
@@ -28,6 +30,75 @@ class PDBAPIException(requests.RequestException):
     def __str__(self):
         response = json.loads(self.response.text) if self.response is not None else None
         return f"{self.source}: {response}"
+
+
+def execute_raw_data_query(
+    base_pdb_id: str,
+    chain_id: str = None,
+    entity_id: str = None,
+    raise_on_error: bool = True,
+) -> dict:
+    """
+    Executes a query to obtain raw data from PDB about a structure, a polymer entity
+    or a chain.
+
+    There are three possible API calls, each returning different data:
+    - Entry data API: Describes the entire structure. Used when chain_id and
+        entity_id are both not provided.
+    - Polymer entity data API: Describes a polymer entity in the structure. Used when
+        entity_id is provided.
+    - Polymer entity instance data API: Describes a chain in the structure.
+        Used when chain_id is provided.
+
+    See the data API documentation for an explanation what's returned in each case.
+    https://data.rcsb.org/#data-api
+    https://data.rcsb.org/redoc/
+
+    :param base_pdb_id: A PDB ID without entity or chain.
+    :param chain_id: A chain ID, e.g. "A". Optional. Must not be provided together
+        with entity_id.
+    :param entity_id: An entity ID, e.g. "1". Optional. Must not be provided together
+        with chain_id.
+    :param raise_on_error: Whether to raise a PDBAPIException in case of an error,
+        or to return an empty dict.
+    :return: A dict containing the raw parsed-json response from the API.
+    """
+
+    base_pdb_id, *rest = PDB_ID_SEPARATORS.split(base_pdb_id or "")
+
+    if not base_pdb_id:
+        raise ValueError("Must provide base PDB ID")
+
+    if rest:
+        raise ValueError("Base PDB ID must not include chain or entity id")
+
+    if chain_id and entity_id:
+        raise ValueError("Must provide either chain, entity or none, but not both")
+
+    base_pdb_id = str.upper(base_pdb_id)
+    if chain_id:
+        query_path = f"polymer_entity_instance/{base_pdb_id}/{str(chain_id).upper()}"
+    elif entity_id:
+        query_path = f"polymer_entity/{base_pdb_id}/{str(entity_id).upper()}"
+    else:
+        query_path = f"entry/{base_pdb_id}"
+
+    query_url = f"{PDB_DATA_API_URL}/{query_path}"
+    try:
+        # Use many retries as this is an unreliable API
+        with requests_retry().get(query_url) as response:
+            # Responses status codes in these APIs are either 200 or 404
+            # 404 means one of the IDs was invalid.
+            response.raise_for_status()
+            return json.loads(response.text)
+    except requests.RequestException as e:
+        new_e = PDBAPIException(e)
+        if raise_on_error:
+            raise new_e from None
+        else:
+            LOGGER.error(f"Failed to query PDB Data API: {new_e}")
+
+    return {}
 
 
 def execute_raw_pdb_search_query(

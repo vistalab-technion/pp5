@@ -1,7 +1,14 @@
+from contextlib import contextmanager
+
 import pytest
 
 import pp5.external_dbs.pdb_api as pdb_api
 from pp5.external_dbs.pdb import split_id_with_entity
+
+
+@contextmanager
+def _does_not_raise(*args, **kwargs):
+    yield
 
 
 class _BasicQuery(pdb_api.PDBQuery):
@@ -13,6 +20,83 @@ class _BasicQuery(pdb_api.PDBQuery):
 
     def description(self) -> str:
         return "Basic query"
+
+
+class TestRawDataAPI:
+    @pytest.mark.parametrize("pdb_base_id", ["4HHB", "2wur", "3sG4"])
+    def test_entry(self, pdb_base_id):
+        result = pdb_api.execute_raw_data_query(pdb_base_id)
+        assert result["rcsb_id"] == pdb_base_id.upper()
+
+    @pytest.mark.parametrize(
+        ["pdb_base_id", "entity_id"], [["4HHB", "1"], ["4hhb", 2]],
+    )
+    def test_entity(self, pdb_base_id, entity_id):
+        result = pdb_api.execute_raw_data_query(pdb_base_id, entity_id=entity_id)
+        assert result["rcsb_id"] == f"{pdb_base_id.upper()}_{str(entity_id).upper()}"
+
+    @pytest.mark.parametrize(
+        ["pdb_base_id", "chain_id"], [["4HHB", "A"], ["4hhb", "b"]],
+    )
+    def test_chain(self, pdb_base_id, chain_id):
+        result = pdb_api.execute_raw_data_query(pdb_base_id, chain_id=chain_id)
+        assert result["rcsb_id"] == f"{pdb_base_id.upper()}.{str(chain_id).upper()}"
+
+    @pytest.mark.parametrize(
+        ["pdb_base_id", "chain_id", "entity_id", "ex_regex"],
+        [
+            [None, None, "1", "Must provide base"],
+            ["", None, "1", "Must provide base"],
+            ["4HHb:1", None, None, "must not include chain or entity"],
+            ["4HHb_1", None, 1, "must not include chain or entity"],
+            ["4HHb.A", "A", None, "must not include chain or entity"],
+            ["4HHB", "A", "1", "not both"],
+        ],
+    )
+    def test_invalid_inputs(self, pdb_base_id, chain_id, entity_id, ex_regex):
+        with pytest.raises(ValueError, match=ex_regex):
+            pdb_api.execute_raw_data_query(
+                pdb_base_id, chain_id=chain_id, entity_id=entity_id
+            )
+
+    @pytest.mark.parametrize(
+        ["pdb_base_id", "chain_id", "entity_id", "raise_on_error", "ex_regex"],
+        [
+            ["4HHB", "Z", None, True, "404"],
+            ["4HHB", "", 12, True, "404"],
+            #
+            ["4HHB", "Z", None, False, ""],
+            ["4HHB", "", 12, False, ""],
+            #
+            ["AAAA", None, None, True, "404"],
+            ["BBBB", None, None, True, "404"],
+            #
+            ["333Z", None, None, False, ""],
+            ["AAAAA", None, None, False, ""],
+            #
+        ],
+    )
+    def test_invalid_pdb_ids(
+        self, pdb_base_id, chain_id, entity_id, raise_on_error, ex_regex
+    ):
+
+        if raise_on_error:
+            expected_behaviour = pytest.raises(pdb_api.PDBAPIException, match=ex_regex)
+            expected_result = None
+        else:
+            expected_behaviour = _does_not_raise()
+            expected_result = {}
+
+        actual_result = None
+        with expected_behaviour:
+            actual_result = pdb_api.execute_raw_data_query(
+                pdb_base_id,
+                chain_id=chain_id,
+                entity_id=entity_id,
+                raise_on_error=raise_on_error,
+            )
+
+        assert actual_result == expected_result
 
 
 class TestPDBQuery(object):
