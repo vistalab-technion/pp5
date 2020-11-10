@@ -169,6 +169,7 @@ class TestPDBDownload:
 
 
 @pytest.mark.skipif(NO_INTERNET, reason="Needs internet")
+@pytest.mark.skip(reason="Legacy PDB API is down, should remove")
 class TestPDBMetadata:
     def test_pdb_metadata(self):
         pdb_ids = ["1MWC", "1b0y"]
@@ -294,6 +295,7 @@ class TestPDB2UNP:
 
 
 @pytest.mark.skipif(NO_INTERNET, reason="Needs internet")
+@pytest.mark.skip(reason="Legacy PDB API is down, should remove these tests")
 class TestPDBQueries:
     def test_resolution_query(self):
         min_res = 0.4
