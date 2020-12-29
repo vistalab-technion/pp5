@@ -1,22 +1,18 @@
 from __future__ import annotations
 
-import os
 import re
 import abc
-import json
 import math
 import logging
 import warnings
-import itertools as it
 from math import cos, sin
 from math import degrees as deg
 from math import radians as rad
-from typing import Set, Dict, List, Type, Tuple, Union, Iterable, Optional, NamedTuple
+from typing import Dict, List, Type, Tuple, Union, Iterable, Optional
 from pathlib import Path
 from collections import OrderedDict
 
 import numpy as np
-import pandas as pd
 import yattag
 import requests
 from Bio import PDB as PDB
@@ -29,9 +25,10 @@ from Bio.PDB.PDBExceptions import PDBConstructionWarning, PDBConstructionExcepti
 import pp5
 from pp5 import PDB_DIR, get_resource_path
 from pp5.utils import JSONCacheableMixin, remote_dl, requests_retry
+from pp5.external_dbs import pdb_api
 
 PDB_ID_PATTERN = re.compile(
-    r"^(?P<id>[0-9][\w]{3})(?::(?:" r"(?P<chain>[a-z])|(?P<entity>[0-9])" r"))?$",
+    r"^(?P<id>[0-9][\w]{3})(?::(?:" r"(?P<chain>[a-z]{1,2})|(?P<entity>[0-9]{1,2})))?$",
     re.IGNORECASE | re.ASCII,
 )
 
@@ -39,11 +36,7 @@ STANDARD_ACID_NAMES = set(standard_aa_names)
 
 PDB_SEARCH_URL = "https://www.rcsb.org/pdb/rest/search"
 PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
-PDB_TO_UNP_URL_TEMPLATE = (
-    r"https://www.rcsb.org/pdb/rest/customReport"
-    r"?pdbids={}&customReportColumns=uniprotAcc"
-    r"&service=wsfile&format=csv"
-)
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -196,7 +189,7 @@ class PDB2UNP(JSONCacheableMixin, object):
         # chain -> unp -> [ (s1,e1), (s2, e2), ... ]
         chain_to_unp_xrefs = self.parse_all_uniprot_xrefs(pdb_id, struct_d)
 
-        # Make sure all Unprot IDs we got from the PDB API exist in our
+        # Make sure all Uniprot IDs we got from the PDB API exist in our
         # final dict and appear in the order we got them from the PDB API.
         # If not, we need to add them. For now we'll add
         # these missing Uniprot IDs with an empty list of ranges.
@@ -299,30 +292,35 @@ class PDB2UNP(JSONCacheableMixin, object):
         """
         Retrieves all Uniprot IDs associated with a PDB structure by querying
         the PDB database.
-        :param pdb_id: The PDB ID to search for. Can be with or without chain.
-        :return: A list of associated Uniprot IDs.
+        :param pdb_id: The PDB ID to search for. Chain or entity will be ignored.
+        :return: A dict, mapping from each chain in the given structure to a list of
+            associated Uniprot IDs.
+        :raises pdb_api.PDBAPIException: If there's a problem obtaining the data.
         """
-        # In the url of the query, chain is separated with a '.'
-        url_pdb_id = pdb_id.replace(":", ".")
-        url = PDB_TO_UNP_URL_TEMPLATE.format(url_pdb_id)
-        try:
-            headers = {"Accept-Encoding": "identity"}
-            with requests_retry().get(url, stream=True, headers=headers) as r:
-                r.raise_for_status()
-                df = pd.read_csv(r.raw, header=0, na_filter=False, dtype=str)
-        except (requests.RequestException, ValueError) as e:
-            raise ValueError(
-                f"Failed to run PDB custom query with {pdb_id} for "
-                f"Uniprot IDs: {e.__class__.__name__}={e}"
-            ) from None
+        chain_to_unp_ids = {}
 
-        # Split each unp column value by '#' because in cases
-        # where there are multiple Uniprot IDs for a single CHAIN, this is
-        # how they're separated (e.g. 3SG4:A).
-        chains = df["chainId"]
-        unp_ids = map(lambda x: x.upper().split("#"), df["uniprotAcc"])
-        unp_ids = map(lambda x: list(filter(lambda y: len(y), x)), unp_ids)
-        chain_to_unp_ids = {k.upper(): v for k, v in zip(chains, unp_ids) if v}
+        # Make sure we have a base id
+        pdb_id, _, _ = split_id_with_entity(pdb_id)
+
+        # Get all data for the PDB structure
+        entry_data = pdb_api.execute_raw_data_query(pdb_id)
+        entry_containers = entry_data["rcsb_entry_container_identifiers"]
+
+        # Find all polymer entities
+        entity_ids = entry_containers.get("polymer_entity_ids", [])
+        for entity_id in entity_ids:
+            # Get all data about this entity
+            entity_data = pdb_api.execute_raw_data_query(pdb_id, entity_id=entity_id)
+
+            # Get list of chains and list of Uniprot IDs for this entity
+            entity_containers = entity_data["rcsb_polymer_entity_container_identifiers"]
+            entity_chains = entity_containers.get("asym_ids", [])
+            entity_unp_ids = entity_containers.get("uniprot_ids", [])
+
+            # Save the mapping from each chain to these uniprot IDs.
+            for chain in entity_chains:
+                chain_to_unp_ids[chain] = entity_unp_ids
+
         return chain_to_unp_ids
 
     @staticmethod
@@ -794,6 +792,36 @@ class PDBResolutionQuery(PDBQuery):
             line(self.TAG_RES_MAX, self.max_res)
 
         return doc.getvalue()
+
+
+class PDBSourceTaxonomyIdQuery(PDBQuery):
+    """
+    Query for PDB structures with a specified host organism, specified as a taxonomy ID.
+    """
+
+    def __init__(
+        self, taxonomy_id: int = pp5.get_config("DEFAULT_SOURCE_TAXID"), t: int = 1,
+    ):
+        self.taxonomy_id = taxonomy_id
+        self.t = t
+
+    SOURCE_TAX_ID_QUERY_TYPE = "org.pdb.query.simple.TreeEntityQuery"
+    TAG_TAXID = "n"
+    TAG_T = "t"  # Don't know what this tag is, but it's required.
+
+    def to_xml(self):
+        doc, tag, text, line = yattag.Doc().ttl()
+
+        with tag(self.TAG_QUERY):
+            line(self.TAG_QUERY_TYPE, self.SOURCE_TAX_ID_QUERY_TYPE)
+            line(self.TAG_DESCRIPTION, self.description())
+            line(self.TAG_TAXID, self.taxonomy_id)
+            line(self.TAG_T, self.t)
+
+        return doc.getvalue()
+
+    def description(self):
+        return f"Source organism TaxonomyID={self.taxonomy_id}"
 
 
 class PDBExpressionSystemQuery(PDBQuery):

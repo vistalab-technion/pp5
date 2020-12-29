@@ -8,7 +8,7 @@ import logging
 import zipfile
 import multiprocessing as mp
 from pprint import pformat
-from typing import Any, Dict, List, Callable, Iterable, Optional, NamedTuple
+from typing import Dict, List, Callable, Iterable, Optional
 from pathlib import Path
 from dataclasses import dataclass
 from multiprocessing.pool import AsyncResult
@@ -21,7 +21,7 @@ from pp5.prec import ProteinRecord
 from pp5.align import ProteinBLAST
 from pp5.utils import ReprJSONEncoder, ProteinInitError, elapsed_seconds_to_dhms
 from pp5.pgroup import ProteinGroup
-from pp5.external_dbs import pdb, unp
+from pp5.external_dbs import pdb, unp, pdb_api
 
 LOGGER = logging.getLogger(__name__)
 
@@ -104,19 +104,18 @@ class ParallelDataCollector(abc.ABC):
         for step_name, collect_fn in collection_functions.items():
             step_start_time = time.time()
 
+            step_status, step_message = "RUNNING", None
             with pp5.parallel.global_pool() as pool:
                 try:
                     step_meta = collect_fn(pool)
                     if step_meta:
                         self._collection_meta.update(step_meta)
-                    step_status = "SUCCESS"
-                    step_message = None
+                    step_status, step_message = "SUCCESS", None
                 except Exception as e:
                     LOGGER.error(
                         f"Unexpected exception in top-level " f"collect", exc_info=e
                     )
-                    step_status = "FAIL"
-                    step_message = f"{e}"
+                    step_status, step_message = "FAIL", f"{e}"
                 finally:
                     step_elapsed = time.time() - step_start_time
                     step_elapsed = elapsed_seconds_to_dhms(step_elapsed)
@@ -254,12 +253,13 @@ class ParallelDataCollector(abc.ABC):
 
 
 class ProteinRecordCollector(ParallelDataCollector):
-    DEFAULT_PREC_INIT_ARGS = dict(dihedral_est_name="erp")
+    DEFAULT_PREC_INIT_ARGS = dict()
 
     def __init__(
         self,
         resolution: float,
-        expr_sys: str = ProteinGroup.DEFAULT_EXPR_SYS,
+        expr_sys: str = pp5.get_config("DEFAULT_EXPR_SYS"),
+        source_taxid: int = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         prec_init_args=None,
         out_dir: Path = pp5.out_subdir("prec-collected"),
         prec_out_dir: Path = pp5.out_subdir("prec"),
@@ -269,20 +269,29 @@ class ProteinRecordCollector(ParallelDataCollector):
         """
         Collects ProteinRecords based on a PDB query results, and saves them
         in the local cache folder. Optionally also writes them to CSV.
-        :param resolution: Resolution cutoff value in Angstorms.
+        :param resolution: Resolution cutoff value in Angstroms.
         :param expr_sys: Expression system name.
+        :param source_taxid: Taxonomy ID of source organism.
         :param out_dir: Output folder for collected metadata.
         :param prec_out_dir: Output folder for prec CSV files.
         :param prec_init_args: Arguments for initializing each ProteinRecord
         :param write_csv: Whether to write the ProteinRecords to
-        the prec_out_dir as CSV files.
+            the prec_out_dir as CSV files.
         :param async_timeout: Timeout in seconds for each worker
-        process result.
+            process result.
         """
         super().__init__(async_timeout=async_timeout, out_dir=out_dir, create_zip=False)
-        res_query = pdb.PDBResolutionQuery(max_res=resolution)
-        expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys=expr_sys)
-        self.query = pdb.PDBCompositeQuery(res_query, expr_sys_query)
+        queries = [pdb_api.PDBXRayResolutionQuery(resolution=resolution)]
+        if expr_sys:
+            queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys=expr_sys))
+        if source_taxid:
+            queries.append(pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=source_taxid))
+        self.query = pdb_api.PDBCompositeQuery(
+            *queries,
+            logical_operator="and",
+            return_type=pdb_api.PDBQuery.ReturnType.ENTITY,
+            raise_on_error=False,
+        )
 
         if prec_init_args:
             self.prec_init_args = prec_init_args
@@ -301,24 +310,26 @@ class ProteinRecordCollector(ParallelDataCollector):
     def _collect_precs(self, pool: mp.Pool):
         meta = {}
         pdb_ids = self.query.execute()
+        n_structs = len(pdb_ids)
+
         meta["query"] = str(self.query)
         meta["n_query_results"] = len(pdb_ids)
-        LOGGER.info(f"Got {len(pdb_ids)} structures from PDB")
+        LOGGER.info(f"Got {n_structs} structures from PDB, collecting...")
 
         async_results = []
         for i, pdb_id in enumerate(pdb_ids):
-            r = pool.apply_async(
-                ProteinRecord.from_pdb, args=(pdb_id,), kwds=self.prec_init_args
-            )
+            args = (pdb_id, (i, n_structs))
+            kwds = dict(csv_out_dir=self.prec_out_dir if self.write_csv else None)
+            r = pool.apply_async(_collect_single_structure, args, kwds)
             async_results.append(r)
 
-        prec_callback = None
-        if self.write_csv:
-            prec_callback = lambda prec: prec.to_csv(self.prec_out_dir)
-
-        count, elapsed, _ = self._handle_async_results(
-            async_results, collect=False, result_callback=prec_callback
+        count, elapsed, pdb_id_data = self._handle_async_results(
+            async_results, collect=True, flatten=True
         )
+
+        # Create a dataframe from the collected data
+        df_all = pd.DataFrame(pdb_id_data)
+        _write_df_csv(df_all, self.out_dir, "meta-structs_all")
 
         meta["n_collected"] = count
         LOGGER.info(
@@ -326,13 +337,15 @@ class ProteinRecordCollector(ParallelDataCollector):
             f"(elapsed={elapsed:.2f} seconds, "
             f"{count / elapsed:.1f} proteins/sec)."
         )
+        return meta
 
 
 class ProteinGroupCollector(ParallelDataCollector):
     def __init__(
         self,
         resolution: float,
-        expr_sys: str = ProteinGroup.DEFAULT_EXPR_SYS,
+        expr_sys: str = pp5.get_config("DEFAULT_EXPR_SYS"),
+        source_taxid: int = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         evalue_cutoff: float = 1.0,
         identity_cutoff: float = 30.0,
         b_max: float = 30.0,
@@ -349,26 +362,27 @@ class ProteinGroupCollector(ParallelDataCollector):
         results.
         :param resolution: Resolution cutoff value in Angstroms.
         :param expr_sys: Expression system name.
+        :param source_taxid: Taxonomy ID of source organism.
         :param evalue_cutoff: Maximal expectation value allowed for BLAST
-        matches when searching for proteins to include in pgroups.
+            matches when searching for proteins to include in pgroups.
         :param identity_cutoff: Minimal percent sequence identity
-        allowed for BLAST matches when searching for proteins to include in
-        pgroups.
+            allowed for BLAST matches when searching for proteins to include in
+            pgroups.
         :param b_max: Maximal b-factor a residue can have
-        (backbone-atom average) in order for it to be included in a match
-        group. None means no limit.
+            (backbone-atom average) in order for it to be included in a match
+            group. None means no limit.
         :param out_dir: Output directory for collection CSV files.
         :param pgroup_out_dir: Output directory for pgroup CSV files. Only
-        relevant if write_pgroup_csvs is True.
+            relevant if write_pgroup_csvs is True.
         :param write_pgroup_csvs: Whether to write each pgroup's CSV files.
-        Even if false, the collection files will still be writen.
+            Even if false, the collection files will still be writen.
         :param out_tag: Extra tag to add to the output file names.
         :param  ref_file: Path of collector CSV file with references.
-        Allows to skip the first and second collection steps (finding PDB
-        IDs for the reference structures) and immediately collect
-        ProteinGroups for the references in the file.
+            Allows to skip the first and second collection steps (finding PDB
+            IDs for the reference structures) and immediately collect
+            ProteinGroups for the references in the file.
         :param async_timeout: Timeout in seconds for each worker
-        process result, or None for no timeout.
+            process result, or None for no timeout.
         :param create_zip: Whether to create a zip file with all output files.
         """
         super().__init__(
@@ -378,9 +392,17 @@ class ProteinGroupCollector(ParallelDataCollector):
             create_zip=create_zip,
         )
 
-        res_query = pdb.PDBResolutionQuery(max_res=resolution)
-        expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys=expr_sys)
-        self.query = pdb.PDBCompositeQuery(res_query, expr_sys_query)
+        queries = [pdb_api.PDBXRayResolutionQuery(resolution=resolution)]
+        if expr_sys:
+            queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys=expr_sys))
+        if source_taxid:
+            queries.append(pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=source_taxid))
+        self.query = pdb_api.PDBCompositeQuery(
+            *queries,
+            logical_operator="and",
+            return_type=pdb_api.PDBQuery.ReturnType.ENTITY,
+            raise_on_error=False,
+        )
 
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
@@ -442,7 +464,7 @@ class ProteinGroupCollector(ParallelDataCollector):
             async_results = []
             for i, pdb_id in enumerate(pdb_ids):
                 args = (pdb_id, (i, n_structs))
-                r = pool.apply_async(self._collect_single_structure, args=args)
+                r = pool.apply_async(_collect_single_structure, args=args)
                 async_results.append(r)
 
             count, elapsed, pdb_id_data = self._handle_async_results(
@@ -456,7 +478,7 @@ class ProteinGroupCollector(ParallelDataCollector):
                     by=["unp_id", "resolution"], inplace=True, ignore_index=True
                 )
 
-        filepath = self._write_csv(self._df_all, "meta-structs_all")
+        filepath = _write_df_csv(self._df_all, self.out_dir, "meta-structs_all")
         self._out_filepaths.append(filepath)
 
         meta["n_all_structures"] = len(self._df_all)
@@ -481,7 +503,7 @@ class ProteinGroupCollector(ParallelDataCollector):
             async_results = []
             for unp_id, df_group in groups:
                 args = (unp_id, df_group)
-                r = pool.apply_async(self._collect_single_ref, args=args)
+                r = pool.apply_async(_collect_single_ref, args=args)
                 async_results.append(r)
 
             count, elapsed, group_datas = self._handle_async_results(
@@ -499,7 +521,7 @@ class ProteinGroupCollector(ParallelDataCollector):
                 )
 
         meta["n_ref_structures"] = len(self._df_ref)
-        filepath = self._write_csv(self._df_ref, "meta-structs_ref")
+        filepath = _write_df_csv(self._df_ref, self.out_dir, "meta-structs_ref")
         self._out_filepaths.append(filepath)
         return meta
 
@@ -523,8 +545,15 @@ class ProteinGroupCollector(ParallelDataCollector):
         for i, ref_pdb_id in enumerate(ref_pdb_ids):
             idx = (i, len(ref_pdb_ids))
             pgroup_out_dir = self.pgroup_out_dir if self.write_pgroup_csvs else None
-            args = (ref_pdb_id, blast, self.b_max, pgroup_out_dir, self.out_tag, idx)
-            r = pool.apply_async(self._collect_single_pgroup, args=args)
+            args = (
+                ref_pdb_id,
+                blast,
+                self.b_max,
+                pgroup_out_dir,
+                self.out_tag,
+                idx,
+            )
+            r = pool.apply_async(_collect_single_pgroup, args=args)
             async_results.append(r)
 
         count, elapsed, collected_data = self._handle_async_results(
@@ -563,7 +592,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         for c in [c for c in self._df_pgroups.columns if c.startswith("n_")]:
             meta[c] = int(self._df_pgroups[c].sum())  # converts from np.int64
 
-        filepath = self._write_csv(self._df_pgroups, "meta-pgroups")
+        filepath = _write_df_csv(self._df_pgroups, self.out_dir, "meta-pgroups")
         self._out_filepaths.append(filepath)
 
         # Create the pairwise matches dataframe
@@ -572,7 +601,7 @@ class ProteinGroupCollector(ParallelDataCollector):
             self._df_pairwise.sort_values(
                 by=["ref_unp_id", "ref_idx", "type"], inplace=True, ignore_index=True
             )
-        filepath = self._write_csv(self._df_pairwise, "data-pairwise")
+        filepath = _write_df_csv(self._df_pairwise, self.out_dir, "data-pairwise")
         self._out_filepaths.append(filepath)
 
         # Create the pointwise matches dataframe
@@ -581,196 +610,221 @@ class ProteinGroupCollector(ParallelDataCollector):
             self._df_pointwise.sort_values(
                 by=["unp_id", "ref_idx"], inplace=True, ignore_index=True
             )
-        filepath = self._write_csv(self._df_pointwise, "data-pointwise")
+        filepath = _write_df_csv(self._df_pointwise, self.out_dir, "data-pointwise")
         self._out_filepaths.append(filepath)
 
         return meta
 
-    def _write_csv(self, df: pd.DataFrame, filename: str) -> Path:
-        filename = f"{filename}.csv"
-        filepath = self.out_dir.joinpath(filename)
 
-        with open(str(filepath), mode="w", encoding="utf-8") as f:
-            df.to_csv(f, header=True, index=False, float_format="%.2f")
+def _collect_single_structure(
+    pdb_id: str,
+    idx: tuple = (0, 0),
+    csv_out_dir: Optional[Path] = None,
+    csv_tag: str = None,
+) -> List[dict]:
+    """
+    Downloads a single PDBB entry, and creates a prec for all its chains.
+    :param pdb_id: The PDB id to download.
+    :param idx: Index for logging; should be a tuple of (current, total).
+    :param csv_out_dir: If provided, the prec of each chain will be written to CSV at
+        this path.
+    :param csv_tag: Tag to add to the output CSVs.
+    :return: A list of dicts, each containing metadata about one of the collected
+        chains.
+    """
+    pdb_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
 
-        LOGGER.info(f"Wrote {filepath}")
-        return filepath
+    pdb_dict = pdb.pdb_dict(pdb_id)
+    meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
+    pdb2unp = pdb.PDB2UNP.from_pdb(pdb_id, cache=True, struct_d=pdb_dict)
 
-    @staticmethod
-    def _collect_single_structure(pdb_id: str, idx: tuple) -> List[dict]:
-        pdb_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
+    # If we got an entity id instead of chain, discover the chain.
+    if entity_id:
+        entity_id = int(entity_id)
+        chain_id = meta.get_chain(entity_id)
 
-        pdb_dict = pdb.pdb_dict(pdb_id)
-        meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
-        pdb2unp = pdb.PDB2UNP.from_pdb(pdb_id, cache=True, struct_d=pdb_dict)
+    if chain_id:
+        # If we have a specific chain, use only that
+        all_chains = (chain_id,)
+    else:
+        # Otherwise we'll take all UNIQUE chains: only one chain from
+        # each unique entity. This is important, since chains from the same
+        # entity are identical, so they're redundant.
+        all_chains = [meta.get_chain(e) for e in meta.entity_sequence]
 
-        # If we got an entity id instead of chain, discover the chain.
-        if entity_id:
-            entity_id = int(entity_id)
-            chain_id = meta.get_chain(entity_id)
+    chain_data = []
+    for chain_id in all_chains:
+        pdb_id_full = f"{pdb_id}:{chain_id}"
 
-        if chain_id:
-            # If we have a specific chain, use only that
-            all_chains = (chain_id,)
-        else:
-            # Otherwise we'll take all UNIQUE chains: only one chain from
-            # each unique entity. This is important, since chains from the same
-            # entity are identical, so they're redundant.
-            all_chains = [meta.get_chain(e) for e in meta.entity_sequence]
+        # Skip chains with no Uniprot ID
+        if chain_id not in pdb2unp:
+            LOGGER.warning(f"No Uniprot ID for {pdb_id_full}")
+            continue
 
-        chain_data = []
-        for chain_id in all_chains:
-            pdb_id_full = f"{pdb_id}:{chain_id}"
+        # Skip chimeric chains
+        if pdb2unp.is_chimeric(chain_id):
+            LOGGER.warning(f"Discarding chimeric chain {pdb_id_full}")
+            continue
 
-            # Skip chains with no Uniprot ID
-            if chain_id not in pdb2unp:
-                LOGGER.warning(f"No Uniprot ID for {pdb_id_full}")
-                continue
+        unp_id = pdb2unp.get_unp_id(chain_id)
+        resolution = meta.resolution
+        seq_len = len(meta.entity_sequence[meta.chain_entities[chain_id]])
 
-            # Skip chimeric chains
-            if pdb2unp.is_chimeric(chain_id):
-                LOGGER.warning(f"Discarding chimeric chain {pdb_id_full}")
-                continue
-
-            unp_id = pdb2unp.get_unp_id(chain_id)
-            resolution = meta.resolution
-            seq_len = len(meta.entity_sequence[meta.chain_entities[chain_id]])
-
-            # Create a ProteinRecord and save it so it's cached for when we
-            # create the pgroups. Only collect structures for which we can
-            # create a prec (e.g. they must have a DNA sequence).
-            try:
-                nc = chain_id in string.digits
-                prec = ProteinRecord(
-                    unp_id,
-                    pdb_id_full,
-                    pdb_dict=pdb_dict,
-                    strict_unp_xref=False,
-                    numeric_chain=nc,
-                )
-                prec.save()
-            except Exception as e:
-                LOGGER.warning(
-                    f"Failed to create ProteinRecord for "
-                    f"({unp_id}, {pdb_id}), will not collect: {e}"
-                )
-                continue
-
-            chain_data.append(
-                dict(
-                    unp_id=unp_id,
-                    pdb_id=pdb_id_full,
-                    resolution=resolution,
-                    seq_len=seq_len,
-                    description=meta.description,
-                    src_org=meta.src_org,
-                    host_org=meta.host_org,
-                    ligands=meta.ligands,
-                    r_free=meta.r_free,
-                    r_work=meta.r_work,
-                )
+        # Create a ProteinRecord and save it so it's cached for when we
+        # create the pgroups. Only collect structures for which we can
+        # create a prec (e.g. they must have a DNA sequence).
+        try:
+            nc = chain_id in string.digits
+            prec = ProteinRecord(
+                unp_id,
+                pdb_id_full,
+                pdb_dict=pdb_dict,
+                strict_unp_xref=False,
+                numeric_chain=nc,
             )
 
+            # Save into cache
+            prec.save()
+
+            # Write CSV if requested
+            if csv_out_dir is not None:
+                prec.to_csv(csv_out_dir, tag=csv_tag)
+        except Exception as e:
+            LOGGER.warning(
+                f"Failed to create ProteinRecord for "
+                f"({unp_id}, {pdb_id}), will not collect: {e}"
+            )
+            continue
+
+        chain_data.append(
+            dict(
+                unp_id=unp_id,
+                pdb_id=pdb_id_full,
+                ena_id=prec.ena_id,
+                resolution=resolution,
+                seq_len=seq_len,
+                description=meta.description,
+                src_org=meta.src_org,
+                host_org=meta.host_org,
+                ligands=meta.ligands,
+                r_free=meta.r_free,
+                r_work=meta.r_work,
+                space_group=meta.space_group,
+                cg_ph=meta.cg_ph,
+                cg_temp=meta.cg_temp,
+            )
+        )
+
+    LOGGER.info(
+        f"Collected {pdb_id} {pdb2unp.get_chain_to_unp_ids()} "
+        f"({idx[0] + 1}/{idx[1]})"
+    )
+
+    return chain_data
+
+
+def _collect_single_ref(group_unp_id: str, df_group: pd.DataFrame) -> Optional[dict]:
+    try:
+        unp_rec = unp.unp_record(group_unp_id)
+        unp_seq_len = len(unp_rec.sequence)
+    except ValueError as e:
+        pdb_ids = tuple(df_group["pdb_id"])
+        LOGGER.error(
+            f"Failed create Uniprot record for {group_unp_id} " f"{pdb_ids}: {e}"
+        )
+        return None
+
+    median_res = df_group["resolution"].median()
+    group_size = len(df_group)
+    df_group = df_group.sort_values(by=["resolution"])
+    df_group["seq_ratio"] = df_group["seq_len"] / unp_seq_len
+
+    # Keep only structures which have at least 90% of residues as
+    # the Uniprot sequence, but no more than 100% (no extras).
+    df_group = df_group[df_group["seq_ratio"] > 0.9]
+    df_group = df_group[df_group["seq_ratio"] <= 1.0]
+    if len(df_group) == 0:
+        return None
+
+    ref_pdb_id = df_group.iloc[0]["pdb_id"]
+    ref_res = df_group.iloc[0]["resolution"]
+    ref_seq_ratio = df_group.iloc[0]["seq_ratio"]
+
+    return dict(
+        unp_id=group_unp_id,
+        unp_name=unp_rec.entry_name,
+        ref_pdb_id=ref_pdb_id,
+        ref_res=ref_res,
+        ref_seq_ratio=ref_seq_ratio,
+        group_median_res=median_res,
+        group_size=group_size,
+    )
+
+
+def _collect_single_pgroup(
+    ref_pdb_id: str,
+    blast: ProteinBLAST,
+    b_max: float,
+    out_dir: Optional[Path],
+    out_tag: str,
+    idx: tuple,
+) -> Optional[dict]:
+    try:
         LOGGER.info(
-            f"Collected {pdb_id} {pdb2unp.get_chain_to_unp_ids()} "
+            f"Creating ProteinGroup for {ref_pdb_id}, {b_max=} "
             f"({idx[0] + 1}/{idx[1]})"
         )
 
-        return chain_data
+        # Run BLAST to find query structures for the pgroup
+        df_blast = blast.pdb(ref_pdb_id)
+        LOGGER.info(f"Got {len(df_blast)} BLAST hits for {ref_pdb_id}")
 
-    @staticmethod
-    def _collect_single_ref(
-        group_unp_id: str, df_group: pd.DataFrame
-    ) -> Optional[dict]:
-        try:
-            unp_rec = unp.unp_record(group_unp_id)
-            unp_seq_len = len(unp_rec.sequence)
-        except ValueError as e:
-            pdb_ids = tuple(df_group["pdb_id"])
-            LOGGER.error(
-                f"Failed create Uniprot record for {group_unp_id} " f"{pdb_ids}: {e}"
-            )
-            return None
-
-        median_res = df_group["resolution"].median()
-        group_size = len(df_group)
-        df_group = df_group.sort_values(by=["resolution"])
-        df_group["seq_ratio"] = df_group["seq_len"] / unp_seq_len
-
-        # Keep only structures which have at least 90% of residues as
-        # the Uniprot sequence, but no more than 100% (no extras).
-        df_group = df_group[df_group["seq_ratio"] > 0.9]
-        df_group = df_group[df_group["seq_ratio"] <= 1.0]
-        if len(df_group) == 0:
-            return None
-
-        ref_pdb_id = df_group.iloc[0]["pdb_id"]
-        ref_res = df_group.iloc[0]["resolution"]
-        ref_seq_ratio = df_group.iloc[0]["seq_ratio"]
-
-        return dict(
-            unp_id=group_unp_id,
-            unp_name=unp_rec.entry_name,
-            ref_pdb_id=ref_pdb_id,
-            ref_res=ref_res,
-            ref_seq_ratio=ref_seq_ratio,
-            group_median_res=median_res,
-            group_size=group_size,
+        # Create a pgroup without an additional query, by specifying the
+        # exact ids of the query structures.
+        pgroup = ProteinGroup.from_query_ids(
+            ref_pdb_id,
+            query_pdb_ids=df_blast.index,
+            b_max=b_max,
+            parallel=False,
+            prec_cache=True,
         )
 
-    @staticmethod
-    def _collect_single_pgroup(
-        ref_pdb_id: str,
-        blast: ProteinBLAST,
-        b_max: float,
-        out_dir: Optional[Path],
-        out_tag: str,
-        idx: tuple,
-    ) -> Optional[dict]:
-        try:
-            LOGGER.info(
-                f"Creating ProteinGroup for {ref_pdb_id} " f"({idx[0] + 1}/{idx[1]})"
-            )
-
-            # Run BLAST to find query structures for the pgroup
-            df_blast = blast.pdb(ref_pdb_id)
-            LOGGER.info(f"Got {len(df_blast)} BLAST hits for {ref_pdb_id}")
-
-            # Create a pgroup without an additional query, by specifying the
-            # exact ids of the query structures.
-            pgroup = ProteinGroup.from_query_ids(
-                ref_pdb_id,
-                query_pdb_ids=df_blast.index,
-                b_max=b_max,
-                parallel=False,
-                prec_cache=True,
-            )
-
-            # Get the pairwise and pointwise matches from the pgroup
-            pgroup_pairwise = pgroup.to_pairwise_dataframe()
-            pgroup_pointwise = pgroup.to_pointwise_dataframe(
-                with_ref_id=True, with_neighbors=True
-            )
-
-            # If necessary, also write the pgroup to CSV files
-            if out_dir is not None:
-                csv_filepaths = pgroup.to_csv(out_dir, tag=out_tag)
-
-        except Exception as e:
-            LOGGER.error(
-                f"Failed to create ProteinGroup from "
-                f"collected reference {ref_pdb_id}: {e}"
-            )
-            return None
-
-        match_counts = {f"n_{k}": v for k, v in pgroup.match_counts.items()}
-        return dict(
-            ref_unp_id=pgroup.ref_prec.unp_id,
-            ref_pdb_id=ref_pdb_id,
-            n_unp_ids=pgroup.num_unique_proteins,
-            n_pdb_ids=pgroup.num_query_structs,
-            n_total_matches=pgroup.num_matches,
-            **match_counts,
-            pgroup_pairwise=pgroup_pairwise,
-            pgroup_pointwise=pgroup_pointwise,
+        # Get the pairwise and pointwise matches from the pgroup
+        pgroup_pairwise = pgroup.to_pairwise_dataframe()
+        pgroup_pointwise = pgroup.to_pointwise_dataframe(
+            with_ref_id=True, with_neighbors=True
         )
+
+        # If necessary, also write the pgroup to CSV files
+        if out_dir is not None:
+            csv_filepaths = pgroup.to_csv(out_dir, tag=out_tag)
+
+    except Exception as e:
+        LOGGER.error(
+            f"Failed to create ProteinGroup from "
+            f"collected reference {ref_pdb_id}: {e}"
+        )
+        return None
+
+    match_counts = {f"n_{k}": v for k, v in pgroup.match_counts.items()}
+    return dict(
+        ref_unp_id=pgroup.ref_prec.unp_id,
+        ref_pdb_id=ref_pdb_id,
+        n_unp_ids=pgroup.num_unique_proteins,
+        n_pdb_ids=pgroup.num_query_structs,
+        n_total_matches=pgroup.num_matches,
+        **match_counts,
+        pgroup_pairwise=pgroup_pairwise,
+        pgroup_pointwise=pgroup_pointwise,
+    )
+
+
+def _write_df_csv(df: pd.DataFrame, out_dir: Path, filename: str) -> Path:
+    filename = f"{filename}.csv"
+    filepath = out_dir.joinpath(filename)
+
+    with open(str(filepath), mode="w", encoding="utf-8") as f:
+        df.to_csv(f, header=True, index=False, float_format="%.2f")
+
+    LOGGER.info(f"Wrote {filepath}")
+    return filepath

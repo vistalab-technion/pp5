@@ -16,13 +16,13 @@ import pp5
 from pp5.prec import ProteinRecord, ResidueRecord
 from pp5.align import BLOSUM80
 from pp5.align import PYMOL_SA_GAP_SYMBOLS as PSA_GAP
-from pp5.align import StructuralAlignment
+from pp5.align import ProteinBLAST, StructuralAlignment
 from pp5.utils import ProteinInitError
 from pp5.codons import UNKNOWN_AA, UNKNOWN_CODON
 from pp5.dihedral import Dihedral
 from pp5.parallel import global_pool
-from pp5.external_dbs import pdb
-from pp5.external_dbs.pdb import PDBQuery, pdb_tagged_filepath
+from pp5.external_dbs import pdb, pdb_api
+from pp5.external_dbs.pdb import pdb_tagged_filepath
 
 LOGGER = logging.getLogger(__name__)
 
@@ -47,15 +47,13 @@ class ProteinGroup(object):
     structures in the group.
     """
 
-    DEFAULT_EXPR_SYS = pp5.get_config("DEFAULT_EXPR_SYS")
-    DEFAULT_RES = pp5.get_config("DEFAULT_RES")
-
     @classmethod
     def from_pdb_ref(
         cls,
         ref_pdb_id: str,
-        expr_sys_query: Union[str, PDBQuery] = DEFAULT_EXPR_SYS,
-        resolution_query: Union[float, PDBQuery] = DEFAULT_RES,
+        resolution_cutoff: float = pp5.get_config("DEFAULT_RES"),
+        expr_sys: Optional[str] = pp5.get_config("DEFAULT_EXPR_SYS"),
+        source_taxid: Optional[int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         blast_e_cutoff: float = 1.0,
         blast_identity_cutoff: float = 30.0,
         **kw_for_init,
@@ -68,10 +66,12 @@ class ProteinGroup(object):
         query.
 
         :param ref_pdb_id: PDB ID of reference structure. Should include chain.
-        :param expr_sys_query: Expression system query object or a a string
-        containing the organism name.
-        :param resolution_query: Resolution query or a number specifying the
-        maximal resolution value.
+        :param resolution_cutoff: Resolution query or a number specifying the
+            maximal resolution value.
+        :param expr_sys: Expression system query object or a a string
+            containing the organism name.
+        :param source_taxid: Source organism query object, or an int representing
+            the desired taxonomy id.
         :param blast_e_cutoff: Expectation value cutoff parameter for BLAST.
         :param blast_identity_cutoff: Identity cutoff parameter for BLAST.
         :param kw_for_init: Keyword args for ProteinGroup.__init__()
@@ -81,31 +81,60 @@ class ProteinGroup(object):
         ref_pdb_id = ref_pdb_id.upper()
         ref_pdb_base_id, ref_chain = pdb.split_id(ref_pdb_id)
         if not ref_chain:
-            raise ValueError("Must provide chain for reference")
+            raise ProteinInitError("Must provide chain for reference")
+        if not resolution_cutoff:
+            raise ProteinInitError("Must specify a resolution cutoff")
 
-        if isinstance(expr_sys_query, str):
-            expr_sys_query = pdb.PDBExpressionSystemQuery(expr_sys_query)
+        queries = [pdb_api.PDBXRayResolutionQuery(resolution=resolution_cutoff)]
+        if expr_sys:
+            queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys))
+        if source_taxid:
+            queries.append(pdb_api.PDBSourceTaxonomyIdQuery(source_taxid))
+        composite_query = pdb_api.PDBCompositeQuery(
+            *queries,
+            logical_operator="and",
+            return_type=pdb_api.PDBQuery.ReturnType.ENTITY,
+            raise_on_error=False,
+        )
 
-        if isinstance(resolution_query, (int, float)):
-            resolution_query = pdb.PDBResolutionQuery(max_res=resolution_query)
+        query_results = set(composite_query.execute())
+        LOGGER.info(
+            f"Got {len(query_results)} query initial results, running BLAST "
+            f"for sequence alignment to reference {ref_pdb_id}..."
+        )
 
-        sequence_query = pdb.PDBSequenceQuery(
-            pdb_id=ref_pdb_id,
-            e_cutoff=blast_e_cutoff,
+        # Run BLAST to only keep structures with a sequence match to the reference
+        blast = ProteinBLAST(
+            evalue_cutoff=blast_e_cutoff,
             identity_cutoff=blast_identity_cutoff,
+            db_autoupdate_days=7,
         )
+        df_blast = blast.pdb(ref_pdb_id)
 
-        composite_query = pdb.PDBCompositeQuery(
-            expr_sys_query, resolution_query, sequence_query
+        # BLAST returns PDB ID with chain, while the query returns PDB id without
+        # chain or with entities (depending on query composition).
+        # Need to strip the chain and entity in order to compare query to BLAST results.
+        blast_ids_no_chain = {
+            pdb.split_id(pdb_id)[0]: pdb_id for pdb_id in df_blast.index
+        }
+        query_ids_no_entity = [
+            pdb.split_id(pdb_entity)[0] for pdb_entity in query_results
+        ]
+
+        # Valid IDs are both in the query results (resolution, etc) AND are a
+        # sequence match to the reference
+        valid_pdb_ids = set.intersection(
+            set(blast_ids_no_chain.keys()), set(query_ids_no_entity)
         )
+        # For the valid ids, get each PDB ID with its chain
+        valid_pdb_entities = [blast_ids_no_chain[pdb_id] for pdb_id in valid_pdb_ids]
 
-        pdb_entities = set(composite_query.execute())
         LOGGER.info(
             f"Initializing ProteinGroup for {ref_pdb_id} with "
-            f"{len(pdb_entities)} query results..."
+            f"{len(valid_pdb_entities)} query structures: "
+            f"{valid_pdb_entities}"
         )
-
-        pgroup = cls.from_query_ids(ref_pdb_id, pdb_entities, **kw_for_init)
+        pgroup = cls.from_query_ids(ref_pdb_id, valid_pdb_entities, **kw_for_init)
         LOGGER.info(
             f"{pgroup}: "
             f"#unp_ids={pgroup.num_unique_proteins} "
@@ -120,30 +149,6 @@ class ProteinGroup(object):
         cls, ref_pdb_id: str, query_pdb_ids: Iterable[str], **kw_for_init
     ) -> ProteinGroup:
         return cls(ref_pdb_id, query_pdb_ids, **kw_for_init)
-
-    @classmethod
-    def from_structures_csv(
-        cls, ref_pdb_id: str, indir=pp5.out_subdir("pgroup"), tag=None, **kw_for_init
-    ) -> ProteinGroup:
-        """
-        Creates a ProteinGroup based on the structures specified in the CSV
-        group file. This file is the one generated by to_csv with
-        type='struct'.
-        :param ref_pdb_id: Reference PDB id.
-        :param indir: Folder to search for the group file in.
-        :param tag: The tag given to the file, if any.
-        :param kw_for_init: Extra args for the ProteinGroup __init__()
-        :return: A ProteinGroup
-        """
-        tag = f"structs-{tag}" if tag else "structs"
-        filepath = pdb_tagged_filepath(ref_pdb_id, indir, "csv", tag)
-        if not filepath.is_file():
-            raise ProteinInitError(
-                f"ProteinGroup structure CSV not found:" f"{filepath}"
-            )
-        df = pd.read_csv(filepath, header=0, index_col=0)
-        query_pdb_ids = list(df["pdb_id"])
-        return cls.from_query_ids(ref_pdb_id, query_pdb_ids, **kw_for_init)
 
     def __init__(
         self,
@@ -167,35 +172,35 @@ class ProteinGroup(object):
         :param ref_pdb_id: Reference structure PDB ID.
         :param query_pdb_ids: List of PDB IDs of query structures.
         :param context_len: Number of stars required around an aligmed AA
-        pair to consider that pair for a match.
+            pair to consider that pair for a match.
         :param prec_cache:  Whether to load ProteinRecords from cache if
-        available.
+            available.
         :param sa_outlier_cutoff: RMS cutoff for determining outliers in
-        structural alignment.
+            structural alignment.
         :param sa_max_all_atom_rmsd: Maximal allowed average RMSD
-        after structural alignment to include a structure in a group.
+            after structural alignment to include a structure in a group.
         :param sa_min_aligned_residues: Minimal number of aligned residues (stars)
         required to include a structure in a group.
         :param b_max: Maximal b-factor a residue can have
-        (backbone-atom average) in order for it to be included in a match
-        group.
+            (backbone-atom average) in order for it to be included in a match
+            group.
         :param angle_aggregation: Method for angle-aggregation of matching
-        query residues of each reference residue. Options are
-        'circ' - Circular mean;
-        'frechet' - Frechet centroid;
-        'max_res' - No aggregation, take angle of maximal resolution structure
+            query residues of each reference residue. Options are
+            'circ' - Circular mean;
+            'frechet' - Frechet centroid;
+            'max_res' - No aggregation, take angle of maximal resolution structure
         :param strict_pdb_xref: Whether to require that the given PDB ID
-        maps uniquely to only one Uniprot ID.
+            maps uniquely to only one Uniprot ID.
         :param strict_unp_xref: Whether to require that there exist a PDB
-        cross-ref for the given Uniprot ID.
+            cross-ref for the given Uniprot ID.
         :param parallel: Whether to process query structures in parallel using
-        the global worker process pool.
+            the global worker process pool.
         """
         self.ref_pdb_id = ref_pdb_id.upper()
         self.ref_pdb_base_id, self.ref_pdb_chain = pdb.split_id(ref_pdb_id)
         if not self.ref_pdb_chain:
             raise ProteinInitError(
-                "ProteinGroup reference structure must " "specify the chain id."
+                "ProteinGroup reference structure must specify the chain id."
             )
 
         ref_pdb_dict = pdb.pdb_dict(self.ref_pdb_base_id)
@@ -241,7 +246,7 @@ class ProteinGroup(object):
 
             # Make sure all query ids have either chain or entity
             if not all(map(lambda x: x[1] or x[2], split_ids)):
-                raise ValueError("Must specify chain or entity for all " "structures")
+                raise ValueError("Must specify chain or entity for all structures")
 
             # If there's no entry for the reference, add it
             if not any(map(lambda x: x[0] == self.ref_pdb_base_id, split_ids)):
@@ -610,6 +615,7 @@ class ProteinGroup(object):
             "residues": self.to_residue_dataframe,
             "groups": self.to_groups_dataframe,
             "pairwise": self.to_pairwise_dataframe,
+            "pointwise": self.to_pointwise_dataframe,
         }
 
         os.makedirs(str(out_dir), exist_ok=True)
@@ -669,7 +675,7 @@ class ProteinGroup(object):
                 strict_unp_xref=self.strict_unp_xref,
             )
         except ProteinInitError as e:
-            LOGGER.error(f"{self}: Failed to create prec for query structure:" f" {e}")
+            LOGGER.error(f"{self}: Failed to create prec for query structure: {e}")
             return None
 
         alignment = self._struct_align_filter(q_prec)
@@ -794,6 +800,7 @@ class ProteinGroup(object):
                 q_pdb_id,
                 cache=True,
                 outlier_rejection_cutoff=self.sa_outlier_cutoff,
+                backbone_only=True,
             )
         except Exception as e:
             LOGGER.warning(

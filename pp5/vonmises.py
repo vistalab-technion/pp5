@@ -220,6 +220,9 @@ class BvMMixtureDiscreteDistribution(object):
 
         return fig, ax
 
+    def __repr__(self):
+        return f"BvM Mixture K={self.n_modes}"
+
 
 class BvMKernelDensityEstimator(object):
     """

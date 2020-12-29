@@ -153,6 +153,15 @@ def _parse_cli():
         dest=f"{_CFG_PREFIX_}REQUEST_RETRIES",
         help="Number of time to retry failed queries/downloads.",
     )
+    p.add_argument(
+        "--debug",
+        "-D",
+        action="store_true",
+        default=False,
+        required=False,
+        dest=f"{_CFG_PREFIX_}LOG_DEBUG",
+        help="Whether to log at the DEBUG level.",
+    )
 
     # Subcommands
     sp = p.add_subparsers(help="Available actions", dest="action")
@@ -318,6 +327,10 @@ if __name__ == "__main__":
     try:
         # Get the function to invoke
         handler_fn = parsed_args.pop("handler")
+
+        # Setup log level for the application
+        if pp5.get_config("LOG_DEBUG"):
+            logging.root.setLevel(logging.DEBUG)
 
         # Invoke it with the remaining arguments
         handler_fn(**parsed_args)

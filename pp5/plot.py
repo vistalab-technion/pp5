@@ -95,7 +95,9 @@ def ramachandran(
             alpha = alphas[i % len(alphas)]
 
             # Transpose because in a Ramachandram plot phi is the x-axis
-            ax.pcolormesh(grid, grid, p.T, cmap=cmap, alpha=alpha, **colormesh_kw)
+            ax.pcolormesh(
+                grid, grid, p.T, cmap=cmap, alpha=alpha, **colormesh_args,
+            )
 
         legend_colors = ["darkred", "darkblue", "darkgreen", "grey"]
         legend_handles = []
