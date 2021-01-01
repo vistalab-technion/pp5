@@ -592,6 +592,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             # In strict mode we require that all group members had the same SS,
             # i.e. we don't allow groups with more than one type
+            # TODO: this is no longer relevant since each group has one SS given by
+            #  majority vote
             if self.strict_ss and (len(ss_p0) != 1 or len(ss_m1) != 1):
                 return None
 
@@ -608,6 +610,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             if ss_m1 == ss_p0:
                 return ss_m1
 
+            # TODO: only reject if we condition on prev?
             return None
 
         # Based on the configuration, we create a column that represents
