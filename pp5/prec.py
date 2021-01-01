@@ -40,22 +40,13 @@ LOGGER = logging.getLogger(__name__)
 
 class ResidueRecord(object):
     """
-    Represents a singe residue in a protein record.
-    - Residue id: (identifier of this residue in the sequence, usually an
-    integer + insertion code if present, which indicates some alteration
-    compared to the wild-type)
-    - Name: (single letter AA code or X for unknown)
-    - Codon: three-letter nucleotide sequence
-    - Codon score: Confidence measure for the codon match
-    - Codon opts: All possible codons found in DNA sequences of the protein
-    - phi/psi/omega: dihedral angles in degrees
-    - bfactor: average b-factor along of the residue's backbone atoms
-    - secondary: single-letter secondary structure code
+    Represents a single residue in a protein record.
     """
 
     def __init__(
         self,
         res_id: Union[str, int],
+        unp_idx: Optional[int],
         name: str,
         codon: str,
         codon_score: float,
@@ -64,7 +55,22 @@ class ResidueRecord(object):
         bfactor: float,
         secondary: str,
     ):
+        """
+
+        :param res_id: identifier of this residue in the sequence, usually an
+            integer + insertion code if present, which indicates some alteration
+            compared to the wild-type.
+        :param unp_idx: index of this residue in the corresponding UNP record.
+        :param name: single-letter name of the residue or X for unknown.
+        :param codon: Three-letter nucleotide sequence of codon matched to this residue.
+        :param codon_score: Confidence measure for the codon match.
+        :param codon_opts: All possible codons found in DNA sequences of the protein.
+        :param angles: A Dihedral objet containing the dihedral angles.
+        :param bfactor: Average b-factor along of the residue's backbone atoms.
+        :param secondary: Single-letter secondary structure code.
+        """
         self.res_id, self.name = str(res_id).strip(), name
+        self.unp_idx = unp_idx
         self.codon, self.codon_score = codon, codon_score
         if isinstance(codon_opts, str):
             self.codon_opts = codon_opts
@@ -72,8 +78,19 @@ class ResidueRecord(object):
             self.codon_opts = str.join("/", codon_opts)
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
 
-    def as_dict(self, skip_omega=False):
+    def as_dict(self, skip_omega=False, convert_none=False):
+        """
+        Creates a dict representation of the data in this residue. The angles object
+        will we flattened out so its attributes will be placed directly in the
+        resulting dict.
+        :param skip_omega: Whether to not include the omega angle in the output.
+        :param convert_none: Whether to convert None to an empty string.
+        :return:
+        """
         d = self.__dict__.copy()
+        if convert_none:
+            d = {k: v if v is not None else "" for k, v in d.items()}
+
         # Replace angles object with the angles themselves
         d.pop("angles")
         a = self.angles
@@ -83,7 +100,8 @@ class ResidueRecord(object):
     def __repr__(self):
         return (
             f"{self.name}{self.res_id:<4s} [{self.codon}]"
-            f"[{self.secondary}] {self.angles} b={self.bfactor:.2f}"
+            f"[{self.secondary}] {self.angles} b={self.bfactor:.2f}, "
+            f"unp_idx={self.unp_idx}"
         )
 
     def __eq__(self, other):
@@ -392,6 +410,9 @@ class ProteinRecord(object):
             sss = (ss_dict.get(res_id, "-") for res_id in res_ids)
             sstructs.extend(sss)
 
+        # Find the alignment between the PDB AA sequence and the Uniprot AA sequence.
+        pdb_to_unp_idx = self._find_unp_alignment(pdb_aa_seq, self.unp_rec.sequence)
+
         # Find the best matching DNA for our AA sequence via pairwise alignment
         # between the PDB AA sequence and translated DNA sequences.
         dna_seq_record, idx_to_codons = self._find_dna_alignment(pdb_aa_seq, max_ena)
@@ -414,6 +435,7 @@ class ProteinRecord(object):
 
             rr = ResidueRecord(
                 res_id=aa_ids[i],
+                unp_idx=pdb_to_unp_idx.get(i, None),
                 name=pdb_aa_seq[i],
                 codon=best_codon,
                 codon_score=codon_score,
@@ -520,7 +542,7 @@ class ProteinRecord(object):
         this ProteinRecord.
         """
         # use the iterator of this class to get the residue recs
-        data = [res_rec.as_dict(skip_omega=True) for res_rec in self]
+        data = [res_rec.as_dict(skip_omega=True, convert_none=True) for res_rec in self]
         df = pd.DataFrame(data)
 
         if with_ids:
@@ -573,9 +595,56 @@ class ProteinRecord(object):
         LOGGER.info(f"Wrote {self} to {filepath}")
         return filepath
 
+    def _find_unp_alignment(self, pdb_aa_seq: str, unp_aa_seq: str) -> Dict[int, int]:
+        """
+        Aligns between this prec's AA sequence (based on the PDB structure) and the
+        Uniprot sequence.
+        :param pdb_aa_seq: AA sequence from PDB to align.
+        :param unp_aa_seq: AA sequence from UNP to align.
+        :return: A dict mapping from an index in the PDB sequence to the
+            corresponding index in the UNP sequence.
+        """
+        aligner = PairwiseAligner(
+            substitution_matrix=BLOSUM80, open_gap_score=-10, extend_gap_score=-0.5
+        )
+        multi_alignments = aligner.align(pdb_aa_seq, unp_aa_seq)
+        alignment = sorted(multi_alignments, key=lambda a: a.score)[-1]
+        LOGGER.info(f"{self}: PDB to UNP sequence alignment score={alignment.score}")
+
+        # Alignment contains two tuples each of length N (for N matching sub-sequences)
+        # (
+        #   ((t_start1, t_end1), (t_start2, t_end2), ..., (t_startN, t_endN)),
+        #   ((q_start1, q_end1), (q_start2, q_end2), ..., (q_startN, q_endN))
+        # )
+        pdb_to_unp: List[Tuple[int, int]] = []
+        pdb_subseqs, unp_subseqs = alignment.aligned
+        assert len(pdb_subseqs) == len(unp_subseqs)
+        for i in range(len(pdb_subseqs)):
+            pdb_start, pdb_end = pdb_subseqs[i]
+            unp_start, unp_end = unp_subseqs[i]
+            assert pdb_end - pdb_start == unp_end - unp_start
+
+            for j in range(pdb_end - pdb_start):
+                assert pdb_aa_seq[pdb_start + j] == unp_aa_seq[unp_start + j]
+                pdb_to_unp.append((pdb_start + j, unp_start + j))
+
+        return dict(pdb_to_unp)
+
     def _find_dna_alignment(
         self, pdb_aa_seq: str, max_ena: int
-    ) -> Tuple[SeqRecord, Dict[int, str]]:
+    ) -> Tuple[SeqRecord, Dict[int, Dict[str, int]]]:
+        """
+        Aligns between this prec's AA sequence and all known DNA (from the
+        ENA database) sequences of the corresponding Uniprot ID.
+        :param pdb_aa_seq: AA sequence from PDB to align.
+        :param max_ena: Maximal number of DNA sequences to consider.
+        :return: A tuple:
+            - SeqRecord of the DNA sequence which best aligns to the provided AAs.
+            - A dict from the index of a residue in the given AA sequence, to a dict
+            of codon counts. The second dict maps from a codon (e.g. 'CCT') to a
+            count, representing the number of times this codon was found in the
+            location of the corresponding AA index.
+        """
         # Find cross-refs in ENA
         ena_molecule_types = ("mrna", "genomic_dna")
         ena_ids = unp.find_ena_xrefs(self.unp_rec, ena_molecule_types)
