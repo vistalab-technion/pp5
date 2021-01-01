@@ -15,9 +15,7 @@ UNP_URL_TEMPLATE = r"https://www.uniprot.org/uniprot/{}.txt"
 UNP_REPLACE_TEMPLATE = (
     r"https://www.uniprot.org/uniprot/?query=replaces:{}" r"&format=list"
 )
-UNP_ORG_TEMPLACE = (
-    r"https://www.uniprot.org/uniprot/?query=gene:{}" r"&format=list"
-)
+UNP_ORG_TEMPLATE = r"https://www.uniprot.org/uniprot/?query=gene:{}" r"&format=list"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -44,7 +42,7 @@ def unp_ids_from_orf(orf_id: str):
     :param reviewed: Whether to filter only reviewed entries.
     :return: A list of PDB ids corresponding to the gene.
     """
-    orf_url = UNP_ORG_TEMPLACE.format(orf_id)
+    orf_url = UNP_ORG_TEMPLATE.format(orf_id)
     orf = requests.get(orf_url)
     orf.raise_for_status()
     ids = orf.text.split()
