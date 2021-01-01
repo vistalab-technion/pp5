@@ -254,6 +254,8 @@ class ParallelDataCollector(abc.ABC):
 
 class ProteinRecordCollector(ParallelDataCollector):
     DEFAULT_PREC_INIT_ARGS = dict()
+    ALL_STRUCTS_FILENAME = "meta-structs_all"
+    DATASET_FILENAME = "data-precs"
 
     def __init__(
         self,
@@ -305,7 +307,10 @@ class ProteinRecordCollector(ParallelDataCollector):
         return f"{self.__class__.__name__} query={self.query}"
 
     def _collection_functions(self):
-        return {"Collect ProteinRecords": self._collect_precs}
+        return {
+            "Collect ProteinRecords": self._collect_precs,
+            "Write dataset": self._write_dataset,
+        }
 
     def _collect_precs(self, pool: mp.Pool):
         meta = {}
@@ -329,7 +334,7 @@ class ProteinRecordCollector(ParallelDataCollector):
 
         # Create a dataframe from the collected data
         df_all = pd.DataFrame(pdb_id_data)
-        _write_df_csv(df_all, self.out_dir, "meta-structs_all")
+        _write_df_csv(df_all, self.out_dir, self.ALL_STRUCTS_FILENAME)
 
         meta["n_collected"] = count
         LOGGER.info(
@@ -337,6 +342,25 @@ class ProteinRecordCollector(ParallelDataCollector):
             f"(elapsed={elapsed:.2f} seconds, "
             f"{count / elapsed:.1f} proteins/sec)."
         )
+        return meta
+
+    def _write_dataset(self, pool: mp.Pool) -> dict:
+        df_pdb_ids: pd.DataFrame = _read_df_csv(
+            self.out_dir, self.ALL_STRUCTS_FILENAME, usecols=["pdb_id"]
+        )
+        pdb_ids = df_pdb_ids["pdb_id"]
+
+        LOGGER.info(f"Creating dataset file for {len(pdb_ids)} precs...")
+
+        filepath = self.out_dir.joinpath(f"{self.DATASET_FILENAME}.csv")
+        with open(str(filepath), mode="a", encoding="utf-8") as f:
+            for i, pdb_id in enumerate(pdb_ids):
+                prec = ProteinRecord.from_pdb(pdb_id, cache=True)
+                df = prec.to_dataframe(with_ids=True)
+                df.to_csv(f, header=i == 0, index=False, float_format="%.2f")
+
+        dataset_size_mb = os.path.getsize(filepath) / 1024 / 1024
+        meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}"}
         return meta
 
 
@@ -447,7 +471,7 @@ class ProteinGroupCollector(ParallelDataCollector):
 
         if self._all_file:
             LOGGER.info(
-                f"Skipping all-structure collection step: " f"loading {self._all_file}"
+                f"Skipping all-structure collection step: loading {self._all_file}"
             )
             read_csv_args = dict(comment="#", index_col=None, header=0)
             self._df_all = pd.read_csv(self._all_file, **read_csv_args)
@@ -623,7 +647,7 @@ def _collect_single_structure(
     csv_tag: str = None,
 ) -> List[dict]:
     """
-    Downloads a single PDBB entry, and creates a prec for all its chains.
+    Downloads a single PDB entry, and creates a prec for all its chains.
     :param pdb_id: The PDB id to download.
     :param idx: Index for logging; should be a tuple of (current, total).
     :param csv_out_dir: If provided, the prec of each chain will be written to CSV at
@@ -828,3 +852,14 @@ def _write_df_csv(df: pd.DataFrame, out_dir: Path, filename: str) -> Path:
 
     LOGGER.info(f"Wrote {filepath}")
     return filepath
+
+
+def _read_df_csv(out_dir: Path, filename: str, usecols: list = None) -> pd.DataFrame:
+    filename = f"{filename}.csv"
+    filepath = out_dir.joinpath(filename)
+
+    with open(str(filepath), mode="r", encoding="utf-8") as f:
+        df = pd.read_csv(f, header=0, index_col=None, usecols=usecols)
+
+    LOGGER.info(f"Loaded {filepath}")
+    return df
