@@ -41,7 +41,7 @@ LOGGER = logging.getLogger(__name__)
 class ResidueRecord(object):
     """
     Represents a singe residue in a protein record.
-    - Sequence id: (identifier of this residue in the sequence, usually an
+    - Residue id: (identifier of this residue in the sequence, usually an
     integer + insertion code if present, which indicates some alteration
     compared to the wild-type)
     - Name: (single letter AA code or X for unknown)
@@ -511,14 +511,23 @@ class ProteinRecord(object):
 
         return self._pp
 
-    def to_dataframe(self):
+    def to_dataframe(self, with_ids=False):
         """
+        :param with_ids: Whether to include pdb_id and unp_id columns. Usually this
+            is redundant since it's the same for all rows, but can be useful if this
+            dataframe is combined with others.
         :return: A Pandas dataframe where each row is a ResidueRecord from
         this ProteinRecord.
         """
         # use the iterator of this class to get the residue recs
         data = [res_rec.as_dict(skip_omega=True) for res_rec in self]
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+
+        if with_ids:
+            df.insert(loc=0, column="unp_id", value=self.unp_id)
+            df.insert(loc=0, column="pdb_id", value=self.pdb_id)
+
+        return df
 
     def to_csv(self, out_dir=pp5.out_subdir("prec"), tag=None):
         """
