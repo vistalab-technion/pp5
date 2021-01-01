@@ -264,6 +264,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         source_taxid: int = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         prec_init_args=None,
         out_dir: Path = pp5.out_subdir("prec-collected"),
+        out_tag: str = None,
         prec_out_dir: Path = pp5.out_subdir("prec"),
         write_csv=True,
         async_timeout=60,
@@ -275,6 +276,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         :param expr_sys: Expression system name.
         :param source_taxid: Taxonomy ID of source organism.
         :param out_dir: Output folder for collected metadata.
+        :param out_tag: Extra tag to add to the output file names.
         :param prec_out_dir: Output folder for prec CSV files.
         :param prec_init_args: Arguments for initializing each ProteinRecord
         :param write_csv: Whether to write the ProteinRecords to
@@ -282,7 +284,9 @@ class ProteinRecordCollector(ParallelDataCollector):
         :param async_timeout: Timeout in seconds for each worker
             process result.
         """
-        super().__init__(async_timeout=async_timeout, out_dir=out_dir, create_zip=False)
+        super().__init__(
+            async_timeout=async_timeout, out_dir=out_dir, tag=out_tag, create_zip=False
+        )
         queries = [pdb_api.PDBXRayResolutionQuery(resolution=resolution)]
         if expr_sys:
             queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys=expr_sys))
