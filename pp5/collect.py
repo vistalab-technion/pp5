@@ -360,6 +360,7 @@ class ProteinRecordCollector(ParallelDataCollector):
                 df.to_csv(f, header=i == 0, index=False, float_format="%.2f")
 
         dataset_size_mb = os.path.getsize(filepath) / 1024 / 1024
+        LOGGER.info(f"Wrote {filepath} ({dataset_size_mb:.2f}MB)")
         meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}"}
         return meta
 
