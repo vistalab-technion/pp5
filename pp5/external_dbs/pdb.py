@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 import re
-import abc
 import math
 import logging
 import warnings
 from math import cos, sin
 from math import degrees as deg
 from math import radians as rad
-from typing import Dict, List, Type, Tuple, Union, Iterable, Optional
+from typing import Dict, List, Type, Tuple, Union, Optional
 from pathlib import Path
 from collections import OrderedDict
 
 import numpy as np
-import yattag
-import requests
 from Bio import PDB as PDB
 from Bio.PDB import Structure as PDBRecord
 from Bio.PDB import MMCIF2Dict
@@ -24,7 +21,7 @@ from Bio.PDB.PDBExceptions import PDBConstructionWarning, PDBConstructionExcepti
 
 import pp5
 from pp5 import PDB_DIR, get_resource_path
-from pp5.utils import JSONCacheableMixin, remote_dl, requests_retry
+from pp5.utils import JSONCacheableMixin, remote_dl
 from pp5.external_dbs import pdb_api
 
 PDB_ID_PATTERN = re.compile(
@@ -34,7 +31,6 @@ PDB_ID_PATTERN = re.compile(
 
 STANDARD_ACID_NAMES = set(standard_aa_names)
 
-PDB_SEARCH_URL = "https://www.rcsb.org/pdb/rest/search"
 PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
 
 LOGGER = logging.getLogger(__name__)
@@ -670,319 +666,6 @@ class PDBUnitCell(object):
         abc = f"(a={self.a:.1f},b={self.b:.1f},c={self.c:.1f})"
         ang = f"(α={self.alpha:.1f},β={self.beta:.1f},γ={self.gamma:.1f})"
         return f"[{self.pdb_id}]{abc}{ang}"
-
-
-class PDBQuery(abc.ABC):
-    """
-    Represents a query that can be sent to the PDB search API to obtain PDB
-    ids matching some criteria.
-    To implement new search criteria, simply derive from this class.
-
-    See documentation here:
-    https://www.rcsb.org/pages/webservices/rest-search#search
-    """
-
-    TAG_QUERY = "orgPdbQuery"
-    TAG_QUERY_TYPE = "queryType"
-    TAG_DESCRIPTION = "description"
-
-    @abc.abstractmethod
-    def to_xml(self):
-        raise NotImplementedError("Override this")
-
-    @abc.abstractmethod
-    def description(self):
-        raise NotImplementedError("Override this")
-
-    def to_xml_pretty(self):
-        return yattag.indent(self.to_xml())
-
-    def execute(self):
-        """
-        Executes the query on PDB.
-        :return: A list of PDB IDs for proteins matching the query.
-        """
-        header = {"Content-Type": "application/x-www-form-urlencoded"}
-        query = self.to_xml()
-
-        pdb_ids = []
-        LOGGER.info(f"Executing PDB query: {self.description()}")
-        try:
-            # Use many retries as this is an unreliable API
-            with requests_retry(retries=10, backoff=0.2).post(
-                PDB_SEARCH_URL, query, headers=header
-            ) as response:
-                response.raise_for_status()
-                pdb_ids = response.text.split()
-        except requests.RequestException as e:
-            LOGGER.error(f"Failed to query PDB: {e.__class__.__name__}={e}")
-
-        return pdb_ids
-
-    def __repr__(self):
-        return self.description()
-
-
-class PDBCompositeQuery(PDBQuery):
-    """
-    A composite query is composed of multiple regular PDBQueries.
-    It creates a query that represents "query1 AND query2 AND ... queryN".
-    """
-
-    TAG_COMPOSITE = "orgPdbCompositeQuery"
-    TAG_REFINEMENT = "queryRefinement"
-    TAG_REFINEMENT_LEVEL = "queryRefinementLevel"
-    TAG_CONJ_TYPE = "conjunctionType"
-
-    def __init__(self, *queries: PDBQuery):
-        super().__init__()
-        self.queries = queries
-
-    def description(self):
-        descriptions = [f"({q.description()})" for q in self.queries]
-        return str.join(" AND ", descriptions)
-
-    def to_xml(self):
-        doc, tag, text, line = yattag.Doc().ttl()
-
-        with tag(self.TAG_COMPOSITE, version="1.0"):
-            for i, query in enumerate(self.queries):
-                with tag(self.TAG_REFINEMENT):
-                    line(self.TAG_REFINEMENT_LEVEL, i)
-
-                    if i > 0:
-                        line(self.TAG_CONJ_TYPE, "and")
-
-                    # Insert XML from regular query as-is
-                    doc.asis(query.to_xml())
-
-        return doc.getvalue()
-
-
-class PDBResolutionQuery(PDBQuery):
-    """
-    Query PDB for structures within a range of X-ray resolutions.
-    """
-
-    RES_QUERY_TYPE = "org.pdb.query.simple.ResolutionQuery"
-    TAG_RES_COMP = "refine.ls_d_res_high.comparator"
-    TAG_RES_MIN = "refine.ls_d_res_high.min"
-    TAG_RES_MAX = "refine.ls_d_res_high.max"
-
-    def __init__(self, min_res=0.0, max_res=pp5.get_config("DEFAULT_RES")):
-        """
-        :param min_res: Minimal Xray-diffraction resolution value.
-        :param max_res: Maximal Xray-diffraction resolution value.
-        """
-        super().__init__()
-        self.min_res = min_res
-        self.max_res = max_res
-
-    def description(self):
-        return f"Resolution between {self.min_res} and {self.max_res}"
-
-    def to_xml(self):
-        doc, tag, text, line = yattag.Doc().ttl()
-
-        with tag(self.TAG_QUERY):
-            line(self.TAG_QUERY_TYPE, self.RES_QUERY_TYPE)
-            line(self.TAG_DESCRIPTION, self.description())
-            line(self.TAG_RES_COMP, "between")
-            line(self.TAG_RES_MIN, self.min_res)
-            line(self.TAG_RES_MAX, self.max_res)
-
-        return doc.getvalue()
-
-
-class PDBSourceTaxonomyIdQuery(PDBQuery):
-    """
-    Query for PDB structures with a specified host organism, specified as a taxonomy ID.
-    """
-
-    def __init__(
-        self, taxonomy_id: int = pp5.get_config("DEFAULT_SOURCE_TAXID"), t: int = 1,
-    ):
-        self.taxonomy_id = taxonomy_id
-        self.t = t
-
-    SOURCE_TAX_ID_QUERY_TYPE = "org.pdb.query.simple.TreeEntityQuery"
-    TAG_TAXID = "n"
-    TAG_T = "t"  # Don't know what this tag is, but it's required.
-
-    def to_xml(self):
-        doc, tag, text, line = yattag.Doc().ttl()
-
-        with tag(self.TAG_QUERY):
-            line(self.TAG_QUERY_TYPE, self.SOURCE_TAX_ID_QUERY_TYPE)
-            line(self.TAG_DESCRIPTION, self.description())
-            line(self.TAG_TAXID, self.taxonomy_id)
-            line(self.TAG_T, self.t)
-
-        return doc.getvalue()
-
-    def description(self):
-        return f"Source organism TaxonomyID={self.taxonomy_id}"
-
-
-class PDBExpressionSystemQuery(PDBQuery):
-    """
-    Query PDB for structures with a specified expression system.
-    """
-
-    COMP_TYPES = {
-        "contains",
-        "equals",
-        "startswith",
-        "endswith",
-        "!contains",
-        "!startswith",
-        "!endswith",
-    }
-
-    EXPR_SYS_QUERY_TYPE = "org.pdb.query.simple.ExpressionOrganismQuery"
-    TAG_COMP = "entity_src_gen.pdbx_host_org_scientific_name.comparator"
-    TAG_NAME = "entity_src_gen.pdbx_host_org_scientific_name.value"
-
-    def __init__(
-        self,
-        expr_sys: str = pp5.get_config("DEFAULT_EXPR_SYS"),
-        expr_sys_comp_type: str = "contains",
-    ):
-        """
-        :param expr_sys: Name of expression system (organism).
-        :param expr_sys_comp_type: How to compare the specific name to PDB
-        entries.
-        """
-        super().__init__()
-        self.expr_sys = expr_sys
-        if expr_sys_comp_type not in self.COMP_TYPES:
-            raise ValueError(
-                f"Unknown comparison type {expr_sys_comp_type}, "
-                f"must be one of {self.COMP_TYPES}."
-            )
-        self.comp_type = expr_sys_comp_type
-
-    def description(self):
-        return f"Expression system {self.comp_type} {self.expr_sys}"
-
-    def to_xml(self):
-        doc, tag, text, line = yattag.Doc().ttl()
-
-        with tag(self.TAG_QUERY):
-            line(self.TAG_QUERY_TYPE, self.EXPR_SYS_QUERY_TYPE)
-            line(self.TAG_DESCRIPTION, self.description())
-            line(self.TAG_COMP, self.comp_type)
-            line(self.TAG_NAME, self.expr_sys)
-
-        return doc.getvalue()
-
-
-class PDBUniprotIdQuery(PDBQuery):
-    UNP_QUERY_TYPE = "org.pdb.query.simple.UpAccessionIdQuery"
-    TAG_ACCESSION_ID_LIST = "accessionIdList"
-
-    def __init__(self, unp_ids: Union[str, Iterable[str]]):
-        super().__init__()
-        if isinstance(unp_ids, str):
-            unp_ids = unp_ids.split(",")
-
-        self.unp_ids = [u.strip().upper() for u in unp_ids]
-
-    def to_xml(self):
-        doc, tag, text, line = yattag.Doc().ttl()
-
-        with tag(self.TAG_QUERY):
-            line(self.TAG_QUERY_TYPE, self.UNP_QUERY_TYPE)
-            line(self.TAG_DESCRIPTION, self.description())
-            line(self.TAG_ACCESSION_ID_LIST, str.join(",", self.unp_ids))
-
-        return doc.getvalue()
-
-    def description(self):
-        return f"Uniprot id in {self.unp_ids}"
-
-
-class PDBSequenceQuery(PDBQuery):
-    """
-    Query PDB for structures by their sequence to a reference.
-
-    See documentation here:
-    https://www.rcsb.org/pages/help/advancedsearch/sequence
-    """
-
-    TOOL_TYPES = {"blast", "psiblast"}
-
-    SEQUENCE_QUERY_TYPE = "org.pdb.query.simple.SequenceQuery"
-    TAG_STRUCTURE_ID = "structureId"
-    TAG_CHAIN_ID = "chainId"
-    TAG_SEQUENCE = "sequence"
-    TAG_ECUTOFF = "eValueCutoff"
-    TAG_MASK_LOW_COMP = "maskLowComplexity"
-    TAG_IDENTITY_CUTOFF = "sequenceIdentityCutoff"
-
-    def __init__(
-        self,
-        pdb_id: str = None,
-        sequence: str = None,
-        search_tool: str = "blast",
-        e_cutoff=10.0,
-        mask_low_complexity=True,
-        identity_cutoff=0.0,
-    ):
-        both = pdb_id and sequence
-        neither = not pdb_id and not sequence
-        if both or neither:
-            raise ValueError("Must provide either pdb_id sequence")
-
-        self.pdb_id = pdb_id
-        self.sequence = sequence
-        self.search_tool = search_tool
-        self.e_cutoff = e_cutoff
-        self.mask_low_complexity = "yes" if mask_low_complexity else "no"
-        self.identity_cutoff = identity_cutoff
-
-        if pdb_id:
-            self.pdb_id, self.chain_id = split_id(pdb_id)
-            if not self.chain_id:
-                raise ValueError("Must provide chain info for BLAST query")
-        else:
-            if len(self.sequence) < 12:
-                raise ValueError(
-                    "Sequence length for BLAST query must be" "at least 12 residues"
-                )
-
-    def description(self):
-        if self.pdb_id:
-            seq_str = f"Structure:Chain = {self.pdb_id}:{self.chain_id}"
-        else:
-            n = 10
-            groups = [self.sequence[i : i + n] for i in range(0, len(self.sequence), n)]
-            seq_str = str.join(" ", groups)
-
-        return (
-            f"Sequence Search ({seq_str}, "
-            f"Expectation Value = {self.e_cutoff:.1f}, "
-            f"Sequence Identity = {self.identity_cutoff:.0f}, "
-            f"Search Tool = {self.search_tool}, "
-            f"Mask Low Complexity={self.mask_low_complexity})"
-        )
-
-    def to_xml(self):
-        doc, tag, text, line = yattag.Doc().ttl()
-
-        with tag(self.TAG_QUERY):
-            line(self.TAG_QUERY_TYPE, self.SEQUENCE_QUERY_TYPE)
-            line(self.TAG_DESCRIPTION, self.description())
-            line(self.TAG_ECUTOFF, self.e_cutoff)
-            line(self.TAG_MASK_LOW_COMP, self.mask_low_complexity)
-            line(self.TAG_IDENTITY_CUTOFF, self.identity_cutoff)
-            if self.pdb_id:
-                line(self.TAG_STRUCTURE_ID, self.pdb_id)
-                line(self.TAG_CHAIN_ID, self.chain_id)
-            else:
-                line(self.TAG_SEQUENCE, self.sequence)
-
-        return doc.getvalue()
 
 
 class CustomMMCIFParser(PDB.MMCIFParser):

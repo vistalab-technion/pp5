@@ -7,7 +7,6 @@ from urllib.request import urlopen
 import pandas as pd
 import pytest
 from pytest import approx
-from Bio.PDB.PDBExceptions import PDBConstructionException
 
 import tests
 import tests.utils
@@ -292,60 +291,3 @@ class TestPDB2UNP:
     def test_multi_unp_for_single_chain_strict(self, test_id):
         with pytest.raises(ValueError, match="chimeric"):
             pdb.PDB2UNP.pdb_id_to_unp_id(test_id)
-
-
-@pytest.mark.skipif(NO_INTERNET, reason="Needs internet")
-@pytest.mark.skip(reason="Legacy PDB API is down, should remove these tests")
-class TestPDBQueries:
-    def test_resolution_query(self):
-        min_res = 0.4
-        max_res = 0.5
-        query = pdb.PDBResolutionQuery(min_res, max_res)
-        pdb_ids = query.execute()
-
-        assert len(pdb_ids) >= 2
-
-        for id in pdb_ids:
-            try:
-                pdb_s = pdb.pdb_struct(id)
-                assert min_res <= pdb_s.header["resolution"] <= max_res
-            except PDBConstructionException as e:
-                pass
-
-    def test_expression_system_query(self):
-        expr_sys = "Escherichia coli BL21(DE3)"
-        comp_type = "equals"
-
-        query = pdb.PDBExpressionSystemQuery(expr_sys, comp_type)
-        pdb_ids = query.execute()
-
-        assert len(pdb_ids) > 17100
-
-    def test_source_organism_taxonomy_id_query(self):
-        expr_sys = "Escherichia coli BL21(DE3)"
-        comp_type = "equals"
-
-        query = pdb.PDBSourceTaxonomyIdQuery(taxonomy_id=28384)
-        pdb_ids = query.execute()
-
-        assert len(pdb_ids) >= 7941
-
-    def test_composite_query(self):
-        query = pdb.PDBCompositeQuery(
-            pdb.PDBExpressionSystemQuery("Escherichia coli BL21(DE3)"),
-            pdb.PDBResolutionQuery(0.5, 0.8),
-        )
-
-        pdb_ids = query.execute()
-
-        assert len(pdb_ids) >= 3
-
-    def test_unp_query_single(self):
-        query = pdb.PDBUniprotIdQuery("p00720")
-        pdb_ids = query.execute()
-        assert len(pdb_ids) >= 3
-
-    def test_unp_query_multi(self):
-        query = pdb.PDBUniprotIdQuery(["p00720", "P00921"])
-        pdb_ids = query.execute()
-        assert len(pdb_ids) >= 3 + 9
