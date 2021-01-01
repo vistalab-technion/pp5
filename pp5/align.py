@@ -775,3 +775,4 @@ class ProteinBLAST(object):
 
 BLOSUM62 = substitution_matrices.load("BLOSUM62")
 BLOSUM80 = substitution_matrices.load("BLOSUM80")
+BLOSUM90 = substitution_matrices.load("BLOSUM90")

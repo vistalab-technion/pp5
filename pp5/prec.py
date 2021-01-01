@@ -18,7 +18,7 @@ from Bio.SeqRecord import SeqRecord
 from Bio.PDB.Polypeptide import Polypeptide
 
 import pp5
-from pp5.align import BLOSUM80
+from pp5.align import BLOSUM80, BLOSUM90
 from pp5.utils import ProteinInitError
 from pp5.codons import UNKNOWN_AA, CODON_TABLE, STOP_CODONS, UNKNOWN_CODON
 from pp5.dihedral import (
@@ -625,7 +625,11 @@ class ProteinRecord(object):
             assert pdb_end - pdb_start == unp_end - unp_start
 
             for j in range(pdb_end - pdb_start):
-                assert pdb_aa_seq[pdb_start + j] == unp_aa_seq[unp_start + j]
+                if pdb_aa_seq[pdb_start + j] != unp_aa_seq[unp_start + j]:
+                    # There are mismatches included in the match sequence (cases
+                    # where a similar AA is not considered a complete mismatch).
+                    # We are more strict: require exact match.
+                    continue
                 pdb_to_unp.append((pdb_start + j, unp_start + j))
 
         return dict(pdb_to_unp)
