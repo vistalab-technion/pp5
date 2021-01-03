@@ -40,5 +40,6 @@ dependencies:
   - blast
   - dssp
   - pip
+  - luigi
   - pip:
     - nbmerge
