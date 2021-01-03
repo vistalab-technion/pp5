@@ -340,7 +340,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
                 async_results.append(
                     pool.apply_async(
-                        PointwiseCodonDistanceAnalyzer._plot_d2_matrices,
+                        _plot_d2_matrices,
                         kwds=dict(
                             group_idx=group_idx,
                             d2_matrices=[d_mu + 1j * d2_sigma],
