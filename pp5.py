@@ -12,7 +12,7 @@ from pp5.pgroup import ProteinGroup
 from pp5.collect import ProteinGroupCollector, ProteinRecordCollector
 from pp5.analysis.cdist import CodonDistanceAnalyzer
 from pp5.analysis.pairwise import PairwiseCodonDistanceAnalyzer
-from pp5.analysis.pointwise import PointwiseCodonDistanceAnalyzer
+from pp5.analysis.pointwise import PGroupPointwiseCodonDistanceAnalyzer
 
 _LOG = logging.getLogger(__name__)
 _CFG_PREFIX_ = "_CFG_"
@@ -263,7 +263,7 @@ def _parse_cli():
 
     # Get pointwise args and subtract all common args
     pointwise_desc, pointwise_args = _generate_cli_from_func(
-        PointwiseCodonDistanceAnalyzer.__init__
+        PGroupPointwiseCodonDistanceAnalyzer.__init__
     )
     pointwise_args = _subtract_dicts(pointwise_args, cdist_args)
 
