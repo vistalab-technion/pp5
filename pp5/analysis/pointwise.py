@@ -5,7 +5,6 @@ import itertools as it
 import multiprocessing as mp
 from typing import Any, Dict, List, Tuple, Union, Callable, Optional, Sequence
 from pathlib import Path
-from collections import defaultdict
 from multiprocessing.pool import AsyncResult
 
 import numpy as np
@@ -44,7 +43,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         bs_randstate: Optional[int] = None,
         bs_fixed_n: str = None,
         n_parallel_kdes: int = 8,
-        t2_permutations: int = 10,
+        t2_permutations: int = 100,
         out_tag: str = None,
     ):
         """
@@ -219,10 +218,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             if len(df_subgroup) < self.min_group_size:
                 continue
 
+            # There shouldn't be more than one SS type since all members of this
+            # subgroup come from the same residue in the same protein
             secondaries = set(df_subgroup[self.secondary_col])
             if len(secondaries) > 1:
-                # There shouldn't be more that one SS since all members of this
-                # subgroup come from the same residue in the same protein
                 LOGGER.warning(
                     f"Ambiguous secondary structure in {group_id=} {subgroup_idx=}"
                 )
@@ -636,7 +635,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                             group_idx=group_idx,
                             d2_matrices=d2_matrices,
                             out_dir=out_dir,
-                            titles=ap_labels,
+                            titles=ap_labels if len(ap_labels) > 1 else None,
                             labels=labels,
                             vmin=None,
                             vmax=None,  # should consider scale
@@ -647,6 +646,34 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     )
                 )
             del dists, d2_matrices
+
+        # p-values
+        for aa_codon in ["aa", "codon"]:
+            pvals = self._load_intermediate(f"{aa_codon}-pvals", True)
+            if pvals is None:
+                continue
+            out_dir = self.out_dir.joinpath(f"{aa_codon}-pvals")
+            labels = AA_CODONS if aa_codon == "codon" else ACIDS
+
+            for group_idx, d2_matrices in pvals.items():
+                async_results.append(
+                    pool.apply_async(
+                        _plot_d2_matrices,
+                        kwds=dict(
+                            group_idx=group_idx,
+                            d2_matrices=d2_matrices,
+                            out_dir=out_dir,
+                            titles=ap_labels if len(ap_labels) > 1 else None,
+                            labels=labels,
+                            vmin=None,
+                            vmax=None,  # should consider scale
+                            annotate_mu=False,
+                            plot_std=False,
+                            block_diagonal=False,
+                        ),
+                    )
+                )
+            del pvals, d2_matrices
 
         # Averaged Dihedral KDEs of each codon in each group
         group_sizes: dict = self._load_intermediate("group-sizes", True)
