@@ -1214,8 +1214,9 @@ def _dkde_dists_pairwise(
 
             #  Calculate statistical significance of the distance based on T_w^2 metric
             _, pval = tw_test(
-                X=np.reshape(dkde1, (B, -1)),
-                Y=np.reshape(dkde2, (B, -1)),
+                # Transpose to (M, M, B) and flatten to (M * M, B)
+                X=dkde1.transpose((1, 2, 0)).reshape((M * M, B)),
+                Y=dkde2.transpose((1, 2, 0)).reshape((M * M, B)),
                 k=t2_permutations,
             )
             pval_mat[i, j] = pval_mat[j, i] = pval
