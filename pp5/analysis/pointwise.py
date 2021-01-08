@@ -14,6 +14,7 @@ import matplotlib as mpl
 
 import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
+from pp5.stats import tw_test
 from pp5.utils import sort_dict
 from pp5.codons import ACIDS, N_CODONS, AA_CODONS, SYN_CODON_IDX, codon2aac
 from pp5.analysis import SS_TYPE_ANY, CODON_TYPE_ANY, DSSP_TO_SS_TYPE
@@ -43,6 +44,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         bs_randstate: Optional[int] = None,
         bs_fixed_n: str = None,
         n_parallel_kdes: int = 8,
+        t2_permutations: int = 10,
         out_tag: str = None,
     ):
         """
@@ -72,13 +74,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param bs_niter: Number of bootstrap iterations.
         :param bs_randstate: Random state for bootstrap.
         :param bs_fixed_n: Whether to fix number of samples in each
-        bootstrap iteration for each subgroup to the number of samples in the
-        smallest subgroup ('min'), largest subgroup ('max') or no limit ('').
+            bootstrap iteration for each subgroup to the number of samples in the
+            smallest subgroup ('min'), largest subgroup ('max') or no limit ('').
         :param n_parallel_kdes: Number of parallel bootstrapped KDE
-        calculations to run simultaneously.
-        By default it will be equal to the number of available CPU cores.
-        Setting this to a high number together with a high bs_niter will cause
-        excessive memory usage.
+            calculations to run simultaneously.
+            By default it will be equal to the number of available CPU cores.
+            Setting this to a high number together with a high bs_niter will cause
+            excessive memory usage.
+        :param t2_permutations: Number of permutations to use when calculating
+            p-value of distances with the T^2 statistic.
         :param out_tag: Tag for output.
         """
         super().__init__(
@@ -114,6 +118,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.bs_randstate = bs_randstate
         self.bs_fixed_n = bs_fixed_n
         self.n_parallel_kdes = n_parallel_kdes
+        self.t2_permutations = t2_permutations
 
     def _collection_functions(
         self,
@@ -392,8 +397,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             f"chunksize={chunksize})..."
         )
 
-        codon_dists, codon_dkdes = {}, {}
-        aa_dists, aa_dkdes = {}, {}
+        codon_dists, codon_pvals, codon_dkdes = {}, {}, {}
+        aa_dists, aa_pvals, aa_dkdes = {}, {}, {}
         dkde_asyncs: Dict[str, AsyncResult] = {}
         dist_asyncs: Dict[str, AsyncResult] = {}
         for i, (group_idx, df_group) in enumerate(df_groups):
@@ -489,6 +494,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         result_group_idx,
                         bs_codon_dkdes,
                         subgroup_sizes,
+                        self.t2_permutations,
                         dist_metric,
                     ),
                 )
@@ -513,13 +519,17 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 LOGGER.info(f"[{i}] Collected dist matrices in {result_group_idx}")
                 (
                     group_codon_d2s,
+                    group_codon_pvals,
                     group_codon_dkdes,
                     group_aa_d2s,
+                    group_aa_pvals,
                     group_aa_dkdes,
                 ) = group_dist_result
                 codon_dists[result_group_idx] = group_codon_d2s
+                codon_pvals[result_group_idx] = group_codon_pvals
                 codon_dkdes[result_group_idx] = group_codon_dkdes
                 aa_dists[result_group_idx] = group_aa_d2s
+                aa_pvals[result_group_idx] = group_aa_pvals
                 aa_dkdes[result_group_idx] = group_aa_dkdes
 
                 # Remove async result so we dont see it next time (mark as collected)
@@ -540,8 +550,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # and imag is sigma
         self._dump_intermediate("codon-dists", codon_dists)
 
+        # codon_pvals: maps from group (codon, SS) to a list, containing a pairwise
+        # pvalue matrix for each angle pair
+        self._dump_intermediate("codon-pvals", codon_pvals)
+
         # aa_dists: Same as codon dists, but keys are AAs
         self._dump_intermediate("aa-dists", aa_dists)
+
+        # aa_pvals: Same as codon pvals, but keys are AAs
+        self._dump_intermediate("aa-pvals", aa_pvals)
 
         # codon_dkdes: maps from group to a dict where keys are codons.
         # For each codon we have a list of KDEs, one for each angle pair.
@@ -673,6 +690,7 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
         bs_randstate=None,
         bs_fixed_n: str = None,
         n_parallel_kdes: int = 8,
+        t2_permutations: int = 10,
         out_tag: str = None,
     ):
         """
@@ -706,10 +724,12 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
         bootstrap iteration for each subgroup to the number of samples in the
         smallest subgroup ('min'), largest subgroup ('max') or no limit ('').
         :param n_parallel_kdes: Number of parallel bootstrapped KDE
-        calculations to run simultaneously.
-        By default it will be equal to the number of available CPU cores.
-        Setting this to a high number together with a high bs_niter will cause
-        excessive memory usage.
+            calculations to run simultaneously.
+            By default it will be equal to the number of available CPU cores.
+            Setting this to a high number together with a high bs_niter will cause
+            excessive memory usage.
+        :param t2_permutations: Number of permutations to use when calculating
+            p-value of distances with the T^2 statistic.
         :param out_tag: Tag for output.
         """
         super().__init__(
@@ -727,6 +747,7 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
             bs_randstate=bs_randstate,
             bs_fixed_n=bs_fixed_n,
             n_parallel_kdes=n_parallel_kdes,
+            t2_permutations=t2_permutations,
             out_tag=out_tag,
         )
 
@@ -1032,10 +1053,13 @@ def _dkde_dists_single_group(
     group_idx: str,
     bs_codon_dkdes: Dict[str, List[np.ndarray]],
     subgroup_sizes: Dict[str, int],
+    t2_permutations: int,
     kde_dist_metric: Callable,
 ) -> Tuple[
     Sequence[np.ndarray],
+    Sequence[np.ndarray],
     Dict[str, Sequence[np.ndarray]],
+    Sequence[np.ndarray],
     Sequence[np.ndarray],
     Dict[str, Sequence[np.ndarray]],
 ]:
@@ -1049,11 +1073,15 @@ def _dkde_dists_single_group(
         of that codon (one KDE for each angle pair).
     :param subgroup_sizes: A dict mapping from subgroup name (AA or AA-codon) to the
         number of samples (dataset rows) available for that AA or AA-codon.
+    :param t2_permutations: Number of permutations to use when calculating T^2
+        statistic.
     :param kde_dist_metric: Function to compute distance between two KDEs.
     :return: A tuple:
         - Codon pairwise-distance matrices
+        - Codon pairwise-pvalue matrices
         - Codon averaged KDEs
         - AA pairwise-distance matrices
+        - AA pairwise-pvalue matrices
         - AA averaged KDEs
     """
 
@@ -1064,7 +1092,9 @@ def _dkde_dists_single_group(
 
     tstart = time.time()
     # Codon distance matrix and average codon KDEs
-    codon_d2s = _dkde_dists_pairwise(bs_codon_dkdes, kde_dist_metric)
+    codon_d2s, codon_pvals = _dkde_dists_pairwise(
+        bs_codon_dkdes, t2_permutations, kde_dist_metric
+    )
     codon_dkdes = _dkde_average(bs_codon_dkdes)
     LOGGER.info(
         f"Calculated codon distance matrix and average KDE for {group_idx} "
@@ -1097,28 +1127,40 @@ def _dkde_dists_single_group(
 
     # Now, we apply the pairwise distance between pairs of AA KDEs, as for the
     # codons
-    aa_d2s = _dkde_dists_pairwise(bs_aa_dkdes, kde_dist_metric)
+    aa_d2s, aa_pvals = _dkde_dists_pairwise(
+        bs_aa_dkdes, t2_permutations, kde_dist_metric
+    )
     aa_dkdes = _dkde_average(bs_aa_dkdes)
     LOGGER.info(
         f"Calculated AA distance matrix and average KDE for {group_idx} "
         f"({time.time() - tstart:.1f}s)..."
     )
 
-    return codon_d2s, codon_dkdes, aa_d2s, aa_dkdes
+    return codon_d2s, codon_pvals, codon_dkdes, aa_d2s, aa_pvals, aa_dkdes
 
 
 def _dkde_dists_pairwise(
     bs_dkdes: Dict[str, List[np.ndarray]],
+    t2_permutations: int,
     kde_dist_metric: Callable[[np.ndarray, np.ndarray], np.ndarray],
-) -> Sequence[np.ndarray]:
+) -> Tuple[Sequence[np.ndarray], Sequence[np.ndarray]]:
     """
     Calculate a distance matrix based on the distance between each pair of
     subgroups (codons or AAs) for which we have a multiple bootstrapped KDEs.
 
     :param bs_dkdes: A dict from a subgroup identifier to a list of bootstrapped KDEs.
+    :param t2_permutations: Number of permutations to use when calculating T^2
+        statistic.
     :param kde_dist_metric: A function to compute the distance between two KDEs.
-    :return: A list of pairwise-distance matrices (corresponding to the list of
-        bootstrapped KDEs for each subgroup, e.g. one for each angle pair).
+    :return: A tuple:
+        - List of pairwise-distance matrices between subgroups. Each distance matrix
+          will be complex, where the real value is the average distance over the
+          bootstrapped samples and the imag is the std.
+        - List of pairwise p-value matrices. These contain the p-value, i.e the
+          probability that the real distance between the distributions is zero between
+          each pair of subgroups.
+        These lists correspond to the list of bootstrapped KDEs for each subgroup,
+        e.g. one for each angle pair.
     """
 
     n_kdes = [len(kdes) for kdes in bs_dkdes.values()][0]
@@ -1128,12 +1170,14 @@ def _dkde_dists_pairwise(
 
     # Calculate distance matrix
     d2_matrices = []
+    pval_matrices = []
     for pair_idx in range(n_kdes):
         # For each angle pair we have N dkde matrices,
         # so we compute the distance between each such pair.
         # We use a complex array to store mu as the real part and sigma
         # as the imaginary part in a single array.
         d2_mat = np.full((N, N), np.nan, np.complex64)
+        pval_mat = np.full((N, N), np.nan, np.float32)
 
         dkde_pairs = it.product(enumerate(dkde_names), enumerate(dkde_names))
         for (i, ci), (j, cj) in dkde_pairs:
@@ -1144,9 +1188,10 @@ def _dkde_dists_pairwise(
                 continue
 
             # Get the two dihedral KDEs arrays to compare, each is of
-            # shape (B, N, N) due to bootstrapping B times
+            # shape (B, M, M) due to bootstrapping B times
             dkde1 = bs_dkdes[ci][pair_idx]
             dkde2 = bs_dkdes[cj][pair_idx]
+            B, M, M = dkde1.shape
 
             # If ci is cj, randomize the order of the KDEs when
             # comparing, so that different bootstrapped KDEs are
@@ -1163,9 +1208,18 @@ def _dkde_dists_pairwise(
             # Store distance mu and std as a complex number
             d2_mat[i, j] = d2_mat[j, i] = d2_mu + 1j * d2_sigma
 
-        d2_matrices.append(d2_mat)
+            #  Calculate statistical significance of the distance based on T_w^2 metric
+            _, pval = tw_test(
+                X=np.reshape(dkde1, (B, -1)),
+                Y=np.reshape(dkde2, (B, -1)),
+                k=t2_permutations,
+            )
+            pval_mat[i, j] = pval_mat[j, i] = pval
 
-    return d2_matrices
+        d2_matrices.append(d2_mat)
+        pval_matrices.append(pval_mat)
+
+    return d2_matrices, pval_matrices
 
 
 def _dkde_average(
