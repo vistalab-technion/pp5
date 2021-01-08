@@ -3,7 +3,7 @@ import time
 import logging
 import itertools as it
 import multiprocessing as mp
-from typing import Dict, List, Tuple, Union, Callable, Optional
+from typing import Any, Dict, List, Tuple, Union, Callable, Optional, Sequence
 from pathlib import Path
 from collections import defaultdict
 from multiprocessing.pool import AsyncResult
@@ -489,7 +489,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         result_group_idx,
                         bs_codon_dkdes,
                         subgroup_sizes,
-                        self.angle_pairs,
                         dist_metric,
                     ),
                 )
@@ -930,6 +929,289 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
         return {}
 
 
+def _dihedral_kde_single_group(
+    group_idx: str,
+    df_group: pd.DataFrame,
+    angle_pairs: Sequence[Tuple[str, str]],
+    kde_args: Dict[str, Any],
+):
+    """
+    Computes kernel density estimation for a dataframe of angles belonging to a
+        condition group (e.g same SS).
+    :param group_idx: Identifier of the group.
+    :param df_group: Dataframe containing the group's data, specifically all the
+        angle columns.
+    :param angle_pairs: A list of 2-tuples containing the angle column names.
+    :param kde_args: arguments for KDE.
+    :return: A tuple:
+        - The group id
+        - A list of KDEs, each an array of shape (M, M).
+    """
+    kde = BvMKernelDensityEstimator(**kde_args)
+
+    # Creates 2D KDE for each angle pair
+    dkdes = []
+    for phi_col, psi_col in angle_pairs:
+        phi = df_group[phi_col].values
+        psi = df_group[psi_col].values
+        dkde = kde(phi, psi)
+        dkdes.append(dkde)
+
+    return group_idx, dkdes
+
+
+def _codon_dkdes_single_subgroup(
+    group_idx: str,
+    subgroup_idx: str,
+    df_subgroup: pd.DataFrame,
+    angle_pairs: Sequence[Tuple[str, str]],
+    kde_args: dict,
+    bs_niter: int,
+    bs_nsamples: int,
+    bs_randstate: Optional[int],
+) -> Tuple[str, List[np.ndarray]]:
+    """
+    Calculates (bootstrapped) KDEs of angle distributions for a subgroup of data
+    (e.g. a specific codon).
+    :param group_idx: Identifier of the given data's group (e.g. SS).
+    :param subgroup_idx: Identifier of the given data's subbgroup (e.g. codon).
+    :param df_subgroup: Dataframe with the angle data.
+    :param angle_pairs: A sequence fot two-tuples each with names of angle columns.
+    :param kde_args: Argumetns for density estimation.
+    :param bs_niter: Number of bootstrap iterations.
+    :param bs_nsamples: Number of times to sample the group in each bootstrap iteration.
+    :param bs_randstate: Random state for bootstrapping.
+    :return: A tuple:
+        - The subgroup id.
+        - A sequence of KDEs of shape (B, M, M), one for each angle pair.
+    """
+
+    # Create a 3D tensor to hold the bootstrapped KDEs (for each angle
+    # pair), of shape (B,M,M)
+    bs_kde_shape = (bs_niter, kde_args["n_bins"], kde_args["n_bins"])
+    bs_dkdes = [np.empty(bs_kde_shape, np.float32) for _ in angle_pairs]
+
+    # We want a different random state in each subgroup, but still
+    # should be reproducible
+    if bs_randstate is not None:
+        seed = (hash(group_idx + subgroup_idx) + bs_randstate) % (2 ** 31)
+        np.random.seed(seed)
+
+    t_start = time.time()
+
+    for bootstrap_idx in range(bs_niter):
+        # Sample from dataset with replacement, the same number of
+        # elements as it's size. This is our bootstrap sample.
+        df_subgroup_sampled = df_subgroup.sample(
+            axis=0, replace=bs_niter > 1, n=bs_nsamples,
+        )
+
+        # dkdes contains one KDE for each pair in angle_pairs
+        _, dkdes = _dihedral_kde_single_group(
+            subgroup_idx, df_subgroup_sampled, angle_pairs, kde_args
+        )
+
+        # Save the current iteration's KDE into the results tensor
+        for angle_pair_idx, dkde in enumerate(dkdes):
+            bs_dkdes[angle_pair_idx][bootstrap_idx, ...] = dkde
+
+    t_elapsed = time.time() - t_start
+    bs_rate_iter = bs_niter / t_elapsed
+    LOGGER.info(
+        f"Completed {bs_niter} bootstrap iterations for "
+        f"{group_idx}_{subgroup_idx}, size={len(df_subgroup)}, "
+        f"bs_nsamples={bs_nsamples}, "
+        f"rate={bs_rate_iter:.1f} iter/sec "
+        f"elapsed={t_elapsed:.1f} sec"
+    )
+
+    return subgroup_idx, bs_dkdes
+
+
+def _dkde_dists_single_group(
+    group_idx: str,
+    bs_codon_dkdes: Dict[str, List[np.ndarray]],
+    subgroup_sizes: Dict[str, int],
+    kde_dist_metric: Callable,
+) -> Tuple[
+    Sequence[np.ndarray],
+    Dict[str, Sequence[np.ndarray]],
+    Sequence[np.ndarray],
+    Dict[str, Sequence[np.ndarray]],
+]:
+    """
+    Calculates the pairwise distance matrix for codons and AAs.
+    Also averages the bootstrapped KDEs to obtain a single KDE estimate per
+    codon or AA in the group.
+
+    :param group_idx: Identifier of the group this data is from.
+    :param bs_codon_dkdes: A dict mapping from an AA-codon to the bootstrapped KDEs
+        of that codon (one KDE for each angle pair).
+    :param subgroup_sizes: A dict mapping from subgroup name (AA or AA-codon) to the
+        number of samples (dataset rows) available for that AA or AA-codon.
+    :param kde_dist_metric: Function to compute distance between two KDEs.
+    :return: A tuple:
+        - Codon pairwise-distance matrices
+        - Codon averaged KDEs
+        - AA pairwise-distance matrices
+        - AA averaged KDEs
+    """
+
+    # Number of different KDEs per codon (e.g. due to different angle pairs).
+    n_kdes_all = [len(kdes) for kdes in bs_codon_dkdes.values()]
+    n_kdes = n_kdes_all[0]
+    assert all(n_kdes == n for n in n_kdes_all)
+
+    tstart = time.time()
+    # Codon distance matrix and average codon KDEs
+    codon_d2s = _dkde_dists_pairwise(bs_codon_dkdes, kde_dist_metric)
+    codon_dkdes = _dkde_average(bs_codon_dkdes)
+    LOGGER.info(
+        f"Calculated codon distance matrix and average KDE for {group_idx} "
+        f"({time.time() - tstart:.1f}s)..."
+    )
+
+    # AA distance matrix and average AA KDEs
+    # First, we compute a weighted sum of the codon dkdes to obtain AA dkdes.
+    tstart = time.time()
+    bs_aa_dkdes = {aac[0]: None for aac in bs_codon_dkdes.keys()}
+    for aa in ACIDS:
+        # Total number of samples from all subgroups (codons) of this AA
+        n_aa_samples = subgroup_sizes[aa]
+        for aac, bs_dkdes in bs_codon_dkdes.items():
+            if aac[0] != aa:
+                continue
+            if subgroup_sizes[aac] == 0:
+                continue
+
+            # Empirical probability of this codon subgroup within its AA
+            p = subgroup_sizes[aac] / n_aa_samples
+
+            # Initialize KDE of each angle pair to zero so we can accumulate
+            if bs_aa_dkdes[aa] is None:
+                bs_aa_dkdes[aa] = [0] * n_kdes
+
+            # Weighted sum of codon dkdes belonging to the current AA
+            for pair_idx in range(n_kdes):
+                bs_aa_dkdes[aa][pair_idx] += p * bs_codon_dkdes[aac][pair_idx]
+
+    # Now, we apply the pairwise distance between pairs of AA KDEs, as for the
+    # codons
+    aa_d2s = _dkde_dists_pairwise(bs_aa_dkdes, kde_dist_metric)
+    aa_dkdes = _dkde_average(bs_aa_dkdes)
+    LOGGER.info(
+        f"Calculated AA distance matrix and average KDE for {group_idx} "
+        f"({time.time() - tstart:.1f}s)..."
+    )
+
+    return codon_d2s, codon_dkdes, aa_d2s, aa_dkdes
+
+
+def _dkde_dists_pairwise(
+    bs_dkdes: Dict[str, List[np.ndarray]],
+    kde_dist_metric: Callable[[np.ndarray, np.ndarray], np.ndarray],
+) -> Sequence[np.ndarray]:
+    """
+    Calculate a distance matrix based on the distance between each pair of
+    subgroups (codons or AAs) for which we have a multiple bootstrapped KDEs.
+
+    :param bs_dkdes: A dict from a subgroup identifier to a list of bootstrapped KDEs.
+    :param kde_dist_metric: A function to compute the distance between two KDEs.
+    :return: A list of pairwise-distance matrices (corresponding to the list of
+        bootstrapped KDEs for each subgroup, e.g. one for each angle pair).
+    """
+
+    n_kdes = [len(kdes) for kdes in bs_dkdes.values()][0]
+
+    dkde_names = list(bs_dkdes.keys())
+    N = len(dkde_names)
+
+    # Calculate distance matrix
+    d2_matrices = []
+    for pair_idx in range(n_kdes):
+        # For each angle pair we have N dkde matrices,
+        # so we compute the distance between each such pair.
+        # We use a complex array to store mu as the real part and sigma
+        # as the imaginary part in a single array.
+        d2_mat = np.full((N, N), np.nan, np.complex64)
+
+        dkde_pairs = it.product(enumerate(dkde_names), enumerate(dkde_names))
+        for (i, ci), (j, cj) in dkde_pairs:
+            if bs_dkdes[ci] is None:
+                continue
+
+            if j < i or bs_dkdes[cj] is None:
+                continue
+
+            # Get the two dihedral KDEs arrays to compare, each is of
+            # shape (B, N, N) due to bootstrapping B times
+            dkde1 = bs_dkdes[ci][pair_idx]
+            dkde2 = bs_dkdes[cj][pair_idx]
+
+            # If ci is cj, randomize the order of the KDEs when
+            # comparing, so that different bootstrapped KDEs are
+            # compared
+            if i == j:
+                # This permutes the order along the first axis
+                dkde2 = np.random.permutation(dkde2)
+
+            # Compute the distances, of shape (B,)
+            d2 = kde_dist_metric(dkde1, dkde2)
+            d2_mu = np.nanmean(d2)
+            d2_sigma = np.nanstd(d2)
+
+            # Store distance mu and std as a complex number
+            d2_mat[i, j] = d2_mat[j, i] = d2_mu + 1j * d2_sigma
+
+        d2_matrices.append(d2_mat)
+
+    return d2_matrices
+
+
+def _dkde_average(
+    bs_dkdes: Dict[str, List[np.ndarray]]
+) -> Dict[str, Sequence[np.ndarray]]:
+    """
+    Averages the KDEs from all bootstraps, to obtain a single KDE per subgroup
+    (codon or AA). Note that this KDE will also include the variance in each bin,
+    so we'll save as a complex matrix where real is the KDE value and imag is the std.
+
+    :param bs_dkdes: A dict from a subgroup identifier to a list of bootstrapped KDEs.
+    :return: A dict mapping from a group identifier (codon or AA) to a list of
+        averaged KDEs for that subgroup. Each averaged KDE will actually be a
+        complex matrix where the real part is average and the imag is std.
+    """
+
+    n_kdes = [len(kdes) for kdes in bs_dkdes.values()][0]
+
+    avg_dkdes = {c: [] for c in bs_dkdes.keys()}
+    for subgroup, bs_dkde in bs_dkdes.items():
+        if bs_dkde is None:
+            continue
+
+        for pair_idx in range(n_kdes):
+            # bs_dkde[pair_idx] here is of shape (B, N, N) due to
+            # bootstrapping. Average it over the bootstrap dimension
+            mean_dkde = np.nanmean(bs_dkde[pair_idx], axis=0, dtype=np.float32)
+            std_dkde = np.nanstd(bs_dkde[pair_idx], axis=0, dtype=np.float32)
+            avg_dkdes[subgroup].append(mean_dkde + 1j * std_dkde)
+
+    return avg_dkdes
+
+
+def _kde_dist_metric_l2(kde1: np.ndarray, kde2: np.ndarray):
+    """
+    L2 distance between two bootstrapped KDEs.
+    We expect kde1 and kde2 to be of shape (B, N, N)
+    We calculate distance between each 2D NxN plane and return B distances.
+    :param kde1: First bootstrapped KDE.
+    :param kde2: Second bootstrapped KDE.
+    :return: Distances, an array of shape (B,)
+    """
+    assert kde1.ndim == 3 and kde2.ndim == 3
+    return np.nansum((kde1 - kde2) ** 2, axis=(1, 2))
+
+
 def _plot_likelihoods(
     likelihoods: dict, codon_or_aa: str, out_dir: Path,
 ):
@@ -1110,210 +1392,6 @@ def _plot_dkdes(
         pp5.plot.savefig(fig, fig_filename, close=True)
 
     return str(fig_filename)
-
-
-def _dihedral_kde_single_group(group_idx, df_group, angle_pairs, kde_args):
-    kde = BvMKernelDensityEstimator(**kde_args)
-
-    # Creates 2D KDE for each angle pair
-    dkdes = []
-    for phi_col, psi_col in angle_pairs:
-        phi = df_group[phi_col].values
-        psi = df_group[psi_col].values
-        dkde = kde(phi, psi)
-        dkdes.append(dkde)
-
-    return group_idx, dkdes
-
-
-def _codon_dkdes_single_subgroup(
-    group_idx: str,
-    subgroup_idx: str,
-    df_subgroup: pd.DataFrame,
-    angle_pairs: list,
-    kde_args: dict,
-    bs_niter: int,
-    bs_nsamples: int,
-    bs_randstate: Optional[int],
-) -> Tuple[str, List[np.ndarray]]:
-    # Create a 3D tensor to hold the bootstrapped KDEs (for each angle
-    # pair), of shape (B,N,N)
-    bs_kde_shape = (bs_niter, kde_args["n_bins"], kde_args["n_bins"])
-    bs_dkdes = [np.empty(bs_kde_shape, np.float32) for _ in angle_pairs]
-
-    # We want a different random state in each subgroup, but still
-    # should be reproducible
-    if bs_randstate is not None:
-        seed = (hash(group_idx + subgroup_idx) + bs_randstate) % (2 ** 31)
-        np.random.seed(seed)
-
-    t_start = time.time()
-
-    for bootstrap_idx in range(bs_niter):
-        # Sample from dataset with replacement, the same number of
-        # elements as it's size. This is our bootstrap sample.
-        df_subgroup_sampled = df_subgroup.sample(
-            axis=0, replace=bs_niter > 1, n=bs_nsamples,
-        )
-
-        # dkdes contains one KDE for each pair in angle_pairs
-        _, dkdes = _dihedral_kde_single_group(
-            subgroup_idx, df_subgroup_sampled, angle_pairs, kde_args
-        )
-
-        # Save the current iteration's KDE into the results tensor
-        for angle_pair_idx, dkde in enumerate(dkdes):
-            bs_dkdes[angle_pair_idx][bootstrap_idx, ...] = dkde
-
-    t_elapsed = time.time() - t_start
-    bs_rate_iter = bs_niter / t_elapsed
-    LOGGER.info(
-        f"Completed {bs_niter} bootstrap iterations for "
-        f"{group_idx}_{subgroup_idx}, size={len(df_subgroup)}, "
-        f"bs_nsamples={bs_nsamples}, "
-        f"rate={bs_rate_iter:.1f} iter/sec "
-        f"elapsed={t_elapsed:.1f} sec"
-    )
-
-    return subgroup_idx, bs_dkdes
-
-
-def _dkde_dists_single_group(
-    group_idx: str,
-    bs_codon_dkdes: Dict[str, List[np.ndarray]],
-    subgroup_sizes: Dict[str, int],
-    angle_pairs: list,
-    kde_dist_metric: Callable,
-):
-    # Calculates the distance matrix for codons and AAs in each group.
-    # Also averages the bootstrapped KDEs to obtain a single KDE estimate per
-    # codon or AA in the group.
-
-    tstart = time.time()
-    # Codon distance matrix and average codon KDEs
-    codon_d2s = _dkde_dists_pairwise(bs_codon_dkdes, angle_pairs, kde_dist_metric)
-    codon_dkdes = _dkde_average(bs_codon_dkdes, angle_pairs,)
-    LOGGER.info(
-        f"Calculated codon distance matrix and average KDE for {group_idx} "
-        f"({time.time() - tstart:.1f}s)..."
-    )
-
-    # AA distance matrix and average AA KDEs
-    # First, we compute a weighted sum of the codon dkdes to obtain AA dkdes.
-    tstart = time.time()
-    bs_aa_dkdes = {aac[0]: None for aac in bs_codon_dkdes.keys()}
-    for aa in ACIDS:
-        # Total number of samples in from all subgroups (codons) of this AA
-        n_aa_samples = subgroup_sizes[aa]
-        for aac, bs_dkdes in bs_codon_dkdes.items():
-            if aac[0] != aa:
-                continue
-            if subgroup_sizes[aac] == 0:
-                continue
-
-            # Empirical probability of this codon subgroup within it's AA
-            p = subgroup_sizes[aac] / n_aa_samples
-
-            # Initialize KDE of each angle pair to zero so we can accumulate
-            if bs_aa_dkdes[aa] is None:
-                bs_aa_dkdes[aa] = [0] * len(angle_pairs)
-
-            # Weighted sum of codon dkdes belonging to the current AA
-            for pair_idx in range(len(angle_pairs)):
-                bs_aa_dkdes[aa][pair_idx] += p * bs_codon_dkdes[aac][pair_idx]
-
-    # Now, we apply the pairwise distance between pairs of AA KDEs, as for the
-    # codons
-    aa_d2s = _dkde_dists_pairwise(bs_aa_dkdes, angle_pairs, kde_dist_metric)
-    aa_dkdes = _dkde_average(bs_aa_dkdes, angle_pairs,)
-    LOGGER.info(
-        f"Calculated AA distance matrix and average KDE for {group_idx} "
-        f"({time.time() - tstart:.1f}s)..."
-    )
-
-    return codon_d2s, codon_dkdes, aa_d2s, aa_dkdes
-
-
-def _dkde_dists_pairwise(
-    bs_dkdes: Dict[str, List[np.ndarray]],
-    angle_pairs: List[str],
-    kde_dist_metric: Callable,
-):
-    # Calculate a distance matrix based on the distance between each pair of
-    # subgroups (codons or AAs) for which we have a multiple bootstrapped KDEs.
-
-    dkde_names = list(bs_dkdes.keys())
-    N = len(dkde_names)
-
-    # Calculate distance matrix
-    d2_matrices = []
-    for pair_idx in range(len(angle_pairs)):
-        # For each angle pair we have N dkde matrices,
-        # so we compute the distance between each such pair.
-        # We use a complex array to store mu as the real part and sigma
-        # as the imaginary part in a single array.
-        d2_mat = np.full((N, N), np.nan, np.complex64)
-
-        dkde_pairs = it.product(enumerate(dkde_names), enumerate(dkde_names))
-        for (i, ci), (j, cj) in dkde_pairs:
-            if bs_dkdes[ci] is None:
-                continue
-
-            if j < i or bs_dkdes[cj] is None:
-                continue
-
-            # Get the two dihedral KDEs arrays to compare, each is of
-            # shape (B, N, N) due to bootstrapping B times
-            dkde1 = bs_dkdes[ci][pair_idx]
-            dkde2 = bs_dkdes[cj][pair_idx]
-
-            # If ci is cj, randomize the order of the KDEs when
-            # comparing, so that different bootstrapped KDEs are
-            # compared
-            if i == j:
-                # This permutes the order along the first axis
-                dkde2 = np.random.permutation(dkde2)
-
-            # Compute the distances, of shape (B,)
-            d2 = kde_dist_metric(dkde1, dkde2)
-            d2_mu = np.nanmean(d2)
-            d2_sigma = np.nanstd(d2)
-
-            # Store distance mu and std as a complex number
-            d2_mat[i, j] = d2_mat[j, i] = d2_mu + 1j * d2_sigma
-
-        d2_matrices.append(d2_mat)
-
-    return d2_matrices
-
-
-def _dkde_average(
-    bs_dkdes: Dict[str, List[np.ndarray]], angle_pairs: List[str],
-):
-    # Average the KDEs from all bootstraps, so that we can save a single KDE
-    # per subgroup (codon or AA). Note that this KDE will also
-    # include the variance in each bin, so we'll save as a complex matrix where
-    # real is the KDE value and imag is the std.
-    avg_dkdes = {c: [] for c in bs_dkdes.keys()}
-    for subgroup, bs_dkde in bs_dkdes.items():
-        if bs_dkde is None:
-            continue
-        for pair_idx in range(len(angle_pairs)):
-            # bs_dkde[pair_idx] here is of shape (B, N, N) due to
-            # bootstrapping. Average it over the bootstrap dimension
-            mean_dkde = np.nanmean(bs_dkde[pair_idx], axis=0, dtype=np.float32)
-            std_dkde = np.nanstd(bs_dkde[pair_idx], axis=0, dtype=np.float32)
-            avg_dkdes[subgroup].append(mean_dkde + 1j * std_dkde)
-
-    return avg_dkdes
-
-
-def _kde_dist_metric_l2(kde1: np.ndarray, kde2: np.ndarray):
-    # We expect kde1 and kde2 to be of shape (B, N, N)
-    # We calculate distance between each 2D NxN plane and return B
-    # distances
-    assert kde1.ndim == 3 and kde2.ndim == 3
-    return np.nansum((kde1 - kde2) ** 2, axis=(1, 2))
 
 
 def _cols2label(phi_col: str, psi_col: str):
