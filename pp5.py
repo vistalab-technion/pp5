@@ -12,7 +12,10 @@ from pp5.pgroup import ProteinGroup
 from pp5.collect import ProteinGroupCollector, ProteinRecordCollector
 from pp5.analysis.cdist import CodonDistanceAnalyzer
 from pp5.analysis.pairwise import PairwiseCodonDistanceAnalyzer
-from pp5.analysis.pointwise import PGroupPointwiseCodonDistanceAnalyzer
+from pp5.analysis.pointwise import (
+    PointwiseCodonDistanceAnalyzer,
+    PGroupPointwiseCodonDistanceAnalyzer,
+)
 
 _LOG = logging.getLogger(__name__)
 _CFG_PREFIX_ = "_CFG_"
@@ -255,7 +258,7 @@ def _parse_cli():
         sp_collect_pgroup.add_argument(*names, **arg_dict)
 
     ##########
-    # Analysis
+    # Analysis: cdist
     ##########
     cdist_desc, cdist_args = _generate_cli_from_func(
         CodonDistanceAnalyzer.__init__, skip=["pointwise_extra_kw", "pairwise_extra_kw"]
@@ -297,6 +300,36 @@ def _parse_cli():
         names = arg_dict.pop("names")
         sp_pointwise_cdist.add_argument(*names, **arg_dict)
 
+    ##########
+    # Analysis: pointwise
+    ##########
+
+    # Get pointwise args and subtract all common args
+    pointwise_desc, pointwise_args = _generate_cli_from_func(
+        PointwiseCodonDistanceAnalyzer.__init__, skip=["consolidate_ss"]
+    )
+
+    def _handle_pointwise_cdist(
+        pointwise_args=pointwise_args, **parsed_args,
+    ):
+        analyzer = PointwiseCodonDistanceAnalyzer(
+            **{k: parsed_args[k] for k in pointwise_args},
+        )
+        analyzer.analyze()
+
+    sp_pointwise = sp.add_parser(
+        "analyze-pointwise", help=pointwise_desc, formatter_class=hf
+    )
+
+    sp_pointwise.set_defaults(handler=_handle_pointwise_cdist)
+    for _, arg_dict in pointwise_args.items():
+        arg_dict = arg_dict.copy()
+        names = arg_dict.pop("names")
+        sp_pointwise.add_argument(*names, **arg_dict)
+
+    ##########
+    # Parse
+    ##########
     parsed = p.parse_args()
     if not parsed.action:
         p.error("Please specify an action")
