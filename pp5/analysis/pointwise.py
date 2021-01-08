@@ -231,6 +231,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             unp_id, unp_idx, codon = subgroup_idx
             subgroup_ss = secondaries.pop()
 
+            # Make sure all angles have a value
+            if np.any(df_subgroup[[*self.angle_cols]].isnull()):
+                continue
+
             # Calculate average angle from the different structures in this sub group
             angles = (
                 Dihedral.from_deg(phi, psi)
