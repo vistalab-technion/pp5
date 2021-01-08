@@ -6,8 +6,8 @@ from scipy.spatial.distance import pdist, squareform
 def tw_test(X, Y, k=1000):
     """
     Calculates the T2 Welch statistic based on distances
-    :param X: nxnx array containing sample X
-    :param Y: nxny array containing sample Y
+    :param X: (N, nx) array containing sample X
+    :param Y: (N, ny) array containing sample Y
     :param k: number of permutation for significance evaluation
     :return: t2 statistic, significance
     """
