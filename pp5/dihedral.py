@@ -42,7 +42,7 @@ class Dihedral(object):
         for name in self.NAMES:
             a = loc[name]
 
-            if isinstance(a, (float, int)):
+            if isinstance(a, (float, int, np.float32, np.float64)):
                 val, std = float(a), None
             elif hasattr(a, "__len__") and len(a) == 2:
                 val = float(a[0])
