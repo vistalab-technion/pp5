@@ -5,6 +5,7 @@ import itertools as it
 import multiprocessing as mp
 from typing import Dict, List, Tuple, Union, Callable, Optional
 from pathlib import Path
+from collections import defaultdict
 from multiprocessing.pool import AsyncResult
 
 import numpy as np
@@ -16,6 +17,7 @@ from pp5.plot import PP5_MPL_STYLE
 from pp5.utils import sort_dict
 from pp5.codons import ACIDS, N_CODONS, AA_CODONS, SYN_CODON_IDX, codon2aac
 from pp5.analysis import SS_TYPE_ANY, CODON_TYPE_ANY, DSSP_TO_SS_TYPE
+from pp5.dihedral import Dihedral
 from pp5.parallel import yield_async_results
 from pp5.vonmises import BvMKernelDensityEstimator
 from pp5.analysis.base import ParallelAnalyzer
@@ -29,15 +31,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         dataset_dir: Union[str, Path],
         out_dir: Union[str, Path] = None,
         pointwise_filename: str = "data-precs.csv",
-        condition_on_ss=True,
-        consolidate_ss=DSSP_TO_SS_TYPE.copy(),
-        strict_codons=True,
-        kde_nbins=128,
-        kde_k1=30.0,
-        kde_k2=30.0,
-        kde_k3=0.0,
-        bs_niter=1,
-        bs_randstate=None,
+        condition_on_ss: bool = True,
+        consolidate_ss: dict = DSSP_TO_SS_TYPE.copy(),
+        min_group_size: int = 1,
+        strict_codons: bool = True,
+        kde_nbins: int = 128,
+        kde_k1: float = 30.0,
+        kde_k2: float = 30.0,
+        kde_k3: float = 0.0,
+        bs_niter: int = 1,
+        bs_randstate: Optional[int] = None,
         bs_fixed_n: str = None,
         n_parallel_kdes: int = 8,
         out_tag: str = None,
@@ -50,13 +53,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         from these codons.
 
         :param dataset_dir: Path to directory with the pointwise collector
-        output.
+            output.
         :param out_dir: Path to output directory. Defaults to <dataset_dir>/results.
         :param pointwise_filename: Filename of the pointwise dataset.
         :param consolidate_ss: Dict mapping from DSSP secondary structure to
-        the consolidated SS types used in this analysis.
+            the consolidated SS types used in this analysis.
         :param condition_on_ss: Whether to condition on secondary structure
             (of two consecutive residues, after consolidation).
+        :param min_group_size: Minimal number of angle-pairs from different
+            structures belonging to the same Uniprot ID, location and codon in order to
+            consider the group of angles for analysis.
         :param strict_codons: Enforce only one known codon per residue
             (reject residues where DNA matching was ambiguous).
         :param kde_nbins: Number of angle binds for KDE estimation.
@@ -89,9 +95,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
+        self.min_group_size = min_group_size
         self.strict_codons = strict_codons
 
+        self.pdb_id_col = "pdb_id"
+        self.unp_id_col, self.unp_idx_col = "unp_id", "unp_idx"
+        self.codon_col, self.codon_score_col = "codon", "codon_score"
+        self.codon_cols = (self.codon_col,)
         self.secondary_col = "secondary"
+        self.angle_cols = ("phi", "psi")
+        self.angle_pairs = [self.angle_cols]
         self.condition_col = "condition_group"
 
         self.kde_args = dict(n_bins=kde_nbins, k1=kde_k1, k2=kde_k2, k3=kde_k3)
@@ -110,24 +123,139 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             "dataset-stats": self._dataset_stats,
             "dihedral-kde-full": self._dihedral_kde_full,
             "codon-dists": self._codons_dists,
-            "codon-dists-expected": self._codon_dists_expected,
             "plot-results": self._plot_results,
         }
 
     def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
-        # TODO
-        raise NotImplemented("")
+
+        cols = (
+            self.pdb_id_col,
+            self.unp_id_col,
+            self.unp_idx_col,
+            self.codon_col,
+            self.codon_score_col,
+            self.secondary_col,
+            *self.angle_cols,
+        )
+
+        # Specifying this dtype allows an integer column with missing values
+        dtype = {self.unp_idx_col: "Int64"}
+        dtype = {**dtype, **{ac: "float32" for ac in self.angle_cols}}
+
+        # Consolidate different SS types into the ones we support
+        converters = {self.secondary_col: lambda ss: self.consolidate_ss.get(ss, "")}
+
+        start = time.time()
+
+        # Load the data
+        df_pointwise = pd.read_csv(
+            str(self.input_file),
+            usecols=cols,
+            dtype=dtype,
+            header=0,
+            converters=converters,
+        )
+
+        # Filter out rows with missing SS, unp_idx or with ambiguous codons
+        idx_filter = ~df_pointwise.secondary.isnull()
+        idx_filter &= ~df_pointwise.unp_idx.isnull()
+        if self.strict_codons:
+            idx_filter &= df_pointwise.codon_score == 1.0
+
+        df_pointwise = df_pointwise[idx_filter]
+
+        # Set a column for the condition group (what we condition on)
+        if self.condition_on_ss:
+            condition_groups = df_pointwise.secondary
+        else:
+            condition_groups = "ANY"
+        df_pointwise[self.condition_col] = condition_groups
+
+        # Convert codon columns to AA-CODON
+        df_pointwise[self.codon_col] = df_pointwise[[self.codon_col]].applymap(
+            codon2aac
+        )
+
+        async_results = []
+
+        # Process groups in parallel.
+        # Add additional conditioning on codon just to break it into many more groups
+        # so that it parallelizes better.
+        for group_idx, df_group in df_pointwise.groupby(
+            by=[self.condition_col, self.codon_col]
+        ):
+            condition_group_id, _ = group_idx
+            async_results.append(
+                pool.apply_async(
+                    self._preprocess_group, args=(condition_group_id, df_group),
+                )
+            )
+
+        _, _, results = self._handle_async_results(
+            async_results, collect=True, flatten=True
+        )
+
+        df_processed = pd.DataFrame(data=results)
+        LOGGER.info(f"preprocessing done, elapsed={time.time()-start:.2f}s")
+        LOGGER.info(f"{df_processed}")
+
+        self._dump_intermediate("dataset", df_processed)
+        return {
+            "n_TOTAL": len(df_processed),
+        }
+
+    def _preprocess_group(self, group_id: str, df_group: pd.DataFrame):
+        processed_subgroups = []
+
+        # Group by each unique codon at a unique location in a unique protein
+        for subgroup_idx, df_subgroup in df_group.groupby(
+            [self.unp_id_col, self.unp_idx_col, self.codon_col]
+        ):
+            if len(df_subgroup) < self.min_group_size:
+                continue
+
+            secondaries = set(df_subgroup[self.secondary_col])
+            if len(secondaries) > 1:
+                # There shouldn't be more that one SS since all members of this
+                # subgroup come from the same residue in the same protein
+                LOGGER.warning(
+                    f"Ambiguous secondary structure in {group_id=} {subgroup_idx=}"
+                )
+                continue
+
+            unp_id, unp_idx, codon = subgroup_idx
+            subgroup_ss = secondaries.pop()
+
+            # Calculate average angle from the different structures in this sub group
+            angles = (
+                Dihedral.from_deg(phi, psi)
+                for phi, psi in df_subgroup[[*self.angle_cols]].values
+            )
+            centroid = Dihedral.circular_centroid(*angles)
+            processed_subgroups.append(
+                {
+                    self.unp_id_col: unp_id,
+                    self.unp_idx_col: unp_idx,
+                    self.codon_col: codon,
+                    self.condition_col: group_id,
+                    self.secondary_col: subgroup_ss,
+                    self.angle_cols[0]: centroid.phi,
+                    self.angle_cols[1]: centroid.psi,
+                    "group_size": len(df_subgroup),
+                }
+            )
+        return processed_subgroups
 
     def _dataset_stats(self, pool: mp.pool.Pool) -> dict:
         # Calculate likelihood distribution of prev codon, separated by SS
         codon_likelihoods = {}
-        prev_codon, curr_codon = self.codon_cols
+        codon_col = self.codon_cols[0]
         df_processed: pd.DataFrame = self._load_intermediate("dataset")
 
         df_ss_groups = df_processed.groupby(self.secondary_col)
         for ss_type, df_ss_group in df_ss_groups:
             n_ss = len(df_ss_group)
-            df_codon_groups = df_ss_group.groupby(prev_codon)
+            df_codon_groups = df_ss_group.groupby(codon_col)
             df_codon_group_names = df_codon_groups.groups.keys()
 
             codon_likelihood = np.array(
@@ -186,7 +314,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Calculate group and subgroup sizes
         group_sizes = {}
-        _, curr_codon_col = self.codon_cols
+        curr_codon_col = self.codon_cols[-1]
         df_groups = df_processed.groupby(by=self.condition_col)
         for group_idx, df_group in df_groups:
             df_subgroups = df_group.groupby(curr_codon_col)
@@ -243,7 +371,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
     def _codons_dists(self, pool: mp.pool.Pool) -> dict:
         group_sizes = self._load_intermediate("group-sizes")
-        prev_codon_col, curr_codon_col = self.codon_cols
+        curr_codon_col = self.codon_cols[-1]
 
         # We currently only support one type of metric
         dist_metrics = {"l2": _kde_dist_metric_l2}
@@ -422,71 +550,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # aa_dkdes: Same as codon_dkdes, but keys are AAs
         self._dump_intermediate("aa-dkdes", aa_dkdes)
-
-        return {}
-
-    def _codon_dists_expected(self, pool: mp.pool.Pool) -> dict:
-        # To obtain the final expected distance matrices, we calculate the expectation
-        # using the likelihood of the prev codon or aa so that conditioning is only
-        # on SS. Then we also take the expectation over the different SS types to
-        # obtain a distance matrix of any SS type.
-
-        # Load map of likelihoods, depending on the type of previous
-        # conditioning (ss->codon or AA->probability)
-        if self.condition_on_prev == "codon":
-            likelihoods: dict = self._load_intermediate("codon-likelihoods")
-        elif self.condition_on_prev == "aa":
-            likelihoods: dict = self._load_intermediate("aa-likelihoods")
-        else:
-            likelihoods = None
-
-        # Load map of likelihoods of secondary structures.
-        ss_likelihoods: dict = self._load_intermediate("ss-likelihoods")
-
-        def _dists_expected(dists):
-            # dists maps from group index to a list of distance matrices (one per
-            # ange pair)
-
-            # This dict will hold the final expected distance matrices (i.e. we
-            # calculate the expectation using the likelihood of the prev codon
-            # or aa). Note that we actually have one matrix per angle pair.
-            dists_exp = {}
-            for group_idx, d2_matrices in dists.items():
-                assert len(d2_matrices) == len(self.angle_pairs)
-                codon_or_aa, ss_type = group_idx.split("_")
-
-                if ss_type not in dists_exp:
-                    defaults = [np.zeros_like(d2) for d2 in d2_matrices]
-                    dists_exp[ss_type] = defaults
-
-                for i, d2 in enumerate(d2_matrices):
-                    p = likelihoods[ss_type][codon_or_aa] if likelihoods else 1.0
-                    # Don't sum nan's because they kill the entire cell
-                    d2 = np.nan_to_num(d2, copy=False, nan=0.0)
-                    dists_exp[ss_type][i] += p * d2
-
-            # Now we also take the expectation over all SS types to produce one
-            # averaged distance matrix, but only if we actually conditioned on it
-            if self.condition_on_ss:
-                defaults = [np.zeros_like(d2) for d2 in d2_matrices]
-                dists_exp[SS_TYPE_ANY] = defaults
-                for ss_type, d2_matrices in dists_exp.items():
-                    if ss_type == SS_TYPE_ANY:
-                        continue
-                    p = ss_likelihoods[ss_type]
-                    for i, d2 in enumerate(d2_matrices):
-                        dists_exp[SS_TYPE_ANY][i] += p * d2
-
-            return dists_exp
-
-        for aa_codon in {"codon", "aa"}:
-            # Load the calculated dists matrices. The loaded dict maps from group
-            # index (prev_codon/AA, SS) to a list of distance matrices for each
-            # angle pair.
-            dists: dict = self._load_intermediate(f"{aa_codon}-dists")
-            dists_exp = _dists_expected(dists)
-            del dists
-            self._dump_intermediate(f"{aa_codon}-dists-exp", dists_exp)
 
         return {}
 
@@ -683,6 +746,14 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
         self.codon_opts_cols = [f"codon_opts-1", f"codon_opts+0"]
         self.secondary_cols = [f"secondary-1", f"secondary+0"]
 
+    def _collection_functions(
+        self,
+    ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
+        return {
+            **super()._collection_functions(),
+            "codon-dists-expected": self._codon_dists_expected,
+        }
+
     def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
         # Specifies which columns to read from the CSV
         def col_filter(col_name: str):
@@ -792,6 +863,71 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
         df_pointwise[self.condition_col] = condition_groups
 
         return df_pointwise
+
+    def _codon_dists_expected(self, pool: mp.pool.Pool) -> dict:
+        # To obtain the final expected distance matrices, we calculate the expectation
+        # using the likelihood of the prev codon or aa so that conditioning is only
+        # on SS. Then we also take the expectation over the different SS types to
+        # obtain a distance matrix of any SS type.
+
+        # Load map of likelihoods, depending on the type of previous
+        # conditioning (ss->codon or AA->probability)
+        if self.condition_on_prev == "codon":
+            likelihoods: dict = self._load_intermediate("codon-likelihoods")
+        elif self.condition_on_prev == "aa":
+            likelihoods: dict = self._load_intermediate("aa-likelihoods")
+        else:
+            likelihoods = None
+
+        # Load map of likelihoods of secondary structures.
+        ss_likelihoods: dict = self._load_intermediate("ss-likelihoods")
+
+        def _dists_expected(dists):
+            # dists maps from group index to a list of distance matrices (one per
+            # angle pair)
+
+            # This dict will hold the final expected distance matrices (i.e. we
+            # calculate the expectation using the likelihood of the prev codon
+            # or aa). Note that we actually have one matrix per angle pair.
+            dists_exp = {}
+            for group_idx, d2_matrices in dists.items():
+                assert len(d2_matrices) == len(self.angle_pairs)
+                codon_or_aa, ss_type = group_idx.split("_")
+
+                if ss_type not in dists_exp:
+                    defaults = [np.zeros_like(d2) for d2 in d2_matrices]
+                    dists_exp[ss_type] = defaults
+
+                for i, d2 in enumerate(d2_matrices):
+                    p = likelihoods[ss_type][codon_or_aa] if likelihoods else 1.0
+                    # Don't sum nan's because they kill the entire cell
+                    d2 = np.nan_to_num(d2, copy=False, nan=0.0)
+                    dists_exp[ss_type][i] += p * d2
+
+            # Now we also take the expectation over all SS types to produce one
+            # averaged distance matrix, but only if we actually conditioned on it
+            if self.condition_on_ss:
+                defaults = [np.zeros_like(d2) for d2 in d2_matrices]
+                dists_exp[SS_TYPE_ANY] = defaults
+                for ss_type, d2_matrices in dists_exp.items():
+                    if ss_type == SS_TYPE_ANY:
+                        continue
+                    p = ss_likelihoods[ss_type]
+                    for i, d2 in enumerate(d2_matrices):
+                        dists_exp[SS_TYPE_ANY][i] += p * d2
+
+            return dists_exp
+
+        for aa_codon in {"codon", "aa"}:
+            # Load the calculated dists matrices. The loaded dict maps from group
+            # index (prev_codon/AA, SS) to a list of distance matrices for each
+            # angle pair.
+            dists: dict = self._load_intermediate(f"{aa_codon}-dists")
+            dists_exp = _dists_expected(dists)
+            del dists
+            self._dump_intermediate(f"{aa_codon}-dists-exp", dists_exp)
+
+        return {}
 
 
 def _plot_likelihoods(
