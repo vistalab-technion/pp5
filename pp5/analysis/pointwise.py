@@ -656,6 +656,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 continue
             out_dir = self.out_dir.joinpath(f"{aa_codon}-pvals")
             labels = AA_CODONS if aa_codon == "codon" else ACIDS
+            block_diagonal = SYN_CODON_IDX if aa_codon == "codon" else None
 
             for group_idx, d2_matrices in pvals.items():
                 async_results.append(
@@ -667,11 +668,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                             out_dir=out_dir,
                             titles=ap_labels if len(ap_labels) > 1 else None,
                             labels=labels,
-                            vmin=None,
-                            vmax=None,  # should consider scale
+                            vmin=0.0,
+                            vmax=1.0,  # pvals are in range 0,1
                             annotate_mu=False,
                             plot_std=False,
-                            block_diagonal=False,
+                            block_diagonal=block_diagonal,
                         ),
                     )
                 )
