@@ -7,8 +7,9 @@ from scipy.spatial.distance import pdist, squareform
 def tw_test(X: np.ndarray, Y: np.ndarray, k: int = 1000):
     """
     Calculates the Tw^2 Welch statistic based on distances.
-    :param X: (N, nx) array containing sample X
-    :param Y: (N, ny) array containing sample Y
+    :param X: (n, Nx) array containing a sample X, where Nx is the number of
+        observations in the sample and n is the dimension of each observation.
+    :param Y: (n, Ny) array containing sample Y with Ny observations of dimension n.
     :param k: number of permutations for significance evaluation
     :return: Tw^2 statistic, p-value (significance).
     """
