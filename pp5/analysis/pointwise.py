@@ -41,8 +41,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         kde_k3: float = 0.0,
         bs_niter: int = 1,
         bs_randstate: Optional[int] = None,
-        bs_fixed_n: str = None,
-        n_parallel_kdes: int = 8,
+        bs_fixed_n: Optional[Union[str, int]] = None,
+        n_parallel_groups: int = 2,
         t2_permutations: int = 100,
         out_tag: str = None,
     ):
@@ -73,13 +73,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param bs_niter: Number of bootstrap iterations.
         :param bs_randstate: Random state for bootstrap.
         :param bs_fixed_n: Whether to fix number of samples in each
-            bootstrap iteration for each subgroup to the number of samples in the
-            smallest subgroup ('min'), largest subgroup ('max') or no limit ('').
-        :param n_parallel_kdes: Number of parallel bootstrapped KDE
-            calculations to run simultaneously.
-            By default it will be equal to the number of available CPU cores.
-            Setting this to a high number together with a high bs_niter will cause
-            excessive memory usage.
+            bootstrap iteration for each subgroup.
+            Values can be "min": fix number of samples to equal the smallest
+            subgroup; "max": fix to size of largest subgroup; ""/None: no limit;
+            integer value: fix to the given number, and zero also means no limit.
+        :param n_parallel_groups: Number of groups to schedule for running in
+            parallel. Note that the sub-groups in each group will be parallelized over
+            all available cores.
         :param t2_permutations: Number of permutations to use when calculating
             p-value of distances with the T^2 statistic.
         :param out_tag: Tag for output.
@@ -93,8 +93,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             clear_intermediate=False,
         )
 
-        if bs_fixed_n not in {None, "", "min", "max"}:
-            raise ValueError(f"invalid bs_fixed_n: {bs_fixed_n}")
+        bs_fixed_n = bs_fixed_n or 0
+        if isinstance(bs_fixed_n, str) and bs_fixed_n not in {"", "min", "max"}:
+            raise ValueError(f"invalid bs_fixed_n: {bs_fixed_n}, must be min/max/''")
+        elif isinstance(bs_fixed_n, int) and bs_fixed_n < 0:
+            raise ValueError(f"invalid bs_fixed_n: {bs_fixed_n}, must be > 0")
 
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
@@ -116,7 +119,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
         self.bs_fixed_n = bs_fixed_n
-        self.n_parallel_kdes = n_parallel_kdes
+        self.n_parallel_groups = n_parallel_groups
         self.t2_permutations = t2_permutations
 
     def _collection_functions(
@@ -385,18 +388,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         dist_metrics = {"l2": _kde_dist_metric_l2}
         dist_metric = dist_metrics[self.kde_dist_metric.lower()]
 
-        # Calculate chunk-size for parallel mapping.
-        # (Num groups in parallel) * (Num subgroups) / (num processors)
-        n_procs = pp5.get_config("MAX_PROCESSES")
-        chunksize = self.n_parallel_kdes * N_CODONS / n_procs
-        chunksize = max(int(chunksize), 1)
+        # Set chunk-size for parallel mapping.
+        chunksize = 1
 
         df_processed: pd.DataFrame = self._load_intermediate("dataset")
         df_groups = df_processed.groupby(by=self.condition_col)
 
         LOGGER.info(
             f"Calculating subgroup KDEs "
-            f"(n_parallel_kdes={self.n_parallel_kdes}, "
+            f"(n_parallel_groups={self.n_parallel_groups}, "
             f"chunksize={chunksize})..."
         )
 
@@ -418,13 +418,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             # Calculates number of samples in each bootstrap iteration:
             # We either take all samples in each subgroup, or the number of
-            # samples in the smallest subgroup.
-            if not self.bs_fixed_n:
+            # samples in the smallest subgroup, or a fixed number.
+            if not self.bs_fixed_n:  # 0 or ""
                 bs_nsamples = subgroup_lens
             elif self.bs_fixed_n == "min":
                 bs_nsamples = [min_len] * len(subgroup_lens)
-            else:
+            elif self.bs_fixed_n == "max":
                 bs_nsamples = [max_len] * len(subgroup_lens)
+            else:  # some positive integer
+                bs_nsamples = [self.bs_fixed_n] * len(subgroup_lens)
 
             # Run bootstrapped KDE estimation for all subgroups in parallel
             subprocess_args = (
@@ -447,7 +449,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Allow limited number of simultaneous group KDE calculations
             # The limit is needed due to the very high memory required when
             # bs_niter is large.
-            if not last_group and len(dkde_asyncs) < self.n_parallel_kdes:
+            if not last_group and len(dkde_asyncs) < self.n_parallel_groups:
                 continue
 
             # If we already have enough simultaneous KDE calculations, collect
@@ -504,7 +506,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 LOGGER.info(f"[{i}] Submitted cdist task {result_group_idx}")
 
             # Allow limited number of simultaneous distance matrix calculations
-            if not last_group and len(dist_asyncs) < self.n_parallel_kdes:
+            if not last_group and len(dist_asyncs) < self.n_parallel_groups:
                 continue
 
             # Wait for one of the distance matrix calculations, or all of
@@ -720,7 +722,7 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
         bs_niter=1,
         bs_randstate=None,
         bs_fixed_n: str = None,
-        n_parallel_kdes: int = 8,
+        n_parallel_groups: int = 2,
         t2_permutations: int = 10,
         out_tag: str = None,
     ):
@@ -754,11 +756,7 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
         :param bs_fixed_n: Whether to fix number of samples in each
         bootstrap iteration for each subgroup to the number of samples in the
         smallest subgroup ('min'), largest subgroup ('max') or no limit ('').
-        :param n_parallel_kdes: Number of parallel bootstrapped KDE
-            calculations to run simultaneously.
-            By default it will be equal to the number of available CPU cores.
-            Setting this to a high number together with a high bs_niter will cause
-            excessive memory usage.
+        :param n_parallel_groups: Number of groups to process in parallel.
         :param t2_permutations: Number of permutations to use when calculating
             p-value of distances with the T^2 statistic.
         :param out_tag: Tag for output.
@@ -777,7 +775,7 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
             bs_niter=bs_niter,
             bs_randstate=bs_randstate,
             bs_fixed_n=bs_fixed_n,
-            n_parallel_kdes=n_parallel_kdes,
+            n_parallel_groups=n_parallel_groups,
             t2_permutations=t2_permutations,
             out_tag=out_tag,
         )
@@ -1241,7 +1239,8 @@ def _dkde_dists_pairwise(
 
             #  Calculate statistical significance of the distance based on T_w^2 metric
             _, pval = tw_test(
-                # Transpose to (M, M, B) and flatten to (M * M, B)
+                # Transpose to (M, M, B) and flatten to (M * M, B): We have B
+                # observations and the dimension of each observation is M*M.
                 X=dkde1.transpose((1, 2, 0)).reshape((M * M, B)),
                 Y=dkde2.transpose((1, 2, 0)).reshape((M * M, B)),
                 k=t2_permutations,
