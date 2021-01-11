@@ -270,6 +270,7 @@ class Dihedral(object):
         n = np.sum(~np.isnan(phi_psi), axis=0, dtype=np.float32)
         n[n == 0.0] = np.nan  # prevent 0/0 runtime warning
         r = np.hypot(sigma_sin / n, sigma_cos / n)  # will be nan for missing
+        r = np.minimum(r, 1.0)  # sometimes hypot returns a value slightly above 1.0
         circstd = np.sqrt(-2 * np.log(r))
 
         m_phi = (circmean[0], circstd[0])
