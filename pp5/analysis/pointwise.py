@@ -1193,6 +1193,16 @@ def _dkde_dists_pairwise(
         e.g. one for each angle pair.
     """
 
+    def _dkde_to_tw_observation(dkde: np.ndarray):
+        # Converts batch of KDEs to an observations matrix for a Tw^2 test.
+        B, M, M = dkde.shape
+        # Transpose to (M, M, B) and flatten to (M * M, B): We have B
+        # observations and the dimension of each observation is M*M.
+        X = dkde.transpose((1, 2, 0)).reshape((M * M, B))
+        # Apply log in such a way as to scale dynamic range to [-100, 0].
+        X = np.log(X + 1e-43)
+        return X
+
     n_kdes = [len(kdes) for kdes in bs_dkdes.values()][0]
 
     dkde_names = list(bs_dkdes.keys())
@@ -1240,10 +1250,8 @@ def _dkde_dists_pairwise(
 
             #  Calculate statistical significance of the distance based on T_w^2 metric
             _, pval = tw_test(
-                # Transpose to (M, M, B) and flatten to (M * M, B): We have B
-                # observations and the dimension of each observation is M*M.
-                X=dkde1.transpose((1, 2, 0)).reshape((M * M, B)),
-                Y=dkde2.transpose((1, 2, 0)).reshape((M * M, B)),
+                X=_dkde_to_tw_observation(dkde1),
+                Y=_dkde_to_tw_observation(dkde2),
                 k=t2_permutations,
             )
             pval_mat[i, j] = pval_mat[j, i] = pval
