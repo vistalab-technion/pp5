@@ -126,10 +126,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self,
     ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
-            "preprocess-dataset": self._preprocess_dataset,
-            "dataset-stats": self._dataset_stats,
-            "dihedral-kde-full": self._dihedral_kde_full,
-            "codon-dists": self._codons_dists,
+            # "preprocess-dataset": self._preprocess_dataset,
+            # "dataset-stats": self._dataset_stats,
+            "dihedral-significance": self._dihedral_significance,
+            # "dihedral-kde-full": self._dihedral_kde_full,
+            # "codon-dists": self._codons_dists,
             "plot-results": self._plot_results,
         }
 
@@ -354,6 +355,68 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         return {"group_sizes": group_sizes}
 
+    def _dihedral_significance(self, pool: mp.pool.Pool):
+        df_processed: pd.DataFrame = self._load_intermediate("dataset")
+        df_groups = df_processed.groupby(by=self.condition_col)
+        curr_codon_col = self.codon_cols[-1]
+        async_results: Dict[Tuple[str, str, str], AsyncResult] = {}
+
+        LOGGER.info(
+            f"Calculating significance of dihedral angle differences between "
+            f"codon pairs..."
+        )
+
+        # Group by the conditioning criteria, e.g. SS
+        for group_idx, (group, df_group) in enumerate(df_groups):
+
+            # Group by codon
+            df_subgroups = df_group.groupby(curr_codon_col)
+            subgroup_pairs = it.product(
+                enumerate(df_subgroups), enumerate(df_subgroups)
+            )
+
+            # Loop over pairs of codons and extract the angles we have for each.
+            for (i, (codon1, df_codon1)), (j, (codon2, df_codon2)) in subgroup_pairs:
+                # Skip redundant calculations
+                if j < i:
+                    continue
+
+                # Need at least 2 observations in each statistical sample
+                if len(df_codon1) < 2 or len(df_codon2) < 2:
+                    continue
+
+                angles1 = df_codon1[[*self.angle_cols]].values
+                angles2 = df_codon2[[*self.angle_cols]].values
+                args = (group, codon1, codon2, angles1, angles2, self.t2_permutations)
+                res = pool.apply_async(_codon_pair_dihedral_significance, args=args)
+                async_results[(group, codon1, codon2)] = res
+
+        # Collect results
+        collected_t2s: Dict[str, np.ndarray] = {
+            g: np.full(shape=(N_CODONS, N_CODONS), fill_value=np.nan, dtype=np.float32)
+            for g in df_groups.groups.keys()
+        }
+
+        collected_pvals: Dict[str, np.ndarray] = {
+            g: np.full(shape=(N_CODONS, N_CODONS), fill_value=np.nan, dtype=np.float32)
+            for g in df_groups.groups.keys()
+        }
+
+        for (group, codon1, codon2), result in yield_async_results(async_results):
+            i, j = AA_CODONS.index(codon1), AA_CODONS.index(codon2)
+            LOGGER.info(
+                f"Collected pairwise-pval {group=}, {codon1=} ({i}), "
+                f"{codon2=} ({j}): {result=}"
+            )
+            t2, pval = result
+            t2s = collected_t2s[group]
+            pvals = collected_pvals[group]
+            t2s[i, j] = t2s[j, i] = t2
+            pvals[i, j] = pvals[j, i] = pval
+
+        self._dump_intermediate("codon-dihedral-t2s", collected_t2s)
+        self._dump_intermediate("codon-dihedral-pvals", collected_pvals)
+
     def _dihedral_kde_full(self, pool: mp.pool.Pool) -> dict:
         df_processed: pd.DataFrame = self._load_intermediate("dataset")
         df_groups = df_processed.groupby(by=self.secondary_col)
@@ -557,13 +620,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # codon_pvals: maps from group (codon, SS) to a list, containing a pairwise
         # pvalue matrix for each angle pair
-        self._dump_intermediate("codon-pvals", codon_pvals)
+        self._dump_intermediate("codon-dkde-pvals", codon_pvals)
 
         # aa_dists: Same as codon dists, but keys are AAs
         self._dump_intermediate("aa-dists", aa_dists)
 
         # aa_pvals: Same as codon pvals, but keys are AAs
-        self._dump_intermediate("aa-pvals", aa_pvals)
+        self._dump_intermediate("aa-dkde-pvals", aa_pvals)
 
         # codon_dkdes: maps from group to a dict where keys are codons.
         # For each codon we have a list of KDEs, one for each angle pair.
@@ -650,15 +713,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             del dists, d2_matrices
 
         # p-values
-        for aa_codon in ["aa", "codon"]:
-            pvals = self._load_intermediate(f"{aa_codon}-pvals", True)
+        for aa_codon, pval_type in it.product(["aa", "codon"], ["dihedral", "dkde"]):
+            pvals = self._load_intermediate(f"{aa_codon}-{pval_type}-pvals", True)
             if pvals is None:
                 continue
-            out_dir = self.out_dir.joinpath(f"{aa_codon}-pvals")
+
+            out_dir = self.out_dir.joinpath(f"{aa_codon}-{pval_type}-pvals")
             labels = AA_CODONS if aa_codon == "codon" else ACIDS
             block_diagonal = SYN_CODON_IDX if aa_codon == "codon" else None
 
             for group_idx, d2_matrices in pvals.items():
+                if isinstance(d2_matrices, np.ndarray):
+                    d2_matrices = [d2_matrices]
                 async_results.append(
                     pool.apply_async(
                         _plot_d2_matrices,
@@ -677,6 +743,29 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     )
                 )
             del pvals, d2_matrices
+
+        # t2 matrices
+        t2s = self._load_intermediate(f"codon-dihedral-t2s", True)
+        out_dir = self.out_dir.joinpath(f"codon-dihedral-t2s")
+        for group_idx, t2 in t2s.items():
+            async_results.append(
+                pool.apply_async(
+                    _plot_d2_matrices,
+                    kwds=dict(
+                        group_idx=group_idx,
+                        d2_matrices=[t2],
+                        out_dir=out_dir,
+                        titles=None,
+                        labels=AA_CODONS,
+                        vmin=0.0,
+                        vmax=10.0,
+                        annotate_mu=False,
+                        plot_std=False,
+                        block_diagonal=SYN_CODON_IDX,
+                    ),
+                )
+            )
+        del t2s, t2
 
         # Averaged Dihedral KDEs of each codon in each group
         group_sizes: dict = self._load_intermediate("group-sizes", True)
@@ -978,6 +1067,32 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
             self._dump_intermediate(f"{aa_codon}-dists-exp", dists_exp)
 
         return {}
+
+
+def _codon_pair_dihedral_significance(
+    group_idx: str,
+    codon1: str,
+    codon2: str,
+    angles1: np.ndarray,
+    angles2: np.ndarray,
+    t2_permutations: int,
+) -> Tuple[float, float]:
+    """
+    Calculates Tw^2 statistic and p-value to determine whether the dihedral angles of a
+    codon are significantly different then another.
+    :param group_idx: Name of the group.
+    :param codon1: Name of first codon.
+    :param codon2: Name of second codon.
+    :param angles1: Angles of first codon. Should be a (N, 2) array where N is the
+        number of samples.
+    :param angles2: Angles of second codon. Shape should be identical to angles1.
+    :param t2_permutations: Number of permutations for computing significance.
+    :return: A Tuple (t2, pval) containing the value of the Tw@ statistic and the
+        p-value.
+    """
+    LOGGER.info(f"Calculating t2 and pval for {group_idx=}, {codon1=}, {codon2=}...")
+    # TODO: Need distance on torus, not standard euclidean
+    return tw_test(X=angles1.transpose(), Y=angles2.transpose(), k=t2_permutations)
 
 
 def _dihedral_kde_single_group(
