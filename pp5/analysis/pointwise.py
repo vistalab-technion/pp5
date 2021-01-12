@@ -126,12 +126,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self,
     ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
-            "preprocess-dataset": self._preprocess_dataset,
-            "dataset-stats": self._dataset_stats,
+            # "preprocess-dataset": self._preprocess_dataset,
+            # "dataset-stats": self._dataset_stats,
             "dihedral-significance": self._dihedral_significance,
-            "dihedral-kde-full": self._dihedral_kde_full,
-            "codon-dists": self._codons_dists,
-            "plot-results": self._plot_results,
+            # "dihedral-kde-full": self._dihedral_kde_full,
+            # "codon-dists": self._codons_dists,
+            # "plot-results": self._plot_results,
         }
 
     def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
@@ -1090,7 +1090,10 @@ def _codon_pair_dihedral_significance(
     :return: A Tuple (t2, pval) containing the value of the Tw@ statistic and the
         p-value.
     """
-    LOGGER.info(f"Calculating t2 and pval for {group_idx=}, {codon1=}, {codon2=}...")
+    LOGGER.info(
+        f"Calculating t2 and pval for {group_idx=}, "
+        f"{codon1=} (n={len(angles1)}), {codon2=} (n={len(angles2)})..."
+    )
 
     # For the same codon, permute so we don't get zero distances in the baseline t2.
     if codon1 == codon2:
