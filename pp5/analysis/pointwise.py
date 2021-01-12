@@ -738,7 +738,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                             vmax=1.0,  # pvals are in range 0,1
                             annotate_mu=False,
                             plot_std=False,
-                            block_diagonal=block_diagonal,
+                            block_diagonal=None,  # block_diagonal,
                         ),
                     )
                 )
@@ -761,7 +761,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         vmax=10.0,
                         annotate_mu=False,
                         plot_std=False,
-                        block_diagonal=SYN_CODON_IDX,
+                        block_diagonal=None,  # SYN_CODON_IDX,
                     ),
                 )
             )
