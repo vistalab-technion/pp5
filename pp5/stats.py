@@ -1,10 +1,12 @@
+from typing import Tuple
+
 import numba
 import numpy as np
 from numpy.random import permutation
 from scipy.spatial.distance import pdist, squareform
 
 
-def tw_test(X: np.ndarray, Y: np.ndarray, k: int = 1000):
+def tw_test(X: np.ndarray, Y: np.ndarray, k: int = 1000) -> Tuple[float, float]:
     """
     Calculates the Tw^2 Welch statistic based on distances.
     :param X: (n, Nx) array containing a sample X, where Nx is the number of
@@ -29,7 +31,7 @@ def tw_test(X: np.ndarray, Y: np.ndarray, k: int = 1000):
 
 
 @numba.jit(nopython=True, parallel=False)  # parallel doesn't seem to help
-def _tw_test_inner(D: np.ndarray, nx: int, ny: int, k: int):
+def _tw_test_inner(D: np.ndarray, nx: int, ny: int, k: int) -> Tuple[float, float]:
     """
     Calculates p-value based on Tw^2 test.
     :param D: Matrix of squared distanced of two pooled samples (X and Y) of
@@ -39,6 +41,9 @@ def _tw_test_inner(D: np.ndarray, nx: int, ny: int, k: int):
     :param k: Number of permutations for significance evaluation.
     :return: Tw^2 statistic of un-permuted distances, and p-value.
     """
+    if nx < 2 or ny < 2:
+        raise ValueError("Tw2 test requires at least two observations in each sample")
+
     t2 = tw2_statistic(D, nx, ny)
     ss = np.zeros(k)
     for i in range(k):
@@ -47,12 +52,12 @@ def _tw_test_inner(D: np.ndarray, nx: int, ny: int, k: int):
         if t2 <= t2_perm:
             ss[i] = 1
 
-    p = np.mean(ss)
+    p = float(np.mean(ss))
     return t2, p
 
 
 @numba.jit(nopython=True, parallel=False)
-def tw2_statistic(D: np.ndarray, nx: int, ny: int):
+def tw2_statistic(D: np.ndarray, nx: int, ny: int) -> float:
     """
     Calculates T statistic of a distance matrix
     :param D: Matrix of squared distances of two pooled samples (X and Y) of
@@ -69,4 +74,4 @@ def tw2_statistic(D: np.ndarray, nx: int, ny: int):
     denumerator = (sum_X / (nx ** 2) / (nx - 1)) + (sum_Y / (ny ** 2) / (ny - 1))
     if denumerator < 1e-12:  # prevent division by zero
         return 0.0
-    return factor * enumerator / denumerator
+    return float(factor * enumerator / denumerator)
