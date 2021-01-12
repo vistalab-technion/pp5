@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Union, Callable, Optional
 
 import numba
 import numpy as np
@@ -6,13 +6,22 @@ from numpy.random import permutation
 from scipy.spatial.distance import pdist, squareform
 
 
-def tw_test(X: np.ndarray, Y: np.ndarray, k: int = 1000) -> Tuple[float, float]:
+def tw_test(
+    X: np.ndarray,
+    Y: np.ndarray,
+    k: int = 1000,
+    metric: Optional[Union[str, Callable]] = "sqeuclidean",
+) -> Tuple[float, float]:
     """
     Calculates the Tw^2 Welch statistic based on distances.
     :param X: (n, Nx) array containing a sample X, where Nx is the number of
         observations in the sample and n is the dimension of each observation.
     :param Y: (n, Ny) array containing sample Y with Ny observations of dimension n.
     :param k: number of permutations for significance evaluation
+    :param metric: A distance metric. Any of the distance metrics supported by
+        :meth:`scipy.spatial.distance.pdist` can be used. Default is squared-euclidean.
+        Can also be a callable that accepts two observations in order to use a custom
+        metric.
     :return: Tw^2 statistic, p-value (significance).
     """
     # sample sizes
@@ -22,9 +31,8 @@ def tw_test(X: np.ndarray, Y: np.ndarray, k: int = 1000) -> Tuple[float, float]:
     # pooled vectors
     Z = np.hstack((X, Y))
 
-    # squared distances
-    D = 0.5 * squareform(pdist(Z.T)) ** 2
-    D = D.astype(np.float32)
+    # pairwise distances
+    D = squareform(pdist(Z.T, metric=metric))
 
     t2, p = _tw_test_inner(D, nx, ny, k)
     return t2, p
