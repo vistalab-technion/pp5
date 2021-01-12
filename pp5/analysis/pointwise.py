@@ -17,7 +17,7 @@ from pp5.stats import tw_test
 from pp5.utils import sort_dict
 from pp5.codons import ACIDS, N_CODONS, AA_CODONS, SYN_CODON_IDX, codon2aac
 from pp5.analysis import SS_TYPE_ANY, CODON_TYPE_ANY, DSSP_TO_SS_TYPE
-from pp5.dihedral import Dihedral
+from pp5.dihedral import Dihedral, flat_torus_distance
 from pp5.parallel import yield_async_results
 from pp5.vonmises import BvMKernelDensityEstimator
 from pp5.analysis.base import ParallelAnalyzer
@@ -126,11 +126,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self,
     ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
-            # "preprocess-dataset": self._preprocess_dataset,
-            # "dataset-stats": self._dataset_stats,
+            "preprocess-dataset": self._preprocess_dataset,
+            "dataset-stats": self._dataset_stats,
             "dihedral-significance": self._dihedral_significance,
-            # "dihedral-kde-full": self._dihedral_kde_full,
-            # "codon-dists": self._codons_dists,
+            "dihedral-kde-full": self._dihedral_kde_full,
+            "codon-dists": self._codons_dists,
             "plot-results": self._plot_results,
         }
 
@@ -1091,8 +1091,12 @@ def _codon_pair_dihedral_significance(
         p-value.
     """
     LOGGER.info(f"Calculating t2 and pval for {group_idx=}, {codon1=}, {codon2=}...")
-    # TODO: Need distance on torus, not standard euclidean
-    return tw_test(X=angles1.transpose(), Y=angles2.transpose(), k=t2_permutations)
+    return tw_test(
+        X=angles1.transpose(),
+        Y=angles2.transpose(),
+        k=t2_permutations,
+        metric=flat_torus_distance,
+    )
 
 
 def _dihedral_kde_single_group(
