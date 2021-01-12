@@ -25,7 +25,7 @@ BACKBONE_ATOMS = {"N", "CA", "C"}
 class Dihedral(object):
     """
     Holds the three dihedral angles associated with adjacent AAs.
-    Values are stored in radians.
+    Values are stored in radians in the range [-pi, pi].
     """
 
     NAMES = ("phi", "psi", "omega")
@@ -61,14 +61,23 @@ class Dihedral(object):
 
     @property
     def phi(self):
+        """
+        :return: phi in radians [-pi, pi]
+        """
         return self._phi
 
     @property
     def psi(self):
+        """
+        :return: psi in radians [-pi, pi]
+        """
         return self._psi
 
     @property
     def omega(self):
+        """
+        :return: omega in radians [-pi, pi]
+        """
         return self._omega
 
     @property
@@ -171,21 +180,15 @@ class Dihedral(object):
         :param squared: Whether to return squared-distance.
         :return: The angle difference.
         """
-        return Dihedral._flat_torus_distance(
-            a1.phi, a2.phi, a1.psi, a2.psi, degrees, squared
-        )
 
-    @staticmethod
-    @numba.jit(nopython=True)
-    def _flat_torus_distance(phi0, phi1, psi0, psi1, degrees=False, squared=False):
-        dphi = math.fabs(phi0 - phi1)
-        dphi = min(dphi, 2 * math.pi - dphi)
-        dpsi = math.fabs(psi0 - psi1)
-        dpsi = min(dpsi, 2 * math.pi - dpsi)
-        dist = dphi ** 2 + dpsi ** 2
+        dist = flat_torus_distance(
+            np.array([a1.phi, a1.psi]), np.array([a2.phi, a2.psi])
+        )[0]
         if not squared:
             dist = math.sqrt(dist)
-        return math.degrees(dist) if degrees else dist
+        if degrees:
+            dist = math.degrees(dist)
+        return dist
 
     @staticmethod
     def s1_distance(a1: Dihedral, a2: Dihedral, degrees=False):
@@ -316,6 +319,24 @@ class Dihedral(object):
                 return False
 
         return True
+
+
+@numba.jit(nopython=True)
+def flat_torus_distance(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
+    """
+    Computes the distance between pairs of dihedral angles as if they were on a
+    "flat torus" (also a Ramachandran Plot). Calculates a euclidean
+    distance, but with a "wrap-around" at +-180, so e.g. the distance
+    between -178 and 178 degrees is actually 4 degrees.
+    :param phi_psi0: (N,2) containing N (phi, psi) pairs in radians within [-pi, pi].
+    :param phi_psi1: Angles corresponding to phi_psi0, must be same shape.
+    :return: An array of shape (N,) containing the flat torus distances.
+    """
+    absdiff = np.fabs(phi_psi0.reshape(-1, 2) - phi_psi1.reshape(-1, 2))
+    absdiff_2pi = 2 * np.pi - absdiff
+    absdiff_min = np.minimum(absdiff, absdiff_2pi)
+    dist = np.sum(absdiff_min ** 2, axis=1)
+    return dist
 
 
 class DihedralAnglesEstimator(object):
