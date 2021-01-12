@@ -126,12 +126,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self,
     ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
-            # "preprocess-dataset": self._preprocess_dataset,
-            # "dataset-stats": self._dataset_stats,
+            "preprocess-dataset": self._preprocess_dataset,
+            "dataset-stats": self._dataset_stats,
             "dihedral-significance": self._dihedral_significance,
-            # "dihedral-kde-full": self._dihedral_kde_full,
-            # "codon-dists": self._codons_dists,
-            # "plot-results": self._plot_results,
+            "dihedral-kde-full": self._dihedral_kde_full,
+            "codon-dists": self._codons_dists,
+            "plot-results": self._plot_results,
         }
 
     def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
