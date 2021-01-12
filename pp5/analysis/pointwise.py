@@ -1091,6 +1091,12 @@ def _codon_pair_dihedral_significance(
         p-value.
     """
     LOGGER.info(f"Calculating t2 and pval for {group_idx=}, {codon1=}, {codon2=}...")
+
+    # For the same codon, permute so we don't get zero distances in the baseline t2.
+    if codon1 == codon2:
+        permutation = np.random.permutation(len(angles2))
+        angles2 = angles2[permutation]
+
     return tw_test(
         X=angles1.transpose(),
         Y=angles2.transpose(),
