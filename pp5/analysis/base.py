@@ -78,7 +78,7 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
         LOGGER.info(f"Wrote intermediate file {path} ({size_mbytes:.1f}MB)")
         return path
 
-    def _load_intermediate(self, name, allow_old=True, raise_if_missing=True):
+    def _load_intermediate(self, name, allow_old=True, raise_if_missing=False):
         path = self.intermediate_dir.joinpath(f"{name}.pkl")
 
         if name not in self._intermediate_files:
@@ -90,9 +90,11 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
                 return None
 
         if not path.is_file():
+            msg = f"Can't find intermediate file {path}"
             if raise_if_missing:
-                raise ValueError(f"Can't find intermediate file {path}")
+                raise ValueError(msg)
             else:
+                LOGGER.warning(msg + ", skipping...")
                 return None
 
         self._intermediate_files[name] = path

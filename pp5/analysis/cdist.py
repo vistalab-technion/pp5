@@ -13,7 +13,7 @@ from pp5.codons import ACIDS, CODON_RE, N_CODONS, AA_CODONS, ACIDS_1TO1AND3
 from pp5.analysis import SS_TYPES, DSSP_TO_SS_TYPE
 from pp5.analysis.base import ParallelAnalyzer
 from pp5.analysis.pairwise import PairwiseCodonDistanceAnalyzer
-from pp5.analysis.pointwise import PointwiseCodonDistanceAnalyzer
+from pp5.analysis.pointwise import PGroupPointwiseCodonDistanceAnalyzer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
         """
         Performs both pointwise and pairwise codon-distance analysis and produces a
         comparison between these two type of analysis.
-        Uses two sub-analyzers PointwiseCodonDistanceAnalyzer and
+        Uses two sub-analyzers PGroupPointwiseCodonDistanceAnalyzer and
         PairwiseCodonDistanceAnalyzer as sub analyzers, which should be configured
         with the *_extra_kw dicts.
 
@@ -51,7 +51,7 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
         :param bs_niter: Number of bootstrap iterations.
         :param bs_randstate: Random state for bootstrap.
         :param out_tag: Tag for output.
-        :param pointwise_extra_kw: Extra args for PointwiseCodonDistanceAnalyzer.
+        :param pointwise_extra_kw: Extra args for PGroupPointwiseCodonDistanceAnalyzer.
         Will override the ones define in this function.
         :param pairwise_extra_kw: Extra args for PairwiseCodonDistanceAnalyzer.
         Will override the ones define in this function.
@@ -78,7 +78,7 @@ class CodonDistanceAnalyzer(ParallelAnalyzer):
 
         pointwise_kw = common_kw.copy()
         pointwise_kw.update(pointwise_filename=pointwise_filename, **pointwise_extra_kw)
-        self.pointwise_analyzer = PointwiseCodonDistanceAnalyzer(**pointwise_kw)
+        self.pointwise_analyzer = PGroupPointwiseCodonDistanceAnalyzer(**pointwise_kw)
 
         pairwise_kw = common_kw.copy()
         pairwise_kw.update(pairwise_filename=pairwise_filename, **pairwise_extra_kw)

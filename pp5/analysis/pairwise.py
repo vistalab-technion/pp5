@@ -15,7 +15,6 @@ from pp5.analysis import SS_TYPE_ANY, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral
 from pp5.parallel import yield_async_results
 from pp5.analysis.base import ParallelAnalyzer
-from pp5.analysis.pointwise import PointwiseCodonDistanceAnalyzer
 
 LOGGER = logging.getLogger(__name__)
 

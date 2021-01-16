@@ -282,6 +282,7 @@ class BvMKernelDensityEstimator(object):
         Calculate KDE of set of angles, evaluated on a discrete 2d grid.
         :param phi: First angle values. Must be in [-pi, pi].
         :param psi: Second angle values. Must be in [-pi, pi].
+        :return: The KDE, as an array of shape (M,M) where M is the number of bins.
         """
         assert phi.ndim == psi.ndim == 1
         assert phi.shape == psi.shape
