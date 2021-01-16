@@ -14,6 +14,8 @@ import matplotlib.patches as patches
 import matplotlib.collections as collections
 from numpy import ndarray
 from matplotlib.pyplot import Axes, Figure
+from pandas import DataFrame
+from itertools import count
 
 import pp5
 from pp5.codons import ACIDS, CODON_RE, ACIDS_1TO3, CODON_TABLE
@@ -553,3 +555,81 @@ def savefig(
         plt.close(fig)
 
     return outfile
+
+
+def bar_plot(data: DataFrame,
+             labels: str,
+             values: str,
+             hue: str,
+             error_minus: str,
+             error_plus: str,
+             palette: str):
+    """
+    Plots a bar plot from a data frame.
+    :param labels: Name of the column containing the labels
+    :param values: Name of the column containing the values
+    :param hue: Name of the column containing the categories
+    :param error_minus: Name of the column containing the negative error offset from
+        value.
+    :param error_plus: Name of the column containing the positive error offset from
+        value.
+    """
+    ax = plt.gca()
+    ax.cla()
+    output_list = []
+
+    hues = np.unique(data[hue].values)
+    N = len(hues)
+
+    w = 0.45 / N
+    eps = w * 0.2
+    step = 2 * w
+    offset = -step * (N - 1) / 2
+
+    cmap = plt.cm.get_cmap(palette)
+    color_list = cmap(np.linspace(0, 1, len(hues)))
+
+    all_keys = data.query(f'{hue}==@hues[0]')[labels].values
+    vals = data.query(f'{hue}==@hues[0]')[values].values
+    idx = np.argsort(vals)
+    all_keys = list(all_keys[idx])
+
+    plt.plot([1, 1], [-1, len(all_keys) + 1], linewidth=0.5, color=[0, 0, 0], alpha=1,
+             label='_nolegend_')
+    for i in range(len(all_keys) + 1):
+        plt.plot([0, 100], [i - 0.5, i - 0.5], linewidth=0.5, color=[0, 0, 0],
+                 alpha=0.5, label='_nolegend_')
+
+    for n, h in enumerate(hues):
+        keys = data.query(f'{hue}==@h')[labels].values
+        vals = data.query(f'{hue}==@h')[values].values
+        # plt.plot(vals, keys, 'o', linewidth=1, markersize=3, color=color_list[n])
+        for v, k in zip(vals, keys):
+            i = all_keys.index(k)
+            plt.plot(
+                [v, v],
+                [i - w + eps + step * n + offset, i + w - eps + step * n + offset],
+                linewidth=2, markersize=3, color=color_list[n],
+                label=h if i == 0 else '_nolegend_'
+            )
+
+    for i, h in enumerate(hues):
+        keys = data.query(f'{hue}==@h')[labels].values
+        vals = data.query(f'{hue}==@h')[values].values
+        std_p = data.query(f'{hue}==@h')[error_plus].values
+        std_m = data.query(f'{hue}==@h')[error_minus].values
+        mins = vals - std_m
+        maxs = vals + std_p
+
+        for k, m, M in zip(keys, mins, maxs):
+            n = all_keys.index(k)
+            output_list.append(
+                plt.Rectangle((m, n - w + step * i + offset), M - m, 2 * w,
+                              facecolor=color_list[i],
+                              edgecolor=None,
+                              fill=True, alpha=0.25, label='_nolegend_'))
+
+        for r in output_list:
+            ax.add_artist(r)
+
+    plt.yticks([i for i in range(len(all_keys))], all_keys)

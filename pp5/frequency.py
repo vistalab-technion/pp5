@@ -53,6 +53,14 @@ def codon_tuples(
           np.array(tuple(
               all(s in allowed_ss for s in sss[i, :]) for i in range(sss.shape[0])))
 
+    codons = codons[idx, :]
+    aas = aas[idx, :]
+    unps = np.array([
+        f"{unp_id}:{str(int(unp_idx))}"
+        for unp_id, unp_idx in zip(unp_ids[idx, 0], unp_idxs[idx, 0])
+    ])
+    _, idx = np.unique(unps, return_index=True)
+
     return (
         tuple(f'{CODON_DELIMITER}'.join(c) for c in codons[idx, :]),
         tuple(''.join(a) for a in aas[idx, :])
@@ -165,3 +173,5 @@ def tuple_freq_analysis(
             names=("", "")
         )
     )
+
+
