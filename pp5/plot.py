@@ -583,7 +583,7 @@ def bar_plot(data: DataFrame,
 
     w = 0.45 / N
     eps = w * 0.2
-    step = 2 * w
+    step = -2 * w
     offset = -step * (N - 1) / 2
 
     cmap = plt.cm.get_cmap(palette)
