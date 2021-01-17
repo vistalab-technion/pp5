@@ -3,6 +3,7 @@ import time
 import logging
 import itertools as it
 import multiprocessing as mp
+from math import ceil
 from typing import Any, Dict, List, Tuple, Union, Callable, Optional, Sequence
 from pathlib import Path
 from multiprocessing.pool import AsyncResult
@@ -43,7 +44,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         bs_randstate: Optional[int] = None,
         bs_fixed_n: Optional[Union[str, int]] = None,
         n_parallel_groups: int = 2,
-        t2_permutations: int = 100,
+        t2_n_max: int = 1000,
+        t2_permutations: int = 1000,
         out_tag: str = None,
     ):
         """
@@ -80,6 +82,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param n_parallel_groups: Number of groups to schedule for running in
             parallel. Note that the sub-groups in each group will be parallelized over
             all available cores.
+        :param t2_n_max: Maximal sample-size to use when calculating
+            p-value of distances with the T^2 statistic. If there are larger samples,
+            bootstrap sampling with the given maximal sample size will be performed.
         :param t2_permutations: Number of permutations to use when calculating
             p-value of distances with the T^2 statistic.
         :param out_tag: Tag for output.
@@ -120,17 +125,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.bs_randstate = bs_randstate
         self.bs_fixed_n = bs_fixed_n
         self.n_parallel_groups = n_parallel_groups
+        self.t2_n_max = t2_n_max
         self.t2_permutations = t2_permutations
 
     def _collection_functions(
         self,
     ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
-            "preprocess-dataset": self._preprocess_dataset,
-            "dataset-stats": self._dataset_stats,
+            # "preprocess-dataset": self._preprocess_dataset,
+            # "dataset-stats": self._dataset_stats,
             "dihedral-significance": self._dihedral_significance,
-            "dihedral-kde-full": self._dihedral_kde_full,
-            "codon-dists": self._codons_dists,
+            # "dihedral-kde-full": self._dihedral_kde_full,
+            # "codon-dists": self._codons_dists,
             "plot-results": self._plot_results,
         }
 
@@ -387,7 +393,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
                 angles1 = df_codon1[[*self.angle_cols]].values
                 angles2 = df_codon2[[*self.angle_cols]].values
-                args = (group, codon1, codon2, angles1, angles2, self.t2_permutations)
+                args = (
+                    group,
+                    codon1,
+                    codon2,
+                    angles1,
+                    angles2,
+                    self.t2_n_max,
+                    self.bs_randstate,
+                    self.t2_permutations,
+                )
                 res = pool.apply_async(_codon_pair_dihedral_significance, args=args)
                 async_results[(group, codon1, codon2)] = res
 
@@ -813,7 +828,8 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
         bs_randstate=None,
         bs_fixed_n: str = None,
         n_parallel_groups: int = 2,
-        t2_permutations: int = 10,
+        t2_n_max: int = 1000,
+        t2_permutations: int = 1000,
         out_tag: str = None,
     ):
         """
@@ -847,6 +863,9 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
         bootstrap iteration for each subgroup to the number of samples in the
         smallest subgroup ('min'), largest subgroup ('max') or no limit ('').
         :param n_parallel_groups: Number of groups to process in parallel.
+        :param t2_n_max: Maximal sample-size to use when calculating
+            p-value of distances with the T^2 statistic. If there are larger samples,
+            bootstrap sampling with the given maximal sample size will be performed.
         :param t2_permutations: Number of permutations to use when calculating
             p-value of distances with the T^2 statistic.
         :param out_tag: Tag for output.
@@ -866,6 +885,7 @@ class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
             bs_randstate=bs_randstate,
             bs_fixed_n=bs_fixed_n,
             n_parallel_groups=n_parallel_groups,
+            t2_n_max=t2_n_max,
             t2_permutations=t2_permutations,
             out_tag=out_tag,
         )
@@ -1075,6 +1095,8 @@ def _codon_pair_dihedral_significance(
     codon2: str,
     angles1: np.ndarray,
     angles2: np.ndarray,
+    n_max: int,
+    randstate: int,
     t2_permutations: int,
 ) -> Tuple[float, float]:
     """
@@ -1086,26 +1108,55 @@ def _codon_pair_dihedral_significance(
     :param angles1: Angles of first codon. Should be a (N, 2) array where N is the
         number of samples.
     :param angles2: Angles of second codon. Shape should be identical to angles1.
+    :param n_max: Max sample size.
+    :param randstate: Random state for bootstrapping.
     :param t2_permutations: Number of permutations for computing significance.
     :return: A Tuple (t2, pval) containing the value of the Tw@ statistic and the
         p-value.
     """
+    t_start = time.time()
+
+    # We want a different random state in each subgroup, but reproducible
+    seed = None
+    if randstate is not None:
+        seed = (hash(group_idx + codon1 + codon2) + randstate) % (2 ** 31)
+        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
+
+    # We use bootstrapping if at least one of the samples is larger than n_max.
+    n1, n2 = len(angles1), len(angles2)
+    n_iter = max(ceil(n1 / n_max), ceil(n2 / n_max))
+
+    # For a sample larger than n_max, we create a new sample from it by sampling with
+    # replacement.
+    def _bootstrap_sample(angles: np.ndarray):
+        n = len(angles)
+        if n > n_max:
+            sample_idxs = rng.choice(n, n_max, replace=True)
+        else:
+            sample_idxs = np.arange(n)
+        return angles[sample_idxs]
+
+    t2s, pvals = np.empty(n_iter, dtype=np.float32), np.empty(n_iter, dtype=np.float32)
+    for i in range(n_iter):
+        t2s[i], pvals[i] = tw_test(
+            X=_bootstrap_sample(angles1).transpose(),
+            Y=_bootstrap_sample(angles2).transpose(),
+            k=t2_permutations,
+            metric=flat_torus_distance,
+        )
+
+    # Report the t2 corresponding to the maximal (worst) p-value, and that p-value.
+    argmax_p = np.argmax(pvals)
+    max_vals = t2s[argmax_p], pvals[argmax_p]
+    mean_vals = np.mean(t2s), np.mean(pvals)
+
+    t_elapsed = time.time() - t_start
     LOGGER.info(
-        f"Calculating t2 and pval for {group_idx=}, "
-        f"{codon1=} (n={len(angles1)}), {codon2=} (n={len(angles2)})..."
+        f"Calculated (t2, pval) {group_idx=}, {codon1=} (n={n1}), {codon2=} (n={n2}), "
+        f"using {n_iter=}: max={max_vals}, mean={mean_vals}, elapsed={t_elapsed:.2f}s"
     )
-
-    # For the same codon, permute so we don't get zero distances in the baseline t2.
-    if codon1 == codon2:
-        permutation = np.random.permutation(len(angles2))
-        angles2 = angles2[permutation]
-
-    return tw_test(
-        X=angles1.transpose(),
-        Y=angles2.transpose(),
-        k=t2_permutations,
-        metric=flat_torus_distance,
-    )
+    return max_vals
 
 
 def _dihedral_kde_single_group(
