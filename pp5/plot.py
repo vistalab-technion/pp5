@@ -2,7 +2,7 @@ import os
 import re
 import logging
 import itertools as it
-from typing import Dict, List, Tuple, Union, Callable, Iterable, Optional
+from typing import Dict, List, Tuple, Union, Callable, Iterable, Optional, Sequence
 from pathlib import Path
 
 import numpy as np
@@ -18,7 +18,6 @@ from pandas import DataFrame
 from itertools import count
 
 import pp5
-from pp5.codons import ACIDS, CODON_RE, ACIDS_1TO3, CODON_TABLE
 
 LOGGER = logging.getLogger(__name__)
 
@@ -563,7 +562,10 @@ def bar_plot(data: DataFrame,
              hue: str,
              error_minus: str,
              error_plus: str,
-             palette: str):
+             palette: str,
+             inv_fun: Callable = lambda x: x,
+             center: float = 0.,
+             margins: Sequence[float] = ()):
     """
     Plots a bar plot from a data frame.
     :param labels: Name of the column containing the labels
@@ -594,15 +596,21 @@ def bar_plot(data: DataFrame,
     idx = np.argsort(vals)
     all_keys = list(all_keys[idx])
 
-    plt.plot([1, 1], [-1, len(all_keys) + 1], linewidth=0.5, color=[0, 0, 0], alpha=1,
+    plt.plot([center, center], [-1, len(all_keys) + 1], linewidth=0.5, color=[0, 0, 0], alpha=1,
              label='_nolegend_')
+    for margin in margins:
+        plt.plot(inv_fun(np.array([margin, margin])),
+                 [-1, len(all_keys) + 1],
+                 linewidth=0.5,
+                 color=[1, 0, 0], alpha=1,
+                 label='_nolegend_')
     for i in range(len(all_keys) + 1):
-        plt.plot([0, 100], [i - 0.5, i - 0.5], linewidth=0.5, color=[0, 0, 0],
+        plt.plot([-100, 100], [i - 0.5, i - 0.5], linewidth=0.5, color=[0, 0, 0],
                  alpha=0.5, label='_nolegend_')
 
     for n, h in enumerate(hues):
         keys = data.query(f'{hue}==@h')[labels].values
-        vals = data.query(f'{hue}==@h')[values].values
+        vals = inv_fun(data.query(f'{hue}==@h')[values].values)
         # plt.plot(vals, keys, 'o', linewidth=1, markersize=3, color=color_list[n])
         for v, k in zip(vals, keys):
             i = all_keys.index(k)
@@ -618,8 +626,8 @@ def bar_plot(data: DataFrame,
         vals = data.query(f'{hue}==@h')[values].values
         std_p = data.query(f'{hue}==@h')[error_plus].values
         std_m = data.query(f'{hue}==@h')[error_minus].values
-        mins = vals - std_m
-        maxs = vals + std_p
+        mins = inv_fun(vals - std_m)
+        maxs = inv_fun(vals + std_p)
 
         for k, m, M in zip(keys, mins, maxs):
             n = all_keys.index(k)

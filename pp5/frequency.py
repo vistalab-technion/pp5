@@ -6,6 +6,7 @@ from pp5.stats import categorical_histogram, relative_histogram, product_histogr
     ratio, factor
 import numpy as np
 import pandas as pd
+from scipy.stats import binom
 
 
 CODON_DELIMITER = '-'
@@ -72,10 +73,12 @@ def relative_codon_histogram(
         aa_hist: Dict[Any, Tuple[float, float]]
 ) -> Dict[Any, Tuple[float, float]]:
     """
-    :param codon_hist: A histogram approximating codon distribution given as c_1...c_n: (p(c_1,...c_n), sigma)
-    :param aa_hist: A histogram approximating AA distribution given as a_1...a_n: (p(a_1,...a_n), sigma)
+    :param codon_hist: A histogram approximating codon distribution given as c_1...c_n:
+        (p(c_1...c_n), sigma)
+    :param aa_hist: A histogram approximating AA distribution given as a_1...a_n:
+        (p(a_1...a_n), sigma)
     :return: A histogram approximating relative codon distribution given as
-        a_1...a_n: c_1...c_n: (p(c_1,...c_n|a_1,...a_n), sigma)
+        a_1...a_n: c_1...c_n: (p(c_1...c_n|a_1...a_n), sigma)
     """
     return relative_histogram(
         codon_hist,
@@ -93,85 +96,72 @@ def tuple_freq_analysis(
     # Single AA and codon histograms
     codon, aa = codon_tuples(data, sequence_length=1, allowed_ss=allowed_ss)
     single_aa_hist = categorical_histogram(aa, ACIDS, bootstraps=bootstraps,
-                                           normalized=True)
+                                           normalized=False)
     single_codon_hist = categorical_histogram(codon, CODONS, bootstraps=bootstraps,
-                                              normalized=True)
+                                              normalized=False)
 
-    # Calculate separable tuple histograms P(a1,...,an) = P(a1)....P(an)
-    # and P(c1,...,an) = P(c1)....P(cn)
-    model_aa_hist = {
-        ''.join(a): v
-        for a, v in product_histogram(single_aa_hist, n=sequence_length).items()
-    }
-    model_codon_hist = {
-        f'{CODON_DELIMITER}'.join(c): v
-        for c, v in product_histogram(single_codon_hist, n=sequence_length).items()
-    }
-
-    # Calculate relative histogram P(c1,...,cn|a1,...,an) = P(c1|a1)...P(cn|an)
-    model_codon_rel_hist = relative_codon_histogram(model_codon_hist, model_aa_hist)
+    aa_combinations = tuple(
+        ''.join(a) for a in product(*([[*single_aa_hist.keys()]] * sequence_length)))
+    codon_combinations = tuple(CODON_DELIMITER.join(a) for a in product(
+        *([[*single_codon_hist.keys()]] * sequence_length)))
 
     # Calculate AA and codon tuple histograms
     codons, aas = codon_tuples(data, sequence_length=sequence_length,
                                allowed_ss=allowed_ss)
     aa_hist = categorical_histogram(
         samples=aas,
-        bins=tuple([*model_aa_hist.keys()]),
-        bootstraps=bootstraps,
-        normalized=True
+        bins=aa_combinations,
+        bootstraps=1,
+        normalized=False
     )
     codon_hist = categorical_histogram(
         samples=codons,
-        bins=tuple([*model_codon_hist.keys()]),
-        bootstraps=bootstraps,
-        normalized=True
+        bins=codon_combinations,
+        bootstraps=1,
+        normalized=False
     )
 
-    # Calculate relative histogram P(c1,...,cn|a1,...,an)
-    codon_rel_hist = relative_codon_histogram(codon_hist, aa_hist)
+    # P(c|a)
+    p_ca = {}
+    for v in relative_codon_histogram(single_codon_hist, single_aa_hist).values():
+        p_ca = {**p_ca, **v}
 
-    # Representativeness ratio
-    # R[aa][cc] = P(c1,...,cn|a1,...,an) / P(c1|a1) / ... / P(cn|an)
-    rep_ratio = {
-        aa:
-            {
-                cc: ratio(codon_rel_hist[aa][cc], model_codon_rel_hist[aa][cc])
-                for cc in codon_rel_hist[aa].keys()
-            }
-        for aa in codon_rel_hist.keys()
+    # P(c1...cn|a1...an)
+    p_cc_aa = {
+        CODON_DELIMITER.join(k): v
+        for k, v in product_histogram(p_ca, n=sequence_length).items()
     }
 
-    # Represent ratio as dataframe
-    aa_cc = [*chain(*[[(a, c) for c in rep_ratio[a].keys()] for a in rep_ratio.keys()])]
-    return DataFrame(
-        index=pd.MultiIndex.from_tuples(
-            aa_cc,
-            names=["a1...an", "c1...cn"]
-        ),
-        data=tuple(
-            (*aa_hist[a],
-             *model_aa_hist[a],
-             *codon_hist[c],
-             *model_codon_hist[c],
-             *codon_rel_hist[a][c],
-             *model_codon_rel_hist[a][c],
-             *rep_ratio[a][c],
-             ) for a, c in aa_cc
-        ),
-        columns=pd.MultiIndex.from_tuples(
-            [*product(
-                ("P(a1,...,an)",
-                 "P(a1)...P(an)",
-                 "P(c1,...,cn)",
-                 "P(c1)...P(cn)",
-                 "P(c1,...,cn|a1,...,an)",
-                 "P(c1|a1)...P(cn|a1)",
-                 "ratio"
-                 ),
-                ("value", "sigma")
-            )],
-            names=("", "")
-        )
-    )
+    def bin_quantile(k, n, p):
+        return binom.cdf(k, n, p)
 
+    cc_aa = {k: ''.join([CODON_TABLE[c] for c in k.split(CODON_DELIMITER)]) for k in
+             codon_hist.keys()}
+
+    quantiles = {
+        cc:
+            (
+                bin_quantile(ncc[0], aa_hist[cc_aa[cc]][0], p_cc_aa[cc][0]),
+                bin_quantile(ncc[0], aa_hist[cc_aa[cc]][0],
+                             p_cc_aa[cc][0] + p_cc_aa[cc][1]),
+                bin_quantile(ncc[0], aa_hist[cc_aa[cc]][0],
+                             p_cc_aa[cc][0] - p_cc_aa[cc][1])
+            )
+        for cc, ncc in codon_hist.items()
+    }
+
+    return DataFrame(
+        {
+            'aa_sequence': cc_aa[k],
+            'cc_sequence': k,
+            'N_cc': codon_hist[k][0],
+            'N_aa': aa_hist[cc_aa[k]][0],
+            'P_cc_aa': p_cc_aa[k][0],
+            'σP_cc_aa': p_cc_aa[k][1],
+            'Q': quantiles[k][0],
+            'Q-σ': quantiles[k][1],
+            'Q+σ': quantiles[k][2],
+        }
+        for k in quantiles
+    )
 
