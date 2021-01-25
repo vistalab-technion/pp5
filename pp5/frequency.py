@@ -6,7 +6,7 @@ from pp5.stats import categorical_histogram, relative_histogram, product_histogr
     ratio, factor
 import numpy as np
 import pandas as pd
-from scipy.stats import binom
+from scipy.stats import binom, norm
 
 
 CODON_DELIMITER = '-'
@@ -87,18 +87,22 @@ def relative_codon_histogram(
     )
 
 
+def _remove_sigma(hist: Dict[str, Tuple[float, float]]):
+    return {k: v[0] for k, v in hist.items()}
+
+
 def tuple_freq_analysis(
         data: DataFrame,
         sequence_length: int = 2,
-        bootstraps: int = 50,
         allowed_ss=(),
 ) -> DataFrame:
-    # Single AA and codon histograms
     codon, aa = codon_tuples(data, sequence_length=1, allowed_ss=allowed_ss)
-    single_aa_hist = categorical_histogram(aa, ACIDS, bootstraps=bootstraps,
+    single_aa_hist = categorical_histogram(aa, ACIDS, bootstraps=0,
                                            normalized=False)
-    single_codon_hist = categorical_histogram(codon, CODONS, bootstraps=bootstraps,
+    single_codon_hist = categorical_histogram(codon, CODONS, bootstraps=0,
                                               normalized=False)
+
+    N = sum([v[0] for v in single_aa_hist.values()])
 
     aa_combinations = tuple(
         ''.join(a) for a in product(*([[*single_aa_hist.keys()]] * sequence_length)))
@@ -111,57 +115,109 @@ def tuple_freq_analysis(
     aa_hist = categorical_histogram(
         samples=aas,
         bins=aa_combinations,
-        bootstraps=1,
+        bootstraps=0,
         normalized=False
     )
     codon_hist = categorical_histogram(
         samples=codons,
         bins=codon_combinations,
-        bootstraps=1,
+        bootstraps=0,
         normalized=False
     )
 
-    # P(c|a)
-    p_ca = {}
-    for v in relative_codon_histogram(single_codon_hist, single_aa_hist).values():
-        p_ca = {**p_ca, **v}
+    # N(a,a')
+    Naa = _remove_sigma(aa_hist)
 
-    # P(c1...cn|a1...an)
-    p_cc_aa = {
+    # N(c,c')
+    Ncc = _remove_sigma(codon_hist)
+
+    # N(a)N(a')
+    NaNa = _remove_sigma({
+        ''.join(k): v
+        for k, v in product_histogram(single_aa_hist, n=sequence_length).items()
+    })
+
+    # N(c)N(c')
+    NcNc = _remove_sigma({
         CODON_DELIMITER.join(k): v
-        for k, v in product_histogram(p_ca, n=sequence_length).items()
-    }
+        for k, v in product_histogram(single_codon_hist, n=sequence_length).items()
+    })
 
-    def bin_quantile(k, n, p):
-        return binom.cdf(k, n, p)
-
+    # cc' -> aa'
     cc_aa = {k: ''.join([CODON_TABLE[c] for c in k.split(CODON_DELIMITER)]) for k in
              codon_hist.keys()}
 
-    quantiles = {
-        cc:
-            (
-                bin_quantile(ncc[0], aa_hist[cc_aa[cc]][0], p_cc_aa[cc][0]),
-                bin_quantile(ncc[0], aa_hist[cc_aa[cc]][0],
-                             p_cc_aa[cc][0] + p_cc_aa[cc][1]),
-                bin_quantile(ncc[0], aa_hist[cc_aa[cc]][0],
-                             p_cc_aa[cc][0] - p_cc_aa[cc][1])
-            )
-        for cc, ncc in codon_hist.items()
+    # score statistic
+    zs = {
+        cc: (Ncc[cc] / Naa[cc_aa[cc]] - NcNc[cc] / NaNa[cc_aa[cc]]) / np.sqrt(
+            NcNc[cc] / NaNa[cc_aa[cc]]) / (1. - NcNc[cc] / NaNa[cc_aa[cc]])
+        for cc in NcNc.keys()
+    }
+
+    # Wald statistic
+    zw = {
+        cc: (Ncc[cc] / Naa[cc_aa[cc]] - NcNc[cc] / NaNa[cc_aa[cc]]) / np.sqrt(
+            Ncc[cc] / Naa[cc_aa[cc]]) / (1. - Ncc[cc] / Naa[cc_aa[cc]])
+        for cc in NcNc.keys()
+    }
+
+    # score statistic undoing the aa dependency
+    zs_ = {
+        cc: (Ncc[cc] / Naa[cc_aa[cc]] - NcNc[cc] / Naa[cc_aa[cc]] / N) / np.sqrt(
+            NcNc[cc] / Naa[cc_aa[cc]] / N) / (1. - NcNc[cc] / Naa[cc_aa[cc]] / N)
+        for cc in NcNc.keys()
+    }
+
+    # Wald statistic undoing the aa dependency
+    zw_ = {
+        cc: (Ncc[cc] / Naa[cc_aa[cc]] - NcNc[cc] / Naa[cc_aa[cc]] / N) / np.sqrt(
+            Ncc[cc] / Naa[cc_aa[cc]]) / (1. - Ncc[cc] / Naa[cc_aa[cc]])
+        for cc in NcNc.keys()
+    }
+
+
+    # P(c|a)P(c'|a')
+    PcPc = {
+        cc: NcNc[cc] / NaNa[cc_aa[cc]]
+        for cc in NcNc.keys()
+    }
+
+    # P(cc'|aa')
+    Pcc = {
+        cc: Ncc[cc] / Naa[cc_aa[cc]]
+        for cc in NcNc.keys()
+    }
+
+    # Probability ratio
+    R = {
+        cc: Pcc[cc] / PcPc[cc]
+        for cc in NcNc.keys()
     }
 
     return DataFrame(
         {
             'aa_sequence': cc_aa[k],
             'cc_sequence': k,
+            'N_c': tuple(
+                single_codon_hist[c][0] for c in k.split(CODON_DELIMITER)
+            ),
+            'N_a': tuple(
+                single_aa_hist[CODON_TABLE[c]][0] for c in k.split(CODON_DELIMITER)
+            ),
             'N_cc': codon_hist[k][0],
             'N_aa': aa_hist[cc_aa[k]][0],
-            'P_cc_aa': p_cc_aa[k][0],
-            'σP_cc_aa': p_cc_aa[k][1],
-            'Q': quantiles[k][0],
-            'Q-σ': quantiles[k][1],
-            'Q+σ': quantiles[k][2],
+            'Pcc': Pcc[k],
+            'PcPc': PcPc[k],
+            'Pratio': R[k],
+            'zs': zs[k],
+            'zw': zw[k],
+            'zs_p_value': norm.cdf(zs[k]),
+            'zw_p_value': norm.cdf(zw[k]),
+            'zs_': zs_[k],
+            'zw_': zw_[k],
+            'zs__p_value': norm.cdf(zs_[k]),
+            'zw__p_value': norm.cdf(zw_[k]),
         }
-        for k in quantiles
+        for k in Pcc.keys()
     )
 

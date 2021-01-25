@@ -565,7 +565,8 @@ def bar_plot(data: DataFrame,
              palette: str,
              inv_fun: Callable = lambda x: x,
              center: float = 0.,
-             margins: Sequence[float] = ()):
+             margins: Sequence[float] = (),
+             step: float = None):
     """
     Plots a bar plot from a data frame.
     :param labels: Name of the column containing the labels
@@ -583,10 +584,16 @@ def bar_plot(data: DataFrame,
     hues = np.unique(data[hue].values)
     N = len(hues)
 
-    w = 0.45 / N
-    eps = w * 0.2
-    step = -2 * w
-    offset = -step * (N - 1) / 2
+    w = 0.45
+    if step is None:
+        w = w / N
+        eps = w * 0.2
+        step = -2 * w
+        offset = -step * (N - 1) / 2
+    else:
+        eps = w * 0.2
+        step = step * 2*w
+        offset = -step * (N - 1) / 2
 
     cmap = plt.cm.get_cmap(palette)
     color_list = cmap(np.linspace(0, 1, len(hues)))

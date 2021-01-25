@@ -76,10 +76,19 @@ def categorical_histogram(
     :return: A dictionary with the mapping bin: counts
     """
     hists: List[Dict[Any, float]] = []
-    for n in range(bootstraps):
+    if bootstraps > 0:
+        for n in range(bootstraps):
+            hists.append(
+                _histogram(
+                    samples=random.choices(samples, k=len(samples)),
+                    bins=bins,
+                    normalized=normalized,
+                )
+            )
+    else:
         hists.append(
             _histogram(
-                samples=random.choices(samples, k=len(samples)),
+                samples=samples,
                 bins=bins,
                 normalized=normalized,
             )
