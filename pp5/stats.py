@@ -48,7 +48,7 @@ def tw_test(X, Y, k=1000):
     return t2, p
 
 
-def _histogram(
+def histogram(
     samples: Sequence[Any],
     bins: Sequence[Any],
     normalized: bool = True
@@ -79,7 +79,7 @@ def categorical_histogram(
     if bootstraps > 0:
         for n in range(bootstraps):
             hists.append(
-                _histogram(
+                histogram(
                     samples=random.choices(samples, k=len(samples)),
                     bins=bins,
                     normalized=normalized,
@@ -87,7 +87,7 @@ def categorical_histogram(
             )
     else:
         hists.append(
-            _histogram(
+            histogram(
                 samples=samples,
                 bins=bins,
                 normalized=normalized,

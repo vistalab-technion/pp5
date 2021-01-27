@@ -559,6 +559,8 @@ def savefig(
 def bar_plot(data: DataFrame,
              labels: str,
              values: str,
+             sortkey: str,
+             pvalue: str,
              hue: str,
              error_minus: str,
              error_plus: str,
@@ -599,8 +601,9 @@ def bar_plot(data: DataFrame,
     color_list = cmap(np.linspace(0, 1, len(hues)))
 
     all_keys = data.query(f'{hue}==@hues[0]')[labels].values
-    vals = data.query(f'{hue}==@hues[0]')[values].values
-    idx = np.argsort(vals)
+    #vals = data.query(f'{hue}==@hues[0]')[values].values
+    sortvals = data.query(f'{hue}==@hues[0]')[sortkey].values
+    idx = np.argsort(sortvals)
     all_keys = list(all_keys[idx])
 
     plt.plot([center, center], [-1, len(all_keys) + 1], linewidth=0.5, color=[0, 0, 0], alpha=1,
@@ -618,14 +621,18 @@ def bar_plot(data: DataFrame,
     for n, h in enumerate(hues):
         keys = data.query(f'{hue}==@h')[labels].values
         vals = inv_fun(data.query(f'{hue}==@h')[values].values)
+        pvals = data.query(f'{hue}==@h')[pvalue].values
+        is_significant = (pvals < 0.05) | (pvals > 1.-0.05)
         # plt.plot(vals, keys, 'o', linewidth=1, markersize=3, color=color_list[n])
-        for v, k in zip(vals, keys):
+        for v, k, is_sig in zip(vals, keys, is_significant):
             i = all_keys.index(k)
             plt.plot(
                 [v, v],
                 [i - w + eps + step * n + offset, i + w - eps + step * n + offset],
-                linewidth=2, markersize=3, color=color_list[n],
-                label=h if i == 0 else '_nolegend_'
+                linewidth=2,
+                color=color_list[n] if is_sig else color_list[n]*0.25 + 0.75,
+                label=h if i == 0 else '_nolegend_',
+                #alpha=1.0 if is_sig else 0.5,
             )
 
     for i, h in enumerate(hues):
@@ -638,11 +645,12 @@ def bar_plot(data: DataFrame,
 
         for k, m, M in zip(keys, mins, maxs):
             n = all_keys.index(k)
-            output_list.append(
-                plt.Rectangle((m, n - w + step * i + offset), M - m, 2 * w,
-                              facecolor=color_list[i],
-                              edgecolor=None,
-                              fill=True, alpha=0.25, label='_nolegend_'))
+            if M > m:
+                output_list.append(
+                    plt.Rectangle((m, n - w + step * i + offset), M - m, 2 * w,
+                                  facecolor=color_list[i],
+                                  edgecolor=None,
+                                  fill=True, alpha=0.25, label='_nolegend_'))
 
         for r in output_list:
             ax.add_artist(r)
