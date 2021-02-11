@@ -776,7 +776,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             if dists is None:
                 continue
             dists_exp = _dists_expected(dists)
-            self._dump_intermediate(f"{aa_codon}-dists-exp", dists_exp)
+            self._dump_intermediate(
+                f"{aa_codon}-{dihedral_dkde}-{d2_t2}-exp", dists_exp
+            )
 
         return {}
 
