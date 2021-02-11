@@ -134,16 +134,20 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self,
     ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
-            "preprocess-dataset": self._preprocess_dataset,
-            "dataset-stats": self._dataset_stats,
-            "dihedral-significance": self._dihedral_significance,
-            "dihedral-kde-full": self._dihedral_kde_full,
-            "codon-dists": self._codons_dists,
-            "codon-dists-exp": self._codon_dists_expected,
-            "plot-results": self._plot_results,
+            "preprocess_dataset": self._preprocess_dataset,
+            "dataset_stats": self._dataset_stats,
+            "pointwise_dists_dihedral": self._pointwise_dists_dihedral,
+            "dihedral_kde_groups": self._dihedral_kde_groups,
+            "pointwise_dists_kde": self._pointwise_dists_kde,
+            "codon_dists_expected": self._codon_dists_expected,
+            "plot_results": self._plot_results,
         }
 
     def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
+        """
+        Converts the input raw data to an intermediate data frame which we use for
+        analysis.
+        """
 
         cols = (
             self.pdb_id_col,
@@ -222,6 +226,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         }
 
     def _preprocess_group(self, group_id: str, df_group: pd.DataFrame):
+        """
+        Applies pre-processing to a single group (e.g. SS) in the dataset.
+        """
         processed_subgroups = []
 
         # Group by each unique codon at a unique location in a unique protein
@@ -268,6 +275,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         return processed_subgroups
 
     def _dataset_stats(self, pool: mp.pool.Pool) -> dict:
+        """
+        Extracts various statistics from the dataset.
+        """
         # Calculate likelihood distribution of prev codon, separated by SS
         codon_likelihoods = {}
         codon_col = self.codon_cols[0]
@@ -364,7 +374,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         return {"group_sizes": group_sizes}
 
-    def _dihedral_significance(self, pool: mp.pool.Pool):
+    def _pointwise_dists_dihedral(self, pool: mp.pool.Pool):
+        """
+        Calculate pointwise-distances between pairs of codon (sub-groups).
+        Each codon is represented by the set of all dihedral angles coming from it.
+
+        The distance between two codon sub-groups is calculated using both the T2
+        statistic as a distance metric between sets of angle-pairs. The distance
+        between tho angle-pairs is calculated on the torus.
+        """
         df_processed: pd.DataFrame = self._load_intermediate("dataset")
         df_groups = df_processed.groupby(by=self.condition_col)
         curr_codon_col = self.codon_cols[-1]
@@ -441,7 +459,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self._dump_intermediate("codon-dihedral-t2s", collected_t2s)
         self._dump_intermediate("codon-dihedral-pvals", collected_pvals)
 
-    def _dihedral_kde_full(self, pool: mp.pool.Pool) -> dict:
+    def _dihedral_kde_groups(self, pool: mp.pool.Pool) -> dict:
+        """
+        Estimates the dihedral angle distribution of each group (e.g. SS) as a
+        Ramachandran plot, using kernel density estimation (KDE).
+        """
         df_processed: pd.DataFrame = self._load_intermediate("dataset")
         df_groups = df_processed.groupby(by=self.secondary_col)
         df_groups_count: pd.DataFrame = df_groups.count()
@@ -467,7 +489,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         return {**ss_counts}
 
-    def _codons_dists(self, pool: mp.pool.Pool) -> dict:
+    def _pointwise_dists_kde(self, pool: mp.pool.Pool) -> dict:
+        """
+        Calculate pointwise-distances between pairs of codon (sub-groups).
+        Each codon is represented by the KDE (estimate distribution) of the dihedral
+        angles coming from it.
+
+        The distance between two codon sub-groups is calculated using both euclidean
+        distance between their KDEs (using bootstrapping to estimate multiple KDEs
+        for the same codon), and also using the T2 statistic as a distance.
+        """
         group_sizes = self._load_intermediate("group-sizes")
         curr_codon_col = self.codon_cols[-1]
 
@@ -674,6 +705,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         return {}
 
     def _codon_dists_expected(self, pool: mp.pool.Pool) -> dict:
+        """
+        Takes the expectation of the various distances between pairs of codons
+        (sub-groups) over the groups (e.g. SS+prev codon).
+        """
+
         # To obtain the final expected distance matrices, we calculate the expectation
         # using the likelihood of the prev codon or aa so that conditioning is only
         # on SS. Then we also take the expectation over the different SS types to
@@ -745,6 +781,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         return {}
 
     def _plot_results(self, pool: mp.pool.Pool):
+        """
+        Loads the intermediate results that were generated during the analysis and
+        plots them.
+        """
         LOGGER.info(f"Plotting results...")
 
         ap_labels = [
