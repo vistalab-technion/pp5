@@ -568,7 +568,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # The limit is needed due to the very high memory required when
             # bs_niter is large.
             if not last_group and len(dkde_asyncs) < self.n_parallel_groups:
-                continue
+                continue  # submit another group fo KDE analysis
 
             # If we already have enough simultaneous KDE calculations, collect
             # one (or all if this is the last group) of their results.
@@ -627,7 +627,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             # Allow limited number of simultaneous distance matrix calculations
             if not last_group and len(dist_asyncs) < self.n_parallel_groups:
-                continue
+                continue  # submit another group fo KDE analysis
 
             # Wait for one of the distance matrix calculations, or all of
             # them if it's the last group
@@ -1475,6 +1475,8 @@ def _dkde_dists_pairwise(
             if j < i or bs_dkdes[cj] is None:
                 continue
 
+            t_start = time.time()
+
             # Get the two dihedral KDEs arrays to compare, each is of
             # shape (B, M, M) due to bootstrapping B times
             dkde1 = bs_dkdes[ci][pair_idx]
@@ -1495,6 +1497,12 @@ def _dkde_dists_pairwise(
 
             # Store distance mu and std as a complex number
             d2_mat[i, j] = d2_mat[j, i] = d2_mu + 1j * d2_sigma
+
+            t_elapsed = time.time() - t_start
+            LOGGER.info(
+                f"Calculated d2 {group_idx=}, {ci=}, {cj=}, value={d2_mu:.3e}±"
+                f"{d2_sigma:.3e}, elapsed={t_elapsed:.2f}s"
+            )
 
             #  Calculate statistical significance of the distance based on T_w^2 metric
             t2, pval = _subgroup_tw2_test(
