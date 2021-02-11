@@ -831,90 +831,56 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
             del full_dkde
 
-        # Expected dists: we have four type of distance matrices: per codon or per AA
-        # and regular (per group=prev-codon/AA+SS) or expected (per SS).
-        for aa_codon, dist_type in it.product(["aa", "codon"], ["", "-exp"]):
-            dists = self._load_intermediate(f"{aa_codon}-dists{dist_type}", True)
+        # Distance matrices and p-vals
+        distance_types = it.product(
+            ["aa", "codon"],
+            ["dkde", "dihedral"],
+            ["d2s", "t2s", "pvals"],
+            ["", "exp"],
+            ["block", ""],
+        )
+        for aa_codon, dkde_dihedral, dist_type, exp, block_diag in distance_types:
+            result_name = str.join(
+                "-", filter(None, [aa_codon, dkde_dihedral, dist_type, exp])
+            )
+            dists = self._load_intermediate(result_name, True)
             if dists is None:
                 continue
 
-            out_dir = self.out_dir.joinpath(f"{aa_codon}-dists{dist_type}")
+            out_dir = self.out_dir.joinpath(result_name)
             labels = AA_CODONS if aa_codon == "codon" else ACIDS
-            block_diagonal = SYN_CODON_IDX if aa_codon == "codon" else None
+
+            block_diagonal_pairs = None
+            if block_diag:
+                if aa_codon == "codon":
+                    block_diagonal_pairs = SYN_CODON_IDX
+                else:
+                    continue
+
+            vmin, vmax = None, None
+            if dist_type == "pvals":
+                vmin, vmax = 0.0, 1.0
+
             for group_idx, d2_matrices in dists.items():
                 async_results.append(
                     pool.apply_async(
-                        _plot_d2_matrices,
+                        _plot_dist_matrices,
                         kwds=dict(
                             group_idx=group_idx,
                             d2_matrices=d2_matrices,
                             out_dir=out_dir,
                             titles=ap_labels if len(ap_labels) > 1 else None,
                             labels=labels,
-                            vmin=None,
-                            vmax=None,  # should consider scale
-                            annotate_mu=True,
+                            vmin=vmin,
+                            vmax=vmax,
+                            annotate_mu=False,
                             plot_std=False,
-                            block_diagonal=block_diagonal,
+                            block_diagonal=block_diagonal_pairs,
+                            tag=block_diag,
                         ),
                     )
                 )
             del dists, d2_matrices
-
-        # p-values
-        for aa_codon, pval_type in it.product(["aa", "codon"], ["dihedral", "dkde"]):
-            pvals = self._load_intermediate(f"{aa_codon}-{pval_type}-pvals", True)
-            if pvals is None:
-                continue
-
-            out_dir = self.out_dir.joinpath(f"{aa_codon}-{pval_type}-pvals")
-            labels = AA_CODONS if aa_codon == "codon" else ACIDS
-            block_diagonal = SYN_CODON_IDX if aa_codon == "codon" else None
-
-            for group_idx, d2_matrices in pvals.items():
-                if isinstance(d2_matrices, np.ndarray):
-                    d2_matrices = [d2_matrices]
-                async_results.append(
-                    pool.apply_async(
-                        _plot_d2_matrices,
-                        kwds=dict(
-                            group_idx=group_idx,
-                            d2_matrices=d2_matrices,
-                            out_dir=out_dir,
-                            titles=ap_labels if len(ap_labels) > 1 else None,
-                            labels=labels,
-                            vmin=0.0,
-                            vmax=1.0,  # pvals are in range 0,1
-                            annotate_mu=False,
-                            plot_std=False,
-                            block_diagonal=None,  # block_diagonal,
-                        ),
-                    )
-                )
-            del pvals, d2_matrices
-
-        # t2 matrices
-        t2s = self._load_intermediate(f"codon-dihedral-t2s", True)
-        out_dir = self.out_dir.joinpath(f"codon-dihedral-t2s")
-        for group_idx, t2 in t2s.items():
-            async_results.append(
-                pool.apply_async(
-                    _plot_d2_matrices,
-                    kwds=dict(
-                        group_idx=group_idx,
-                        d2_matrices=[t2],
-                        out_dir=out_dir,
-                        titles=None,
-                        labels=AA_CODONS,
-                        vmin=0.0,
-                        vmax=10.0,
-                        annotate_mu=False,
-                        plot_std=False,
-                        block_diagonal=None,  # SYN_CODON_IDX,
-                    ),
-                )
-            )
-        del t2s, t2
 
         # Averaged Dihedral KDEs of each codon in each group
         group_sizes: dict = self._load_intermediate("group-sizes", True)
@@ -1658,7 +1624,7 @@ def _plot_full_dkdes(full_dkde: dict, angle_pair_labels: List[str], out_dir: Pat
     return str(fig_filename)
 
 
-def _plot_d2_matrices(
+def _plot_dist_matrices(
     group_idx: str,
     d2_matrices: List[np.ndarray],
     titles: List[str],
@@ -1666,12 +1632,11 @@ def _plot_d2_matrices(
     out_dir: Path,
     vmin: float = None,
     vmax: float = None,
-    annotate_mu=True,
-    plot_std=False,
-    block_diagonal=None,
+    annotate_mu: bool = True,
+    plot_std: bool = False,
+    block_diagonal: Sequence[Tuple[int, int]] = None,
+    tag: str = None,
 ):
-    LOGGER.info(f"Plotting distances for {group_idx}")
-
     # d2_matrices contains a matrix for each analyzed angle pair.
     # Split the mu and sigma from the complex d2 matrices
     d2_mu_sigma = [(np.real(d2), np.imag(d2)) for d2 in d2_matrices]
@@ -1714,7 +1679,10 @@ def _plot_d2_matrices(
             mask[ii, jj] = 1.0
             d2 = [mask * d2i for d2i in d2]
 
-        fig_filename = out_dir.joinpath(f"{group_idx}-{avg_std}.png")
+        filename = str.join(
+            "-", filter(None, [group_idx, avg_std if plot_std else None, tag])
+        )
+        fig_filepath = out_dir.joinpath(f"{filename}.png")
 
         pp5.plot.multi_heatmap(
             d2,
@@ -1725,11 +1693,11 @@ def _plot_d2_matrices(
             vmin=vmin,
             vmax=vmax,
             fig_rows=1,
-            outfile=fig_filename,
+            outfile=fig_filepath,
             data_annotation_fn=ann_fn,
         )
 
-        fig_filenames.append(str(fig_filename))
+        fig_filenames.append(str(fig_filepath))
 
     return fig_filenames
 
