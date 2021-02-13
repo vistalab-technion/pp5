@@ -926,7 +926,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Distance matrices and p-vals
         distance_types = it.product(
-            ["aa", "codon"],
+            ["aa", "codon", "aac"],
             ["dkde", "dihedral"],
             ["d2s", "t2s", "pvals"],
             ["", "exp"],
@@ -941,14 +941,20 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 continue
 
             out_dir = self.out_dir.joinpath(result_name)
-            labels = AA_CODONS if aa_codon == "codon" else ACIDS
+            if aa_codon == "aa":
+                row_labels = col_labels = ACIDS
+            elif aa_codon == "codon":
+                row_labels = col_labels = AA_CODONS
+            else:  # aac
+                row_labels = ACIDS
+                col_labels = AA_CODONS
 
             block_diagonal_pairs = None
             if block_diag:
                 if aa_codon == "codon":
                     block_diagonal_pairs = SYN_CODON_IDX
                 else:
-                    continue
+                    continue  # Prevent plotting twice
 
             vmin, vmax = None, None
             if dist_type == "pvals":
@@ -963,7 +969,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                             d2_matrices=d2_matrices,
                             out_dir=out_dir,
                             titles=ap_labels if len(ap_labels) > 1 else None,
-                            labels=labels,
+                            row_labels=row_labels,
+                            col_labels=col_labels,
                             vmin=vmin,
                             vmax=vmax,
                             annotate_mu=False,
@@ -1729,7 +1736,8 @@ def _plot_dist_matrices(
     group_idx: str,
     d2_matrices: List[np.ndarray],
     titles: List[str],
-    labels: List[str],
+    row_labels: List[str],
+    col_labels: List[str],
     out_dir: Path,
     vmin: float = None,
     vmax: float = None,
@@ -1787,8 +1795,8 @@ def _plot_dist_matrices(
 
         pp5.plot.multi_heatmap(
             d2,
-            row_labels=labels,
-            col_labels=labels,
+            row_labels=row_labels,
+            col_labels=col_labels,
             titles=titles,
             fig_size=20,
             vmin=vmin,
