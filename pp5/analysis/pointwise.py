@@ -16,7 +16,7 @@ import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
 from pp5.stats import tw_test
 from pp5.utils import sort_dict
-from pp5.codons import ACIDS, N_CODONS, AA_CODONS, SYN_CODON_IDX, codon2aac
+from pp5.codons import ACIDS, N_ACIDS, N_CODONS, AA_CODONS, SYN_CODON_IDX, codon2aac
 from pp5.analysis import SS_TYPE_ANY, CODON_TYPE_ANY, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral, flat_torus_distance
 from pp5.parallel import yield_async_results
@@ -137,6 +137,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             "preprocess_dataset": self._preprocess_dataset,
             "dataset_stats": self._dataset_stats,
             "pointwise_dists_dihedral": self._pointwise_dists_dihedral,
+            "pointwise_aac_dists_dihedral": self._pointwise_aac_dists_dihedral,
             "dihedral_kde_groups": self._dihedral_kde_groups,
             "pointwise_dists_kde": self._pointwise_dists_kde,
             "codon_dists_expected": self._codon_dists_expected,
@@ -376,12 +377,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
     def _pointwise_dists_dihedral(self, pool: mp.pool.Pool):
         """
-        Calculate pointwise-distances between pairs of codon (sub-groups).
+        Calculate pointwise-distances between pairs of codons (sub-groups).
         Each codon is represented by the set of all dihedral angles coming from it.
 
-        The distance between two codon sub-groups is calculated using both the T2
+        The distance between two codon sub-groups is calculated using the T2
         statistic as a distance metric between sets of angle-pairs. The distance
-        between tho angle-pairs is calculated on the torus.
+        between two angle-pairs is calculated on the torus.
         """
         df_processed: pd.DataFrame = self._load_intermediate("dataset")
         df_groups = df_processed.groupby(by=self.condition_col)
@@ -458,6 +459,98 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         self._dump_intermediate("codon-dihedral-t2s", collected_t2s)
         self._dump_intermediate("codon-dihedral-pvals", collected_pvals)
+
+    def _pointwise_aac_dists_dihedral(self, pool: mp.pool.Pool):
+        """
+        Calculate pointwise-distances between each AA and the codons which encode it.
+        Each AA and codon is represented by the set of all dihedral angles coming
+        from it.
+
+        The distance between an AA and each of it's codons is calculated using
+        the T2 statistic as a distance metric between sets of angle-pairs.
+        The distance between two angle-pairs is calculated on the torus.
+        """
+        df_processed: pd.DataFrame = self._load_intermediate("dataset")
+        curr_codon_col = self.codon_cols[-1]
+        async_results: Dict[Tuple[str, str, str], AsyncResult] = {}
+
+        LOGGER.info(
+            f"Calculating distance-based standout-scores for codons vs. their AA"
+        )
+
+        # This analysis only supports one angle pair. We should deprecate angle pairs.
+        if len(self.angle_pairs) > 1:
+            LOGGER.warning(f"Angle pairs are not supported in standout score")
+        angle_cols = self.angle_pairs[0]
+
+        # Add an AA col so we can group on it
+        aa_col = "AA"
+        df_processed[aa_col] = list(
+            map(lambda aac: aac.split("-")[0], df_processed[curr_codon_col])
+        )
+
+        # Group by the conditioning criteria, e.g. SS
+        df_groups = df_processed.groupby(by=self.condition_col)
+        for group_idx, (group, df_group) in enumerate(df_groups):
+
+            # Group by AA
+            df_aa_groups = df_group.groupby(aa_col)
+            for aa_idx, (aa, df_aa) in enumerate(df_aa_groups):
+
+                # Need at least 2 observations in each statistical sample
+                if len(df_aa) < 2:
+                    continue
+
+                # Group by codon
+                df_subgroups = df_aa.groupby(curr_codon_col)
+                for codon_idx, (codon, df_codon) in enumerate(df_subgroups):
+
+                    # Need at least 2 observations in each statistical sample
+                    if len(df_codon) < 2:
+                        continue
+
+                    angles_aa = df_aa[[*angle_cols]].values
+                    angles_codon = df_codon[[*angle_cols]].values
+                    args = (
+                        group,
+                        aa,
+                        codon,
+                        angles_aa,
+                        angles_codon,
+                        self.bs_randstate,
+                        self.t2_n_max,
+                        self.t2_permutations,
+                        flat_torus_distance,
+                    )
+
+                    res = pool.apply_async(_subgroup_tw2_test, args=args)
+                    async_results[(group, aa, codon)] = res
+
+        # Collect results
+        # The list used here is for compatibility with the dkde analysis which uses
+        # angle-pairs.
+        default = dict(shape=(N_ACIDS, N_CODONS), fill_value=np.nan, dtype=np.float32)
+        collected_t2s: Dict[str, List[np.ndarray]] = {
+            g: [np.full(**default)] for g in df_groups.groups.keys()
+        }
+        collected_pvals: Dict[str, List[np.ndarray]] = {
+            g: [np.full(**default)] for g in df_groups.groups.keys()
+        }
+
+        for (group, aa, codon), result in yield_async_results(async_results):
+            i, j = ACIDS.index(aa), AA_CODONS.index(codon)
+            LOGGER.info(
+                f"Collected pairwise-pval {group=}, {aa=} ({i}), "
+                f"{codon=} ({j}): {result=}"
+            )
+            t2, pval = result
+            t2s = collected_t2s[group][0]
+            pvals = collected_pvals[group][0]
+            t2s[i, j] = t2
+            pvals[i, j] = pval
+
+        self._dump_intermediate("aac-dihedral-t2s", collected_t2s)
+        self._dump_intermediate("aac-dihedral-pvals", collected_pvals)
 
     def _dihedral_kde_groups(self, pool: mp.pool.Pool) -> dict:
         """
