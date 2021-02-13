@@ -3,7 +3,7 @@ import time
 import logging
 import itertools as it
 import multiprocessing as mp
-from math import ceil
+from math import ceil, floor
 from typing import Any, Dict, List, Tuple, Union, Callable, Optional, Sequence
 from pathlib import Path
 from multiprocessing.pool import AsyncResult
@@ -539,11 +539,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         for (group, aa, codon), result in yield_async_results(async_results):
             i, j = ACIDS.index(aa), AA_CODONS.index(codon)
+            t2, pval = result
             LOGGER.info(
                 f"Collected pairwise-pval {group=}, {aa=} ({i}), "
-                f"{codon=} ({j}): {result=}"
+                f"{codon=} ({j}): {t2=:.2f}, {pval=:.3f}"
             )
-            t2, pval = result
             t2s = collected_t2s[group][0]
             pvals = collected_pvals[group][0]
             t2s[i, j] = t2
@@ -1249,8 +1249,7 @@ def _subgroup_tw2_test(
     :param t2_n_max: Max sample size. If None or zero then no limit.
     :param t2_permutations: Number of permutations for computing significance.
     :param t2_metric: Distance metric to use between observations.
-    :return: A Tuple (t2, pval) containing the value of the Tw@ statistic and the
-        p-value.
+    :return: A Tuple (t2, pval) containing the value of the T2 statistic and the p-value.
     """
     t_start = time.time()
 
@@ -1285,17 +1284,25 @@ def _subgroup_tw2_test(
             metric=t2_metric,
         )
 
-    # Report the t2 corresponding to the maximal (worst) p-value, and that p-value.
+    # Calculate the t2 corresponding to the maximal (worst) p-value, and that p-value.
     argmax_p = np.argmax(pvals)
-    max_vals = t2s[argmax_p], pvals[argmax_p]
-    mean_vals = np.mean(t2s), np.mean(pvals)
+    max_t2, max_p = t2s[argmax_p], pvals[argmax_p]
+
+    # Calculate the t2 corresponding to the median p-value.
+    sort_idx = np.argsort(pvals)
+    median_idx = sort_idx[floor(n_iter / 2)]  # note: floor is correct since indices
+    # are zero based
+    med_t2, med_p = t2s[median_idx], pvals[median_idx]
 
     t_elapsed = time.time() - t_start
     LOGGER.info(
-        f"Calculated (t2, pval) {group_idx=}, {subgroup1_idx=} (n={n1}), {subgroup2_idx=} (n={n2}), "
-        f"using {n_iter=}: max={max_vals}, mean={mean_vals}, elapsed={t_elapsed:.2f}s"
+        f"Calculated (t2, pval) {group_idx=}, {subgroup1_idx=} (n={n1}), "
+        f"{subgroup2_idx=} (n={n2}), using {n_iter=}: "
+        f"(med_p, max_p)=({med_p:.3f},{max_p:.3f}),"
+        f"(med_t2, max_t2)=({med_t2:.2f},{max_t2:.2f}), "
+        f"elapsed={t_elapsed:.2f}s"
     )
-    return max_vals
+    return med_t2, med_p
 
 
 def _dihedral_kde_single_group(
