@@ -518,11 +518,16 @@ class ProteinGroup(object):
 
             for match_group in grouped_matches:
                 data = match_group.as_dict(join_sequences=True)
-                idx = (ref_idx, data.pop("unp_id"), data.pop("codon"))
+                idx = (
+                    ref_idx,
+                    data.pop("unp_id"),
+                    data.pop("unp_idx"),
+                    data.pop("codon"),
+                )
                 df_index.append(idx)
                 df_data.append(data)
 
-        df_index_names = ["ref_idx", "unp_id", "codon"]
+        df_index_names = ["ref_idx", "unp_id", "unp_idx", "codon"]
         df_index = pd.MultiIndex.from_tuples(df_index, names=df_index_names)
         df = pd.DataFrame(data=df_data, index=df_index)
         return df
@@ -899,35 +904,53 @@ class ProteinGroup(object):
         subgroups.
         """
 
+        def _valid_match_group_index(group_idx: Tuple[str, int, str]) -> bool:
+            # group_idx is (unp_id, unp_idx, codon)
+            return all(x is not None and x != "" for x in group_idx)
+
         grouped_matches: Dict[int, List[ResidueMatchGroup]] = OrderedDict()
 
         for ref_res_idx, matches in self.ref_matches.items():
-            # Group matches of queries to current residue by unp_id and codon
-            match_groups: Dict[Tuple[str, str], Dict[str, ResidueMatch]] = {}
+            # Group matches of queries to current residue by unp_id, unp_idx and codon
+            match_groups: Dict[Tuple[str, int, str], Dict[str, ResidueMatch]] = {}
             ref_group_idx = None
             for q_pdb_id, q_match in matches.items():
                 q_prec = self.query_pdb_to_prec[q_pdb_id]
                 unp_id = q_prec.unp_id
+                unp_idx = q_match.unp_idx
                 codon = q_match.codon
 
                 # Reference group will include the REFERENCE residue and zero
                 # or more VARIANT residues. We want to calculate the angle
                 # difference between all other groups and this group.
                 if q_match.type == ResidueMatchType.REFERENCE:
-                    ref_group_idx = (unp_id, codon)
+                    ref_group_idx = (unp_id, unp_idx, codon)
 
-                match_group_idx = (unp_id, codon)
+                # Make sure this match has a complete index
+                match_group_idx = (unp_id, unp_idx, codon)
+                if not _valid_match_group_index(match_group_idx):
+                    continue
+
                 match_group = match_groups.setdefault(match_group_idx, {})
                 match_group[q_pdb_id] = q_match
 
+            # If one of the components of the reference index is missing, skip this
+            # reference altogether
+            assert ref_group_idx is not None  # Sanity check, a ref should always exist
+            if not _valid_match_group_index(ref_group_idx):
+                LOGGER.warning(
+                    f"{self}: incomplete reference group index at "
+                    f"{ref_res_idx=}: {ref_group_idx=}. Skipping..."
+                )
+                continue
+
             # Compute reference group aggregate angles
-            assert ref_group_idx is not None
             ref_group_avg_phipsi = aggregate_fn(match_groups[ref_group_idx])
 
             # Compute aggregate statistics in each group
             for match_group_idx, match_group in match_groups.items():
-                (unp_id, codon) = match_group_idx
-                match_group: Dict[str, ResidueMatch]
+                (unp_id, unp_idx, codon) = match_group_idx
+                match_group: Dict[str, ResidueMatch]  # pdb_id -> match
 
                 # Calculate average angle in this group with the aggregation
                 # function
@@ -952,6 +975,7 @@ class ProteinGroup(object):
                 ref_res_groups.append(
                     ResidueMatchGroup(
                         unp_id,
+                        unp_idx,
                         codon,
                         match_group,
                         group_precs,
@@ -1064,14 +1088,25 @@ class ResidueMatchGroup(object):
     def __init__(
         self,
         unp_id: str,
+        unp_idx: int,
         codon: str,
         match_group: Dict[str, ResidueMatch],
         precs: Dict[str, ProteinRecord],
         avg_phipsi: Dihedral,
         ang_dist: float,
     ):
+        """
+        :param unp_id: Uniprot id of all the matches.
+        :param unp_idx: Uniprot index of all the matches.
+        :param codon: Codon of all the matches.
+        :param match_group: Mapping from PDB ID to the actual match object.
+        :param precs: Mapping from PDB ID to the corresponding protein record.
+        :param avg_phipsi: Averaged dihedral angles of the group.
+        :param ang_dist: Angle distance between this group and the reference.
+        """
 
         self.unp_id = unp_id
+        self.unp_idx = unp_idx
         self.codon = codon
         self.group_size = len(match_group)
         self.pdb_ids = tuple(match_group.keys())
@@ -1149,7 +1184,7 @@ class ResidueMatchGroup(object):
 
     def __repr__(self):
         return (
-            f"[{self.unp_id}, {self.codon}] {self.match_type.name} "
+            f"[{self.unp_id}:{self.unp_idx} {self.codon}] {self.match_type.name} "
             f"{self.avg_phipsi}, n={self.group_size}, "
             f"ang_dist={self.ang_dist:.2f}"
         )
@@ -1185,6 +1220,7 @@ class ResidueMatchGroup(object):
         d = {
             f"{p}type": self.match_type.name,
             f"{p}unp_id": self.unp_id,
+            f"{p}unp_idx": self.unp_idx,
             f"{p}codon": self.codon,
             f"{p}name": self.name,
             f"{p}secondary": self.secondary,
