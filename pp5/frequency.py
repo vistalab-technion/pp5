@@ -1,26 +1,33 @@
-from typing import Sequence, Tuple, Dict, Any
-from pandas import DataFrame
 from itertools import product, chain
 from pp5.codons import CODONS, AA_CODONS, CODON_TABLE, ACIDS
-from pp5.stats import categorical_histogram, relative_histogram, product_histogram, \
-    ratio, factor, histogram
+from typing import Any, Dict, Tuple, Sequence
+from itertools import chain, product
+
 import numpy as np
 import pandas as pd
-from scipy.stats import binom, norm
+from pandas import DataFrame
 
+from pp5.stats import (
+    ratio,
+    factor,
+    product_histogram,
+    relative_histogram,
+    categorical_histogram,
+    norm,
+    histogram
+)
+from pp5.codons import ACIDS, CODONS, AA_CODONS, CODON_TABLE
 
-CODON_DELIMITER = '-'
+CODON_DELIMITER = "-"
 
 
 def roll(a: np.array, shifts: Sequence[int]):
-    return np.stack(
-        tuple(np.roll(a, -n) for n in shifts),
-        axis=1
-    )
+    return np.stack(tuple(np.roll(a, -n) for n in shifts), axis=1)
 
 
 def codon_tuples(
-        data: DataFrame, sequence_length: int = 2, allowed_ss: Sequence[str] = ()):
+    data: DataFrame, sequence_length: int = 2, allowed_ss: Sequence[str] = ()
+):
     """
     :param data: Pandas dataframe with the following columns present for each residue location:
         unp_id      -- uniprot id

@@ -25,6 +25,7 @@ N_CODONS = len(CODONS)
 AA_CODONS = sorted(codon2aac(c) for c in CODONS)
 
 ACIDS = sorted(set([aac[0] for aac in AA_CODONS]))
+N_ACIDS = len(ACIDS)
 ACIDS_1TO3 = IUPACData.protein_letters_1to3
 ACIDS_1TO1AND3 = {aa: f"{aa} ({ACIDS_1TO3[aa]})" for aa in ACIDS}
 UNKNOWN_AA = "X"
@@ -39,4 +40,8 @@ SYN_CODON_IDX: Sequence[Tuple[int, int]] = tuple(
     (i, j)
     for i, j in it.product(range(N_CODONS), range(N_CODONS))
     if AA_CODONS[i][0] == AA_CODONS[j][0]
+)
+
+SYN_CODON_IDX_UNIQ: Sequence[Tuple[int, int]] = tuple(
+    set(tuple(sorted(ij)) for ij in SYN_CODON_IDX)
 )
