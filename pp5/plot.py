@@ -560,7 +560,6 @@ def bar_plot(data: DataFrame,
              labels: str,
              values: str,
              sortkey: str,
-             pvalue: str,
              hue: str,
              error_minus: str,
              error_plus: str,
@@ -621,16 +620,13 @@ def bar_plot(data: DataFrame,
     for n, h in enumerate(hues):
         keys = data.query(f'{hue}==@h')[labels].values
         vals = inv_fun(data.query(f'{hue}==@h')[values].values)
-        pvals = data.query(f'{hue}==@h')[pvalue].values
-        is_significant = (pvals < 0.05) | (pvals > 1.-0.05)
-        # plt.plot(vals, keys, 'o', linewidth=1, markersize=3, color=color_list[n])
-        for v, k, is_sig in zip(vals, keys, is_significant):
+        for v, k in zip(vals, keys):
             i = all_keys.index(k)
             plt.plot(
                 [v, v],
                 [i - w + eps + step * n + offset, i + w - eps + step * n + offset],
                 linewidth=2,
-                color=color_list[n] if is_sig else color_list[n]*0.25 + 0.75,
+                color=color_list[n],
                 label=h if i == 0 else '_nolegend_',
                 #alpha=1.0 if is_sig else 0.5,
             )
