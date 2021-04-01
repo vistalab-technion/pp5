@@ -7,7 +7,7 @@ import warnings
 from math import cos, sin
 from math import degrees as deg
 from math import radians as rad
-from typing import Dict, List, Type, Tuple, Union, Optional
+from typing import Any, Dict, List, Type, Tuple, Union, Optional
 from pathlib import Path
 from collections import OrderedDict
 
@@ -555,8 +555,11 @@ class PDBMetadata(object):
             return None
         return sorted(chains)[0]
 
+    def as_dict(self) -> Dict[str, Any]:
+        return {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
+
     def __repr__(self):
-        return str(self.__dict__)
+        return str(self.as_dict())
 
 
 class PDBUnitCell(object):
