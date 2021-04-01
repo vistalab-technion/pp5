@@ -2,7 +2,6 @@
 /.make/
 /data/
 out/
-tests/resources/**/tmp/
 /tmp.*
 /temp.*
 
