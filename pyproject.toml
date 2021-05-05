@@ -5,7 +5,32 @@ requires = ["setuptools>=42", "wheel", "setuptools_scm[toml]>=3.4"]
 write_to = "src/pp5/__version__.py"
 
 [tool.pytest.ini_options]
-addopts = "--cov pp5 --cov-report term-missing --verbose -n 4"
+addopts = [
+    # Show names of all tests and parametrizations
+    "--verbose",
+    # Calculate code coverage with coverage.py
+    "--cov",
+    # Show a detailed coverage report on the terminal output
+    "--cov-report=term-missing",
+    # Write coverage reports
+    "--cov-report=xml:tests/out/reports/cov.xml",
+    "--cov-report=html:tests/out/reports/cov.html",
+    # Write test results to xml
+    "--junitxml=tests/out/reports/junit.xml",
+    # Use multiprocessing for speed.
+    "--numprocesses=4",
+    # Benchmark-disable means that tests with benchmarks will be run as regular tests,
+    # without benchmarking (but with asserts or course).
+    # Benchmarking is disabled anyway when using multi-process runs, this just supresses
+    # a warning. Benchmarking can be enabled again via CLI with --enable-benchmark,
+    # e.g. when writing a new benchmark test. In CI we enable this.
+    "--benchmark-disable",
+    # Show durations of slowest tests.
+    "--durations=10",
+    # Force colored output even on CI
+    "--color=yes"
+]
+
 testpaths = [
     "tests",
 ]
@@ -49,3 +74,37 @@ exclude = '''
   | __foo__.py           # also separately exclude a specific file (example)
 )
 '''
+
+
+# Configure coverage.py (provides code coverage report through pytest)
+[tool.coverage.run]
+branch = true
+source = ["pp5"]
+disable_warnings = ["module-not-measured"]
+data_file = ".coverage/coverage"
+# omit = bad_file.py
+
+[tool.coverage.paths]
+# Paths considered equivalent.
+# The first entry must exist in the directory from which we run the tests.
+# This configures */site-packages/pp5 to be equivalent to src/pp5
+source = [
+    "src/",
+    "*/site-packages/",
+]
+
+[tool.coverage.report]
+# Regexes for lines to exclude from consideration
+exclude_lines = [
+    # Have to re-enable the standard pragma
+    "pragma: no cover",
+    # Don't complain about missing debug-only code:
+    "def __repr__",
+    "if self\\.debug",
+    # Don't complain if tests don't hit defensive assertion code:
+    "raise AssertionError",
+    "raise NotImplementedError",
+    # Don't complain if non-runnable code isn't run:
+    "if 0:",
+    "if __name__ == .__main__.:",
+]
