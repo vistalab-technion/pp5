@@ -4,6 +4,7 @@
 out/
 /tmp.*
 /temp.*
+__version__.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
