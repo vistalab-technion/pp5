@@ -10,7 +10,7 @@ dependencies:
   # then pymol fails to start.
   # To fix it, after installing this env, we need to do:
   # conda uninstall -y pymol-bundle && conda install -y --force-reinstall -c schrodinger pymol-bundle=2.4.1
-  - python=3.8.6
+  - python=3.8.*
   - pymol-bundle=2.4.1
   - biopython=1.78
   - ipython
@@ -39,8 +39,8 @@ dependencies:
   - clustalo
   - blast
   - dssp
+  - nglview
   - pip
-  - luigi
   - pip:
     - nbmerge
-  - nglview
+    - -e . # install this package
