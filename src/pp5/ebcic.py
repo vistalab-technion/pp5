@@ -29,24 +29,25 @@ THE SOFTWARE COMES WITH ABSOLUTELY NO WARRANTY.
 Copyright (C) 2020 National Institute of Advanced Industrial Science
 and Technology (AIST).
 """
-__version__ = '0.0.0'
+__version__ = "0.0.0"
 import os
 import sys
+import math
 import logging
+import warnings
+from decimal import ROUND_HALF_UP, Decimal
+from platform import python_version
+
 import numpy as np
 import scipy
-import math
 import matplotlib
 import matplotlib.cm as mplcm
 import matplotlib.colors as colors
-import warnings
 from numpy import log
-from scipy import optimize
 from scipy import stats as st
-from scipy.stats import binom
+from scipy import optimize
 from matplotlib import pyplot as plt
-from platform import python_version
-from decimal import Decimal, ROUND_HALF_UP
+from scipy.stats import binom
 
 print(f"python    : {python_version()}")  # os, math, warnings
 print(f"np        : {np.__version__}")
@@ -55,13 +56,12 @@ print(f"logging   : {logging.__version__}")
 print(f"scipy     : {scipy.version.full_version}")
 print(f"matplotlib: {matplotlib.__version__}")
 
-warnings.filterwarnings(
-        'ignore', 'The iteration is not making good progress')
+warnings.filterwarnings("ignore", "The iteration is not making good progress")
 
 # Log handler's loglevels
 # Choose from 'DEBUG', 'INFO', 'WARNING' 'ERROR', 'CRITICAL'.
-loglevel_stderr = 'INFO'  # for stderr (stdout in jupyter note)
-loglevel_file = 'DEBUG'   # for log file
+loglevel_stderr = "INFO"  # for stderr (stdout in jupyter note)
+loglevel_file = "DEBUG"  # for log file
 
 # logger.setLevel should be DEBUG to handle all the levels at handlers,
 # change the above handler's loglevels instead of this logger's.
@@ -71,19 +71,19 @@ logger.setLevel(logging.DEBUG)
 # Check loglevels
 numeric_level_stderr = getattr(logging, loglevel_stderr.upper(), None)
 if not isinstance(numeric_level_stderr, int):
-    raise ValueError('Invalid log level: %s' % loglevel_stderr)
+    raise ValueError("Invalid log level: %s" % loglevel_stderr)
 numeric_level_file = getattr(logging, loglevel_file.upper(), None)
 if not isinstance(numeric_level_file, int):
-    raise ValueError('Invalid log level: %s' % loglevel_file)
+    raise ValueError("Invalid log level: %s" % loglevel_file)
 
 # Create handlers with loglevels
 
 # For Jupyter, existing 'sh' and 'fh' shall be removed first,
 # or restart Jupyter kernel.
-if 'sh' in globals():
+if "sh" in globals():
     # print(sh)
     logger.removeHandler(sh)  # noqa: F821  # needed for Jupyter
-if 'fh' in globals():
+if "fh" in globals():
     # print(fh)
     logger.removeHandler(fh)  # noqa: F821  # needed for Jupyter
 
@@ -92,18 +92,19 @@ sh = logging.StreamHandler(sys.stdout)  # for Jupyter
 sh.setLevel(numeric_level_stderr)
 # sh.setLevel(logger.INFO)
 fh = logging.FileHandler(
-    mode='w',
+    mode="w",
     # filename=os.path.splitext(os.path.basename(__file__))[0] + ".log")
-    filename=os.path.splitext(os.path.basename('ebcic'))[0] + ".log")
+    filename=os.path.splitext(os.path.basename("ebcic"))[0] + ".log",
+)
 fh.setLevel(numeric_level_file)
 # fh.setLevel(logger.DEBUG)
 # Create formatter
 formatter = logging.Formatter(
     # WARNI CRITI
     # "%(asctime)s %(levelname)5s %(lineno)d %(funcName)s %(message)s")
-    "%(levelname)5.5s %(lineno)4d %(funcName)12.12s %(message)s")
-formatter_simple = logging.Formatter(
-    "%(levelname)5s: %(message)s")
+    "%(levelname)5.5s %(lineno)4d %(funcName)12.12s %(message)s"
+)
+formatter_simple = logging.Formatter("%(levelname)5s: %(message)s")
 # Cdd formatter to channels
 sh.setFormatter(formatter_simple)
 fh.setFormatter(formatter)
@@ -137,9 +138,9 @@ def round_h_up(x, sig_digits=-5):
     """
     # Input check
     if isinstance(x, float):
-        x_type = 'float'
+        x_type = "float"
     elif isinstance(x, int):
-        x_type = 'int'
+        x_type = "int"
     else:
         raise TypeError("'x' must be either float or integer.")
     if not isinstance(sig_digits, int):
@@ -150,13 +151,13 @@ def round_h_up(x, sig_digits=-5):
     if sig_digits == 0:
         dec_input = str(0)
     elif sig_digits < 0:
-        dec_input = str(10**(sig_digits))
+        dec_input = str(10 ** (sig_digits))
     else:  # sig_digits > 0
         dec_input = "1E" + str(sig_digits)
 
     # ROUND_HALF_UP
     tmp = Decimal(str(x)).quantize(Decimal(dec_input), rounding=ROUND_HALF_UP)
-    if x_type == 'float':
+    if x_type == "float":
         rounded = float(tmp)
     else:
         rounded = int(tmp)
@@ -164,19 +165,19 @@ def round_h_up(x, sig_digits=-5):
 
 
 def check_n(n):
-    if (n < 1):
+    if n < 1:
         logger.error(f"'1 <= n' must hold where n={n}!!")
         sys.exit(1)
 
 
 def check_k(k):
-    if (k < 0):
+    if k < 0:
         logger.error(f"'0 <= k' must hold where k={k}!!")
         sys.exit(1)
 
 
 def check_between_k_and_n(k, n):
-    if (n < k):
+    if n < k:
         logger.error(f"'k <= n' must hold where k={k} and n={n}!!")
         sys.exit(1)
 
@@ -193,8 +194,8 @@ def check_confi_perc(confi_perc):
     if (confi_perc <= 0) or (100 <= confi_perc):
         # raise ValueError("'0 < confi_perc={confi_perc} < 100' must hold")
         logger.error(
-            f"'0 < confi_perc < 100' must hold where "
-            f"confi_perc={confi_perc}!!")
+            f"'0 < confi_perc < 100' must hold where " f"confi_perc={confi_perc}!!"
+        )
         sys.exit(1)
 
 
@@ -212,17 +213,18 @@ class Params:
     """
 
     def __init__(
-            self,
-            k=None,
-            n=None,
-            alpha=None,
-            confi_perc=None,
-            # FIDO Biometrics Requirements v1.1
-            # https://fidoalliance.org/specs/biometric/requirements/
-            # Biometrics-Requirements-v1.1-fd-20190606.pdf
-            # uses 80% for one-sided (60% for two-sided) confidence.
-            # (confi_perc < warn_line_confi_perc) is warned
-            warn_line_confi_perc=60):  # for two-sided confidence
+        self,
+        k=None,
+        n=None,
+        alpha=None,
+        confi_perc=None,
+        # FIDO Biometrics Requirements v1.1
+        # https://fidoalliance.org/specs/biometric/requirements/
+        # Biometrics-Requirements-v1.1-fd-20190606.pdf
+        # uses 80% for one-sided (60% for two-sided) confidence.
+        # (confi_perc < warn_line_confi_perc) is warned
+        warn_line_confi_perc=60,
+    ):  # for two-sided confidence
         self.n = None
         self.k = None
         self.alpha = None
@@ -232,33 +234,32 @@ class Params:
         # 'warn_line' shall be set by warn_line_confi_perc even for alpha.
         check_confi_perc(warn_line_confi_perc)  # may exit
         self.warn_line_confi_perc = warn_line_confi_perc
-        self.warn_line_alpha = confi_perc_to_alpha_wo_check(
-            warn_line_confi_perc)
+        self.warn_line_alpha = confi_perc_to_alpha_wo_check(warn_line_confi_perc)
         self.num_of_warned = 0  # For test
         # Check and set parameters.
         # 'confi_perc' or 'alpha'
-        which_to_be_used = 'confi_perc'
+        which_to_be_used = "confi_perc"
         if (confi_perc is None) and (alpha is None):
             which_to_be_used = None
         elif (confi_perc is not None) and (alpha is not None):
-            logger.warning("giving either 'alpha' or "
-                           "'confi_perc' is enough.")
+            logger.warning("giving either 'alpha' or " "'confi_perc' is enough.")
             if alpha != confi_perc_to_alpha_wo_check(warn_line_confi_perc):
                 logger.error(
                     f"'alpha [{alpha}] != "
                     f"confi_perc_to_alpha_wo_check(confi_perc "
                     f"[confi_perc])"
-                    f"[{confi_perc_to_alpha_wo_check(confi_perc)}]'!!")
+                    f"[{confi_perc_to_alpha_wo_check(confi_perc)}]'!!"
+                )
                 sys.exit(1)
         else:  # (either confi_perc) or (alpha is not None)
             if alpha is not None:
-                which_to_be_used = 'alpha'
+                which_to_be_used = "alpha"
         # Check and set both 'confi_perc' and 'alpha'.
         if which_to_be_used is not None:
-            if which_to_be_used == 'confi_perc':
+            if which_to_be_used == "confi_perc":
                 self.set_confi_perc(confi_perc)  # alpha is also set
-            elif which_to_be_used == 'alpha':
-                self.set_alpha(alpha)       # confi_perc is also set
+            elif which_to_be_used == "alpha":
+                self.set_alpha(alpha)  # confi_perc is also set
             else:
                 logger.error(f"unknown which_to_be_used={which_to_be_used}!!")
         # Set k and n
@@ -269,13 +270,13 @@ class Params:
 
     def set_k(self, k):
         check_k(k)  # may exit
-        if (self.n is not None):
+        if self.n is not None:
             check_between_k_and_n(k, self.n)  # may exit
         self.k = k
 
     def set_n(self, n):
         check_n(n)  # may exit
-        if (self.k is not None):
+        if self.k is not None:
             check_between_k_and_n(self.k, n)  # may exit
         self.n = n
 
@@ -285,7 +286,8 @@ class Params:
             logger.warning(
                 f"'confi_perc < {self.warn_line_confi_perc}'"
                 " is unusual.\n"
-                f"Is 'confi_perc={confi_perc}' correct?")
+                f"Is 'confi_perc={confi_perc}' correct?"
+            )
             warned = 1
             self.num_of_warned += 1
         else:
@@ -303,10 +305,11 @@ class Params:
         tmp_za = alpha_to_za(tmp_alpha)
         warned = 0
         if (
-                (self.confi_perc != confi_perc)
-                or (self.alpha != tmp_alpha)
-                or (self.zah != tmp_zah)
-                or (self.za != tmp_za)):
+            (self.confi_perc != confi_perc)
+            or (self.alpha != tmp_alpha)
+            or (self.zah != tmp_zah)
+            or (self.za != tmp_za)
+        ):
             # Check
             warned = self.check_and_warn_confi_perc(confi_perc)
             # set
@@ -324,7 +327,8 @@ class Params:
             logger.warning(
                 f"'alpha > {self.warn_line_alpha}'"
                 " is unusual.\n"
-                f"Is 'alpha={alpha}' correct?")
+                f"Is 'alpha={alpha}' correct?"
+            )
             warned = 1
             self.num_of_warned += 1
         else:
@@ -347,10 +351,10 @@ class Params:
         # print(f"self.za != tmp_za : {self.za} != {tmp_za}")
         warned = 0
         if (
-                (self.alpha != alpha)
-                or (self.confi_perc != tmp_confi_perc)
-                or (self.zah != tmp_zah)
-                or (self.za != tmp_za)
+            (self.alpha != alpha)
+            or (self.confi_perc != tmp_confi_perc)
+            or (self.zah != tmp_zah)
+            or (self.za != tmp_za)
         ):
             # Check
             warned = self.check_and_warn_alpha(alpha)
@@ -427,7 +431,7 @@ def exact(params):
         # return sum([binom.pmf(i,n,result_lower) for i in range(k,n)]) - r
 
     if k == 0 or k == n:
-        tmp = (alpha)**(1 / n)
+        tmp = (alpha) ** (1 / n)
         if k == 0:
             lower_p = 0.0
             upper_p = 1 - tmp
@@ -460,10 +464,7 @@ def exact(params):
     return lower_p, upper_p
 
 
-def verify_interval_of_p(
-        params,
-        lower_p, upper_p,
-        sig_digits=-5, verbose=1):
+def verify_interval_of_p(params, lower_p, upper_p, sig_digits=-5, verbose=1):
     """Check the reliability of the given interval.
 
     This checks, for given parameteres, if integral of outside of
@@ -491,30 +492,30 @@ def verify_interval_of_p(
     ret = 0
     if sig_digits < MIN_SIG_DIGITS:
         sig_digits = MIN_SIG_DIGITS
-    acceptable_range = 10**sig_digits
+    acceptable_range = 10 ** sig_digits
     # Test that cumulative error = r
     if (k == 0) or (k == n):
-        if (k == 0):
+        if k == 0:
             if abs(binom.cdf(k, n, upper_p) - alpha) > acceptable_range:
                 ret = 1
             if (verbose == 1 and ret == 1) or verbose >= 2:
                 print(
                     f"Upper : check if abs(alpha ({alpha}) - "
                     f"cumulative error ({binom.cdf(k, n, upper_p)})) <= "
-                    f"{acceptable_range}")
+                    f"{acceptable_range}"
+                )
                 # print(f"Upper : check if {round_h_up(alpha, sig_digits)} == "
                 #      f"{round_h_up(binom.cdf(k, n, upper_p), sig_digits)}")
         else:
             # k == n
-            if abs(
-                    binom.cdf(n - k, n, 1 - lower_p) -
-                    alpha) > acceptable_range:
+            if abs(binom.cdf(n - k, n, 1 - lower_p) - alpha) > acceptable_range:
                 ret = 1
             if (verbose == 1 and ret == 1) or verbose >= 2:
                 print(
                     f"Lower : check if abs(alpha ({alpha}) - "
                     f"cumulative error ({binom.cdf(n - k, n, 1- lower_p)})) "
-                    f"<= {acceptable_range}")
+                    f"<= {acceptable_range}"
+                )
                 # print(f"Lower : check if {round_h_up(alpha, sig_digits)} == "
                 # f"{round_h_up(binom.cdf(n - k, n, 1 - lower_p),
                 # sig_digits)}")
@@ -529,7 +530,8 @@ def verify_interval_of_p(
             print(
                 f"Upper : check if abs(alpha/2 ({r}) - "
                 f"cumulative error ({binom.cdf(k, n, upper_p)})) <= "
-                f"{acceptable_range}")
+                f"{acceptable_range}"
+            )
             # print(f"Upper : check if {round_h_up(r, sig_digits)} == "
             #      f"{round_h_up(binom.cdf(k, n, upper_p), sig_digits)}")
         tmp_ret = 0
@@ -540,7 +542,8 @@ def verify_interval_of_p(
             print(
                 f"Lower : check if abs(alpha/2 ({r}) - "
                 f"cumulative error ({binom.cdf(n - k, n, 1 - lower_p)})) <= "
-                f"{acceptable_range}")
+                f"{acceptable_range}"
+            )
             # print(f"Lower : check if {round_h_up(r, sig_digits)} == "
             # f"{round_h_up(binom.cdf(n - k, n, 1 - lower_p), sig_digits)}")
 
@@ -620,9 +623,10 @@ def alpha_to_zah(alpha, sig_digits=-5):
     USE_NORMAL_DIST = True
     if USE_NORMAL_DIST:  # Python > 3.8
         from statistics import NormalDist
-        tmp_zah = NormalDist(mu=0, sigma=1).inv_cdf(1 - alpha / 2.)
+
+        tmp_zah = NormalDist(mu=0, sigma=1).inv_cdf(1 - alpha / 2.0)
     else:
-        tmp_zah = st.norm.ppf(1 - alpha / 2.)
+        tmp_zah = st.norm.ppf(1 - alpha / 2.0)
     return round_h_up(tmp_zah, sig_digits)
 
 
@@ -664,6 +668,7 @@ def zah_to_alpha(zah, sig_digits=-5):
     USE_NORMAL_DIST = True
     if USE_NORMAL_DIST:
         from statistics import NormalDist
+
         cdf_zah = NormalDist(mu=0, sigma=1).cdf(zah)
     else:
         cdf_zah = st.norm.cdf(zah)
@@ -718,7 +723,7 @@ def normal_approx(params):
     p = k / n
     # sigma = np.sqrt(p * (1 - p)/n)
     if n != 1:
-        sigma = np.sqrt(n * p * (1 - p))/(n - 1)
+        sigma = np.sqrt(n * p * (1 - p)) / (n - 1)
     else:
         sigma = np.sqrt(p * (1 - p))
     half_width = zah * sigma
@@ -750,9 +755,9 @@ def wilson_score(params):
     k = params.k
     z = params.zah
     p = k / n
-    mu = 2 * k + z**2
-    half_width = z * np.sqrt(z**2 + 4 * k * (1 - p))
-    denomi = 2 * (n + z**2)
+    mu = 2 * k + z ** 2
+    half_width = z * np.sqrt(z ** 2 + 4 * k * (1 - p))
+    denomi = 2 * (n + z ** 2)
     lower_p = max(0, (mu - half_width) / denomi)
     upper_p = min(1, (mu + half_width) / denomi)
     return lower_p, upper_p
@@ -783,9 +788,9 @@ def wilson_score_cc(params):
     k = params.k
     z = params.zah
     p = k / n
-    mu = 2 * k + z**2
-    half_width = 1 + z * np.sqrt(z**2 - 1 / n + 4 * k * (1 - p) + (4 * p - 2))
-    denomi = 2 * (n + z**2)
+    mu = 2 * k + z ** 2
+    half_width = 1 + z * np.sqrt(z ** 2 - 1 / n + 4 * k * (1 - p) + (4 * p - 2))
+    denomi = 2 * (n + z ** 2)
     lower_p = max(0, (mu - half_width) / denomi)
     upper_p = min(1, (mu + half_width) / denomi)
     return lower_p, upper_p
@@ -811,35 +816,33 @@ def print_interval(params):
     print("===== Parameters =====")
     print("n (num of trials)  :", params.n)
     print("k (num of failures):", params.k)
-    print("k/n (observed p')  :",
-          {round_h_up(params.k/params.n, sig_digits)})
+    print("k/n (observed p')  :", {round_h_up(params.k / params.n, sig_digits)})
 
     # Instantiation of parameters where alpha is set as well.
     lower_p, upper_p = exact(params)
 
-    print("\n===== Exact interval of p with",
-          params.confi_perc, "[%] two-sided (or",
-          100 - (100 - params.confi_perc)/2,
-          "[%] one-sided) confidence  =====")
+    print(
+        "\n===== Exact interval of p with",
+        params.confi_perc,
+        "[%] two-sided (or",
+        100 - (100 - params.confi_perc) / 2,
+        "[%] one-sided) confidence  =====",
+    )
     print(f"Upper : {round_h_up(upper_p, sig_digits)}")
     print(f"Lower : {round_h_up(lower_p, sig_digits)}")
     print(f"Width : {round_h_up(upper_p - lower_p, sig_digits)}")
-    '''
+    """
     # NOTE: if the numbers are too small, use below.
     print(f"Upper : {result_upper[0]:.6g}")
     print(f"Lower : {result_lower[0]:.6g}")
     print(f"Width : {result_upper[0] - result_lower[0]:.6g}")
     # NOTE: be careful using round(), which rounds 0.*5 to the nearest even,
         say, 1.2345 to 1.234 (not 1.235).
-    '''
+    """
     print("\n===== Verification =====")
-    vmes = ("If the following does not hold, "
-            "the results might not be reliable.\n")
+    vmes = "If the following does not hold, " "the results might not be reliable.\n"
     print(vmes)
-    ret = verify_interval_of_p(
-        params,
-        lower_p, upper_p,
-        sig_digits, verbose=2)
+    ret = verify_interval_of_p(params, lower_p, upper_p, sig_digits, verbose=2)
     if ret != 0:
         print("\nNG: obtained interval is not reliable, try other parameters.")
     else:
@@ -872,18 +875,18 @@ class GraProps:
     """
 
     def __init__(
-            self,
-            # Defaults
-            k_start=0,
-            k_end=2,
-            k_step=1,
-            log_n_end=6,
-            confi_perc_list=[99],
-            line_list=['with_exact'],
-            savefig=False,
-            fig_file_name='intervals.png',
-            leg_pos='auto'
-            ):
+        self,
+        # Defaults
+        k_start=0,
+        k_end=2,
+        k_step=1,
+        log_n_end=6,
+        confi_perc_list=[99],
+        line_list=["with_exact"],
+        savefig=False,
+        fig_file_name="intervals.png",
+        leg_pos="auto",
+    ):
         self.savefig = savefig
         self.fig_file_name = fig_file_name
         self.leg_pos = leg_pos
@@ -900,12 +903,13 @@ class GraProps:
     def set_k(self, k_start, k_end, k_step):
         # Input check
         if (k_start < 0) or (k_end < k_start):
-            logger.error(f"'0 <= k_start <= k_end' must hold "
-                         f"where k_start={k_start} and k_end={k_end}!!")
+            logger.error(
+                f"'0 <= k_start <= k_end' must hold "
+                f"where k_start={k_start} and k_end={k_end}!!"
+            )
             sys.exit(1)
         if k_step <= 0:
-            logger.error(f"'k_step > 0' must hold "
-                         f"where k_step={k_step}!!")
+            logger.error(f"'k_step > 0' must hold " f"where k_step={k_step}!!")
             sys.exit(1)
         self.k_start = k_start
         self.k_end = k_end
@@ -914,20 +918,23 @@ class GraProps:
 
     def set_n(self, log_n_end):
         # Input check
-        if (log_n_end < 1):
-            logger.error(f"'1 <= log_n_end' must hold "
-                         f"where log_n_end={log_n_end}!!")
+        if log_n_end < 1:
+            logger.error(
+                f"'1 <= log_n_end' must hold " f"where log_n_end={log_n_end}!!"
+            )
             sys.exit(1)
         # n <= 3 * k_end * 10^log_n_end <= 10^7 where 3 is floor(sqrt(10)).
         RELIABLE_LOG_N_MAX = 7
-        if (10**RELIABLE_LOG_N_MAX < 3 * self.k_end * 10**log_n_end):
+        if 10 ** RELIABLE_LOG_N_MAX < 3 * self.k_end * 10 ** log_n_end:
             log_n_end_org = log_n_end
             log_n_end = math.floor(
-                np.log10((10**RELIABLE_LOG_N_MAX)/(3 * self.k_end)))
+                np.log10((10 ** RELIABLE_LOG_N_MAX) / (3 * self.k_end))
+            )
             logger.warning(
                 f"log_n_end={log_n_end_org} was so large and changed to"
-                f" {log_n_end}.")
-            '''
+                f" {log_n_end}."
+            )
+            """
             logger.error(
                 f"log_n_end={log_n_end} is too large!!"
                 " '3 k_end * 10^log_n_end <= "
@@ -936,7 +943,7 @@ class GraProps:
                 "and 3 k_end * 10^log_n_end="
                 f"{3 * self.k_end * 10**log_n_end}!!")
             sys.exit(1)
-            '''
+            """
         self.log_n_end = log_n_end
 
 
@@ -987,11 +994,11 @@ def interval_graph(gra_props):
         In jupyter, drag and drop the displayed figure to a folder,
         open it with Paint app and so on and then overwrite the figure.
     """
-    '''
+    """
     mul = 2.2
     plt.rcParams['figure.figsize'] = 4 * mul, 3 * mul
-    '''
-    plt.rcParams['figure.dpi'] = 150
+    """
+    plt.rcParams["figure.dpi"] = 150
     # Customize of graph
     k_start = gra_props.k_start
     k_end = gra_props.k_end
@@ -1004,10 +1011,11 @@ def interval_graph(gra_props):
 
     title = (
         # f'Interval with {confi_perc}% confidence '
-        'Interval of $p$ '
-        'after $k$ errors are observed among $n$ trials')
-    x_label = 'Number of Trials ($n$)'
-    y_label = 'Error Rate ($p$)'
+        "Interval of $p$ "
+        "after $k$ errors are observed among $n$ trials"
+    )
+    x_label = "Number of Trials ($n$)"
+    y_label = "Error Rate ($p$)"
     trans_alpha = 0.6  # Transparency
 
     # Set colorlist
@@ -1015,22 +1023,22 @@ def interval_graph(gra_props):
     line_types_per_k = 1  # Exact interval
     if k_diff == 0:
         if k_start == 0:
-            if 'with_rule_of_la' in line_list:
+            if "with_rule_of_la" in line_list:
                 line_types_per_k += 1
-            if 'with_wilson_cc' in line_list:
+            if "with_wilson_cc" in line_list:
                 line_types_per_k += 1
         else:
-            if 'with_normal' in line_list:
+            if "with_normal" in line_list:
                 line_types_per_k += 1
-            if 'with_wilson' in line_list:
+            if "with_wilson" in line_list:
                 line_types_per_k += 1
-            if 'with_wilson_cc' in line_list:
+            if "with_wilson_cc" in line_list:
                 line_types_per_k += 1
 
     # Max num of colors
     col_max_per_k = line_types_per_k * len(gra_props.confi_perc_list)
     col_max = (k_end - k_start + 1) * col_max_per_k
-    cm = plt.get_cmap('brg')
+    cm = plt.get_cmap("brg")
     # yellow lines are haed to see.
     # cm = plt.get_cmap('gist_rainbow')
     # cm = plt.get_cmap('rainbow')
@@ -1038,72 +1046,79 @@ def interval_graph(gra_props):
     scalarMap = mplcm.ScalarMappable(norm=cNorm, cmap=cm)
     colorlist = [scalarMap.to_rgba(i) for i in range(col_max)]
 
-    n_list_base = (
-        sorted([10**i for i in range(0, log_n_end + 1, 1)]
-               + [3 * 10**i for i in range(0, log_n_end + 1, 1)]))
+    n_list_base = sorted(
+        [10 ** i for i in range(0, log_n_end + 1, 1)]
+        + [3 * 10 ** i for i in range(0, log_n_end + 1, 1)]
+    )
     # print(n_list_base)
 
     params = Params()
     leg = 0  # Num of legend
-    if (k_start == 0):
+    if k_start == 0:
         k = 0  # lower_p = 0
         params.set_k(k)
         n_list = n_list_base
         col_offset = 0
         for confi_perc in gra_props.confi_perc_list:
             params.set_confi_perc(confi_perc)
-            if 'with_exact' in line_list:
+            if "with_exact" in line_list:
                 k0_upper = [exact(params)[1] for params.n in n_list]
                 plt.plot(
-                    n_list, k0_upper, color=colorlist[k + col_offset],
-                    alpha=trans_alpha, marker=3,
+                    n_list,
+                    k0_upper,
+                    color=colorlist[k + col_offset],
+                    alpha=trans_alpha,
+                    marker=3,
                     # linestyle='dashdot',
-                    linestyle='solid',
-                    label=f"$k$={k} {confi_perc}% exact upper")
+                    linestyle="solid",
+                    label=f"$k$={k} {confi_perc}% exact upper",
+                )
                 leg += 1
                 if k_diff == 0:
                     col_offset += 1
             # Approximated upper bound
             # col_offset = 0
-            if 'with_rule_of_la' in line_list:
-                k0_rule_of_ln_a = [rule_of_ln_alpha(
-                    params)[1] for params.n in n_list]
-                plt.plot(n_list,
-                         k0_rule_of_ln_a,
-                         color=colorlist[k + col_offset],
-                         alpha=trans_alpha,
-                         marker=3,
-                         # linestyle='dotted',
-                         linestyle='dashdot',
-                         label=f"$k$={k} {confi_perc}% rule of -ln(a)")
+            if "with_rule_of_la" in line_list:
+                k0_rule_of_ln_a = [rule_of_ln_alpha(params)[1] for params.n in n_list]
+                plt.plot(
+                    n_list,
+                    k0_rule_of_ln_a,
+                    color=colorlist[k + col_offset],
+                    alpha=trans_alpha,
+                    marker=3,
+                    # linestyle='dotted',
+                    linestyle="dashdot",
+                    label=f"$k$={k} {confi_perc}% rule of -ln(a)",
+                )
                 leg += 1
                 if k_diff == 0:
                     col_offset += 1
-            if 'with_wilson_cc' in line_list:
+            if "with_wilson_cc" in line_list:
                 # Wilson with continuity correction
-                tmp = np.array(
-                    [wilson_score_cc(params) for params.n in n_list])
+                tmp = np.array([wilson_score_cc(params) for params.n in n_list])
                 wilson_cc_lower = tmp[:, 0]
                 wilson_cc_upper = tmp[:, 1]
-                plt.plot(n_list,
-                         wilson_cc_upper,
-                         color=colorlist[
-                             (k - k_start) * col_max_per_k + col_offset],
-                         alpha=trans_alpha,
-                         marker=3,
-                         # linestyle='dotted',
-                         linestyle='dashdot',
-                         label=f"$k$={k} {confi_perc}% Wilson cc upper")
+                plt.plot(
+                    n_list,
+                    wilson_cc_upper,
+                    color=colorlist[(k - k_start) * col_max_per_k + col_offset],
+                    alpha=trans_alpha,
+                    marker=3,
+                    # linestyle='dotted',
+                    linestyle="dashdot",
+                    label=f"$k$={k} {confi_perc}% Wilson cc upper",
+                )
                 leg += 1
-                plt.plot(n_list,
-                         wilson_cc_lower,
-                         color=colorlist[
-                             (k - k_start) * col_max_per_k + col_offset],
-                         alpha=trans_alpha,
-                         marker=2,
-                         # linestyle='dotted',
-                         linestyle='dashdot',
-                         label=f"$k$={k} {confi_perc}% Wilson cc lower")
+                plt.plot(
+                    n_list,
+                    wilson_cc_lower,
+                    color=colorlist[(k - k_start) * col_max_per_k + col_offset],
+                    alpha=trans_alpha,
+                    marker=2,
+                    # linestyle='dotted',
+                    linestyle="dashdot",
+                    label=f"$k$={k} {confi_perc}% Wilson cc lower",
+                )
                 leg += 1
                 if k_diff == 0:
                     col_offset += 1
@@ -1111,15 +1126,17 @@ def interval_graph(gra_props):
     for k in range(max(1, k_start), k_end + 1, k_step):
         n_list = np.array(n_list_base) * k
         # print(n_list)
-        if 'with_line_kn' in line_list:
+        if "with_line_kn" in line_list:
             # Line of k/n
             k_expect = [k / n for n in n_list]
-            plt.plot(n_list,
-                     k_expect,
-                     color=colorlist[(k - k_start) * col_max_per_k],
-                     alpha=trans_alpha,
-                     linestyle='dashed',
-                     label=f"$k$={k} k/n={k}/n")
+            plt.plot(
+                n_list,
+                k_expect,
+                color=colorlist[(k - k_start) * col_max_per_k],
+                alpha=trans_alpha,
+                linestyle="dashed",
+                label=f"$k$={k} k/n={k}/n",
+            )
             leg += 1
 
         # Exact lower and upper
@@ -1127,110 +1144,121 @@ def interval_graph(gra_props):
         col_offset = 0
         for confi_perc in gra_props.confi_perc_list:
             params.set_confi_perc(confi_perc)
-            if 'with_exact' in line_list:
+            if "with_exact" in line_list:
                 tmp = np.array([exact(params) for params.n in n_list])
                 k_lower = tmp[:, 0]
                 k_upper = tmp[:, 1]
-                plt.plot(n_list,
-                         k_upper,
-                         color=colorlist[
-                             (k - k_start) * col_max_per_k + col_offset],
-                         alpha=trans_alpha,
-                         marker=3,
-                         # linestyle='dashdot',
-                         linestyle='solid',
-                         label=f"$k$={k} {confi_perc}% exact upper")
+                plt.plot(
+                    n_list,
+                    k_upper,
+                    color=colorlist[(k - k_start) * col_max_per_k + col_offset],
+                    alpha=trans_alpha,
+                    marker=3,
+                    # linestyle='dashdot',
+                    linestyle="solid",
+                    label=f"$k$={k} {confi_perc}% exact upper",
+                )
                 leg += 1
-                plt.plot(n_list,
-                         k_lower,
-                         color=colorlist[
-                             (k - k_start) * col_max_per_k + col_offset],
-                         alpha=trans_alpha,
-                         marker=2,
-                         # linestyle='dashdot',
-                         linestyle='solid',
-                         label=f"$k$={k} {confi_perc}% exact lower")
+                plt.plot(
+                    n_list,
+                    k_lower,
+                    color=colorlist[(k - k_start) * col_max_per_k + col_offset],
+                    alpha=trans_alpha,
+                    marker=2,
+                    # linestyle='dashdot',
+                    linestyle="solid",
+                    label=f"$k$={k} {confi_perc}% exact lower",
+                )
                 leg += 1
                 if k_diff == 0:
                     col_offset += 1
 
             # Approximated Intervals
             # col_offset = 0
-            if 'with_normal' in line_list:
+            if "with_normal" in line_list:
                 # Normal
                 tmp = np.array([normal_approx(params) for params.n in n_list])
                 norm_lower = tmp[:, 0]
                 norm_upper = tmp[:, 1]
                 plt.plot(
-                    n_list, norm_upper, color=colorlist[
-                        (k - k_start) * col_max_per_k + col_offset],
-                    alpha=trans_alpha, marker=3,
+                    n_list,
+                    norm_upper,
+                    color=colorlist[(k - k_start) * col_max_per_k + col_offset],
+                    alpha=trans_alpha,
+                    marker=3,
                     # linestyle='dotted',
-                    linestyle='dashdot',
-                    label=f"$k$={k} {confi_perc}% normal upper")
+                    linestyle="dashdot",
+                    label=f"$k$={k} {confi_perc}% normal upper",
+                )
                 leg += 1
                 plt.plot(
-                    n_list, norm_lower, color=colorlist[
-                        (k - k_start) * col_max_per_k + col_offset],
-                    alpha=trans_alpha, marker=2,
+                    n_list,
+                    norm_lower,
+                    color=colorlist[(k - k_start) * col_max_per_k + col_offset],
+                    alpha=trans_alpha,
+                    marker=2,
                     # linestyle='dotted',
-                    linestyle='dashdot',
-                    label=f"$k$={k} {confi_perc}% normal lower")
+                    linestyle="dashdot",
+                    label=f"$k$={k} {confi_perc}% normal lower",
+                )
                 leg += 1
                 if k_diff == 0:
                     col_offset += 1
-            if 'with_wilson' in line_list:
+            if "with_wilson" in line_list:
                 # Wilson
                 tmp = np.array([wilson_score(params) for params.n in n_list])
                 wilson_lower = tmp[:, 0]
                 wilson_upper = tmp[:, 1]
-                plt.plot(n_list,
-                         wilson_upper,
-                         color=colorlist[
-                             (k - k_start) * col_max_per_k + col_offset],
-                         alpha=trans_alpha,
-                         marker=3,
-                         # linestyle='dotted',
-                         linestyle='dashdot',
-                         label=f"$k$={k} {confi_perc}% Wilson upper")
+                plt.plot(
+                    n_list,
+                    wilson_upper,
+                    color=colorlist[(k - k_start) * col_max_per_k + col_offset],
+                    alpha=trans_alpha,
+                    marker=3,
+                    # linestyle='dotted',
+                    linestyle="dashdot",
+                    label=f"$k$={k} {confi_perc}% Wilson upper",
+                )
                 leg += 1
-                plt.plot(n_list,
-                         wilson_lower,
-                         color=colorlist[
-                             (k - k_start) * col_max_per_k + col_offset],
-                         alpha=trans_alpha,
-                         marker=2,
-                         # linestyle='dotted',
-                         linestyle='dashdot',
-                         label=f"$k$={k} {confi_perc}% Wilson lower")
+                plt.plot(
+                    n_list,
+                    wilson_lower,
+                    color=colorlist[(k - k_start) * col_max_per_k + col_offset],
+                    alpha=trans_alpha,
+                    marker=2,
+                    # linestyle='dotted',
+                    linestyle="dashdot",
+                    label=f"$k$={k} {confi_perc}% Wilson lower",
+                )
                 leg += 1
                 if k_diff == 0:
                     col_offset += 1
-            if 'with_wilson_cc' in line_list:
+            if "with_wilson_cc" in line_list:
                 # Wilson with continuity correction
-                tmp = np.array(
-                    [wilson_score_cc(params) for params.n in n_list])
+                tmp = np.array([wilson_score_cc(params) for params.n in n_list])
                 wilson_cc_lower = tmp[:, 0]
                 wilson_cc_upper = tmp[:, 1]
-                plt.plot(n_list,
-                         wilson_cc_upper,
-                         color=colorlist[
-                             (k - k_start) * col_max_per_k + col_offset],
-                         alpha=trans_alpha,
-                         marker=3,
-                         # linestyle='dotted',
-                         linestyle='dashdot',
-                         label=f"$k$={k} {confi_perc}% Wilson cc upper")
+                plt.plot(
+                    n_list,
+                    wilson_cc_upper,
+                    color=colorlist[(k - k_start) * col_max_per_k + col_offset],
+                    alpha=trans_alpha,
+                    marker=3,
+                    # linestyle='dotted',
+                    linestyle="dashdot",
+                    label=f"$k$={k} {confi_perc}% Wilson cc upper",
+                )
                 leg += 1
-                plt.plot(n_list,
-                         wilson_cc_lower,
-                         color=colorlist[
-                             (k - k_start) * col_max_per_k + col_offset],
-                         alpha=trans_alpha,
-                         marker=2,
-                         # linestyle='dotted',
-                         linestyle='dashdot',
-                         label=f"$k$={k} {confi_perc}% Wilson cc lower")
+                plt.plot(
+                    n_list,
+                    wilson_cc_lower,
+                    color=colorlist[(k - k_start) * col_max_per_k + col_offset],
+                    alpha=trans_alpha,
+                    marker=2,
+                    # linestyle='dotted',
+                    linestyle="dashdot",
+                    label=f"$k$={k} {confi_perc}% Wilson cc lower",
+                )
                 leg += 1
                 if k_diff == 0:
                     col_offset += 1
@@ -1244,29 +1272,32 @@ def interval_graph(gra_props):
 
     leg_fontsize = 8
     # print(leg_pos, (leg_pos == 'auto'))
-    if (leg <= 5 and (leg_pos == 'auto')) or (leg_pos == 'upper_right'):
+    if (leg <= 5 and (leg_pos == "auto")) or (leg_pos == "upper_right"):
         plt.legend(
             bbox_to_anchor=(1, 1),
-            loc='upper right',
+            loc="upper right",
             borderaxespad=1,
-            fontsize=leg_fontsize)
-    elif (leg <= 6 and (leg_pos == 'auto')) or (leg_pos == 'upper_right_nm'):
+            fontsize=leg_fontsize,
+        )
+    elif (leg <= 6 and (leg_pos == "auto")) or (leg_pos == "upper_right_nm"):
         plt.legend(
             bbox_to_anchor=(1, 1),
-            loc='upper right',
+            loc="upper right",
             borderaxespad=0,
-            fontsize=leg_fontsize)
-    elif (leg_pos == 'auto') or (leg_pos == 'out_right'):
+            fontsize=leg_fontsize,
+        )
+    elif (leg_pos == "auto") or (leg_pos == "out_right"):
         plt.legend(
             # bbox_to_anchor=(1.05, 1),
             bbox_to_anchor=(1.01, 1),
-            loc='upper left',
+            loc="upper left",
             borderaxespad=0,
-            fontsize=leg_fontsize)
-    plt.grid(which='major', color='black', linestyle='-')
-    plt.grid(which='minor', color='black', linestyle='dotted')
-    plt.yscale('log')
-    plt.xscale('log')
+            fontsize=leg_fontsize,
+        )
+    plt.grid(which="major", color="black", linestyle="-")
+    plt.grid(which="minor", color="black", linestyle="dotted")
+    plt.yscale("log")
+    plt.xscale("log")
     plt.show()
 
     if gra_props.savefig:
@@ -1287,7 +1318,7 @@ def compare_dist(params):
     """
     # mul = 1
     # plt.rcParams["figure.figsize"] = 4 * mul, 3 * mul
-    plt.rcParams['figure.dpi'] = 150
+    plt.rcParams["figure.dpi"] = 150
     # plt.rcParams['figure.dpi'] = 100
 
     # Settings
@@ -1298,10 +1329,10 @@ def compare_dist(params):
     x_max = max(8, 3 * k)
 
     title = (
-        f'Probability distribution of $k$ errors in {n} trials'
-        f' for $p={k/n:.3g}$')
-    x_label = 'Number of Errors ($k$)'
-    y_label = 'Probability'
+        f"Probability distribution of $k$ errors in {n} trials" f" for $p={k/n:.3g}$"
+    )
+    x_label = "Number of Errors ($k$)"
+    y_label = "Probability"
 
     # Distribution
     x = range(0, x_max + 1, 1)
@@ -1322,13 +1353,9 @@ def compare_dist(params):
     plt.xlabel(x_label, fontsize=12)
     plt.ylabel(y_label, fontsize=12)
 
-    plt.legend(
-        bbox_to_anchor=(1, 1),
-        loc='upper right',
-        borderaxespad=1,
-        fontsize=10)
+    plt.legend(bbox_to_anchor=(1, 1), loc="upper right", borderaxespad=1, fontsize=10)
 
-    plt.grid(which='major', color='black', linestyle='dotted')
+    plt.grid(which="major", color="black", linestyle="dotted")
     # plt.grid(which='minor', color='black', linestyle='dotted')
 
 
@@ -1355,8 +1382,7 @@ def test_for_z():
         if zah_to_alpha(zah) != alpha:
             logger.error(f"{zah_to_alpha(zah)} = {alpha}")
             ret = 1
-        print(
-            f"Check if alpha_to_zah({alpha}) = {alpha_to_zah(alpha)} = {zah}")
+        print(f"Check if alpha_to_zah({alpha}) = {alpha_to_zah(alpha)} = {zah}")
         if alpha_to_zah(alpha) != zah:
             logger.error(f"{alpha_to_zah(alpha)} = {zah}")
             ret = 1
@@ -1418,8 +1444,10 @@ def test_warning_once():
     msg_wo = "\n= Should be warned once. ="
     msg_nw = "\n= Should not be warned. ="
 
-    print("\n== params.alpha_to_confi_perc(alpha) -> "
-          "params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check(alpha)) ==")
+    print(
+        "\n== params.alpha_to_confi_perc(alpha) -> "
+        "params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check(alpha)) =="
+    )
     alpha = 0.5
     params.num_of_warned = 0
     if alpha != params.alpha:
@@ -1428,29 +1456,29 @@ def test_warning_once():
     else:
         print(msg_nw)
         right_num_of_warned = 0
-    print(f"alpha={alpha}, "
-          f"checked one={params.alpha}.")
-    print(f"params.alpha_to_confi_perc({alpha}) = "
-          f"{params.alpha_to_confi_perc(alpha)}")
-    print(f"params.alpha_to_confi_perc({alpha}) = "
-          f"{params.alpha_to_confi_perc(alpha)}")
-    tmp = params.confi_perc_to_alpha(
-        alpha_to_confi_perc_wo_check(alpha))
+    print(f"alpha={alpha}, " f"checked one={params.alpha}.")
     print(
-        "params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check"
-        "({alpha})) = {tmp}")
-    tmp = params.confi_perc_to_alpha(
-        alpha_to_confi_perc_wo_check(alpha))
+        f"params.alpha_to_confi_perc({alpha}) = " f"{params.alpha_to_confi_perc(alpha)}"
+    )
     print(
-        "params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check"
-        f"({alpha})) = {tmp}")
+        f"params.alpha_to_confi_perc({alpha}) = " f"{params.alpha_to_confi_perc(alpha)}"
+    )
+    tmp = params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check(alpha))
+    print(
+        "params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check" "({alpha})) = {tmp}"
+    )
+    tmp = params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check(alpha))
+    print(
+        "params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check" f"({alpha})) = {tmp}"
+    )
     if params.num_of_warned != right_num_of_warned:
         ret = 1
         logger.error("duplicate warnings!!")
 
     print(
         "\n== params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check(alpha))"
-        " -> params.alpha_to_confi_perc(alpha) ==")
+        " -> params.alpha_to_confi_perc(alpha) =="
+    )
     alpha = 0.6
     params.num_of_warned = 0
     if alpha != params.alpha:
@@ -1459,31 +1487,32 @@ def test_warning_once():
     else:
         print(msg_nw)
         right_num_of_warned = 0
-    print(f"alpha={alpha}, "
-          f"checked one={params.alpha}.")
-    tmp = params.confi_perc_to_alpha(
-        alpha_to_confi_perc_wo_check(alpha))
+    print(f"alpha={alpha}, " f"checked one={params.alpha}.")
+    tmp = params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check(alpha))
     print(
-        "params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check"
-        f"({alpha})) = {tmp}")
-    tmp = params.confi_perc_to_alpha(
-        alpha_to_confi_perc_wo_check(alpha))
+        "params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check" f"({alpha})) = {tmp}"
+    )
+    tmp = params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check(alpha))
     print(
-        "params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check"
-        f"({alpha})) = {tmp}")
-    print(f"params.alpha_to_confi_perc({alpha}) = "
-          f"{params.alpha_to_confi_perc(alpha)}")
-    print(f"params.alpha_to_confi_perc({alpha}) = "
-          f"{params.alpha_to_confi_perc(alpha)}")
+        "params.confi_perc_to_alpha(alpha_to_confi_perc_wo_check" f"({alpha})) = {tmp}"
+    )
+    print(
+        f"params.alpha_to_confi_perc({alpha}) = " f"{params.alpha_to_confi_perc(alpha)}"
+    )
+    print(
+        f"params.alpha_to_confi_perc({alpha}) = " f"{params.alpha_to_confi_perc(alpha)}"
+    )
     if params.num_of_warned != right_num_of_warned:
         ret = 1
         logger.error("duplicate warnings!!")
 
     print("\n=== Input check of confi_perc ===")
 
-    print("\n== params.confi_perc_to_alpha(confi_perc) -> "
-          "params.alpha_to_confi_perc("
-          "confi_perc_to_alpha_wo_check(confi_perc)) ==")
+    print(
+        "\n== params.confi_perc_to_alpha(confi_perc) -> "
+        "params.alpha_to_confi_perc("
+        "confi_perc_to_alpha_wo_check(confi_perc)) =="
+    )
     confi_perc = 55
     params.num_of_warned = 0
     if confi_perc != params.confi_perc:
@@ -1492,51 +1521,59 @@ def test_warning_once():
     else:
         print(msg_nw)
         right_num_of_warned = 0
-    print(f"confi_perc={confi_perc}, "
-          f"checked one={params.confi_perc}.")
-    print(f"params.confi_perc_to_alpha({confi_perc}) = "
-          f"{params.confi_perc_to_alpha(confi_perc)}")
-    print(f"params.confi_perc_to_alpha({confi_perc}) = "
-          f"{params.confi_perc_to_alpha(confi_perc)}")
-    tmp = params.alpha_to_confi_perc(
-        confi_perc_to_alpha_wo_check(confi_perc))
+    print(f"confi_perc={confi_perc}, " f"checked one={params.confi_perc}.")
+    print(
+        f"params.confi_perc_to_alpha({confi_perc}) = "
+        f"{params.confi_perc_to_alpha(confi_perc)}"
+    )
+    print(
+        f"params.confi_perc_to_alpha({confi_perc}) = "
+        f"{params.confi_perc_to_alpha(confi_perc)}"
+    )
+    tmp = params.alpha_to_confi_perc(confi_perc_to_alpha_wo_check(confi_perc))
     print(
         "params.alpha_to_confi_perc(confi_perc_to_alpha_wo_check"
-        f"({confi_perc})) = {tmp}")
-    tmp = params.alpha_to_confi_perc(
-        confi_perc_to_alpha_wo_check(confi_perc))
+        f"({confi_perc})) = {tmp}"
+    )
+    tmp = params.alpha_to_confi_perc(confi_perc_to_alpha_wo_check(confi_perc))
     print(
         "params.alpha_to_confi_perc(confi_perc_to_alpha_wo_check"
-        "({confi_perc})) = {tmp}")
+        "({confi_perc})) = {tmp}"
+    )
     if params.num_of_warned != right_num_of_warned:
         ret = 1
         logger.error("duplicate warnings!!")
 
-    print("\n== params.alpha_to_confi_perc("
-          "confi_perc_to_alpha_wo_check(confi_perc)) -> "
-          "params.confi_perc_to_alpha(confi_perc) ==")
+    print(
+        "\n== params.alpha_to_confi_perc("
+        "confi_perc_to_alpha_wo_check(confi_perc)) -> "
+        "params.confi_perc_to_alpha(confi_perc) =="
+    )
     confi_perc = 65
     params.num_of_warned = 0
     if confi_perc != params.confi_perc:
         print(msg_wo)
     else:
         print(msg_nw)
-    print(f"alpha={confi_perc}, "
-          f"checked one={params.confi_perc}.")
-    tmp = params.alpha_to_confi_perc(
-            confi_perc_to_alpha_wo_check(confi_perc))
+    print(f"alpha={confi_perc}, " f"checked one={params.confi_perc}.")
+    tmp = params.alpha_to_confi_perc(confi_perc_to_alpha_wo_check(confi_perc))
     print(
         "params.alpha_to_confi_perc(confi_perc_to_alpha_wo_check"
-        f"({confi_perc})) = {tmp}")
-    tmp = params.alpha_to_confi_perc(
-            confi_perc_to_alpha_wo_check(confi_perc))
+        f"({confi_perc})) = {tmp}"
+    )
+    tmp = params.alpha_to_confi_perc(confi_perc_to_alpha_wo_check(confi_perc))
     print(
         "params.alpha_to_confi_perc(confi_perc_to_alpha_wo_check"
-        f"({confi_perc})) = {tmp}")
-    print(f"params.confi_perc_to_alpha({confi_perc}) = "
-          f"{params.confi_perc_to_alpha(confi_perc)}")
-    print(f"params.confi_perc_to_alpha({confi_perc}) = "
-          f"{params.confi_perc_to_alpha(confi_perc)}")
+        f"({confi_perc})) = {tmp}"
+    )
+    print(
+        f"params.confi_perc_to_alpha({confi_perc}) = "
+        f"{params.confi_perc_to_alpha(confi_perc)}"
+    )
+    print(
+        f"params.confi_perc_to_alpha({confi_perc}) = "
+        f"{params.confi_perc_to_alpha(confi_perc)}"
+    )
     if params.num_of_warned != right_num_of_warned:
         ret = 1
         logger.error("duplicate warnings!!")
@@ -1548,12 +1585,7 @@ def test_warning_once():
     return ret
 
 
-def test_of_intervals(
-        n_start,
-        n_end,
-        n_step,
-        confi_perc,
-        sig_digits=-5):
+def test_of_intervals(n_start, n_end, n_step, confi_perc, sig_digits=-5):
     """Test of reliability of obtained intervals for given parameters.
 
     Check if integral of outside of the interval is alpha for given k, n, etc
@@ -1573,24 +1605,23 @@ def test_of_intervals(
             confi_perc=99.0,  # Confidence Percentage (90 <= confi_perc < 100)
             sig_digits=-5)
     """
-    warnings.filterwarnings(
-        'ignore', 'The iteration is not making good progress')
+    warnings.filterwarnings("ignore", "The iteration is not making good progress")
 
     check_n(n_start)
     check_n(n_end)
     params = Params(confi_perc=confi_perc)
-    '''
+    """
     # ALTERNATIVE:
     # Check k selectively.
     K_CHANGE_LINE = 500
     PARTIAL_RANGE = 100  # < K_CHANGE_LINE/3
-    '''
+    """
     num_of_wrongs = 0
     print(f"Checking from n = {n_start} with {n_step} step(s)")
     for n in range(n_start, n_end + 1, n_step):
         if (n % 100) == 0:
             print(f"Have checked n < {n}")
-        '''
+        """
         # ALTERNATIVE:
         # Check k selectively.
         if n < K_CHANGE_LINE:
@@ -1602,7 +1633,7 @@ def test_of_intervals(
                     (n + PARTIAL_RANGE)/2), 1))
             k_list.extend(range(n - (PARTIAL_RANGE + 1), n + 1, 1))
         for k in k_list:
-        '''
+        """
         # Check all of the k.
         for k in range(0, n + 1, 1):
             if n > 100000:
@@ -1618,7 +1649,12 @@ def test_of_intervals(
             lower_p, upper_p = exact(params)
             ret = verify_interval_of_p(
                 # k, n, alpha, lower_p, upper_p, sig_digits, verbose=1)
-                params, lower_p, upper_p, sig_digits, verbose=1)
+                params,
+                lower_p,
+                upper_p,
+                sig_digits,
+                verbose=1,
+            )
             if ret != 0:
                 print(f"Wrong interval at n={n} k={k}")
                 num_of_wrongs += 1
@@ -1643,11 +1679,12 @@ def test_all():
         ret = tmp_ret
 
     num_of_wrongs = test_of_intervals(
-            n_start=1,
-            n_end=100,
-            n_step=1,
-            confi_perc=99.0,  # Confidence Percentage (90 <= confi_perc < 100)
-            sig_digits=-5)
+        n_start=1,
+        n_end=100,
+        n_step=1,
+        confi_perc=99.0,  # Confidence Percentage (90 <= confi_perc < 100)
+        sig_digits=-5,
+    )
     if num_of_wrongs > 0:
         ret = num_of_wrongs
 
@@ -1658,6 +1695,6 @@ def test_all():
 
 
 if __name__ == "__main__":
-    '''
+    """
     Examples:
-    '''
+    """

@@ -4,6 +4,7 @@ import logging
 import itertools as it
 from typing import Dict, List, Tuple, Union, Callable, Iterable, Optional, Sequence
 from pathlib import Path
+from itertools import count
 
 import numpy as np
 import matplotlib as mpl
@@ -13,9 +14,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.collections as collections
 from numpy import ndarray
-from matplotlib.pyplot import Axes, Figure
 from pandas import DataFrame
-from itertools import count
+from matplotlib.pyplot import Axes, Figure
 
 import pp5
 
@@ -556,18 +556,20 @@ def savefig(
     return outfile
 
 
-def bar_plot(data: DataFrame,
-             labels: str,
-             values: str,
-             sortkey: str,
-             hue: str,
-             error_minus: str,
-             error_plus: str,
-             palette: str,
-             inv_fun: Callable = lambda x: x,
-             center: float = 0.,
-             margins: Sequence[float] = (),
-             step: float = None):
+def bar_plot(
+    data: DataFrame,
+    labels: str,
+    values: str,
+    sortkey: str,
+    hue: str,
+    error_minus: str,
+    error_plus: str,
+    palette: str,
+    inv_fun: Callable = lambda x: x,
+    center: float = 0.0,
+    margins: Sequence[float] = (),
+    step: float = None,
+):
     """
     Plots a bar plot from a data frame.
     :param labels: Name of the column containing the labels
@@ -593,33 +595,48 @@ def bar_plot(data: DataFrame,
         offset = -step * (N - 1) / 2
     else:
         eps = w * 0.2
-        step = step * 2*w
+        step = step * 2 * w
         offset = -step * (N - 1) / 2
 
     cmap = plt.cm.get_cmap(palette)
     color_list = cmap(np.linspace(0, 1, len(hues)))
 
-    all_keys = data.query(f'{hue}==@hues[0]')[labels].values
-    #vals = data.query(f'{hue}==@hues[0]')[values].values
-    sortvals = data.query(f'{hue}==@hues[0]')[sortkey].values
+    all_keys = data.query(f"{hue}==@hues[0]")[labels].values
+    # vals = data.query(f'{hue}==@hues[0]')[values].values
+    sortvals = data.query(f"{hue}==@hues[0]")[sortkey].values
     idx = np.argsort(sortvals)
     all_keys = list(all_keys[idx])
 
-    plt.plot([center, center], [-1, len(all_keys) + 1], linewidth=0.5, color=[0, 0, 0], alpha=1,
-             label='_nolegend_')
+    plt.plot(
+        [center, center],
+        [-1, len(all_keys) + 1],
+        linewidth=0.5,
+        color=[0, 0, 0],
+        alpha=1,
+        label="_nolegend_",
+    )
     for margin in margins:
-        plt.plot(inv_fun(np.array([margin, margin])),
-                 [-1, len(all_keys) + 1],
-                 linewidth=0.5,
-                 color=[1, 0, 0], alpha=1,
-                 label='_nolegend_')
+        plt.plot(
+            inv_fun(np.array([margin, margin])),
+            [-1, len(all_keys) + 1],
+            linewidth=0.5,
+            color=[1, 0, 0],
+            alpha=1,
+            label="_nolegend_",
+        )
     for i in range(len(all_keys) + 1):
-        plt.plot([-100, 100], [i - 0.5, i - 0.5], linewidth=0.5, color=[0, 0, 0],
-                 alpha=0.5, label='_nolegend_')
+        plt.plot(
+            [-100, 100],
+            [i - 0.5, i - 0.5],
+            linewidth=0.5,
+            color=[0, 0, 0],
+            alpha=0.5,
+            label="_nolegend_",
+        )
 
     for n, h in enumerate(hues):
-        keys = data.query(f'{hue}==@h')[labels].values
-        vals = inv_fun(data.query(f'{hue}==@h')[values].values)
+        keys = data.query(f"{hue}==@h")[labels].values
+        vals = inv_fun(data.query(f"{hue}==@h")[values].values)
         for v, k in zip(vals, keys):
             i = all_keys.index(k)
             plt.plot(
@@ -627,15 +644,15 @@ def bar_plot(data: DataFrame,
                 [i - w + eps + step * n + offset, i + w - eps + step * n + offset],
                 linewidth=2,
                 color=color_list[n],
-                label=h if i == 0 else '_nolegend_',
-                #alpha=1.0 if is_sig else 0.5,
+                label=h if i == 0 else "_nolegend_",
+                # alpha=1.0 if is_sig else 0.5,
             )
 
     for i, h in enumerate(hues):
-        keys = data.query(f'{hue}==@h')[labels].values
-        vals = data.query(f'{hue}==@h')[values].values
-        std_p = data.query(f'{hue}==@h')[error_plus].values
-        std_m = data.query(f'{hue}==@h')[error_minus].values
+        keys = data.query(f"{hue}==@h")[labels].values
+        vals = data.query(f"{hue}==@h")[values].values
+        std_p = data.query(f"{hue}==@h")[error_plus].values
+        std_m = data.query(f"{hue}==@h")[error_minus].values
         mins = inv_fun(vals - std_m)
         maxs = inv_fun(vals + std_p)
 
@@ -643,10 +660,17 @@ def bar_plot(data: DataFrame,
             n = all_keys.index(k)
             if M > m:
                 output_list.append(
-                    plt.Rectangle((m, n - w + step * i + offset), M - m, 2 * w,
-                                  facecolor=color_list[i],
-                                  edgecolor=None,
-                                  fill=True, alpha=0.25, label='_nolegend_'))
+                    plt.Rectangle(
+                        (m, n - w + step * i + offset),
+                        M - m,
+                        2 * w,
+                        facecolor=color_list[i],
+                        edgecolor=None,
+                        fill=True,
+                        alpha=0.25,
+                        label="_nolegend_",
+                    )
+                )
 
         for r in output_list:
             ax.add_artist(r)

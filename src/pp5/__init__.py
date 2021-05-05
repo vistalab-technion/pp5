@@ -2,7 +2,7 @@ import os
 import logging.config
 from pathlib import Path
 
-PROJECT_DIR = Path(Path(__file__).resolve().parents[1])
+PROJECT_DIR = Path(Path(__file__).resolve().parents[2])
 if str(PROJECT_DIR).startswith(os.getcwd()):
     PROJECT_DIR = PROJECT_DIR.relative_to(os.getcwd())
 CFG_DIR = PROJECT_DIR.joinpath("cfg")

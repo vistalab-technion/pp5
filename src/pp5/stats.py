@@ -1,11 +1,13 @@
 import random
 from typing import Any, Dict, List, Tuple, Union, Callable, Optional, Sequence
 from itertools import product
+
 import numba
 import numpy as np
+from scipy.stats import norm
 from numpy.random import permutation
 from scipy.spatial.distance import pdist, squareform
-from scipy.stats import norm
+
 
 def tw_test(
     X: np.ndarray,
@@ -87,15 +89,13 @@ def tw2_statistic(D: np.ndarray, nx: int, ny: int) -> float:
 
 
 def histogram(
-    samples: Sequence[Any],
-    bins: Sequence[Any],
-    normalized: bool = True
+    samples: Sequence[Any], bins: Sequence[Any], normalized: bool = True
 ) -> Dict[Any, float]:
     counts = {b: 0.0 for b in bins}
     for s in samples:
         if s in counts:
             counts[s] += 1
-    n = sum(counts.values()) if normalized else 1.
+    n = sum(counts.values()) if normalized else 1.0
     return {b: c / n for b, c in counts.items()}
 
 
@@ -103,7 +103,7 @@ def categorical_histogram(
     samples: Sequence[Any],
     bins: Sequence[Any],
     bootstraps: int = 1,
-    normalized: bool = True
+    normalized: bool = True,
 ) -> Dict[Any, float]:
     """
     Calculates a bootstrapped categorical histogram.
@@ -124,21 +124,14 @@ def categorical_histogram(
                 )
             )
     else:
-        hists.append(
-            histogram(
-                samples=samples,
-                bins=bins,
-                normalized=normalized,
-            )
-        )
+        hists.append(histogram(samples=samples, bins=bins, normalized=normalized,))
 
     def _mean_std(a: np.array) -> Tuple[float, float]:
         sigma = np.std(a)
         return np.mean(a), sigma if not np.isnan(sigma) else 0.0
 
     return {
-        b: _mean_std(np.array([hists[i][b] for i in range(len(hists))]))
-        for b in bins
+        b: _mean_std(np.array([hists[i][b] for i in range(len(hists))])) for b in bins
     }
 
 
@@ -149,12 +142,9 @@ def ratio(num: Tuple[float, float], den: Tuple[float, float]) -> Tuple[float, fl
     :param den: (E[Y], Std[Y])
     :return: Ratio (E[X]/E[Y], Std[X/Y])
     """
-    ratio = num[0]/den[0]
-    sigma = ratio*np.sqrt((num[1]/num[0])**2 + (den[1]/den[0])**2)
-    return (
-        ratio,
-        sigma if not np.isnan(sigma) else 0.
-    )
+    ratio = num[0] / den[0]
+    sigma = ratio * np.sqrt((num[1] / num[0]) ** 2 + (den[1] / den[0]) ** 2)
+    return (ratio, sigma if not np.isnan(sigma) else 0.0)
 
 
 def factor(*x: Tuple[float, float]) -> Tuple[float, float]:
@@ -164,17 +154,14 @@ def factor(*x: Tuple[float, float]) -> Tuple[float, float]:
     :return: product (E[X_1*...*X_n], Std[[X_1*...*X_n])
     """
     prod = np.product([x[0] for x in x])
-    sigma = prod*np.sqrt( np.sum([ (x[1]/x[0])**2 for x in x]) )
-    return (
-        prod,
-        sigma if not np.isnan(sigma) else 0.
-    )
+    sigma = prod * np.sqrt(np.sum([(x[1] / x[0]) ** 2 for x in x]))
+    return (prod, sigma if not np.isnan(sigma) else 0.0)
 
 
 def relative_histogram(
     x_hist: Dict[Any, Tuple[float, float]],
     y_hist: Dict[Any, Tuple[float, float]],
-    groups: Dict[Any, Any]
+    groups: Dict[Any, Any],
 ) -> Dict[Any, Dict[Any, Tuple[float, float]]]:
     """
     Calculates a relative histogram.
@@ -185,15 +172,16 @@ def relative_histogram(
     """
     return {
         yy: {
-              xx: ratio(x_hist[xx], y_hist[yy])
-              for xx in [x for x, y in groups.items() if y == yy]
-            }
+            xx: ratio(x_hist[xx], y_hist[yy])
+            for xx in [x for x, y in groups.items() if y == yy]
+        }
         for yy in y_hist.keys()
     }
 
 
-def product_histogram(x_hist: Dict[Any, Tuple[float, float]], n: int = 1) \
-        -> Dict[Any, Tuple[float, float]]:
+def product_histogram(
+    x_hist: Dict[Any, Tuple[float, float]], n: int = 1
+) -> Dict[Any, Tuple[float, float]]:
     """
     Computes a separable product histogram for tuples
     :param x_hist: A dictionary containing x: (p(x), sigma)
@@ -202,8 +190,5 @@ def product_histogram(x_hist: Dict[Any, Tuple[float, float]], n: int = 1) \
         for (x_1,...,x_n) in {x}^n
     """
     x = [*x_hist.keys()]
-    combinations = tuple(a for a in product(*([x]*n)))
-    return {
-        xx:
-        factor(*[x_hist[x] for x in xx]) for xx in combinations
-    }
+    combinations = tuple(a for a in product(*([x] * n)))
+    return {xx: factor(*[x_hist[x] for x in xx]) for xx in combinations}

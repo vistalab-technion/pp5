@@ -337,7 +337,7 @@ def _parse_cli():
     return parsed
 
 
-if __name__ == "__main__":
+def main():
     parsed_args = _parse_cli()
 
     # Convert to a dict
@@ -369,3 +369,7 @@ if __name__ == "__main__":
         _LOG.warning(f"Interrupted by user, stopping.")
     except Exception as e:
         _LOG.error(f"{e.__class__.__name__}: {e}", exc_info=e)
+
+
+if __name__ == "__main__":
+    main()
