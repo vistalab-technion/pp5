@@ -40,9 +40,9 @@ jobs:
           conda-channels: conda-forge # optional, default is 
 
       - name: Install deps
-        run: |
-            conda env update -f environment.yml -n proteins
-            conda activate proteins
-
+        run: conda env update -f environment.yml -n proteins
+        
       - name: Run tests
-        run: pytest
+        run: |
+          source activate proteins
+          pytest
