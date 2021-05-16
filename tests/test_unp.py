@@ -11,7 +11,7 @@ NO_INTERNET = not tests.utils.has_internet()
 class TestUNPDownload:
     @classmethod
     def setup_class(cls):
-        cls.TEMP_PATH = tests.get_tmp_path("unp")
+        cls.TEMP_PATH = tests.get_tmp_path("data/unp")
 
     def test_unp_record(self):
         test_id = "P00720"

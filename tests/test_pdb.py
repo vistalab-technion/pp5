@@ -146,7 +146,7 @@ class TestPDBDownload:
     def setup_class(cls):
         cls.test_id = "102L"
         # Use temp path to force download (file won't exists there)
-        cls.TEMP_PATH = tests.get_tmp_path("pdb")
+        cls.TEMP_PATH = tests.get_tmp_path("data/pdb")
 
     @classmethod
     def teardown_class(cls):

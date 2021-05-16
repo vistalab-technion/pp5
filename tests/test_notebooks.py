@@ -6,7 +6,6 @@ import nbformat
 import nbconvert
 
 from pp5 import PROJECT_DIR
-from tests import TEST_RESOURCES_PATH
 
 NOTEBOOKS_DIR = PROJECT_DIR.joinpath("notebooks")
 

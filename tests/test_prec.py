@@ -135,7 +135,7 @@ class TestInit:
 class TestSave:
     @classmethod
     def setup_class(cls):
-        cls.TEMP_PATH = get_tmp_path("prec")
+        cls.TEMP_PATH = get_tmp_path("data/prec")
 
     @pytest.mark.parametrize("pdb_id", ["2WUR:A", "102L", "5NL4:A"])
     def test_save_roundtrip(self, pdb_id):
@@ -151,7 +151,7 @@ class TestSave:
 class TestCache:
     @classmethod
     def setup_class(cls):
-        cls.CACHE_DIR = get_tmp_path("prec_cache")
+        cls.CACHE_DIR = get_tmp_path("data/prec_cache")
 
     @pytest.mark.parametrize("pdb_id", ["1MWC:A", "4N6V:7"])
     def test_from_pdb_with_cache(self, pdb_id):
