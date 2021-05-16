@@ -3,9 +3,31 @@ import logging.config
 from pathlib import Path
 
 PROJECT_DIR = Path(Path(__file__).resolve().parents[2])
+
+# If we're in an installed package, use pwd
+if "site-packages" in str(PROJECT_DIR):
+    PROJECT_DIR = Path(os.getcwd())
+
+# Relativize
 if str(PROJECT_DIR).startswith(os.getcwd()):
     PROJECT_DIR = PROJECT_DIR.relative_to(os.getcwd())
+
 CFG_DIR = PROJECT_DIR.joinpath("cfg")
+
+
+"""
+Env vars used to configure the application
+"""
+ENV_PP5_PP5_MAX_PROCESSES = "PP5_MAX_PROCESSES"
+ENV_PP5_DATA_DIR = "DATA_DIR"
+ENV_PP5_OUT_DIR = "OUT_DIR"
+ENV_PP5_PDB_DIR = "PDB_DIR"
+ENV_PP5_UNP_DIR = "UNP_DIR"
+ENV_PP5_ENA_DIR = "ENA_DIR"
+ENV_PP5_PREC_DIR = "PREC_DIR"
+ENV_PP5_PDB2UNP_DIR = "PDB2UNP_DIR"
+ENV_PP5_ALIGNMENT_DIR = "ALIGNMENT_DIR"
+ENV_PP5_BLASTDB_DIR = "BLASTDB_DIR"
 
 """
 Dict for storing top-level package configuration options, and their default
@@ -13,7 +35,7 @@ values.
 """
 _CONFIG = {
     # Number of worker processes in global parallel pool
-    "MAX_PROCESSES": int(os.getenv("PP5_MAX_PROCESSES", os.cpu_count())),
+    "MAX_PROCESSES": int(os.getenv(ENV_PP5_PP5_MAX_PROCESSES, os.cpu_count())),
     # Number of retries to use when fetching/querying data
     "REQUEST_RETRIES": 5,
     # Default expression system for PDB queries
@@ -33,11 +55,11 @@ names.
 """
 
 # Top-level directory for raw data and downloading files
-BASE_DATA_DIR = Path(os.getenv("DATA_DIR", PROJECT_DIR.joinpath("data")))
+BASE_DATA_DIR = Path(os.getenv(ENV_PP5_DATA_DIR, PROJECT_DIR.joinpath("data")))
 BASE_DOWNLOAD_DIR = BASE_DATA_DIR
 
 # Directory for writing output files
-OUT_DIR = Path(os.getenv("OUT_DIR", PROJECT_DIR.joinpath("out")))
+OUT_DIR = Path(os.getenv(ENV_PP5_OUT_DIR, PROJECT_DIR.joinpath("out")))
 
 for d in [CFG_DIR, BASE_DATA_DIR, OUT_DIR]:
     os.makedirs(d, exist_ok=True)
@@ -72,25 +94,25 @@ def get_config(name: str):
 
 
 # Directory for PDB files
-PDB_DIR = Path(os.getenv("PDB_DIR", data_subdir("pdb")))
+PDB_DIR = Path(os.getenv(ENV_PP5_PDB_DIR, data_subdir("pdb")))
 
 # Directory for UniProt files
-UNP_DIR = Path(os.getenv("UNP_DIR", data_subdir("unp")))
+UNP_DIR = Path(os.getenv(ENV_PP5_UNP_DIR, data_subdir("unp")))
 
 # Directory for ENA files
-ENA_DIR = Path(os.getenv("ENA_DIR", data_subdir("ena")))
+ENA_DIR = Path(os.getenv(ENV_PP5_ENA_DIR, data_subdir("ena")))
 
 # Directory for ProteinRecords
-PREC_DIR = Path(os.getenv("PREC_DIR", data_subdir("prec")))
+PREC_DIR = Path(os.getenv(ENV_PP5_PREC_DIR, data_subdir("prec")))
 
 # Directory for PDB to UNP mappings
-PDB2UNP_DIR = Path(os.getenv("PDB2UNP_DIR", data_subdir("pdb2unp")))
+PDB2UNP_DIR = Path(os.getenv(ENV_PP5_PDB2UNP_DIR, data_subdir("pdb2unp")))
 
 # Directory for Structural Alignments
-ALIGNMENT_DIR = Path(os.getenv("ALIGNMENT_DIR", data_subdir("align")))
+ALIGNMENT_DIR = Path(os.getenv(ENV_PP5_ALIGNMENT_DIR, data_subdir("align")))
 
 # Directory for local BLAST DB
-BLASTDB_DIR = Path(os.getenv("BLASTDB_DIR", data_subdir("blast")))
+BLASTDB_DIR = Path(os.getenv(ENV_PP5_BLASTDB_DIR, data_subdir("blast")))
 
 
 def get_resource_path(data_dir: Path, basename: str):
