@@ -656,6 +656,7 @@ class ProteinGroup(object):
         return filepaths
 
     def _align_query_residues_to_ref(self, q_pdb_id: str):
+        LOGGER.info(f"Starting alignment: ref={self.ref_pdb_id} query={q_pdb_id}")
         try:
             return self._align_query_residues_to_ref_inner(q_pdb_id)
         except Exception as e:
@@ -666,6 +667,8 @@ class ProteinGroup(object):
                 exc_info=e,
             )
             return None
+        finally:
+            LOGGER.info(f"Completed alignment: ref={self.ref_pdb_id} query={q_pdb_id}")
 
     def _align_query_residues_to_ref_inner(
         self, q_pdb_id: str
