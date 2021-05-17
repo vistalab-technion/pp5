@@ -1,4 +1,5 @@
 import os
+import sys
 import pathlib
 
 from pp5 import (
@@ -38,3 +39,7 @@ os.environ[ENV_PP5_DATA_DIR] = str(get_resource_path("data"))
 os.environ[ENV_PP5_PREC_DIR] = str(get_tmp_path("data/prec"))
 os.environ[ENV_PP5_PDB2UNP_DIR] = str(get_tmp_path("data/pdb2unp"))
 os.environ[ENV_PP5_ALIGNMENT_DIR] = str(get_tmp_path("data/align"))
+
+# Remove imported pp5 so that its init runs again and updates the paths using the
+# above env vars
+sys.modules.pop("pp5")
