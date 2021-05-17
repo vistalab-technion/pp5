@@ -10,7 +10,9 @@ class TestFromPDBRef(object):
 
     def test_default(self):
         # Just an initial rudimentary test to check the code is alive
-        pgroup = ProteinGroup.from_pdb_ref("1NKD:A", parallel=False)
+        pgroup = ProteinGroup.from_pdb_ref(
+            "1NKD:A", parallel=False, sa_min_aligned_residues=40
+        )
         assert isinstance(pgroup, ProteinGroup)
         assert pgroup.num_query_structs >= 4
         assert len(pgroup.to_csv())
