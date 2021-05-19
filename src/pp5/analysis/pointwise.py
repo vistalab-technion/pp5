@@ -16,8 +16,17 @@ import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
 from pp5.stats import tw_test
 from pp5.utils import sort_dict
-from pp5.codons import ACIDS, N_ACIDS, N_CODONS, AA_CODONS, SYN_CODON_IDX, codon2aac
-from pp5.analysis import SS_TYPE_ANY, CODON_TYPE_ANY, DSSP_TO_SS_TYPE
+from pp5.codons import (
+    ACIDS,
+    AAC_SEP,
+    N_ACIDS,
+    N_CODONS,
+    AA_CC_SEP,
+    AA_CODONS,
+    SYN_CODON_IDX,
+    codon2aac,
+)
+from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral, flat_torus_distance
 from pp5.parallel import yield_async_results
 from pp5.vonmises import BvMKernelDensityEstimator
@@ -113,12 +122,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         self.pdb_id_col = "pdb_id"
         self.unp_id_col, self.unp_idx_col = "unp_id", "unp_idx"
+        self.aa_col = "AA"
         self.codon_col, self.codon_score_col = "codon", "codon_score"
-        self.codon_cols = (self.codon_col,)
         self.secondary_col = "secondary"
         self.angle_cols = ("phi", "psi")
         self.angle_pairs = [self.angle_cols]  # should deprecate
         self.condition_col = "condition_group"
+        self.group_size_col = "group_size"
 
         self.kde_args = dict(n_bins=kde_nbins, k1=kde_k1, k2=kde_k2, k3=kde_k3)
         self.kde_dist_metric = "l2"
@@ -135,6 +145,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
     ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
             "preprocess_dataset": self._preprocess_dataset,
+            "pairs_dataset": self._pairs_dataset,
             "dataset_stats": self._dataset_stats,
             "pointwise_dists_dihedral": self._pointwise_dists_dihedral,
             "pointwise_aac_dists_dihedral": self._pointwise_aac_dists_dihedral,
@@ -150,7 +161,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         analysis.
         """
 
-        cols = (
+        input_cols = (
             self.pdb_id_col,
             self.unp_id_col,
             self.unp_idx_col,
@@ -172,7 +183,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Load the data
         df_pointwise = pd.read_csv(
             str(self.input_file),
-            usecols=cols,
+            usecols=input_cols,
             dtype=dtype,
             header=0,
             converters=converters,
@@ -221,7 +232,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         LOGGER.info(f"preprocessing done, elapsed={time.time()-start:.2f}s")
         LOGGER.info(f"{df_processed}")
 
-        self._dump_intermediate("dataset", df_processed)
+        self._dump_intermediate("dataset", df_processed, debug=True)
         return {
             "n_TOTAL": len(df_processed),
         }
@@ -248,7 +259,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 )
                 continue
 
-            unp_id, unp_idx, codon = subgroup_idx
+            unp_id, unp_idx, aa_codon = subgroup_idx
             subgroup_ss = secondaries.pop()
 
             # Make sure all angles have a value
@@ -265,15 +276,93 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 {
                     self.unp_id_col: unp_id,
                     self.unp_idx_col: unp_idx,
-                    self.codon_col: codon,
+                    self.aa_col: str.split(aa_codon, AAC_SEP)[0],
+                    self.codon_col: aa_codon,
                     self.condition_col: group_id,
                     self.secondary_col: subgroup_ss,
                     self.angle_cols[0]: centroid.phi,
                     self.angle_cols[1]: centroid.psi,
-                    "group_size": len(df_subgroup),
+                    self.group_size_col: len(df_subgroup),
                 }
             )
         return processed_subgroups
+
+    def _pairs_dataset(self, pool: mp.pool.Pool) -> dict:
+        curr_codon_col = self.codon_col
+        async_results: List[AsyncResult] = []
+
+        start = time.time()
+        df_processed: pd.DataFrame = self._load_intermediate("dataset")
+
+        # Process groups in parallel.
+        for group_idx, df_group in df_processed.groupby(by=[self.unp_id_col]):
+            unp_id = group_idx
+            async_results.append(
+                pool.apply_async(self._create_group_pairs, args=(unp_id, df_group),)
+            )
+
+        # Results is a list of dataframes
+        _, _, results = self._handle_async_results(
+            async_results, collect=True, flatten=False
+        )
+
+        df_pairs = pd.concat(results, axis=0)
+        LOGGER.info(f"Pairs dataset created, elapsed={time.time()-start:.2f}s")
+        LOGGER.info(f"{df_pairs}")
+
+        self._dump_intermediate("dataset-pairs", df_pairs, debug=True)
+        return {
+            "n_TOTAL-pairs": len(df_pairs),
+        }
+
+    def _create_group_pairs(self, unp_id: str, df_group: pd.DataFrame):
+
+        # Sort rows using the order of residues in each protein
+        df_group = df_group.sort_values(by=[self.unp_id_col, self.unp_idx_col])
+
+        # Create a shifted version of the data and concatenate is next to the original
+        # Each row will have the current and next residue.
+        p = "next_"
+        df_m = pd.concat([df_group, df_group.shift(-1).add_prefix(p)], axis=1)
+        df_m[f"{p}{self.unp_idx_col}"] = df_m[f"{p}{self.unp_idx_col}"].astype("Int64")
+
+        # Only keep rows where the next residue is in the same protein and has the
+        # successive index.
+        df_m = df_m.query(
+            f"{self.unp_id_col} == {p}{self.unp_id_col} and "
+            f"{self.unp_idx_col} + 1 == {p}{self.unp_idx_col}"
+        )
+
+        # Function to map rows in the merged dataframe to the final rows we'll use.
+        def _row_mapper(row: pd.Series):
+            codon_pair = (
+                f"{row[self.codon_col]}{AA_CC_SEP}{row[f'{p}{self.codon_col}']}"
+            )
+            aa_pair = f"{row[self.aa_col]}{AA_CC_SEP}{row[f'{p}{self.aa_col}']}"
+            ss_pair = (
+                f"{row[self.secondary_col]}{AA_CC_SEP}{row[f'{p}{self.secondary_col}']}"
+            )
+            if row[self.secondary_col] == row[f"{p}{self.secondary_col}"]:
+                condition_group = row[self.secondary_col]
+            else:
+                condition_group = SS_TYPE_MIXED
+            return {
+                self.unp_id_col: row[self.unp_id_col],
+                self.unp_idx_col: row[self.unp_idx_col],
+                self.aa_col: aa_pair,
+                self.codon_col: codon_pair,
+                self.secondary_col: ss_pair,
+                self.condition_col: condition_group,
+                # Use Psi0, Phi1 (current psi, next phi)
+                self.angle_cols[0]: row[f"{p}{self.angle_cols[0]}"],
+                self.angle_cols[1]: row[self.angle_cols[1]],
+                self.group_size_col: min(
+                    row[self.group_size_col], int(row[f"{p}{self.group_size_col}"])
+                ),
+            }
+
+        df_pairs = df_m.apply(_row_mapper, axis=1, raw=False, result_type="expand")
+        return df_pairs
 
     def _dataset_stats(self, pool: mp.pool.Pool) -> dict:
         """
@@ -281,7 +370,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         """
         # Calculate likelihood distribution of prev codon, separated by SS
         codon_likelihoods = {}
-        codon_col = self.codon_cols[0]
+        codon_col = self.codon_col
         df_processed: pd.DataFrame = self._load_intermediate("dataset")
 
         df_ss_groups = df_processed.groupby(self.secondary_col)
@@ -346,7 +435,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Calculate group and subgroup sizes
         group_sizes = {}
-        curr_codon_col = self.codon_cols[-1]
+        curr_codon_col = self.codon_col
         df_groups = df_processed.groupby(by=self.condition_col)
         for group_idx, df_group in df_groups:
             df_subgroups = df_group.groupby(curr_codon_col)
@@ -386,7 +475,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         """
         df_processed: pd.DataFrame = self._load_intermediate("dataset")
         df_groups = df_processed.groupby(by=self.condition_col)
-        curr_codon_col = self.codon_cols[-1]
+        curr_codon_col = self.codon_col
         async_results: Dict[Tuple[str, str, str], AsyncResult] = {}
 
         LOGGER.info(
@@ -471,7 +560,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         The distance between two angle-pairs is calculated on the torus.
         """
         df_processed: pd.DataFrame = self._load_intermediate("dataset")
-        curr_codon_col = self.codon_cols[-1]
+        curr_codon_col = self.codon_col
         async_results: Dict[Tuple[str, str, str], AsyncResult] = {}
 
         LOGGER.info(
@@ -483,18 +572,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             LOGGER.warning(f"Angle pairs are not supported in standout score")
         angle_cols = self.angle_pairs[0]
 
-        # Add an AA col so we can group on it
-        aa_col = "AA"
-        df_processed[aa_col] = list(
-            map(lambda aac: aac.split("-")[0], df_processed[curr_codon_col])
-        )
-
         # Group by the conditioning criteria, e.g. SS
         df_groups = df_processed.groupby(by=self.condition_col)
         for group_idx, (group, df_group) in enumerate(df_groups):
 
             # Group by AA
-            df_aa_groups = df_group.groupby(aa_col)
+            df_aa_groups = df_group.groupby(self.aa_col)
             for aa_idx, (aa, df_aa) in enumerate(df_aa_groups):
 
                 # Need at least 2 observations in each statistical sample
@@ -593,7 +676,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         for the same codon), and also using the T2 statistic as a distance.
         """
         group_sizes = self._load_intermediate("group-sizes")
-        curr_codon_col = self.codon_cols[-1]
+        curr_codon_col = self.codon_col
 
         # We currently only support one type of metric
         dist_metrics = {"l2": _kde_dist_metric_l2}
