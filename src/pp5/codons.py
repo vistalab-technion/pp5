@@ -4,7 +4,12 @@ from typing import Tuple, Sequence
 
 from Bio.Data import IUPACData, CodonTable
 
+# Separates between AA and matching codon
 AAC_SEP = "-"
+
+
+# Separates between two (or more) AAs or two (or more) codons
+AA_CC_SEP = "_"
 
 
 def codon2aac(codon: str):
