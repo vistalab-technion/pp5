@@ -4,6 +4,8 @@ from typing import Tuple, Sequence
 
 from Bio.Data import IUPACData, CodonTable
 
+AAC_SEP = "-"
+
 
 def codon2aac(codon: str):
     """
@@ -13,7 +15,7 @@ def codon2aac(codon: str):
     corresponding amino acid.
     """
     aa = CODON_TABLE[codon]
-    return f"{aa}-{codon}".upper()
+    return f"{aa}{AAC_SEP}{codon}".upper()
 
 
 CODON_TABLE = CodonTable.standard_dna_table.forward_table
@@ -31,7 +33,7 @@ ACIDS_1TO1AND3 = {aa: f"{aa} ({ACIDS_1TO3[aa]})" for aa in ACIDS}
 UNKNOWN_AA = "X"
 
 CODON_RE = re.compile(
-    rf'^(?:(?P<aa>[{str.join("", ACIDS)}])-)?' rf'(?P<codon>{str.join("|", CODONS)})$',
+    rf'^(?:(?P<aa>[{str.join("", ACIDS)}]){AAC_SEP})?(?P<codon>{str.join("|", CODONS)})$',
     re.VERBOSE | re.IGNORECASE,
 )
 
