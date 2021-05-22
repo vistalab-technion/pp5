@@ -780,7 +780,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # bs_codon_dkdes maps from codon to a list of bootstrapped
                 # KDEs of shape (B,N,N), one for each angle pair
                 # Initialize in advance to obtain consistent order of codons
-                bs_codon_dkdes = {c: None for c in AA_CODONS}
+                # remove [] when deprecating angle_pairs
+                bs_codon_dkdes = {c: [None] for c in AA_CODONS}
                 for subgroup_idx, subgroup_bs_dkdes in group_dkde_result:
                     bs_codon_dkdes[subgroup_idx] = subgroup_bs_dkdes
 
@@ -1456,6 +1457,9 @@ def _dkde_dists_pairwise(
             # shape (B, M, M) due to bootstrapping B times
             dkde1 = bs_dkdes[ci][pair_idx]
             dkde2 = bs_dkdes[cj][pair_idx]
+            if dkde1 is None or dkde2 is None:  # remove when deprecating angle_pairs
+                continue
+
             B, M, M = dkde1.shape
 
             # If ci is cj, randomize the order of the KDEs when
@@ -1523,6 +1527,9 @@ def _dkde_average(
             continue
 
         for pair_idx in range(n_kdes):
+            if bs_dkde[pair_idx] is None:  # remove when deprecating angle_pairs
+                continue
+
             # bs_dkde[pair_idx] here is of shape (B, N, N) due to
             # bootstrapping. Average it over the bootstrap dimension
             mean_dkde = np.nanmean(bs_dkde[pair_idx], axis=0, dtype=np.float32)
