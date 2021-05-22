@@ -307,16 +307,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             async_results, collect=True, flatten=False
         )
 
-        df_pairs = pd.concat(results, axis=0)
+        df_pairs = pd.concat((r for r in results if r is not None), axis=0)
         LOGGER.info(f"Pairs dataset created, elapsed={time.time()-start:.2f}s")
         LOGGER.info(f"{df_pairs}")
 
         self._dump_intermediate("dataset-pairs", df_pairs, debug=True)
         return {
-            "n_TOTAL-pairs": len(df_pairs),
+            "n_pairs_TOTAL": len(df_pairs),
         }
 
-    def _create_group_pairs(self, unp_id: str, df_group: pd.DataFrame):
+    def _create_group_pairs(
+        self, unp_id: str, df_group: pd.DataFrame
+    ) -> Optional[pd.DataFrame]:
 
         # Sort rows using the order of residues in each protein
         df_group = df_group.sort_values(by=[UNP_ID_COL, UNP_IDX_COL])
@@ -333,6 +335,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             f"{UNP_ID_COL} == {p}{UNP_ID_COL} and "
             f"{UNP_IDX_COL} + 1 == {p}{UNP_IDX_COL}"
         )
+
+        if len(df_m) == 0:
+            return None
 
         # Function to map rows in the merged dataframe to the final rows we'll use.
         def _row_mapper(row: pd.Series):
