@@ -42,36 +42,49 @@ CODON_RE = re.compile(
     re.VERBOSE | re.IGNORECASE,
 )
 
-#: Pairs of synonymous codons indices
-SYN_CODON_IDX: Sequence[Tuple[int, int]] = tuple(
-    (i, j)
-    for i, j in it.product(range(N_CODONS), range(N_CODONS))
-    if AA_CODONS[i][0] == AA_CODONS[j][0]
-)
-
-SYN_CODON_IDX_UNIQ: Sequence[Tuple[int, int]] = tuple(
-    set(tuple(sorted(ij)) for ij in SYN_CODON_IDX)
-)
-
 
 AAC = str
 AACTuple = Tuple[AAC, ...]
 AACIndexedTuple = Tuple[int, AACTuple]
 
 
-def aac2aa(aac: AAC):
+def aac2aa(aac: AAC) -> str:
+    """
+    :param aac: An AA-CODON
+    :return: The AA string.
+    """
     return aac.split(AAC_SEP)[0]
 
 
 def aac2c(aac: AAC):
+    """
+    :param aac: An AA-CODON
+    :return: The Codon string.
+    """
     return aac.split(AAC_SEP)[1]
 
 
-def is_synonymous(aac1: AAC, aac2: AAC):
+def is_synonymous(aac1: AAC, aac2: AAC) -> bool:
+    """
+    Whether two AAC's are synonymous, i.e. codons corresponding to the same AA.
+    :param aac1: First AAC.
+    :param aac2: Second AAC.
+    :return: True iff they're synonymous.
+    """
     return aac2aa(aac1) == aac2aa(aac2)
 
 
 def is_synonymous_tuple(aact1: AACTuple, aact2: AACTuple):
+    """
+    Whether two tuples, each containing k AACs, are synonymous, i.e.,
+    each pair of corresponding AACs at corresponding indices within the tuples is
+    itself synonymous.
+
+    :param aact1: First AAC tuple.
+    :param aact2: Second AAC tuple.
+    :return: True iff the tuples are considered synonymous.
+    """
+    assert len(aact1) == len(aact2)
     return all(is_synonymous(aac1, aac2) for aac1, aac2 in zip(aact1, aact2))
 
 
