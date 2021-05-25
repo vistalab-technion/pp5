@@ -136,3 +136,12 @@ def aac_tuple_pairs(
     )
 
     return {*indexed_filtered_pairs}
+
+
+# Pairs of synonymous codons indices
+SYN_CODON_IDX: Sequence[Tuple[int, int]] = tuple(
+    (i, j)
+    for (i, aac1), (j, aac2) in aac_tuple_pairs(k=1, synonymous=True, unique=True)
+)
+
+SYN_CODON_IDX_UNIQ: Set[Tuple[int, int]] = set(SYN_CODON_IDX)
