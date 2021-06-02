@@ -21,8 +21,8 @@ from pp5.codons import (
     AAC_SEP,
     N_ACIDS,
     N_CODONS,
-    AA_CC_SEP,
     AA_CODONS,
+    AAC_TUPLE_SEP,
     SYN_CODON_IDX,
     codon2aac,
 )
@@ -341,9 +341,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Function to map rows in the merged dataframe to the final rows we'll use.
         def _row_mapper(row: pd.Series):
-            codon_pair = f"{row[CODON_COL]}{AA_CC_SEP}{row[f'{p}{CODON_COL}']}"
-            aa_pair = f"{row[AA_COL]}{AA_CC_SEP}{row[f'{p}{AA_COL}']}"
-            ss_pair = f"{row[SECONDARY_COL]}{AA_CC_SEP}{row[f'{p}{SECONDARY_COL}']}"
+            codon_pair = f"{row[CODON_COL]}{AAC_TUPLE_SEP}{row[f'{p}{CODON_COL}']}"
+            aa_pair = f"{row[AA_COL]}{AAC_TUPLE_SEP}{row[f'{p}{AA_COL}']}"
+            ss_pair = f"{row[SECONDARY_COL]}{AAC_TUPLE_SEP}{row[f'{p}{SECONDARY_COL}']}"
             if row[SECONDARY_COL] == row[f"{p}{SECONDARY_COL}"]:
                 condition_group = row[SECONDARY_COL]
             else:
