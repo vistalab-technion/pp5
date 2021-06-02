@@ -6,6 +6,7 @@ from pp5.codons import (
     CODONS,
     AAC_SEP,
     CODON_RE,
+    N_CODONS,
     AA_CODONS,
     SYN_CODON_IDX,
     SYN_CODON_IDX_UNIQ,
@@ -64,3 +65,32 @@ class TestSynonymous:
         assert len(set(SYN_CODON_IDX_UNIQ)) == len(SYN_CODON_IDX_UNIQ)
         for i, j in SYN_CODON_IDX_UNIQ:
             assert is_synonymous(AA_CODONS[i], AA_CODONS[j])
+
+
+class TestAACTuplePairs:
+    @pytest.mark.parametrize("unique", [False, True], ids=["non_uniq", "uniq"])
+    @pytest.mark.parametrize("synonymous", [False, True], ids=["non_syn", "syn"])
+    @pytest.mark.parametrize("k", [1, 2])
+    def test_aac_tuple_pairs(self, k, synonymous, unique):
+        if k > 1 and synonymous and not unique:
+            return
+
+        tuple_pairs = aac_tuple_pairs(k, synonymous=synonymous, unique=unique)
+
+        # number of all k-tuple pairs
+        n_k_tuples = N_CODONS ** k
+        num_all_k_tuple_pairs = n_k_tuples ** 2
+        num_unique_k_tuple_pairs = num_all_k_tuple_pairs / 2 + n_k_tuples / 2
+
+        print(f"{n_k_tuples=}, {num_all_k_tuple_pairs=}, {num_unique_k_tuple_pairs=}")
+
+        if not synonymous:
+            if not unique:
+                assert len(tuple_pairs) == num_all_k_tuple_pairs
+            else:
+                assert len(tuple_pairs) == num_unique_k_tuple_pairs
+
+        for (i, aact1), (j, aact2) in tuple_pairs:
+            assert len(aact1) == len(aact2) == k
+            if synonymous:
+                assert is_synonymous_tuple(aact1, aact2)

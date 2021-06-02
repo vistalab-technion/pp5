@@ -2,6 +2,7 @@ import re
 import itertools as it
 from typing import Set, Tuple, Iterator, Sequence, cast
 
+import numpy as np
 from Bio.Data import IUPACData, CodonTable
 
 # Separates between AA and matching codon, e.g. "A-GCA"
@@ -130,7 +131,7 @@ def aac_tuple_pairs(
     indexed_pairs = it.product(enumerate(aac_tuples(k)), enumerate(aac_tuples(k)))
 
     indexed_filtered_pairs = (
-        _reduce_fn(ij)  # ij = tuple of two AACIndexedTuple
+        _reduce_fn(ij)  # ij = ((i, aact1), (j, aact2))
         for ij in indexed_pairs
         if _synonymous_fn(ij[0][1], ij[1][1])
     )
