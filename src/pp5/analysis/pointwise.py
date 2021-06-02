@@ -56,6 +56,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         pointwise_filename: str = "data-precs.csv",
         condition_on_ss: bool = True,
         consolidate_ss: dict = DSSP_TO_SS_TYPE.copy(),
+        tuple_len: int = 1,
         min_group_size: int = 1,
         strict_codons: bool = True,
         kde_nbins: int = 128,
@@ -85,6 +86,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             the consolidated SS types used in this analysis.
         :param condition_on_ss: Whether to condition on secondary structure
             (of two consecutive residues, after consolidation).
+        :param tuple_len: Number of consecutive codons to analyze as a tuple.
+            Set 1 for single codons, 2 for codon pairs. Other values are not supported.
         :param min_group_size: Minimal number of angle-pairs from different
             structures belonging to the same Uniprot ID, location and codon in order to
             consider the group of angles for analysis.
@@ -127,8 +130,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         elif isinstance(bs_fixed_n, int) and bs_fixed_n < 0:
             raise ValueError(f"invalid bs_fixed_n: {bs_fixed_n}, must be > 0")
 
+        if tuple_len not in (1, 2):
+            raise ValueError(f"invalid {tuple_len=}, must be 1 or 2")
+
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
+        self.tuple_len = tuple_len
         self.min_group_size = min_group_size
         self.strict_codons = strict_codons
         self.condition_on_prev = None
