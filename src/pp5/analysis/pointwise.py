@@ -59,7 +59,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         pointwise_filename: str = "data-precs.csv",
         condition_on_ss: bool = True,
         consolidate_ss: dict = DSSP_TO_SS_TYPE.copy(),
-        tuple_len: int = 1,
+        codon_tuple_len: int = 1,
         min_group_size: int = 1,
         strict_codons: bool = True,
         kde_nbins: int = 128,
@@ -89,7 +89,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             the consolidated SS types used in this analysis.
         :param condition_on_ss: Whether to condition on secondary structure
             (of two consecutive residues, after consolidation).
-        :param tuple_len: Number of consecutive codons to analyze as a tuple.
+        :param codon_tuple_len: Number of consecutive codons to analyze as a tuple.
             Set 1 for single codons, 2 for codon pairs. Other values are not supported.
         :param min_group_size: Minimal number of angle-pairs from different
             structures belonging to the same Uniprot ID, location and codon in order to
@@ -133,12 +133,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         elif isinstance(bs_fixed_n, int) and bs_fixed_n < 0:
             raise ValueError(f"invalid bs_fixed_n: {bs_fixed_n}, must be > 0")
 
-        if tuple_len not in (1, 2):
-            raise ValueError(f"invalid {tuple_len=}, must be 1 or 2")
+        if codon_tuple_len < 1:
+            raise ValueError(f"invalid {codon_tuple_len=}, must be >= 1")
 
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
-        self.tuple_len = tuple_len
+        self.codon_tuple_len = codon_tuple_len
         self.min_group_size = min_group_size
         self.strict_codons = strict_codons
         self.condition_on_prev = None
@@ -241,6 +241,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         LOGGER.info(f"preprocessing done, elapsed={time.time()-start:.2f}s")
         LOGGER.info(f"{df_processed}")
 
+        # Sort rows using the order of residues in each protein
+        df_processed = df_processed.sort_values(by=[UNP_ID_COL, UNP_IDX_COL])
+
         self._dump_intermediate("dataset", df_processed, debug=True)
         return {
             "n_TOTAL": len(df_processed),
@@ -296,7 +299,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
         return processed_subgroups
 
-    def _pairs_dataset(self, pool: mp.pool.Pool) -> dict:
+    def _create_tuples_dataset(self, pool: mp.pool.Pool) -> dict:
         curr_codon_col = CODON_COL
         async_results: List[AsyncResult] = []
 
@@ -307,7 +310,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         for group_idx, df_group in df_processed.groupby(by=[UNP_ID_COL]):
             unp_id = group_idx
             async_results.append(
-                pool.apply_async(self._create_group_pairs, args=(unp_id, df_group),)
+                pool.apply_async(
+                    self._create_group_tuples, args=(df_group, self.codon_tuple_len),
+                )
             )
 
         # Results is a list of dataframes
@@ -315,17 +320,17 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             async_results, collect=True, flatten=False
         )
 
-        df_pairs = pd.concat((r for r in results if r is not None), axis=0)
-        LOGGER.info(f"Pairs dataset created, elapsed={time.time()-start:.2f}s")
-        LOGGER.info(f"{df_pairs}")
+        df_tuples = pd.concat((r for r in results if r is not None), axis=0)
+        LOGGER.info(f"tuples dataset created, elapsed={time.time()-start:.2f}s")
+        LOGGER.info(f"{df_tuples}")
 
-        self._dump_intermediate("dataset-pairs", df_pairs, debug=True)
+        self._dump_intermediate("dataset-tuples", df_tuples, debug=True)
         return {
-            "n_pairs_TOTAL": len(df_pairs),
+            "n_tuples_TOTAL": len(df_tuples),
         }
 
-    def _create_group_pairs(
-        self, unp_id: str, df_group: pd.DataFrame
+    def _create_group_tuples(
+        self, df_group: pd.DataFrame, tuple_len: int,
     ) -> Optional[pd.DataFrame]:
 
         # Sort rows using the order of residues in each protein
@@ -333,46 +338,68 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Create a shifted version of the data and concatenate is next to the original
         # Each row will have the current and next residue.
-        p = "next_"
-        df_m = pd.concat([df_group, df_group.shift(-1).add_prefix(p)], axis=1)
-        df_m[f"{p}{UNP_IDX_COL}"] = df_m[f"{p}{UNP_IDX_COL}"].astype("Int64")
+        prefixes = [""]
+        shifted_dfs = [df_group]
+        for i in range(1, tuple_len):
+            p = f"next_{i}_"
+            prefixes.append(p)
+
+            # Shift and fix type due to NaNs appearing
+            df_shifted = df_group.shift(-i)
+            df_shifted[f"{UNP_IDX_COL}"] = df_shifted[f"{UNP_IDX_COL}"].astype("Int64")
+            df_shifted = df_shifted.add_prefix(p)
+
+            shifted_dfs.append(df_shifted)
+
+        df_m = pd.concat(shifted_dfs, axis=1)
 
         # Only keep rows where the next residue is in the same protein and has the
         # successive index.
-        df_m = df_m.query(
-            f"{UNP_ID_COL} == {p}{UNP_ID_COL} and "
-            f"{UNP_IDX_COL} + 1 == {p}{UNP_IDX_COL}"
-        )
+        queries = []
+        for i, prefix in enumerate(prefixes[1:], start=1):
+            queries.append(f"{UNP_ID_COL} == {prefix}{UNP_ID_COL}")
+            queries.append(f"{UNP_IDX_COL} + {i} == {prefix}{UNP_IDX_COL}")
+
+        query = str.join(" and ", queries)
+        if query:
+            df_m = df_m.query(query)
 
         if len(df_m) == 0:
             return None
 
         # Function to map rows in the merged dataframe to the final rows we'll use.
         def _row_mapper(row: pd.Series):
-            codon_pair = f"{row[CODON_COL]}{AAC_TUPLE_SEP}{row[f'{p}{CODON_COL}']}"
-            aa_pair = f"{row[AA_COL]}{AAC_TUPLE_SEP}{row[f'{p}{AA_COL}']}"
-            ss_pair = f"{row[SECONDARY_COL]}{AAC_TUPLE_SEP}{row[f'{p}{SECONDARY_COL}']}"
-            if row[SECONDARY_COL] == row[f"{p}{SECONDARY_COL}"]:
-                condition_group = row[SECONDARY_COL]
+
+            codons, aas, sss, group_sizes = [], [], [], []
+            for i, p in enumerate(prefixes):
+                codons.append(row[f"{p}{CODON_COL}"])
+                aas.append(row[f"{p}{AA_COL}"])
+                sss.append(row[f"{p}{SECONDARY_COL}"])
+                group_sizes.append(row[f"{p}{GROUP_SIZE_COL}"])
+
+            codon_tuple = str.join(AAC_TUPLE_SEP, codons)
+            aa_tuple = str.join(AAC_TUPLE_SEP, aas)
+            ss_tuple = str.join(AAC_TUPLE_SEP, sss)
+            if all(ss == sss[0] for ss in sss):
+                condition_group = sss[0]
             else:
                 condition_group = SS_TYPE_MIXED
+
             return {
                 UNP_ID_COL: row[UNP_ID_COL],
                 UNP_IDX_COL: row[UNP_IDX_COL],
-                AA_COL: aa_pair,
-                CODON_COL: codon_pair,
-                SECONDARY_COL: ss_pair,
+                AA_COL: aa_tuple,
+                CODON_COL: codon_tuple,
+                SECONDARY_COL: ss_tuple,
                 CONDITION_COL: condition_group,
-                # Use Psi0, Phi1 (current psi, next phi)
-                PHI_COL: row[f"{p}{PHI_COL}"],
+                # Use Psi0, Phi1 (current psi, next (or last) phi)
+                PHI_COL: row[f"{prefixes[-1]}{PHI_COL}"],
                 PSI_COL: row[PSI_COL],
-                GROUP_SIZE_COL: min(
-                    row[GROUP_SIZE_COL], int(row[f"{p}{GROUP_SIZE_COL}"])
-                ),
+                GROUP_SIZE_COL: int(min(group_sizes)),
             }
 
-        df_pairs = df_m.apply(_row_mapper, axis=1, raw=False, result_type="expand")
-        return df_pairs
+        df_tuples = df_m.apply(_row_mapper, axis=1, raw=False, result_type="expand")
+        return df_tuples
 
     def _dataset_stats(self, pool: mp.pool.Pool) -> dict:
         """
