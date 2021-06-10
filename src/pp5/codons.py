@@ -44,8 +44,10 @@ CODON_RE = re.compile(
 )
 
 
+AA = str
 AAC = str
 AACTuple = Tuple[AAC, ...]
+AATuple = Tuple[AA, ...]
 AACIndexedTuple = Tuple[int, AACTuple]
 
 
@@ -63,6 +65,16 @@ def aac2c(aac: AAC):
     :return: The Codon string.
     """
     return aac.split(AAC_SEP)[1]
+
+
+def aact2aat(aact: AACTuple) -> AATuple:
+    """
+    Convert a tuple of AACs e.g. (A-GCA, A-GCC) to a tuple of the corresponding AAs,
+    e.g. (A, A).
+    :param aact: The AAC tuple.
+    :return: An AA tuple.
+    """
+    return tuple(aac2aa(aac) for aac in aact)
 
 
 def is_synonymous(aac1: AAC, aac2: AAC) -> bool:
