@@ -4,9 +4,40 @@ from itertools import product
 
 import numba
 import numpy as np
-from scipy.stats import norm
 from numpy.random import permutation
 from scipy.spatial.distance import pdist, squareform
+
+
+def mht_bh(q: float, pvals: np.ndarray):
+    """
+    Multiple hypothesis testing with BH(q) method.
+    :param q: The desired maximal FDR level (holds only in expectation across
+        multiple realizations of the problem).
+    :param pvals: 1d array of p-values corresponding to m different null hypotheses.
+    :return: The threshold to use for determining which of the null hypotheses to
+        reject (reject where pvals < mht_bh(q, pvals)).
+    """
+    m = len(pvals)
+
+    # Sort the pvals from low to high
+    idx_sorted = pvals.argsort()
+    pvals_sorted = pvals[idx_sorted]
+
+    # Calculate a different threshold for each pval based on it's rank
+    bhq_thresh = (np.arange(m) + 1) * (q / m)
+
+    # Find the index of the largest pval that's below its assigned threshold
+    i0 = np.argmax(np.diff(pvals_sorted <= bhq_thresh))
+
+    # Sanity check
+    assert pvals_sorted[i0] <= bhq_thresh[i0]
+    if i0 + 1 < m:
+        assert pvals_sorted[i0 + 1] > bhq_thresh[i0]
+
+    # Return the corresponding threshold of that pval
+    # This threshold should be used to determine significance among the
+    # given hypotheses.
+    return bhq_thresh[i0]
 
 
 def tw_test(
