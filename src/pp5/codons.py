@@ -112,7 +112,7 @@ def aac_tuples(k: int = 1) -> Iterator[AACTuple]:
 
 def aac_tuple_pairs(
     k: int = 1, synonymous: bool = False, unique: bool = False
-) -> Set[Tuple[AACIndexedTuple, AACIndexedTuple]]:
+) -> Iterator[Tuple[AACIndexedTuple, AACIndexedTuple]]:
     """
 
     Creates pairs of AAC indexed k-tuples.
@@ -129,31 +129,23 @@ def aac_tuple_pairs(
         tuples of length k and i and j are their indices is the sorted order of AAC
         tuples.
     """
-
-    if synonymous:
-        _synonymous_fn = is_synonymous_tuple
-    else:
-        _synonymous_fn = lambda *args: True
-
-    if unique:
-        _reduce_fn = lambda x: tuple(sorted(x))
-    else:
-        _reduce_fn = lambda x: x
-
     indexed_pairs = it.product(enumerate(aac_tuples(k)), enumerate(aac_tuples(k)))
 
-    indexed_filtered_pairs = (
-        _reduce_fn(ij)  # ij = ((i, aact1), (j, aact2))
-        for ij in indexed_pairs
-        if _synonymous_fn(ij[0][1], ij[1][1])
-    )
-
-    return {*indexed_filtered_pairs}
+    if not unique and not synonymous:
+        # This is an optimization for the non-unique non-synonymous case
+        yield from indexed_pairs
+    else:
+        for (i, aact_i), (j, aact_j) in indexed_pairs:
+            if unique and j < i:
+                continue
+            if synonymous and not is_synonymous_tuple(aact_i, aact_j):
+                continue
+            yield (i, aact_i), (j, aact_j)
 
 
 def aac_index_pairs(
     k: int = 1, synonymous: bool = False, unique: bool = False
-) -> Set[Tuple[int, int]]:
+) -> Iterator[Tuple[int, int]]:
     """
     Returns indices of AAC tuples.
     :param k: Length of each tuple in each returned pair.
@@ -165,13 +157,16 @@ def aac_index_pairs(
     :return: A set of pairs (i, j) where i and j are each indices of AACs is the sorted
         order of AAC tuples.
     """
-    return {(i, j) for (i, aact1), (j, aact2) in aac_tuple_pairs(k, synonymous, unique)}
+    yield from (
+        (i, j) for (i, aact1), (j, aact2) in aac_tuple_pairs(k, synonymous, unique)
+    )
 
 
 # Pairs of synonymous codons indices
 SYN_CODON_IDX: Sequence[Tuple[int, int]] = tuple(
-    (i, j)
-    for (i, aac1), (j, aac2) in aac_tuple_pairs(k=1, synonymous=True, unique=True)
+    aac_index_pairs(k=1, synonymous=True, unique=False)
 )
 
-SYN_CODON_IDX_UNIQ: Set[Tuple[int, int]] = set(SYN_CODON_IDX)
+SYN_CODON_IDX_UNIQ: Set[Tuple[int, int]] = set(
+    aac_index_pairs(k=1, synonymous=True, unique=True)
+)

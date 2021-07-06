@@ -13,6 +13,7 @@ from pp5.codons import (
     aac2c,
     aac2aa,
     is_synonymous,
+    aac_index_pairs,
     aac_tuple_pairs,
     is_synonymous_tuple,
 )
@@ -75,22 +76,37 @@ class TestAACTuplePairs:
         if k > 1 and synonymous and not unique:
             return
 
+        # tuple_pairs = aac_tuple_pairs(k, synonymous=synonymous, unique=unique)
         tuple_pairs = aac_tuple_pairs(k, synonymous=synonymous, unique=unique)
+        index_pairs = aac_index_pairs(k, synonymous=synonymous, unique=unique)
 
-        # number of all k-tuple pairs
+        # expected number of all k-tuple pairs
         n_k_tuples = N_CODONS ** k
         num_all_k_tuple_pairs = n_k_tuples ** 2
         num_unique_k_tuple_pairs = num_all_k_tuple_pairs / 2 + n_k_tuples / 2
 
-        print(f"{n_k_tuples=}, {num_all_k_tuple_pairs=}, {num_unique_k_tuple_pairs=}")
+        num_tuple_pairs = 0
+        num_synonymous_k_tuple_pairs = 0
+        for ((i, aact1), (j, aact2)), (i_, j_) in zip(tuple_pairs, index_pairs):
+            assert len(aact1) == len(aact2) == k
+
+            if synonymous:
+                assert is_synonymous_tuple(aact1, aact2)
+                num_synonymous_k_tuple_pairs += 1
+            num_tuple_pairs += 1
+
+            assert i == i_
+            assert j == j_
+            if unique:
+                assert j >= i
 
         if not synonymous:
             if not unique:
-                assert len(tuple_pairs) == num_all_k_tuple_pairs
+                assert num_tuple_pairs == num_all_k_tuple_pairs
             else:
-                assert len(tuple_pairs) == num_unique_k_tuple_pairs
+                assert num_tuple_pairs == num_unique_k_tuple_pairs
 
-        for (i, aact1), (j, aact2) in tuple_pairs:
-            assert len(aact1) == len(aact2) == k
-            if synonymous:
-                assert is_synonymous_tuple(aact1, aact2)
+        print(
+            f"{n_k_tuples=}, {num_all_k_tuple_pairs=}, {num_unique_k_tuple_pairs=}, "
+            f"{num_synonymous_k_tuple_pairs=}"
+        )
