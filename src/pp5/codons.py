@@ -151,6 +151,23 @@ def aac_tuple_pairs(
     return {*indexed_filtered_pairs}
 
 
+def aac_index_pairs(
+    k: int = 1, synonymous: bool = False, unique: bool = False
+) -> Set[Tuple[int, int]]:
+    """
+    Returns indices of AAC tuples.
+    :param k: Length of each tuple in each returned pair.
+    :param synonymous: Whether to only returns synonymous pairs of AAC tuples. Two
+        AAC tuples A and B are synonymous if is_synonymous_tuple(A, B) is True.
+    :param unique: Whether to only return unique pairs. If False, then a pair of
+        tuples (A, B) and another pair (B, A) will be returned, otherwise only one of
+        them.
+    :return: A set of pairs (i, j) where i and j are each indices of AACs is the sorted
+        order of AAC tuples.
+    """
+    return {(i, j) for (i, aact1), (j, aact2) in aac_tuple_pairs(k, synonymous, unique)}
+
+
 # Pairs of synonymous codons indices
 SYN_CODON_IDX: Sequence[Tuple[int, int]] = tuple(
     (i, j)
