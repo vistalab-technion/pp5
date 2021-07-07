@@ -31,7 +31,9 @@ from pp5.codons import (
     aact2aat,
     codon2aac,
     aac_tuples,
+    aact_str2tuple,
     aact_tuple2str,
+    is_synonymous_tuple,
 )
 from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral, flat_torus_distance
@@ -529,14 +531,21 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         """
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
 
+        def _non_syn_codons_pair_filter(group: str, aact1: str, aact2: str):
+            # Returns True if aact1 and aact2 are not synonymous (therefore should be
+            # filtered out).
+            return not is_synonymous_tuple(aact_str2tuple(aact1), aact_str2tuple(aact2))
+
+        totals = {}
+
         result_types_to_subgroup_pairs = {
-            "aa": (AA_COL, AA_COL),
-            "aac": (AA_COL, CODON_COL),
-            "codon": (CODON_COL, CODON_COL),
+            "aa": (AA_COL, AA_COL, None),
+            "aac": (AA_COL, CODON_COL, None),
+            "codon": (CODON_COL, CODON_COL, _non_syn_codons_pair_filter),
         }
         for (
             result_name,
-            (subgroup1_col, subgroup2_col),
+            (subgroup1_col, subgroup2_col, pair_filter_fn),
         ) in result_types_to_subgroup_pairs.items():
 
             sub1_names_to_idx, sub2_names_to_idx = (
@@ -562,7 +571,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             }
 
             async_results = self._pointwise_dists_dihedral_subgroup_pairs(
-                pool, df_processed, result_name, subgroup1_col, subgroup2_col
+                pool,
+                df_processed,
+                result_name,
+                subgroup1_col,
+                subgroup2_col,
+                pair_filter_fn,
             )
 
             for (group, sub1, sub2), result in yield_async_results(async_results):
@@ -579,12 +593,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 pvals = collected_pvals[group]
                 t2s[i, j] = t2
                 pvals[i, j] = pval
-                if subgroup1_col == subgroup2_col:
-                    t2s[j, i] = t2
-                    pvals[j, i] = pval
 
             self._dump_intermediate(f"{result_name}-dihedral-t2s", collected_t2s)
             self._dump_intermediate(f"{result_name}-dihedral-pvals", collected_pvals)
+
+            totals[result_name] = {
+                g: np.sum(~np.isnan(pvals)) for g, pvals in collected_pvals.items()
+            }
+
+        LOGGER.info(f"Total number of unique tuple-pairwise pvals: {totals}")
 
     def _pointwise_dists_dihedral_subgroup_pairs(
         self,
@@ -593,6 +610,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         result_name: str,
         subgroup1_col: str,
         subgroup2_col: str,
+        pair_filter_fn: Optional[Callable[[str, str, str], bool]],
     ):
         """
         Helper function that submits pairs of subgroups for pointwise angle-based
@@ -631,9 +649,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     if len(df_sub2) < 2:
                         continue
 
-                    # Skip redundant calculations: identical pairs with h different
+                    # Skip redundant calculations: identical pairs with a different
                     # order
-                    if subgroup2_col == subgroup1_col and j < i:
+                    if subgroup2_col == subgroup1_col and j <= i:
+                        continue
+
+                    # Skip based on custom pair filtering logic
+                    if pair_filter_fn is not None and pair_filter_fn(group, sub1, sub2):
                         continue
 
                     # Analyze the angles of subgroup1 and subgroup2
