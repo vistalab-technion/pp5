@@ -77,6 +77,24 @@ def aact2aat(aact: AACTuple) -> AATuple:
     return tuple(aac2aa(aac) for aac in aact)
 
 
+def aact_str2tuple(aact_str: str) -> AACTuple:
+    """
+    Converts a string of separated AAC's to a tuple.
+    :param aact_str: The string to convert, e.g. "A-GCA_C-CCC"
+    :return: The tuple, e.g. ("A-GCA", "C-CCC").
+    """
+    return tuple(aact_str.split(AAC_TUPLE_SEP))
+
+
+def aact_tuple2str(aact: AACTuple) -> str:
+    """
+    Converts a tuple of AACs to a string representation.
+    :param aact: The tuple to convert, e.g. ("A-GCA", "C-CCC").
+    :return: The string representation, e.g. "A-GCA_C-CCC"
+    """
+    return str.join(AAC_TUPLE_SEP, aact)
+
+
 def is_synonymous(aac1: AAC, aac2: AAC) -> bool:
     """
     Whether two AAC's are synonymous, i.e. codons corresponding to the same AA.
@@ -87,7 +105,7 @@ def is_synonymous(aac1: AAC, aac2: AAC) -> bool:
     return aac2aa(aac1) == aac2aa(aac2)
 
 
-def is_synonymous_tuple(aact1: AACTuple, aact2: AACTuple):
+def is_synonymous_tuple(aact1: AACTuple, aact2: AACTuple) -> bool:
     """
     Whether two tuples, each containing k AACs, are synonymous, i.e.,
     each pair of corresponding AACs at corresponding indices within the tuples is

@@ -12,7 +12,11 @@ from pp5.codons import (
     SYN_CODON_IDX_UNIQ,
     aac2c,
     aac2aa,
+    aact2aat,
+    aac_tuples,
     is_synonymous,
+    aact_str2tuple,
+    aact_tuple2str,
     aac_index_pairs,
     aac_tuple_pairs,
     is_synonymous_tuple,
@@ -110,3 +114,17 @@ class TestAACTuplePairs:
             f"{n_k_tuples=}, {num_all_k_tuple_pairs=}, {num_unique_k_tuple_pairs=}, "
             f"{num_synonymous_k_tuple_pairs=}"
         )
+
+
+class TestStringConversions:
+    @pytest.mark.parametrize("k", [1, 2, 3])
+    @pytest.mark.parametrize("use_aas", [False, True], ids=["codons", "aas"])
+    def test_conversion(self, k, use_aas):
+        for t in aac_tuples(k=k):
+            if use_aas:
+                t = aact2aat(t)
+
+            t_str = aact_tuple2str(t)
+            assert type(t_str) == str
+            t_ = aact_str2tuple(t_str)
+            assert t_ == t
