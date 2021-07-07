@@ -179,7 +179,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             "tuples_dataset": self._create_tuples_dataset,
             "dataset_stats": self._dataset_stats,
             "pointwise_dists_dihedral": self._pointwise_dists_dihedral,
-            # "dihedral_kde_groups": self._dihedral_kde_groups,
+            "kde_groups": self._kde_groups,
+            "kde_subgroups": self._kde_subgroups,
             # "pointwise_dists_kde": self._pointwise_dists_kde,
             # "codon_dists_expected": self._codon_dists_expected,
             # "plot_results": self._plot_results,
@@ -520,7 +521,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         return {"group_sizes": group_sizes}
 
-    def _pointwise_dists_dihedral(self, pool: mp.pool.Pool):
+    def _pointwise_dists_dihedral(self, pool: mp.pool.Pool) -> dict:
         """
         Calculate pointwise-distances between pairs of codon-tuples (sub-groups).
         Each codon-tuple is represented by the set of all dihedral angles coming from it.
@@ -602,6 +603,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             }
 
         LOGGER.info(f"Total number of unique tuple-pairwise pvals: {totals}")
+        return {"pval_counts": totals}
 
     def _pointwise_dists_dihedral_subgroup_pairs(
         self,
@@ -672,17 +674,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         self.t2_permutations,
                         flat_torus_distance,
                     )
+
                     res = pool.apply_async(_subgroup_tw2_test, args=args)
                     async_results[(group, sub1, sub2)] = res
 
         return async_results
 
-    def _dihedral_kde_groups(self, pool: mp.pool.Pool) -> dict:
+    def _kde_groups(self, pool: mp.pool.Pool) -> dict:
         """
         Estimates the dihedral angle distribution of each group (e.g. SS) as a
         Ramachandran plot, using kernel density estimation (KDE).
         """
-        df_processed: pd.DataFrame = self._load_intermediate("dataset")
+        df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
         df_groups = df_processed.groupby(by=SECONDARY_COL)
         df_groups_count: pd.DataFrame = df_groups.count()
         ss_counts = {
@@ -705,6 +708,58 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self._dump_intermediate("full-dkde", map_result)
 
         return {**ss_counts}
+
+    def _kde_subgroups(self, pool: mp.pool.Pool):
+        """
+        Estimates dihedral angle distributions of subgroups (AA and codon tuples).
+        """
+        df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
+        df_groups = df_processed.groupby(by=CONDITION_COL)
+
+        result_types_to_subgroup_pairs = {
+            "aa": (AA_COL, self._aa_tuple_to_idx),
+            "codon": (CODON_COL, self._codon_tuple_to_idx),
+        }
+        for (
+            result_name,
+            (subgroup_col, sub_names_to_idx),
+        ) in result_types_to_subgroup_pairs.items():
+
+            LOGGER.info(
+                f"Calculating dihedral angle distributions for {result_name}-tuples..."
+            )
+
+            async_results: Dict[Tuple[str, str], AsyncResult] = {}
+
+            # Group by the conditioning criteria, e.g. SS
+            for group_idx, (group, df_group) in enumerate(df_groups):
+
+                # Group by subgroup (e.g. AA or codon tuple)
+                df_sub_groups = df_group.groupby(subgroup_col)
+                for i, (sub, df_sub) in enumerate(df_sub_groups):
+
+                    args = (
+                        group_idx,
+                        df_sub,
+                        ANGLE_COLS,
+                        self.kde_args,
+                    )
+
+                    async_results[(group, sub)] = pool.apply_async(
+                        _dihedral_kde_single_group, args=args
+                    )
+
+            group_names = sorted(set(df_processed[CONDITION_COL]))
+            collected_kdes: Dict[str, Dict[str, np.ndarray]] = {
+                g: {} for g in group_names
+            }
+            for ((group, sub), result) in yield_async_results(async_results):
+                i = sub_names_to_idx[sub]
+                _, kde = result
+                collected_kdes[group][sub] = kde
+                LOGGER.info(f"Collected {result_name} KDEs {group=}, {sub=} ({i=})")
+
+            self._dump_intermediate(f"{result_name}-dihedral-kdes", collected_kdes)
 
     def _pointwise_dists_kde(self, pool: mp.pool.Pool) -> dict:
         """
@@ -1234,7 +1289,7 @@ def _dihedral_kde_single_group(
     :param kde_args: arguments for KDE.
     :return: A tuple:
         - The group id
-        - A list of KDEs, each an array of shape (M, M).
+        - A KDE of shape (M, M) where M is the number of bins.
     """
     kde = BvMKernelDensityEstimator(**kde_args)
 
