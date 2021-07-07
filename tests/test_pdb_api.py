@@ -254,3 +254,12 @@ class TestPDBXRayResolutionQuery:
         )
         results = query.execute()
         assert len(results) >= 2798
+
+
+class TestPDBRFreeQuery:
+    def test_1(self):
+        query = pdb_api.PDBRFreeQuery(
+            rfree=0.1, return_type=pdb_api.PDBQuery.ReturnType.ENTITY
+        )
+        results = query.execute()
+        assert len(results) >= 63

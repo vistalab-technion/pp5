@@ -44,6 +44,8 @@ _CONFIG = {
     "DEFAULT_SOURCE_TAXID": None,  # 9606 is Homo Sapiens
     # Default resolution for PDB queries
     "DEFAULT_RES": 1.8,
+    # Default RFree for PDB queries
+    "DEFAULT_RFREE": 0.24,
     # Whether to log at DEBUG level
     "LOG_DEBUG": False,
 }
