@@ -1660,7 +1660,7 @@ def _plot_full_dkdes(
 ):
     fig_filename = out_dir.joinpath("full-dkdes.pdf")
     with mpl.style.context(PP5_MPL_STYLE):
-        fig_rows, fig_cols = len(full_dkde) // 2, 2
+        fig_rows, fig_cols = len(full_dkde) // 2 + len(full_dkde) % 2, 2
         fig, ax = mpl.pyplot.subplots(
             fig_rows,
             fig_cols,
@@ -1680,6 +1680,10 @@ def _plot_full_dkdes(
                 vmin=vmin,
                 vmax=vmax,
             )
+
+        while i + 1 < len(axes):
+            i += 1
+            axes[i].set_axis_off()
 
         pp5.plot.savefig(fig, fig_filename, close=True)
 
