@@ -275,7 +275,8 @@ class ProteinRecordCollector(ParallelDataCollector):
 
     def __init__(
         self,
-        resolution: float,
+        resolution: float = pp5.get_config("DEFAULT_RES"),
+        r_free: Optional[float] = pp5.get_config("DEFAULT_RFREE"),
         expr_sys: Optional[str] = pp5.get_config("DEFAULT_EXPR_SYS"),
         source_taxid: Optional[int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         prec_init_args=None,
@@ -303,11 +304,17 @@ class ProteinRecordCollector(ParallelDataCollector):
         super().__init__(
             async_timeout=async_timeout, out_dir=out_dir, tag=out_tag, create_zip=False
         )
+        if resolution is None:
+            raise ValueError("Must specify resolution cutoff for collection")
+
         self.resolution = float(resolution)
-        self.expr_sys = expr_sys
-        self.source_taxid = int(source_taxid) if source_taxid else None
+        self.r_free = float(r_free) if r_free is not None else None
+        self.expr_sys = str(expr_sys) if expr_sys else None
+        self.source_taxid = int(source_taxid) if source_taxid is not None else None
 
         queries = [pdb_api.PDBXRayResolutionQuery(resolution=self.resolution)]
+        if self.r_free:
+            queries.append(pdb_api.PDBRFreeQuery(rfree=self.r_free))
         if self.expr_sys:
             queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys=self.expr_sys))
         if self.source_taxid:
