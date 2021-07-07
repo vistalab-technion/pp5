@@ -1,6 +1,6 @@
 import re
 import itertools as it
-from typing import Set, Tuple, Iterator, Sequence, cast
+from typing import Set, Tuple, Union, Iterator, Sequence, cast
 
 import numpy as np
 from Bio.Data import IUPACData, CodonTable
@@ -86,7 +86,7 @@ def aact_str2tuple(aact_str: str) -> AACTuple:
     return tuple(aact_str.split(AAC_TUPLE_SEP))
 
 
-def aact_tuple2str(aact: AACTuple) -> str:
+def aact_tuple2str(aact: Union[AACTuple, Sequence[str]]) -> str:
     """
     Converts a tuple of AACs to a string representation.
     :param aact: The tuple to convert, e.g. ("A-GCA", "C-CCC").
