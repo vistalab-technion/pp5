@@ -31,6 +31,7 @@ from pp5.codons import (
     aact2aat,
     codon2aac,
     aac_tuples,
+    aact_tuple2str,
 )
 from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral, flat_torus_distance
@@ -159,11 +160,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Initialize codon tuple names and corresponding indices
         tuples = list(aac_tuples(k=self.codon_tuple_len))
         self._codon_tuple_to_idx = {
-            str.join(AAC_TUPLE_SEP, aac_tuple): idx
-            for idx, aac_tuple in enumerate(tuples)
+            aact_tuple2str(aac_tuple): idx for idx, aac_tuple in enumerate(tuples)
         }
         self._aa_tuple_to_idx = {
-            str.join(AAC_TUPLE_SEP, aat): idx
+            aact_tuple2str(aat): idx
             for idx, aat in enumerate(sorted(set(aact2aat(aact) for aact in tuples)))
         }
         self._n_codon_tuples = len(self._codon_tuple_to_idx)
@@ -392,9 +392,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 sss.append(row[f"{p}{SECONDARY_COL}"])
                 group_sizes.append(row[f"{p}{GROUP_SIZE_COL}"])
 
-            codon_tuple = str.join(AAC_TUPLE_SEP, codons)
-            aa_tuple = str.join(AAC_TUPLE_SEP, aas)
-            ss_tuple = str.join(AAC_TUPLE_SEP, sss)
+            codon_tuple = aact_tuple2str(codons)
+            aa_tuple = aact_tuple2str(aas)
+            ss_tuple = aact_tuple2str(sss)
             if all(ss == sss[0] for ss in sss):
                 condition_group = sss[0]
             else:
