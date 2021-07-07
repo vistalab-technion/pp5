@@ -22,17 +22,15 @@ from pp5.utils import sort_dict
 from pp5.codons import (
     ACIDS,
     AAC_SEP,
-    N_ACIDS,
-    N_CODONS,
     AA_CODONS,
     AAC_TUPLE_SEP,
-    SYN_CODON_IDX,
     aac2aa,
     aact2aat,
     codon2aac,
     aac_tuples,
     aact_str2tuple,
     aact_tuple2str,
+    aac_index_pairs,
     is_synonymous_tuple,
 )
 from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
@@ -183,7 +181,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             "kde_subgroups": self._kde_subgroups,
             # "pointwise_dists_kde": self._pointwise_dists_kde,
             # "codon_dists_expected": self._codon_dists_expected,
-            # "plot_results": self._plot_results,
+            "plot_results": self._plot_results,
         }
 
     def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
@@ -1058,7 +1056,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         """
         LOGGER.info(f"Plotting results...")
 
-        ap_label = _cols2label(PHI_COL, PSI_COL)
+        ap_label = _cols2label(
+            PHI_COL + ("+0" if self.codon_tuple_len == 1 else "+1"), PSI_COL + "+0"
+        )
 
         async_results = []
 
@@ -1112,6 +1112,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             ["block", ""],
         )
         for aa_codon, dkde_dihedral, dist_type, exp, block_diag in distance_types:
+
+            # FIXME
+            continue
+
             result_name = str.join(
                 "-", filter(None, [aa_codon, dkde_dihedral, dist_type, exp])
             )
@@ -1121,19 +1125,26 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             if dists is None:
                 continue
 
+            aa_tuple_labels = tuple(self._aa_tuple_to_idx.keys())
+            codon_tuple_labels = tuple(self._codon_tuple_to_idx.keys())
             out_dir = self.out_dir.joinpath(result_name)
             if aa_codon == "aa":
-                row_labels = col_labels = ACIDS
+                row_labels = col_labels = aa_tuple_labels
             elif aa_codon == "codon":
-                row_labels = col_labels = AA_CODONS
+                row_labels = col_labels = codon_tuple_labels
             else:  # aac
-                row_labels = ACIDS
-                col_labels = AA_CODONS
+                row_labels = aa_tuple_labels
+                col_labels = codon_tuple_labels
 
             block_diagonal_pairs = None
             if block_diag:
                 if aa_codon == "codon":
-                    block_diagonal_pairs = SYN_CODON_IDX
+                    block_diagonal_pairs = tuple(
+                        aac_index_pairs(
+                            k=self.codon_tuple_len, synonymous=True, unique=False
+                        )
+                    )
+
                 else:
                     continue  # Prevent plotting twice
 
@@ -1166,11 +1177,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Averaged Dihedral KDEs of each codon in each group
         group_sizes: dict = self._load_intermediate("group-sizes", True)
         for aa_codon in ["aa", "codon"]:
-            avg_dkdes: dict = self._load_intermediate(f"{aa_codon}-dkdes", True)
+            avg_dkdes: dict = self._load_intermediate(f"{aa_codon}-dihedral-kdes", True)
             if avg_dkdes is None:
                 continue
             for group_idx, dkdes in avg_dkdes.items():
                 subgroup_sizes = group_sizes[group_idx]["subgroups"]
+
+                split_subgroups_glob = None
+                if self.codon_tuple_len > 1:
+                    split_subgroups_glob = ACIDS if aa_codon == "aa" else AA_CODONS
+                    split_subgroups_glob = [f"{s}*" for s in split_subgroups_glob]
 
                 async_results.append(
                     pool.apply_async(
@@ -1178,9 +1194,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         kwds=dict(
                             group_idx=group_idx,
                             subgroup_sizes=subgroup_sizes,
+                            split_subgroups_glob=split_subgroups_glob,
                             dkdes=dkdes,
                             out_dir=self.out_dir.joinpath(f"{aa_codon}-dkdes"),
-                            angle_pair_labels=ap_label,
+                            angle_pair_label=ap_label,
                             vmin=0.0,
                             vmax=5e-4,
                         ),
@@ -1770,51 +1787,85 @@ def _plot_dist_matrix(
 def _plot_dkdes(
     group_idx: str,
     subgroup_sizes: Dict[str, int],
+    split_subgroups_glob: Sequence[str],
     dkdes: Dict[str, Optional[np.ndarray]],
     angle_pair_label: Optional[str],
     out_dir: Path,
     vmin: Optional[float] = None,
     vmax: Optional[float] = None,
 ):
+    """
+    :param group_idx: Name of group.
+    :param subgroup_sizes: Dict from subgroup name to number of samples.
+    :param split_subgroups_glob: Sequence of glob patterns to use for splitting sub
+        groups into separate figures
+    :param dkdes: The data to plot, maps from subgroup name to a KDE
+    :param angle_pair_label: Label for plot legend.
+    :param out_dir: Output directory.
+    :param vmin: Normalization min value.
+    :param vmax: Normalization max value.
+    """
     # Plot the kdes and distance matrices
-    LOGGER.info(f"Plotting KDEs for {group_idx}")
+    LOGGER.info(f"Plotting KDEs for {group_idx} into {out_dir!s}")
 
-    N = len(dkdes)
-    fig_cols = int(np.ceil(np.sqrt(N)))
-    fig_rows = int(np.ceil(N / fig_cols))
+    from fnmatch import fnmatchcase
 
-    with matplotlib.style.context(PP5_MPL_STYLE):
-        fig, ax = mpl.pyplot.subplots(
-            fig_rows,
-            fig_cols,
-            figsize=(5 * fig_cols, 5 * fig_rows),
-            sharex="all",
-            sharey="all",
-        )
-        axes: Sequence[Axes] = np.reshape(ax, -1)
+    if not split_subgroups_glob:
+        split_subgroups_glob = ["*"]
 
-        for i, (subgroup_idx, d2) in enumerate(dkdes.items()):
-            title = f"{subgroup_idx} ({subgroup_sizes.get(subgroup_idx, 0)})"
-            if d2 is None:
-                ax[i].set_title(title)
-                continue
+    fig_filenames = []
+    for subgroup_glob in split_subgroups_glob:
 
-            # Remove the std of the DKDE
-            d2_real = np.real(d2)
+        filtered_dkdes = {
+            sub: dkde for sub, dkde in dkdes.items() if fnmatchcase(sub, subgroup_glob)
+        }
 
-            pp5.plot.ramachandran(
-                d2_real,
-                angle_pair_label,
-                title=title,
-                ax=axes[i],
-                vmin=vmin,
-                vmax=vmax,
+        N = len(filtered_dkdes)
+        if N < 1:
+            continue
+
+        fig_cols = int(np.ceil(np.sqrt(N)))
+        fig_rows = int(np.ceil(N / fig_cols))
+
+        with matplotlib.style.context(PP5_MPL_STYLE):
+            fig, ax = mpl.pyplot.subplots(
+                fig_rows,
+                fig_cols,
+                figsize=(5 * fig_cols, 5 * fig_rows),
+                sharex="all",
+                sharey="all",
             )
+            axes: Sequence[Axes] = np.reshape(ax, -1)
 
-        fig_filename = out_dir.joinpath(f"{group_idx}.png")
-        pp5.plot.savefig(fig, fig_filename, close=True)
+            for i, (subgroup_idx, d2) in enumerate(filtered_dkdes.items()):
+                title = f"{subgroup_idx} ({subgroup_sizes.get(subgroup_idx, 0)})"
+                if d2 is None:
+                    axes[i].set_title(title)
+                    continue
 
-    return str(fig_filename)
+                # Remove the std of the DKDE
+                d2_real = np.real(d2)
+
+                pp5.plot.ramachandran(
+                    d2_real,
+                    angle_pair_label,
+                    title=title,
+                    ax=axes[i],
+                    vmin=vmin,
+                    vmax=vmax,
+                )
+
+            while i + 1 < len(axes):
+                i += 1
+                axes[i].set_axis_off()
+
+            fig_filename = out_dir.joinpath(f"{group_idx}").joinpath(
+                f"{subgroup_glob}.png"
+            )
+            pp5.plot.savefig(fig, fig_filename, close=True)
+            fig_filenames.append(fig_filename)
+
+    return str(fig_filenames)
 
 
 def _cols2label(phi_col: str, psi_col: str):
