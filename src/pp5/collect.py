@@ -310,7 +310,9 @@ class ProteinRecordCollector(ParallelDataCollector):
         self.resolution = float(resolution)
         self.r_free = float(r_free) if r_free is not None else None
         self.expr_sys = str(expr_sys) if expr_sys else None
-        self.source_taxid = int(source_taxid) if source_taxid is not None else None
+        self.source_taxid = (
+            int(source_taxid) if (source_taxid not in (None, "")) else None
+        )
 
         queries = [pdb_api.PDBXRayResolutionQuery(resolution=self.resolution)]
         if self.r_free:
