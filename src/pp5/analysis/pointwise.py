@@ -24,6 +24,7 @@ from pp5.codons import (
     AAC_SEP,
     AA_CODONS,
     AAC_TUPLE_SEP,
+    UNKNOWN_CODON,
     aac2aa,
     aact2aat,
     codon2aac,
@@ -230,10 +231,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if self.condition_on_ss:
             condition_groups = df_pointwise.secondary
         else:
-            condition_groups = "ANY"
+            condition_groups = SS_TYPE_ANY
         df_pointwise[CONDITION_COL] = condition_groups
 
         # Convert codon columns to AA-CODON
+        idx_no_codon = df_pointwise[CODON_COL] == UNKNOWN_CODON
+        df_pointwise = df_pointwise[~idx_no_codon]
         df_pointwise[CODON_COL] = df_pointwise[[CODON_COL]].applymap(codon2aac)
 
         async_results = []
@@ -396,7 +399,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             codon_tuple = aact_tuple2str(codons)
             aa_tuple = aact_tuple2str(aas)
             ss_tuple = aact_tuple2str(sss)
-            if all(ss == sss[0] for ss in sss):
+            if not self.condition_on_ss:
+                condition_group = SS_TYPE_ANY
+            elif all(ss == sss[0] for ss in sss):
                 condition_group = sss[0]
             else:
                 condition_group = SS_TYPE_MIXED
