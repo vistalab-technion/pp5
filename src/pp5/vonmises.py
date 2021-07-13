@@ -198,25 +198,13 @@ class BvMMixtureDiscreteDistribution(object):
 
         # Set defaults and override with user prefs
         ramachandran_kw = {**dict(grid_2pi=self.two_pi, figsize=4), **ramachandran_kw}
-        scatter_kw = {**dict(s=10, c="black", marker="x", alpha=0.7), **scatter_kw}
 
         fig, ax = plot.ramachandran(
-            [self.pdf], legend_label=["BvM Mixture"], **ramachandran_kw,
+            [self.pdf],
+            legend_label=["BvM Mixture"],
+            samples=samples,
+            **ramachandran_kw,
         )
-        ax: Axes
-
-        if samples is not None:
-            samples = np.degrees(samples)
-            xlim, ylim = ax.get_xlim(), ax.get_ylim()
-            scatter = ax.scatter(x=samples[:, 0], y=samples[:, 1], **scatter_kw)
-
-            # Hack for re-using existing legend handles and labels.
-            legend = ax.get_legend()
-            labels = [] if legend is None else [str(x._text) for x in legend.texts]
-            handles = [] if legend is None else legend.legendHandles
-            ax.legend([*handles, scatter], [*labels, "Samples"], loc="lower right")
-            ax.set_xlim(xlim)
-            ax.set_ylim(ylim)
 
         return fig, ax
 
