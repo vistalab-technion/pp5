@@ -27,12 +27,13 @@ PP5_MPL_STYLE = str(pp5.CFG_DIR.joinpath("pp5_plotstyle.rc.ini"))
 def ramachandran(
     pdist: Union[ndarray, List[ndarray]],
     legend_label: Union[str, List[str]],
-    title: str = None,
+    title: Optional[str] = None,
     grid_2pi: bool = False,
-    ax: Axes = None,
+    samples: Optional[ndarray] = None,
+    ax: Optional[Axes] = None,
     style: str = PP5_MPL_STYLE,
-    figsize: float = None,
-    outfile: Union[Path, str] = None,
+    figsize: Optional[float] = None,
+    outfile: Optional[Union[Path, str]] = None,
     **colormesh_kw,
 ) -> Optional[Tuple[Figure, Axes]]:
     """
@@ -46,6 +47,8 @@ def ramachandran(
     number of elements as pdist.
     :param title: Optional title for axes.
     :param grid_2pi: Whether the data grid is [0, 2pi) (True) or [-pi, pi) (False, default).
+    :param samples: An (N, 2) ndarray containing the samples to plot on top of the
+        Ramachandran plot. The sample values must be in radians.
     :param ax: Axes to plot onto. If None, a new figure will be created.
     :param style: Matplotlib style to apply (name or filename).
     :param figsize: Size in inches of figure in both directions. None means use default.
@@ -106,6 +109,22 @@ def ramachandran(
             color = legend_colors[i % len(legend_colors)]
             label = legend_label[i]
             legend_handles.append(patches.Patch(color=color, label=label))
+
+        # Add a scatter plot of the given samples
+        if samples is not None:
+            samples = np.degrees(samples)
+            samples = ((samples + 360.0) % 360.0) if grid_2pi else samples
+
+            scatter_kw = {}  # consider adding an argument for this
+            scatter_kw = {**dict(s=10, c="black", marker="x", alpha=0.7), **scatter_kw}
+
+            xlim, ylim = ax.get_xlim(), ax.get_ylim()
+            scatter = ax.scatter(
+                x=samples[:, 0], y=samples[:, 1], label="Samples", **scatter_kw
+            )
+            legend_handles.append(scatter)
+            ax.set_xlim(xlim)
+            ax.set_ylim(ylim)
 
         ax.set_xlabel(r"$\varphi$")
         ax.set_ylabel(r"$\psi$")
