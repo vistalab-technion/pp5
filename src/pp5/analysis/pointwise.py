@@ -53,6 +53,7 @@ PHI_COL = "phi"
 PSI_COL = "psi"
 ANGLE_COLS = (PHI_COL, PSI_COL)
 CONDITION_COL = "condition_group"
+SUBGROUP_COL = "subgroup"
 GROUP_SIZE_COL = "group_size"
 
 
@@ -1180,6 +1181,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             del dists, d2
 
         # Averaged Dihedral KDEs of each codon in each group
+        df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
+        df_groups = df_processed.groupby(by=CONDITION_COL)
         group_sizes: dict = self._load_intermediate("group-sizes", True)
         for aa_codon in ["aa", "codon"]:
             avg_dkdes: dict = self._load_intermediate(f"{aa_codon}-dihedral-kdes", True)
@@ -1193,6 +1196,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     split_subgroups_glob = ACIDS if aa_codon == "aa" else AA_CODONS
                     split_subgroups_glob = [f"{s}*" for s in split_subgroups_glob]
 
+                # Get the samples (angles) of all subgroups in this group
+                subgroup_col = AA_COL if aa_codon == "aa" else CODON_COL
+                df_group: pd.DataFrame = df_groups.get_group(group_idx)
+                df_group_samples: pd.DataFrame = df_group[[subgroup_col, *ANGLE_COLS]]
+                df_group_samples = df_group_samples.rename(
+                    columns={subgroup_col: SUBGROUP_COL}
+                )
+
                 async_results.append(
                     pool.apply_async(
                         _plot_dkdes,
@@ -1201,6 +1212,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                             subgroup_sizes=subgroup_sizes,
                             split_subgroups_glob=split_subgroups_glob,
                             dkdes=dkdes,
+                            df_group_samples=df_group_samples,
                             out_dir=self.out_dir.joinpath(f"{aa_codon}-dkdes"),
                             angle_pair_label=ap_label,
                             vmin=0.0,
@@ -1794,6 +1806,7 @@ def _plot_dkdes(
     subgroup_sizes: Dict[str, int],
     split_subgroups_glob: Sequence[str],
     dkdes: Dict[str, Optional[np.ndarray]],
+    df_group_samples: Optional[pd.DataFrame],
     angle_pair_label: Optional[str],
     out_dir: Path,
     vmin: Optional[float] = None,
@@ -1805,6 +1818,8 @@ def _plot_dkdes(
     :param split_subgroups_glob: Sequence of glob patterns to use for splitting sub
         groups into separate figures
     :param dkdes: The data to plot, maps from subgroup name to a KDE
+    :param df_group_samples: The data of the current group. Optional, if provided,
+        samples will be plotted on top of each ramachandran plot.
     :param angle_pair_label: Label for plot legend.
     :param out_dir: Output directory.
     :param vmin: Normalization min value.
@@ -1851,11 +1866,17 @@ def _plot_dkdes(
                 # Remove the std of the DKDE
                 d2_real = np.real(d2)
 
+                samples = None
+                if df_group_samples is not None:
+                    idx_samples = df_group_samples[SUBGROUP_COL] == subgroup_idx
+                    samples = df_group_samples[idx_samples][[*ANGLE_COLS]].values
+
                 pp5.plot.ramachandran(
                     d2_real,
                     angle_pair_label,
                     title=title,
                     ax=axes[i],
+                    samples=samples,
                     vmin=vmin,
                     vmax=vmax,
                 )
