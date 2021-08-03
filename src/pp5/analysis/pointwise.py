@@ -1,3 +1,4 @@
+import os
 import re
 import time
 import logging
@@ -12,6 +13,7 @@ import numpy as np
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.style
+import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
@@ -773,6 +775,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
         df_groups = df_processed.groupby(by=CONDITION_COL)
 
+        out_dir = self.out_dir.joinpath("pvals")
+        os.makedirs(out_dir, exist_ok=True)
+
         significance_metadata = {}
 
         result_types = [
@@ -856,10 +861,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     )
 
             df_pvals = pd.DataFrame(data=df_data)
-            csv_path = str(self.out_dir.joinpath(f"{result_type}-pvals.csv"))
+            csv_path = str(out_dir.joinpath(f"{result_type}-pvals.csv"))
             df_pvals.to_csv(csv_path)
             LOGGER.info(f"Wrote {csv_path}")
 
+        self._dump_intermediate("significance", significance_metadata)
         return {"significance": significance_metadata}
 
     def _plot_results(self, pool: mp.pool.Pool):
@@ -957,6 +963,27 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     )
                 )
             del avg_dkdes, dkdes
+
+        # pvalues
+        significance_meta: dict = self._load_intermediate("significance", True)
+        group_sizes: dict = self._load_intermediate("group-sizes", True)
+        type_to_pvals = {
+            result_type: self._load_intermediate(
+                f"{result_type}-dihedral-pvals", True, raise_if_missing=True
+            )
+            for result_type in ["aa", "codon", "aac"]
+        }
+        async_results.append(
+            pool.apply_async(
+                _plot_pvals_hist,
+                kwds=dict(
+                    pvals=type_to_pvals,
+                    group_sizes=group_sizes,
+                    significance_meta=significance_meta,
+                    out_dir=self.out_dir.joinpath(f"pvals"),
+                ),
+            )
+        )
 
         # Wait for plotting to complete. Each function returns a path
         fig_paths = self._handle_async_results(async_results, collect=True)
@@ -1450,7 +1477,7 @@ def _plot_full_dkdes(
     fig_filename = out_dir.joinpath("full-dkdes.pdf")
     with mpl.style.context(PP5_MPL_STYLE):
         fig_rows, fig_cols = len(full_dkde) // 2 + len(full_dkde) % 2, 2
-        fig, ax = mpl.pyplot.subplots(
+        fig, ax = plt.subplots(
             fig_rows,
             fig_cols,
             figsize=(5 * fig_cols, 5 * fig_rows),
@@ -1603,7 +1630,7 @@ def _plot_dkdes(
         fig_rows = int(np.ceil(N / fig_cols))
 
         with matplotlib.style.context(PP5_MPL_STYLE):
-            fig, ax = mpl.pyplot.subplots(
+            fig, ax = plt.subplots(
                 fig_rows,
                 fig_cols,
                 figsize=(5 * fig_cols, 5 * fig_rows),
@@ -1649,6 +1676,64 @@ def _plot_dkdes(
             fig_filenames.append(fig_filename)
 
     return str(fig_filenames)
+
+
+def _plot_pvals_hist(
+    pvals: Dict[str, np.ndarray],
+    group_sizes: Dict[str, int],
+    significance_meta: Dict[str, dict],
+    out_dir: Path,
+    n_bins: int = 50,
+):
+    """
+    Plots pvalue histogram.
+    :param pvals: Dict mapping from result_type to an array of pvalues.
+    :param group_sizes: Dict from group_name to size ('total') and subgroup sizes ('subgroup').
+    :param significance_meta: A dict mapping from result_type to group_name to a dict
+        containing the significance information.
+    :return: Path of output figure.
+    """
+
+    n_groups = len(group_sizes.keys())
+
+    fig_filename = out_dir.joinpath("pvals_hist.pdf")
+    with mpl.style.context(PP5_MPL_STYLE):
+        fig_cols = 2 if n_groups > 1 else 1
+        fig_rows = n_groups // 2 + n_groups % 2
+        fig, ax = plt.subplots(
+            fig_rows, fig_cols, figsize=(5 * fig_cols, 5 * fig_rows), squeeze=False,
+        )
+        fig: Figure
+        axes: Sequence[Axes] = ax.reshape(-1)
+
+        for i, (group_name, group_sizes) in enumerate(group_sizes.items()):
+            ax = axes[i]
+
+            for result_type, group_to_pvals in pvals.items():
+                pvals_2d = group_to_pvals[group_name]
+                pvals_flat = pvals_2d[~np.isnan(pvals_2d)]
+                meta = significance_meta[result_type][group_name]
+                ax.hist(
+                    pvals_flat,
+                    bins=n_bins,
+                    density=True,
+                    log=True,
+                    alpha=0.5,
+                    label=(
+                        f"{result_type} t={meta['pval_thresh']:.4f}, "
+                        f"({meta['num_rejections']}/{meta['num_hypotheses']})"
+                    ),
+                )
+            ax.set_title(f"{group_name} ({group_sizes['total']})")
+            ax.set_ylabel("log-density")
+            ax.set_xlabel("pval")
+            ax.legend()
+
+        while i + 1 < len(axes):
+            i += 1
+            axes[i].set_axis_off()
+
+        return pp5.plot.savefig(fig, fig_filename, close=True)
 
 
 def _cols2label(phi_col: str, psi_col: str):
