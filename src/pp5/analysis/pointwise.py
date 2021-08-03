@@ -164,10 +164,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self._codon_tuple_to_idx = {
             aact_tuple2str(aac_tuple): idx for idx, aac_tuple in enumerate(tuples)
         }
+        self._idx_to_codon_tuple = {i: t for t, i in self._codon_tuple_to_idx.items()}
         self._aa_tuple_to_idx = {
             aact_tuple2str(aat): idx
             for idx, aat in enumerate(sorted(set(aact2aat(aact) for aact in tuples)))
         }
+        self._idx_to_aa_tuple = {i: t for t, i in self._aa_tuple_to_idx.items()}
         self._n_codon_tuples = len(self._codon_tuple_to_idx)
         self._n_aa_tuples = len(self._aa_tuple_to_idx)
 
@@ -297,11 +299,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 continue
 
             # Calculate average angle from the different structures in this sub group
-            angles = (
-                Dihedral.from_deg(phi, psi)
-                for phi, psi in df_subgroup[[*ANGLE_COLS]].values
-            )
-            centroid = Dihedral.circular_centroid(*angles)
+            centroid = _subgroup_centroid(df_subgroup, input_degrees=True)
             processed_subgroups.append(
                 {
                     UNP_ID_COL: unp_id,
@@ -310,8 +308,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     CODON_COL: aa_codon,
                     CONDITION_COL: group_id,
                     SECONDARY_COL: subgroup_ss,
-                    PHI_COL: centroid.phi,
-                    PSI_COL: centroid.psi,
+                    PHI_COL: centroid.phi_deg,
+                    PSI_COL: centroid.psi_deg,
                     GROUP_SIZE_COL: len(df_subgroup),
                 }
             )
@@ -515,7 +513,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Count size of each codon subgroup
             group_sizes[group_idx] = {
                 "total": len(df_group),
-                "subgroups": sort_dict(subgroup_sizes),
+                SUBGROUP_COL: sort_dict(subgroup_sizes),
             }
 
         group_sizes = sort_dict(group_sizes, selector=lambda g: g["total"])
@@ -663,8 +661,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         continue
 
                     # Analyze the angles of subgroup1 and subgroup2
-                    angles1 = df_sub1[[*ANGLE_COLS]].values
-                    angles2 = df_sub2[[*ANGLE_COLS]].values
+                    angles1 = np.deg2rad(df_sub1[[*ANGLE_COLS]].values)
+                    angles2 = np.deg2rad(df_sub2[[*ANGLE_COLS]].values)
                     args = (
                         group,
                         sub1,
@@ -826,7 +824,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             if avg_dkdes is None:
                 continue
             for group_idx, dkdes in avg_dkdes.items():
-                subgroup_sizes = group_sizes[group_idx]["subgroups"]
+                subgroup_sizes = group_sizes[group_idx][SUBGROUP_COL]
 
                 split_subgroups_glob = None
                 if self.codon_tuple_len > 1:
@@ -861,6 +859,25 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Wait for plotting to complete. Each function returns a path
         fig_paths = self._handle_async_results(async_results, collect=True)
+
+
+def _subgroup_centroid(
+    df_subgroup: pd.DataFrame, input_degrees: bool = False
+) -> Dihedral:
+    """
+    Calculates centroid angle from a subgroup dataframe containing phi,psi dihedral
+    angles in degrees under the columns ANGLE_COLS.
+    :param df_subgroup: The dataframe.
+    :param input_degrees: Whether the input data in the ANGLE_COLS is in degrees.
+    :return: A Dihedral angles object containing the result.
+    """
+    raw_angles = df_subgroup[[*ANGLE_COLS]].values
+    if input_degrees:
+        raw_angles = np.deg2rad(raw_angles)
+
+    angles = [Dihedral.from_rad(phi, psi) for phi, psi in raw_angles]
+    centroid = Dihedral.circular_centroid(*angles)
+    return centroid
 
 
 def _subgroup_tw2_test(
@@ -965,8 +982,8 @@ def _dihedral_kde_single_group(
     kde = BvMKernelDensityEstimator(**kde_args)
 
     phi_col, psi_col = angle_cols
-    phi = df_group[phi_col].values
-    psi = df_group[psi_col].values
+    phi = np.deg2rad(df_group[phi_col].values)
+    psi = np.deg2rad(df_group[psi_col].values)
     dkde = kde(phi, psi)
 
     return group_idx, dkde
@@ -1506,7 +1523,9 @@ def _plot_dkdes(
                 samples = None
                 if df_group_samples is not None:
                     idx_samples = df_group_samples[SUBGROUP_COL] == subgroup_idx
-                    samples = df_group_samples[idx_samples][[*ANGLE_COLS]].values
+                    samples = np.deg2rad(
+                        df_group_samples[idx_samples][[*ANGLE_COLS]].values
+                    )
 
                 pp5.plot.ramachandran(
                     d2_real,
