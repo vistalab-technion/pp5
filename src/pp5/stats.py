@@ -15,7 +15,7 @@ def mht_bh(q: float, pvals: np.ndarray):
         multiple realizations of the problem).
     :param pvals: 1d array of p-values corresponding to m different null hypotheses.
     :return: The threshold to use for determining which of the null hypotheses to
-        reject (reject where pvals < mht_bh(q, pvals)).
+        reject (reject where pvals <= mht_bh(q, pvals)).
     """
     m = len(pvals)
 
@@ -30,7 +30,7 @@ def mht_bh(q: float, pvals: np.ndarray):
     i0 = np.argmax(np.diff(pvals_sorted <= bhq_thresh))
 
     # Sanity check
-    assert pvals_sorted[i0] <= bhq_thresh[i0]
+    assert (pvals_sorted[i0] <= bhq_thresh[i0]) or i0 == 0
     if i0 + 1 < m:
         assert pvals_sorted[i0 + 1] > bhq_thresh[i0]
 
