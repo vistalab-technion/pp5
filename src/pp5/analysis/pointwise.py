@@ -17,7 +17,7 @@ from matplotlib.figure import Figure
 
 import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
-from pp5.stats import tw_test
+from pp5.stats import mht_bh, tw_test
 from pp5.utils import sort_dict
 from pp5.codons import (
     ACIDS,
@@ -78,6 +78,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         n_parallel_groups: int = 2,
         t2_n_max: Optional[int] = 1000,
         t2_permutations: int = 1000,
+        fdr: float = 0.1,
         out_tag: str = None,
     ):
         """
@@ -122,6 +123,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             If None or zero, sample size wont be limited.
         :param t2_permutations: Number of permutations to use when calculating
             p-value of distances with the T^2 statistic.
+        :param fdr: False discovery rate for multiple hypothesis testing using
+            Benjamini-Hochberg method.
         :param out_tag: Tag for output.
         """
         super().__init__(
@@ -142,6 +145,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if codon_tuple_len < 1:
             raise ValueError(f"invalid {codon_tuple_len=}, must be >= 1")
 
+        if not 0.0 < fdr < 1.0:
+            raise ValueError("FDR should be between 0 and 1, exclusive")
+
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
         self.codon_tuple_len = codon_tuple_len
@@ -158,6 +164,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.n_parallel_groups = n_parallel_groups
         self.t2_n_max = t2_n_max
         self.t2_permutations = t2_permutations
+        self.fdr = fdr
 
         # Initialize codon tuple names and corresponding indices
         tuples = list(aac_tuples(k=self.codon_tuple_len))
@@ -183,6 +190,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             "pointwise_dists_dihedral": self._pointwise_dists_dihedral,
             "kde_groups": self._kde_groups,
             "kde_subgroups": self._kde_subgroups,
+            "write_pvals": self._write_pvals,
             "plot_results": self._plot_results,
         }
 
@@ -760,6 +768,99 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 LOGGER.info(f"Collected {result_name} KDEs {group=}, {sub=} ({i=})")
 
             self._dump_intermediate(f"{result_name}-dihedral-kdes", collected_kdes)
+
+    def _write_pvals(self, pool: mp.pool.Pool) -> dict:
+        df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
+        df_groups = df_processed.groupby(by=CONDITION_COL)
+
+        significance_metadata = {}
+
+        result_types = [
+            ("aa", AA_COL, AA_COL, self._idx_to_aa_tuple, self._idx_to_aa_tuple),
+            (
+                "codon",
+                CODON_COL,
+                CODON_COL,
+                self._idx_to_codon_tuple,
+                self._idx_to_codon_tuple,
+            ),
+            ("aac", AA_COL, CODON_COL, self._idx_to_aa_tuple, self._idx_to_codon_tuple),
+        ]
+        for (result_type, i_col, j_col, i_tuples, j_tuples) in result_types:
+            # pvals and t2s are dicts from a group name to a dict from a
+            # subgroup-pair to a pval/t2.
+            pvals = self._load_intermediate(
+                f"{result_type}-dihedral-pvals", True, raise_if_missing=True
+            )
+            t2s = self._load_intermediate(
+                f"{result_type}-dihedral-t2s", True, raise_if_missing=True
+            )
+
+            significance_metadata[result_type] = {}
+            df_data = []
+            group: str
+            df_group: pd.DataFrame
+            for idx_group, (group, df_group) in enumerate(df_groups):
+                group_pvals = pvals[group]
+                group_t2s = t2s[group]
+
+                # Get all indices of non-null pvals
+                idx_valid = np.argwhere(~np.isnan(group_pvals))
+
+                # Calculate significance threshold for pvalues for  multiple-hypothesis
+                # testing.
+                group_pvals_flat = group_pvals[idx_valid[:, 0], idx_valid[:, 1]]
+                significance_thresh = mht_bh(q=self.fdr, pvals=group_pvals_flat)
+                significance_metadata[result_type][group] = {
+                    "pval_thresh": significance_thresh,
+                    "num_hypotheses": len(group_pvals_flat),
+                    "num_rejections": np.sum(
+                        group_pvals_flat <= significance_thresh
+                    ).item(),
+                }
+
+                # Loop over the indices of subgroups for which we computed pvalues
+                for i, j in idx_valid:
+                    subgroup_i: str = i_tuples[i]
+                    subgroup_j: str = j_tuples[j]
+
+                    df_subgroup_i = df_group[df_group[i_col] == subgroup_i]
+                    df_subgroup_j = df_group[df_group[j_col] == subgroup_j]
+
+                    mu1: Dihedral = _subgroup_centroid(
+                        df_subgroup_i, input_degrees=True
+                    )
+                    mu2: Dihedral = _subgroup_centroid(
+                        df_subgroup_j, input_degrees=True
+                    )
+                    d12 = Dihedral.flat_torus_distance(
+                        mu1, mu2, degrees=True, squared=False
+                    )
+
+                    df_data.append(
+                        {
+                            CONDITION_COL: group,
+                            f"{SUBGROUP_COL}1": subgroup_i,
+                            f"{SUBGROUP_COL}2": subgroup_j,
+                            "n1": len(df_subgroup_i),
+                            "n2": len(df_subgroup_j),
+                            "phi1_mean": mu1.phi_deg,
+                            "psi1_mean": mu1.psi_deg,
+                            "phi2_mean": mu2.phi_deg,
+                            "psi2_mean": mu2.psi_deg,
+                            "d12": d12,
+                            "pval": group_pvals[i, j],
+                            "t2": group_t2s[i, j],
+                            "significant": group_pvals[i, j] <= significance_thresh,
+                        }
+                    )
+
+            df_pvals = pd.DataFrame(data=df_data)
+            csv_path = str(self.out_dir.joinpath(f"{result_type}-pvals.csv"))
+            df_pvals.to_csv(csv_path)
+            LOGGER.info(f"Wrote {csv_path}")
+
+        return {"significance": significance_metadata}
 
     def _plot_results(self, pool: mp.pool.Pool):
         """
