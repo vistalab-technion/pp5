@@ -927,16 +927,23 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_groups = df_processed.groupby(by=CONDITION_COL)
         group_sizes: dict = self._load_intermediate("group-sizes", True)
         for aa_codon in ["aa", "codon"]:
+
             avg_dkdes: dict = self._load_intermediate(f"{aa_codon}-dihedral-kdes", True)
             if avg_dkdes is None:
                 continue
+
             for group_idx, dkdes in avg_dkdes.items():
                 subgroup_sizes = group_sizes[group_idx][SUBGROUP_COL]
 
+                # Create glob patterns to define which ramachandran plots will go
+                # into the same figure
                 split_subgroups_glob = None
                 if self.codon_tuple_len > 1:
-                    split_subgroups_glob = ACIDS if aa_codon == "aa" else AA_CODONS
-                    split_subgroups_glob = [f"{s}*" for s in split_subgroups_glob]
+                    tuple_elements = ACIDS if aa_codon == "aa" else AA_CODONS
+                    split_subgroups_glob = [f"{s}*" for s in tuple_elements]
+                    # For AAs, also include the reverse glob
+                    if aa_codon == "aa":
+                        split_subgroups_glob.extend([f"*{s}" for s in tuple_elements])
 
                 # Get the samples (angles) of all subgroups in this group
                 subgroup_col = AA_COL if aa_codon == "aa" else CODON_COL
