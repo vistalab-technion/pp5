@@ -4,23 +4,25 @@ import pytest
 from pp5.stats import mht_bh
 
 
-class TestMHT_BH(object):
+class TestMHTBH(object):
+    Q = [0.05, 0.1]
+    M = [10, 100]
+
     @pytest.fixture(autouse=True)
     def setup(self):
         pass
 
-    @pytest.mark.parametrize("q", [0.05, 0.1])
-    @pytest.mark.parametrize("m", [10, 100])
-    def test_linear_1(self, m, q):
+    @pytest.mark.parametrize("q", Q)
+    @pytest.mark.parametrize("m", M)
+    def test_pvals_equal_to_thresh(self, m, q):
         # pvals equal exactly to bh(q) line: the threshold should be the last
         pvals = (np.arange(m) + 1) * (q / m)
         t = mht_bh(q, pvals)
         assert t == pvals[-1]
 
-    @pytest.mark.parametrize("q", [0.05, 0.1])
-    @pytest.mark.parametrize("m", [10, 100])
-    def test_linear_2(self, m, q):
-        # pvals equal exactly to bh(q) line: the threshold should be the last
+    @pytest.mark.parametrize("q", Q)
+    @pytest.mark.parametrize("m", M)
+    def test_middle_pval_greater_than_thresh(self, m, q):
         bhq_thresh = (np.arange(m) + 1) * (q / m)
 
         pvals = np.copy(bhq_thresh)
@@ -33,7 +35,25 @@ class TestMHT_BH(object):
 
         # The chosen threshold should be one pval before last even though there was a
         # larger one in the middle
-        assert t == pvals[-2]
+        assert t == bhq_thresh[-2]
+
+    @pytest.mark.parametrize("q", Q)
+    @pytest.mark.parametrize("m", M)
+    def test_all_above(self, m, q):
+        # all pvals are above the threshold
+        bhq_thresh = (np.arange(m) + 1) * (q / m)
+        pvals = bhq_thresh * 1.1
+        t = mht_bh(q, pvals)
+        assert t == 0.0
+
+    @pytest.mark.parametrize("q", Q)
+    @pytest.mark.parametrize("m", M)
+    def test_all_below(self, m, q):
+        # all pvals are below the threshold
+        bhq_thresh = (np.arange(m) + 1) * (q / m)
+        pvals = bhq_thresh * 0.9
+        t = mht_bh(q, pvals)
+        assert t == bhq_thresh[-1]
 
     @pytest.mark.parametrize("q", [-0.1, 0, 1, 1.1])
     def test_invalid_q(self, q):
