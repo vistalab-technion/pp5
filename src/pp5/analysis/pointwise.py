@@ -1,3 +1,4 @@
+import os
 import re
 import time
 import logging
@@ -11,19 +12,51 @@ from multiprocessing.pool import AsyncResult
 import numpy as np
 import pandas as pd
 import matplotlib as mpl
+import matplotlib.style
+import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 
 import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
-from pp5.stats import tw_test
+from pp5.stats import mht_bh, tw_test
 from pp5.utils import sort_dict
-from pp5.codons import ACIDS, N_ACIDS, N_CODONS, AA_CODONS, SYN_CODON_IDX, codon2aac
-from pp5.analysis import SS_TYPE_ANY, CODON_TYPE_ANY, DSSP_TO_SS_TYPE
+from pp5.codons import (
+    ACIDS,
+    AAC_SEP,
+    AA_CODONS,
+    AAC_TUPLE_SEP,
+    UNKNOWN_CODON,
+    aac2aa,
+    aact2aat,
+    codon2aac,
+    aac_tuples,
+    aact_str2tuple,
+    aact_tuple2str,
+    aac_index_pairs,
+    is_synonymous_tuple,
+)
+from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral, flat_torus_distance
 from pp5.parallel import yield_async_results
 from pp5.vonmises import BvMKernelDensityEstimator
 from pp5.analysis.base import ParallelAnalyzer
 
 LOGGER = logging.getLogger(__name__)
+
+PDB_ID_COL = "pdb_id"
+UNP_ID_COL = "unp_id"
+UNP_IDX_COL = "unp_idx"
+AA_COL = "AA"
+CODON_COL = "codon"
+CODON_SCORE_COL = "codon_score"
+SECONDARY_COL = "secondary"
+PHI_COL = "phi"
+PSI_COL = "psi"
+ANGLE_COLS = (PHI_COL, PSI_COL)
+CONDITION_COL = "condition_group"
+SUBGROUP_COL = "subgroup"
+GROUP_SIZE_COL = "group_size"
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
@@ -34,6 +67,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         pointwise_filename: str = "data-precs.csv",
         condition_on_ss: bool = True,
         consolidate_ss: dict = DSSP_TO_SS_TYPE.copy(),
+        codon_tuple_len: int = 1,
         min_group_size: int = 1,
         strict_codons: bool = True,
         kde_nbins: int = 128,
@@ -46,6 +80,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         n_parallel_groups: int = 2,
         t2_n_max: Optional[int] = 1000,
         t2_permutations: int = 1000,
+        fdr: float = 0.1,
         out_tag: str = None,
     ):
         """
@@ -63,6 +98,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             the consolidated SS types used in this analysis.
         :param condition_on_ss: Whether to condition on secondary structure
             (of two consecutive residues, after consolidation).
+        :param codon_tuple_len: Number of consecutive codons to analyze as a tuple.
+            Set 1 for single codons, 2 for codon pairs. Other values are not supported.
         :param min_group_size: Minimal number of angle-pairs from different
             structures belonging to the same Uniprot ID, location and codon in order to
             consider the group of angles for analysis.
@@ -88,6 +125,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             If None or zero, sample size wont be limited.
         :param t2_permutations: Number of permutations to use when calculating
             p-value of distances with the T^2 statistic.
+        :param fdr: False discovery rate for multiple hypothesis testing using
+            Benjamini-Hochberg method.
         :param out_tag: Tag for output.
         """
         super().__init__(
@@ -105,20 +144,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         elif isinstance(bs_fixed_n, int) and bs_fixed_n < 0:
             raise ValueError(f"invalid bs_fixed_n: {bs_fixed_n}, must be > 0")
 
+        if codon_tuple_len < 1:
+            raise ValueError(f"invalid {codon_tuple_len=}, must be >= 1")
+
+        if not 0.0 < fdr < 1.0:
+            raise ValueError("FDR should be between 0 and 1, exclusive")
+
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
+        self.codon_tuple_len = codon_tuple_len
         self.min_group_size = min_group_size
         self.strict_codons = strict_codons
         self.condition_on_prev = None
-
-        self.pdb_id_col = "pdb_id"
-        self.unp_id_col, self.unp_idx_col = "unp_id", "unp_idx"
-        self.codon_col, self.codon_score_col = "codon", "codon_score"
-        self.codon_cols = (self.codon_col,)
-        self.secondary_col = "secondary"
-        self.angle_cols = ("phi", "psi")
-        self.angle_pairs = [self.angle_cols]  # should deprecate
-        self.condition_col = "condition_group"
 
         self.kde_args = dict(n_bins=kde_nbins, k1=kde_k1, k2=kde_k2, k3=kde_k3)
         self.kde_dist_metric = "l2"
@@ -129,18 +166,33 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.n_parallel_groups = n_parallel_groups
         self.t2_n_max = t2_n_max
         self.t2_permutations = t2_permutations
+        self.fdr = fdr
+
+        # Initialize codon tuple names and corresponding indices
+        tuples = list(aac_tuples(k=self.codon_tuple_len))
+        self._codon_tuple_to_idx = {
+            aact_tuple2str(aac_tuple): idx for idx, aac_tuple in enumerate(tuples)
+        }
+        self._idx_to_codon_tuple = {i: t for t, i in self._codon_tuple_to_idx.items()}
+        self._aa_tuple_to_idx = {
+            aact_tuple2str(aat): idx
+            for idx, aat in enumerate(sorted(set(aact2aat(aact) for aact in tuples)))
+        }
+        self._idx_to_aa_tuple = {i: t for t, i in self._aa_tuple_to_idx.items()}
+        self._n_codon_tuples = len(self._codon_tuple_to_idx)
+        self._n_aa_tuples = len(self._aa_tuple_to_idx)
 
     def _collection_functions(
         self,
     ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
         return {
             "preprocess_dataset": self._preprocess_dataset,
+            "tuples_dataset": self._create_tuples_dataset,
             "dataset_stats": self._dataset_stats,
             "pointwise_dists_dihedral": self._pointwise_dists_dihedral,
-            "pointwise_aac_dists_dihedral": self._pointwise_aac_dists_dihedral,
-            "dihedral_kde_groups": self._dihedral_kde_groups,
-            "pointwise_dists_kde": self._pointwise_dists_kde,
-            "codon_dists_expected": self._codon_dists_expected,
+            "kde_groups": self._kde_groups,
+            "kde_subgroups": self._kde_subgroups,
+            "write_pvals": self._write_pvals,
             "plot_results": self._plot_results,
         }
 
@@ -150,29 +202,29 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         analysis.
         """
 
-        cols = (
-            self.pdb_id_col,
-            self.unp_id_col,
-            self.unp_idx_col,
-            self.codon_col,
-            self.codon_score_col,
-            self.secondary_col,
-            *self.angle_cols,
+        input_cols = (
+            PDB_ID_COL,
+            UNP_ID_COL,
+            UNP_IDX_COL,
+            CODON_COL,
+            CODON_SCORE_COL,
+            SECONDARY_COL,
+            *ANGLE_COLS,
         )
 
         # Specifying this dtype allows an integer column with missing values
-        dtype = {self.unp_idx_col: "Int64"}
-        dtype = {**dtype, **{ac: "float32" for ac in self.angle_cols}}
+        dtype = {UNP_IDX_COL: "Int64"}
+        dtype = {**dtype, **{ac: "float32" for ac in ANGLE_COLS}}
 
         # Consolidate different SS types into the ones we support
-        converters = {self.secondary_col: lambda ss: self.consolidate_ss.get(ss, "")}
+        converters = {SECONDARY_COL: lambda ss: self.consolidate_ss.get(ss, "")}
 
         start = time.time()
 
         # Load the data
         df_pointwise = pd.read_csv(
             str(self.input_file),
-            usecols=cols,
+            usecols=input_cols,
             dtype=dtype,
             header=0,
             converters=converters,
@@ -190,22 +242,20 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if self.condition_on_ss:
             condition_groups = df_pointwise.secondary
         else:
-            condition_groups = "ANY"
-        df_pointwise[self.condition_col] = condition_groups
+            condition_groups = SS_TYPE_ANY
+        df_pointwise[CONDITION_COL] = condition_groups
 
         # Convert codon columns to AA-CODON
-        df_pointwise[self.codon_col] = df_pointwise[[self.codon_col]].applymap(
-            codon2aac
-        )
+        idx_no_codon = df_pointwise[CODON_COL] == UNKNOWN_CODON
+        df_pointwise = df_pointwise[~idx_no_codon]
+        df_pointwise[CODON_COL] = df_pointwise[[CODON_COL]].applymap(codon2aac)
 
         async_results = []
 
         # Process groups in parallel.
         # Add additional conditioning on codon just to break it into many more groups
         # so that it parallelizes better.
-        for group_idx, df_group in df_pointwise.groupby(
-            by=[self.condition_col, self.codon_col]
-        ):
+        for group_idx, df_group in df_pointwise.groupby(by=[CONDITION_COL, CODON_COL]):
             condition_group_id, _ = group_idx
             async_results.append(
                 pool.apply_async(
@@ -221,7 +271,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         LOGGER.info(f"preprocessing done, elapsed={time.time()-start:.2f}s")
         LOGGER.info(f"{df_processed}")
 
-        self._dump_intermediate("dataset", df_processed)
+        # Sort rows using the order of residues in each protein
+        df_processed = df_processed.sort_values(by=[UNP_ID_COL, UNP_IDX_COL])
+
+        self._dump_intermediate("dataset", df_processed, debug=True)
         return {
             "n_TOTAL": len(df_processed),
         }
@@ -234,46 +287,147 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Group by each unique codon at a unique location in a unique protein
         for subgroup_idx, df_subgroup in df_group.groupby(
-            [self.unp_id_col, self.unp_idx_col, self.codon_col]
+            [UNP_ID_COL, UNP_IDX_COL, CODON_COL]
         ):
             if len(df_subgroup) < self.min_group_size:
                 continue
 
             # There shouldn't be more than one SS type since all members of this
             # subgroup come from the same residue in the same protein
-            secondaries = set(df_subgroup[self.secondary_col])
+            secondaries = set(df_subgroup[SECONDARY_COL])
             if len(secondaries) > 1:
                 LOGGER.warning(
                     f"Ambiguous secondary structure in {group_id=} {subgroup_idx=}"
                 )
                 continue
 
-            unp_id, unp_idx, codon = subgroup_idx
+            unp_id, unp_idx, aa_codon = subgroup_idx
             subgroup_ss = secondaries.pop()
 
             # Make sure all angles have a value
-            if np.any(df_subgroup[[*self.angle_cols]].isnull()):
+            if np.any(df_subgroup[[*ANGLE_COLS]].isnull()):
                 continue
 
             # Calculate average angle from the different structures in this sub group
-            angles = (
-                Dihedral.from_deg(phi, psi)
-                for phi, psi in df_subgroup[[*self.angle_cols]].values
-            )
-            centroid = Dihedral.circular_centroid(*angles)
+            centroid = _subgroup_centroid(df_subgroup, input_degrees=True)
             processed_subgroups.append(
                 {
-                    self.unp_id_col: unp_id,
-                    self.unp_idx_col: unp_idx,
-                    self.codon_col: codon,
-                    self.condition_col: group_id,
-                    self.secondary_col: subgroup_ss,
-                    self.angle_cols[0]: centroid.phi,
-                    self.angle_cols[1]: centroid.psi,
-                    "group_size": len(df_subgroup),
+                    UNP_ID_COL: unp_id,
+                    UNP_IDX_COL: unp_idx,
+                    AA_COL: str.split(aa_codon, AAC_SEP)[0],
+                    CODON_COL: aa_codon,
+                    CONDITION_COL: group_id,
+                    SECONDARY_COL: subgroup_ss,
+                    PHI_COL: centroid.phi_deg,
+                    PSI_COL: centroid.psi_deg,
+                    GROUP_SIZE_COL: len(df_subgroup),
                 }
             )
         return processed_subgroups
+
+    def _create_tuples_dataset(self, pool: mp.pool.Pool) -> dict:
+        curr_codon_col = CODON_COL
+        async_results: List[AsyncResult] = []
+
+        start = time.time()
+        df_processed: pd.DataFrame = self._load_intermediate("dataset")
+
+        # Process groups in parallel.
+        for group_idx, df_group in df_processed.groupby(by=[UNP_ID_COL]):
+            unp_id = group_idx
+            async_results.append(
+                pool.apply_async(
+                    self._create_group_tuples, args=(df_group, self.codon_tuple_len),
+                )
+            )
+
+        # Results is a list of dataframes
+        _, _, results = self._handle_async_results(
+            async_results, collect=True, flatten=False
+        )
+
+        df_tuples = pd.concat((r for r in results if r is not None), axis=0)
+        LOGGER.info(f"tuples dataset created, elapsed={time.time()-start:.2f}s")
+        LOGGER.info(f"{df_tuples}")
+
+        self._dump_intermediate("dataset-tuples", df_tuples, debug=True)
+        return {
+            "n_tuples_TOTAL": len(df_tuples),
+        }
+
+    def _create_group_tuples(
+        self, df_group: pd.DataFrame, tuple_len: int,
+    ) -> Optional[pd.DataFrame]:
+
+        # Sort rows using the order of residues in each protein
+        df_group = df_group.sort_values(by=[UNP_ID_COL, UNP_IDX_COL])
+
+        # Create a shifted version of the data and concatenate is next to the original
+        # Each row will have the current and next residue.
+        prefixes = [""]
+        shifted_dfs = [df_group]
+        for i in range(1, tuple_len):
+            p = f"next_{i}_"
+            prefixes.append(p)
+
+            # Shift and fix type due to NaNs appearing
+            df_shifted = df_group.shift(-i)
+            df_shifted[f"{UNP_IDX_COL}"] = df_shifted[f"{UNP_IDX_COL}"].astype("Int64")
+            df_shifted = df_shifted.add_prefix(p)
+
+            shifted_dfs.append(df_shifted)
+
+        df_m = pd.concat(shifted_dfs, axis=1)
+
+        # Only keep rows where the next residue is in the same protein and has the
+        # successive index.
+        queries = []
+        for i, prefix in enumerate(prefixes[1:], start=1):
+            queries.append(f"{UNP_ID_COL} == {prefix}{UNP_ID_COL}")
+            queries.append(f"{UNP_IDX_COL} + {i} == {prefix}{UNP_IDX_COL}")
+
+        query = str.join(" and ", queries)
+        if query:
+            df_m = df_m.query(query)
+
+        if len(df_m) == 0:
+            return None
+
+        # Function to map rows in the merged dataframe to the final rows we'll use.
+        def _row_mapper(row: pd.Series):
+
+            codons, aas, sss, group_sizes = [], [], [], []
+            for i, p in enumerate(prefixes):
+                codons.append(row[f"{p}{CODON_COL}"])
+                aas.append(row[f"{p}{AA_COL}"])
+                sss.append(row[f"{p}{SECONDARY_COL}"])
+                group_sizes.append(row[f"{p}{GROUP_SIZE_COL}"])
+
+            codon_tuple = aact_tuple2str(codons)
+            aa_tuple = aact_tuple2str(aas)
+            ss_tuple = aact_tuple2str(sss)
+            if not self.condition_on_ss:
+                condition_group = SS_TYPE_ANY
+            elif all(ss == sss[0] for ss in sss):
+                condition_group = sss[0]
+            else:
+                condition_group = SS_TYPE_MIXED
+
+            return {
+                UNP_ID_COL: row[UNP_ID_COL],
+                UNP_IDX_COL: row[UNP_IDX_COL],
+                AA_COL: aa_tuple,
+                CODON_COL: codon_tuple,
+                SECONDARY_COL: ss_tuple,
+                CONDITION_COL: condition_group,
+                # Use Psi0, Phi1 (current psi, next (or last) phi)
+                PHI_COL: row[f"{prefixes[-1]}{PHI_COL}"],
+                PSI_COL: row[PSI_COL],
+                GROUP_SIZE_COL: int(min(group_sizes)),
+            }
+
+        df_tuples = df_m.apply(_row_mapper, axis=1, raw=False, result_type="expand")
+        return df_tuples
 
     def _dataset_stats(self, pool: mp.pool.Pool) -> dict:
         """
@@ -281,10 +435,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         """
         # Calculate likelihood distribution of prev codon, separated by SS
         codon_likelihoods = {}
-        codon_col = self.codon_cols[0]
+        codon_col = CODON_COL
         df_processed: pd.DataFrame = self._load_intermediate("dataset")
 
-        df_ss_groups = df_processed.groupby(self.secondary_col)
+        df_ss_groups = df_processed.groupby(SECONDARY_COL)
         for ss_type, df_ss_group in df_ss_groups:
             n_ss = len(df_ss_group)
             df_codon_groups = df_ss_group.groupby(codon_col)
@@ -345,29 +499,31 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self._dump_intermediate("ss-likelihoods", ss_likelihoods)
 
         # Calculate group and subgroup sizes
+        df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
         group_sizes = {}
-        curr_codon_col = self.codon_cols[-1]
-        df_groups = df_processed.groupby(by=self.condition_col)
+        curr_codon_col = CODON_COL
+        df_groups = df_processed.groupby(by=CONDITION_COL)
         for group_idx, df_group in df_groups:
             df_subgroups = df_group.groupby(curr_codon_col)
 
             # Not all codon may exist as subgroups. Default to zero and count each
             # existing subgroup.
-            subgroup_sizes = {aac: 0 for aac in AA_CODONS}
+            subgroup_sizes = {
+                **{aac: 0 for aac in self._codon_tuple_to_idx.keys()},
+                **{aa: 0 for aa in self._aa_tuple_to_idx.keys()},
+            }
             for aac, df_sub in df_subgroups:
                 subgroup_sizes[aac] = len(df_sub)
 
-            # Count size of each AA subgroup
-            for aa in ACIDS:
-                n_aa_samples = sum(
-                    [size for aac, size in subgroup_sizes.items() if aac[0] == aa]
+                aa = str.join(
+                    AAC_TUPLE_SEP, [aac2aa(aac) for aac in aac.split(AAC_TUPLE_SEP)]
                 )
-                subgroup_sizes[aa] = n_aa_samples
+                subgroup_sizes[aa] += len(df_sub)
 
             # Count size of each codon subgroup
             group_sizes[group_idx] = {
                 "total": len(df_group),
-                "subgroups": sort_dict(subgroup_sizes),
+                SUBGROUP_COL: sort_dict(subgroup_sizes),
             }
 
         group_sizes = sort_dict(group_sizes, selector=lambda g: g["total"])
@@ -375,148 +531,154 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         return {"group_sizes": group_sizes}
 
-    def _pointwise_dists_dihedral(self, pool: mp.pool.Pool):
+    def _pointwise_dists_dihedral(self, pool: mp.pool.Pool) -> dict:
         """
-        Calculate pointwise-distances between pairs of codons (sub-groups).
-        Each codon is represented by the set of all dihedral angles coming from it.
+        Calculate pointwise-distances between pairs of codon-tuples (sub-groups).
+        Each codon-tuple is represented by the set of all dihedral angles coming from it.
 
-        The distance between two codon sub-groups is calculated using the T2
+        The distance between two codon-tuple sub-groups is calculated using the T2
         statistic as a distance metric between sets of angle-pairs. The distance
         between two angle-pairs is calculated on the torus.
         """
-        df_processed: pd.DataFrame = self._load_intermediate("dataset")
-        df_groups = df_processed.groupby(by=self.condition_col)
-        curr_codon_col = self.codon_cols[-1]
-        async_results: Dict[Tuple[str, str, str], AsyncResult] = {}
+        df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
 
-        LOGGER.info(
-            f"Calculating significance of dihedral angle differences between "
-            f"codon pairs..."
-        )
+        def _non_syn_codons_pair_filter(group: str, aact1: str, aact2: str):
+            # Returns True if aact1 and aact2 are not synonymous (therefore should be
+            # filtered out).
+            return not is_synonymous_tuple(aact_str2tuple(aact1), aact_str2tuple(aact2))
 
-        # This analysis only supports one angle pair. We should deprecate angle pairs.
-        if len(self.angle_pairs) > 1:
-            LOGGER.warning(f"Angle pairs are not supported in dihedral significance")
-        angle_cols = self.angle_pairs[0]
+        totals = {}
 
-        # Group by the conditioning criteria, e.g. SS
-        for group_idx, (group, df_group) in enumerate(df_groups):
+        result_types_to_subgroup_pairs = {
+            "aa": (AA_COL, AA_COL, None),
+            "aac": (AA_COL, CODON_COL, None),
+            "codon": (CODON_COL, CODON_COL, _non_syn_codons_pair_filter),
+        }
+        for (
+            result_name,
+            (subgroup1_col, subgroup2_col, pair_filter_fn),
+        ) in result_types_to_subgroup_pairs.items():
 
-            # Group by codon
-            df_subgroups = df_group.groupby(curr_codon_col)
-            subgroup_pairs = it.product(
-                enumerate(df_subgroups), enumerate(df_subgroups)
+            sub1_names_to_idx, sub2_names_to_idx = (
+                self._aa_tuple_to_idx
+                if subgroup_col == AA_COL
+                else self._codon_tuple_to_idx
+                for subgroup_col in (subgroup1_col, subgroup2_col)
             )
 
-            # Loop over pairs of codons and extract the angles we have for each.
-            for (i, (codon1, df_codon1)), (j, (codon2, df_codon2)) in subgroup_pairs:
-                # Skip redundant calculations
-                if j < i:
-                    continue
+            # Collect results
+            default = dict(
+                shape=(len(sub1_names_to_idx), len(sub2_names_to_idx)),
+                fill_value=np.nan,
+                dtype=np.float32,
+            )
 
-                # Need at least 2 observations in each statistical sample
-                if len(df_codon1) < 2 or len(df_codon2) < 2:
-                    continue
+            group_names = sorted(set(df_processed[CONDITION_COL]))
+            collected_t2s: Dict[str, np.ndarray] = {
+                g: np.full(**default) for g in group_names
+            }
+            collected_pvals: Dict[str, np.ndarray] = {
+                g: np.full(**default) for g in group_names
+            }
 
-                angles1 = df_codon1[[*angle_cols]].values
-                angles2 = df_codon2[[*angle_cols]].values
-                args = (
-                    group,
-                    codon1,
-                    codon2,
-                    angles1,
-                    angles2,
-                    self.bs_randstate,
-                    self.t2_n_max,
-                    self.t2_permutations,
-                    flat_torus_distance,
+            async_results = self._pointwise_dists_dihedral_subgroup_pairs(
+                pool,
+                df_processed,
+                result_name,
+                subgroup1_col,
+                subgroup2_col,
+                pair_filter_fn,
+            )
+
+            for (group, sub1, sub2), result in yield_async_results(async_results):
+                i, j = (
+                    sub1_names_to_idx[sub1],
+                    sub2_names_to_idx[sub2],
                 )
-                res = pool.apply_async(_subgroup_tw2_test, args=args)
-                async_results[(group, codon1, codon2)] = res
+                LOGGER.info(
+                    f"Collected {result_name} pairwise-pval {group=}, {sub1=} ({i=}), "
+                    f"{sub2=} ({j=}): (t2, p)={result}"
+                )
+                t2, pval = result
+                t2s = collected_t2s[group]
+                pvals = collected_pvals[group]
+                t2s[i, j] = t2
+                pvals[i, j] = pval
 
-        # Collect results
-        # The list used here is for compatibility with the dkde analysis which uses
-        # angle-pairs.
-        default = dict(shape=(N_CODONS, N_CODONS), fill_value=np.nan, dtype=np.float32)
-        collected_t2s: Dict[str, List[np.ndarray]] = {
-            g: [np.full(**default)] for g in df_groups.groups.keys()
-        }
-        collected_pvals: Dict[str, List[np.ndarray]] = {
-            g: [np.full(**default)] for g in df_groups.groups.keys()
-        }
+            self._dump_intermediate(f"{result_name}-dihedral-t2s", collected_t2s)
+            self._dump_intermediate(f"{result_name}-dihedral-pvals", collected_pvals)
 
-        for (group, codon1, codon2), result in yield_async_results(async_results):
-            i, j = AA_CODONS.index(codon1), AA_CODONS.index(codon2)
-            LOGGER.info(
-                f"Collected pairwise-pval {group=}, {codon1=} ({i}), "
-                f"{codon2=} ({j}): {result=}"
-            )
-            t2, pval = result
-            t2s = collected_t2s[group][0]
-            pvals = collected_pvals[group][0]
-            t2s[i, j] = t2s[j, i] = t2
-            pvals[i, j] = pvals[j, i] = pval
+            totals[result_name] = {
+                g: np.sum(~np.isnan(pvals)) for g, pvals in collected_pvals.items()
+            }
 
-        self._dump_intermediate("codon-dihedral-t2s", collected_t2s)
-        self._dump_intermediate("codon-dihedral-pvals", collected_pvals)
+        LOGGER.info(f"Total number of unique tuple-pairwise pvals: {totals}")
+        return {"pval_counts": totals}
 
-    def _pointwise_aac_dists_dihedral(self, pool: mp.pool.Pool):
+    def _pointwise_dists_dihedral_subgroup_pairs(
+        self,
+        pool: mp.pool.Pool,
+        df_processed: pd.DataFrame,
+        result_name: str,
+        subgroup1_col: str,
+        subgroup2_col: str,
+        pair_filter_fn: Optional[Callable[[str, str, str], bool]],
+    ):
         """
-        Calculate pointwise-distances between each AA and the codons which encode it.
-        Each AA and codon is represented by the set of all dihedral angles coming
-        from it.
-
-        The distance between an AA and each of it's codons is calculated using
-        the T2 statistic as a distance metric between sets of angle-pairs.
-        The distance between two angle-pairs is calculated on the torus.
+        Helper function that submits pairs of subgroups for pointwise angle-based
+        analysis.
         """
-        df_processed: pd.DataFrame = self._load_intermediate("dataset")
-        curr_codon_col = self.codon_cols[-1]
+        df_groups = df_processed.groupby(by=CONDITION_COL)
         async_results: Dict[Tuple[str, str, str], AsyncResult] = {}
 
         LOGGER.info(
-            f"Calculating distance-based standout-scores for codons vs. their AA"
-        )
-
-        # This analysis only supports one angle pair. We should deprecate angle pairs.
-        if len(self.angle_pairs) > 1:
-            LOGGER.warning(f"Angle pairs are not supported in standout score")
-        angle_cols = self.angle_pairs[0]
-
-        # Add an AA col so we can group on it
-        aa_col = "AA"
-        df_processed[aa_col] = list(
-            map(lambda aac: aac.split("-")[0], df_processed[curr_codon_col])
+            f"Calculating dihedral angle differences between pairs of "
+            f"{result_name}-tuples..."
         )
 
         # Group by the conditioning criteria, e.g. SS
-        df_groups = df_processed.groupby(by=self.condition_col)
         for group_idx, (group, df_group) in enumerate(df_groups):
 
-            # Group by AA
-            df_aa_groups = df_group.groupby(aa_col)
-            for aa_idx, (aa, df_aa) in enumerate(df_aa_groups):
-
+            # Group by subgroup1 (e.g. AA  or codon)
+            df_sub1_groups = df_group.groupby(subgroup1_col)
+            for i, (sub1, df_sub1) in enumerate(df_sub1_groups):
                 # Need at least 2 observations in each statistical sample
-                if len(df_aa) < 2:
+                if len(df_sub1) < 2:
                     continue
 
-                # Group by codon
-                df_subgroups = df_aa.groupby(curr_codon_col)
-                for codon_idx, (codon, df_codon) in enumerate(df_subgroups):
+                # Group by subgroup2 (e.g. codon)
+                if subgroup2_col == subgroup1_col:
+                    # If the subgroup columns are the same, interpret as sub1 and
+                    # sub2 are independent.
+                    df_sub2_groups = df_group.groupby(subgroup2_col)
+                else:
+                    # If the subgroup columns are the distinct, interpret as sub2 is a
+                    # subgroup of sub1
+                    df_sub2_groups = df_sub1.groupby(subgroup2_col)
 
+                for j, (sub2, df_sub2) in enumerate(df_sub2_groups):
                     # Need at least 2 observations in each statistical sample
-                    if len(df_codon) < 2:
+                    if len(df_sub2) < 2:
                         continue
 
-                    angles_aa = df_aa[[*angle_cols]].values
-                    angles_codon = df_codon[[*angle_cols]].values
+                    # Skip redundant calculations: identical pairs with a different
+                    # order
+                    if subgroup2_col == subgroup1_col and j <= i:
+                        continue
+
+                    # Skip based on custom pair filtering logic
+                    if pair_filter_fn is not None and pair_filter_fn(group, sub1, sub2):
+                        continue
+
+                    # Analyze the angles of subgroup1 and subgroup2
+                    angles1 = np.deg2rad(df_sub1[[*ANGLE_COLS]].values)
+                    angles2 = np.deg2rad(df_sub2[[*ANGLE_COLS]].values)
                     args = (
                         group,
-                        aa,
-                        codon,
-                        angles_aa,
-                        angles_codon,
+                        sub1,
+                        sub2,
+                        angles1,
+                        angles2,
                         self.bs_randstate,
                         self.t2_n_max,
                         self.t2_permutations,
@@ -524,41 +686,17 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     )
 
                     res = pool.apply_async(_subgroup_tw2_test, args=args)
-                    async_results[(group, aa, codon)] = res
+                    async_results[(group, sub1, sub2)] = res
 
-        # Collect results
-        # The list used here is for compatibility with the dkde analysis which uses
-        # angle-pairs.
-        default = dict(shape=(N_ACIDS, N_CODONS), fill_value=np.nan, dtype=np.float32)
-        collected_t2s: Dict[str, List[np.ndarray]] = {
-            g: [np.full(**default)] for g in df_groups.groups.keys()
-        }
-        collected_pvals: Dict[str, List[np.ndarray]] = {
-            g: [np.full(**default)] for g in df_groups.groups.keys()
-        }
+        return async_results
 
-        for (group, aa, codon), result in yield_async_results(async_results):
-            i, j = ACIDS.index(aa), AA_CODONS.index(codon)
-            t2, pval = result
-            LOGGER.info(
-                f"Collected pairwise-pval {group=}, {aa=} ({i}), "
-                f"{codon=} ({j}): {t2=:.2f}, {pval=:.3f}"
-            )
-            t2s = collected_t2s[group][0]
-            pvals = collected_pvals[group][0]
-            t2s[i, j] = t2
-            pvals[i, j] = pval
-
-        self._dump_intermediate("aac-dihedral-t2s", collected_t2s)
-        self._dump_intermediate("aac-dihedral-pvals", collected_pvals)
-
-    def _dihedral_kde_groups(self, pool: mp.pool.Pool) -> dict:
+    def _kde_groups(self, pool: mp.pool.Pool) -> dict:
         """
         Estimates the dihedral angle distribution of each group (e.g. SS) as a
         Ramachandran plot, using kernel density estimation (KDE).
         """
-        df_processed: pd.DataFrame = self._load_intermediate("dataset")
-        df_groups = df_processed.groupby(by=self.secondary_col)
+        df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
+        df_groups = df_processed.groupby(by=SECONDARY_COL)
         df_groups_count: pd.DataFrame = df_groups.count()
         ss_counts = {
             f"n_{ss_type}": count
@@ -569,311 +707,166 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         LOGGER.info(f"Calculating dihedral distribution per SS type...")
 
         args = (
-            (group_idx, df_group, self.angle_pairs, self.kde_args)
+            (group_idx, df_group, ANGLE_COLS, self.kde_args)
             for group_idx, df_group in df_groups
         )
 
         map_result = pool.starmap(_dihedral_kde_single_group, args)
 
-        # maps from group (SS) to a list, containing a dihedral KDE
-        # matrix for each angle-pair.
-        map_result = {group_idx: dkdes for group_idx, dkdes in map_result}
+        # maps from group (SS) to a dihedral KDE matrix
+        map_result = {group_idx: dkde for (group_idx, dkde) in map_result}
         self._dump_intermediate("full-dkde", map_result)
 
         return {**ss_counts}
 
-    def _pointwise_dists_kde(self, pool: mp.pool.Pool) -> dict:
+    def _kde_subgroups(self, pool: mp.pool.Pool):
         """
-        Calculate pointwise-distances between pairs of codon (sub-groups).
-        Each codon is represented by the KDE (estimate distribution) of the dihedral
-        angles coming from it.
-
-        The distance between two codon sub-groups is calculated using both euclidean
-        distance between their KDEs (using bootstrapping to estimate multiple KDEs
-        for the same codon), and also using the T2 statistic as a distance.
+        Estimates dihedral angle distributions of subgroups (AA and codon tuples).
         """
-        group_sizes = self._load_intermediate("group-sizes")
-        curr_codon_col = self.codon_cols[-1]
+        df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
+        df_groups = df_processed.groupby(by=CONDITION_COL)
 
-        # We currently only support one type of metric
-        dist_metrics = {"l2": _kde_dist_metric_l2}
-        dist_metric = dist_metrics[self.kde_dist_metric.lower()]
+        result_types_to_subgroup_pairs = {
+            "aa": (AA_COL, self._aa_tuple_to_idx),
+            "codon": (CODON_COL, self._codon_tuple_to_idx),
+        }
+        for (
+            result_name,
+            (subgroup_col, sub_names_to_idx),
+        ) in result_types_to_subgroup_pairs.items():
 
-        # Set chunk-size for parallel mapping.
-        chunksize = 1
-
-        df_processed: pd.DataFrame = self._load_intermediate("dataset")
-        df_groups = df_processed.groupby(by=self.condition_col)
-
-        LOGGER.info(
-            f"Calculating subgroup KDEs "
-            f"(n_parallel_groups={self.n_parallel_groups}, "
-            f"chunksize={chunksize})..."
-        )
-
-        codon_d2s, codon_t2s, codon_pvals, codon_dkdes = {}, {}, {}, {}
-        aa_d2s, aa_t2s, aa_pvals, aa_dkdes = {}, {}, {}, {}
-        dkde_asyncs: Dict[str, AsyncResult] = {}
-        dist_asyncs: Dict[str, AsyncResult] = {}
-        for i, (group_idx, df_group) in enumerate(df_groups):
-            last_group = i == len(df_groups) - 1
-
-            # In each pre-condition group, group by current codon.
-            # These subgroups are where we estimate the dihedral angle KDEs.
-            df_subgroups = df_group.groupby(curr_codon_col)
-
-            # Find smallest subgroup
-            subgroup_lens = [len(df_s) for _, df_s in df_subgroups]
-            min_idx, max_idx = np.argmin(subgroup_lens), np.argmax(subgroup_lens)
-            min_len, max_len = subgroup_lens[min_idx], subgroup_lens[max_idx]
-
-            # Calculates number of samples in each bootstrap iteration:
-            # We either take all samples in each subgroup, or the number of
-            # samples in the smallest subgroup, or a fixed number.
-            if not self.bs_fixed_n:  # 0 or ""
-                bs_nsamples = subgroup_lens
-            elif self.bs_fixed_n == "min":
-                bs_nsamples = [min_len] * len(subgroup_lens)
-            elif self.bs_fixed_n == "max":
-                bs_nsamples = [max_len] * len(subgroup_lens)
-            else:  # some positive integer
-                bs_nsamples = [self.bs_fixed_n] * len(subgroup_lens)
-
-            # Run bootstrapped KDE estimation for all subgroups in parallel
-            subprocess_args = (
-                (
-                    group_idx,
-                    subgroup_idx,
-                    df_subgroup,
-                    self.angle_pairs,
-                    self.kde_args,
-                    self.bs_niter,
-                    bs_nsamples[j],
-                    self.bs_randstate,
-                )
-                for j, (subgroup_idx, df_subgroup) in enumerate(df_subgroups)
-            )
-            dkde_asyncs[group_idx] = pool.starmap_async(
-                _codon_dkdes_single_subgroup, subprocess_args, chunksize=chunksize
-            )
-
-            # Allow limited number of simultaneous group KDE calculations
-            # The limit is needed due to the very high memory required when
-            # bs_niter is large.
-            if not last_group and len(dkde_asyncs) < self.n_parallel_groups:
-                continue  # submit another group fo KDE analysis
-
-            # If we already have enough simultaneous KDE calculations, collect
-            # one (or all if this is the last group) of their results.
-            # Note that we collect the first one that's ready.
-            dkde_results_iter = yield_async_results(dkde_asyncs.copy())
-            collected_dkde_results = {}
             LOGGER.info(
-                f"[{i}] Waiting to collect KDEs "
-                f"(#async_results={len(dkde_asyncs)})..."
-            )
-            for result_group_idx, group_dkde_result in dkde_results_iter:
-                if group_dkde_result is None:
-                    LOGGER.error(f"[{i}] No KDE result in {result_group_idx}")
-                    continue
-
-                LOGGER.info(f"[{i}] Collected KDEs for {result_group_idx}")
-                collected_dkde_results[result_group_idx] = group_dkde_result
-
-                # Remove async result so we dont see it next time (mark as collected)
-                del dkde_asyncs[result_group_idx]
-
-                # We only collect one result here, unless we are in the last
-                # group. In that case we wait for all of the remaining results
-                # since there's no next group.
-                if not last_group:
-                    break
-
-            # Go over collected KDE results (usually only one) and start
-            # the distance matrix calculation in parallel.
-            for result_group_idx in collected_dkde_results:
-                group_dkde_result = collected_dkde_results[result_group_idx]
-
-                # bs_codon_dkdes maps from codon to a list of bootstrapped
-                # KDEs of shape (B,N,N), one for each angle pair
-                # Initialize in advance to obtain consistent order of codons
-                bs_codon_dkdes = {c: None for c in AA_CODONS}
-                for subgroup_idx, subgroup_bs_dkdes in group_dkde_result:
-                    bs_codon_dkdes[subgroup_idx] = subgroup_bs_dkdes
-
-                subgroup_sizes = group_sizes[result_group_idx]["subgroups"]
-
-                # Run distance matrix calculation in parallel
-                dist_asyncs[result_group_idx] = pool.apply_async(
-                    _dkde_dists_single_group,
-                    args=(
-                        result_group_idx,
-                        bs_codon_dkdes,
-                        subgroup_sizes,
-                        self.bs_randstate,
-                        self.t2_n_max,
-                        self.t2_permutations,
-                        dist_metric,
-                    ),
-                )
-                LOGGER.info(f"[{i}] Submitted cdist task {result_group_idx}")
-
-            # Allow limited number of simultaneous distance matrix calculations
-            if not last_group and len(dist_asyncs) < self.n_parallel_groups:
-                continue  # submit another group fo KDE analysis
-
-            # Wait for one of the distance matrix calculations, or all of
-            # them if it's the last group
-            dists_results_iter = yield_async_results(dist_asyncs.copy())
-            LOGGER.info(
-                f"[{i}] Waiting to collect cdist matrices "
-                f"(#async_results={len(dist_asyncs)})..."
-            )
-            for result_group_idx, group_dist_result in dists_results_iter:
-                if group_dist_result is None:
-                    LOGGER.error(f"[{i}] No dists in {result_group_idx}")
-                    continue
-
-                LOGGER.info(f"[{i}] Collected dist matrices in {result_group_idx}")
-                (
-                    group_codon_d2s,
-                    group_codon_t2s,
-                    group_codon_pvals,
-                    group_codon_dkdes,
-                    group_aa_d2s,
-                    group_aa_t2s,
-                    group_aa_pvals,
-                    group_aa_dkdes,
-                ) = group_dist_result
-                codon_d2s[result_group_idx] = group_codon_d2s
-                codon_t2s[result_group_idx] = group_codon_t2s
-                codon_pvals[result_group_idx] = group_codon_pvals
-                codon_dkdes[result_group_idx] = group_codon_dkdes
-                aa_d2s[result_group_idx] = group_aa_d2s
-                aa_t2s[result_group_idx] = group_aa_t2s
-                aa_pvals[result_group_idx] = group_aa_pvals
-                aa_dkdes[result_group_idx] = group_aa_dkdes
-
-                # Remove async result so we dont see it next time (mark as collected)
-                del dist_asyncs[result_group_idx]
-
-                # If we're in the last group, collect everything
-                if not last_group:
-                    break
-
-        # Make sure everything was collected
-        assert len(dkde_asyncs) == 0, "Not all KDEs collected"
-        assert len(dist_asyncs) == 0, "Not all dist matrices collected"
-        LOGGER.info(f"Completed distance matrix collection")
-
-        # codon_dkde_d2s: maps from group (codon, SS) to a list, containing a
-        # codon-distance matrix for each angle-pair.
-        # The codon distance matrix is complex, where real is mu
-        # and imag is sigma
-        self._dump_intermediate("codon-dkde-d2s", codon_d2s)
-
-        # codon_dkde_t2s: same as codon_dkde_d2s, but distances are the t2 statistic.
-        self._dump_intermediate("codon-dkde-t2s", codon_t2s)
-
-        # codon_pvals: maps from group (codon, SS) to a list, containing a pairwise
-        # pvalue matrix for each angle pair
-        self._dump_intermediate("codon-dkde-pvals", codon_pvals)
-
-        # aa_dkde_d2s: Same as codon_dkde_d2s, but keys are AAs
-        self._dump_intermediate("aa-dkde-d2s", aa_d2s)
-
-        # aa_dkde_t2s: Same as codon_dkde_t2s, but keys are AAs
-        self._dump_intermediate("aa-dkde-t2s", aa_t2s)
-
-        # aa_pvals: Same as codon pvals, but keys are AAs
-        self._dump_intermediate("aa-dkde-pvals", aa_pvals)
-
-        # codon_dkdes: maps from group to a dict where keys are codons.
-        # For each codon we have a list of KDEs, one for each angle pair.
-        self._dump_intermediate("codon-dkdes", codon_dkdes)
-
-        # aa_dkdes: Same as codon_dkdes, but keys are AAs
-        self._dump_intermediate("aa-dkdes", aa_dkdes)
-
-        return {}
-
-    def _codon_dists_expected(self, pool: mp.pool.Pool) -> dict:
-        """
-        Takes the expectation of the various distances between pairs of codons
-        (sub-groups) over the groups (e.g. SS+prev codon).
-        """
-
-        # To obtain the final expected distance matrices, we calculate the expectation
-        # using the likelihood of the prev codon or aa so that conditioning is only
-        # on SS. Then we also take the expectation over the different SS types to
-        # obtain a distance matrix of any SS type.
-
-        # Load map of likelihoods, depending on the type of previous
-        # conditioning (ss->codon or AA->probability)
-        if self.condition_on_prev == "codon":
-            likelihoods: dict = self._load_intermediate("codon-likelihoods")
-        elif self.condition_on_prev == "aa":
-            likelihoods: dict = self._load_intermediate("aa-likelihoods")
-        else:
-            likelihoods = None
-
-        # Load map of likelihoods of secondary structures.
-        ss_likelihoods: dict = self._load_intermediate("ss-likelihoods")
-
-        def _dists_expected(dists):
-            # dists maps from group index to a list of distance matrices (one per
-            # angle pair)
-
-            # This dict will hold the final expected distance matrices (i.e. we
-            # calculate the expectation using the likelihood of the prev codon
-            # or aa). Note that we actually have one matrix per angle pair.
-            dists_exp = {}
-            for group_idx, d2_matrices in dists.items():
-                assert len(d2_matrices) == len(self.angle_pairs)
-                if len(group_idx.split("_")) == 1:
-                    codon_or_aa, ss_type = None, group_idx
-                else:
-                    codon_or_aa, ss_type = group_idx.split("_")
-
-                if ss_type not in dists_exp:
-                    defaults = [np.zeros_like(d2) for d2 in d2_matrices]
-                    dists_exp[ss_type] = defaults
-
-                for i, d2 in enumerate(d2_matrices):
-                    p = likelihoods[ss_type][codon_or_aa] if likelihoods else 1.0
-                    # Don't sum nan's because they kill the entire cell
-                    d2 = np.nan_to_num(d2, copy=False, nan=0.0)
-                    dists_exp[ss_type][i] += p * d2
-
-            # Now we also take the expectation over all SS types to produce one
-            # averaged distance matrix, but only if we actually conditioned on it
-            if self.condition_on_ss:
-                defaults = [np.zeros_like(d2) for d2 in d2_matrices]
-                dists_exp[SS_TYPE_ANY] = defaults
-                for ss_type, d2_matrices in dists_exp.items():
-                    if ss_type == SS_TYPE_ANY:
-                        continue
-                    p = ss_likelihoods[ss_type]
-                    for i, d2 in enumerate(d2_matrices):
-                        dists_exp[SS_TYPE_ANY][i] += p * d2
-
-            return dists_exp
-
-        for aa_codon, dihedral_dkde, d2_t2 in it.product(
-            {"codon", "aa"}, {"dihedral", "dkde"}, {"d2s", "t2s"}
-        ):
-            # Load the calculated dists matrices. The loaded dict maps from group
-            # index (prev_codon/AA, SS) to a list of distance matrices for each
-            # angle pair.
-            dists: dict = self._load_intermediate(f"{aa_codon}-{dihedral_dkde}-{d2_t2}")
-            if dists is None:
-                continue
-            dists_exp = _dists_expected(dists)
-            self._dump_intermediate(
-                f"{aa_codon}-{dihedral_dkde}-{d2_t2}-exp", dists_exp
+                f"Calculating dihedral angle distributions for {result_name}-tuples..."
             )
 
-        return {}
+            async_results: Dict[Tuple[str, str], AsyncResult] = {}
+
+            # Group by the conditioning criteria, e.g. SS
+            for group_idx, (group, df_group) in enumerate(df_groups):
+
+                # Group by subgroup (e.g. AA or codon tuple)
+                df_sub_groups = df_group.groupby(subgroup_col)
+                for i, (sub, df_sub) in enumerate(df_sub_groups):
+
+                    args = (
+                        group_idx,
+                        df_sub,
+                        ANGLE_COLS,
+                        self.kde_args,
+                    )
+
+                    async_results[(group, sub)] = pool.apply_async(
+                        _dihedral_kde_single_group, args=args
+                    )
+
+            group_names = sorted(set(df_processed[CONDITION_COL]))
+            collected_kdes: Dict[str, Dict[str, np.ndarray]] = {
+                g: {} for g in group_names
+            }
+            for ((group, sub), result) in yield_async_results(async_results):
+                i = sub_names_to_idx[sub]
+                _, kde = result
+                collected_kdes[group][sub] = kde
+                LOGGER.info(f"Collected {result_name} KDEs {group=}, {sub=} ({i=})")
+
+            self._dump_intermediate(f"{result_name}-dihedral-kdes", collected_kdes)
+
+    def _write_pvals(self, pool: mp.pool.Pool) -> dict:
+        df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
+        df_groups = df_processed.groupby(by=CONDITION_COL)
+
+        out_dir = self.out_dir.joinpath("pvals")
+        os.makedirs(out_dir, exist_ok=True)
+
+        significance_metadata = {}
+
+        result_types = [
+            ("aa", AA_COL, AA_COL, self._idx_to_aa_tuple, self._idx_to_aa_tuple),
+            (
+                "codon",
+                CODON_COL,
+                CODON_COL,
+                self._idx_to_codon_tuple,
+                self._idx_to_codon_tuple,
+            ),
+            ("aac", AA_COL, CODON_COL, self._idx_to_aa_tuple, self._idx_to_codon_tuple),
+        ]
+        for (result_type, i_col, j_col, i_tuples, j_tuples) in result_types:
+            # pvals and t2s are dicts from a group name to a dict from a
+            # subgroup-pair to a pval/t2.
+            pvals = self._load_intermediate(
+                f"{result_type}-dihedral-pvals", True, raise_if_missing=True
+            )
+            t2s = self._load_intermediate(
+                f"{result_type}-dihedral-t2s", True, raise_if_missing=True
+            )
+
+            significance_metadata[result_type] = {}
+            df_data = []
+            group: str
+            df_group: pd.DataFrame
+            for idx_group, (group, df_group) in enumerate(df_groups):
+                group_pvals = pvals[group]
+                group_t2s = t2s[group]
+
+                # Get all indices of non-null pvals
+                idx_valid = np.argwhere(~np.isnan(group_pvals))
+
+                # Calculate significance threshold for pvalues for  multiple-hypothesis
+                # testing.
+                group_pvals_flat = group_pvals[idx_valid[:, 0], idx_valid[:, 1]]
+                significance_thresh = mht_bh(q=self.fdr, pvals=group_pvals_flat)
+                significance_metadata[result_type][group] = {
+                    "pval_thresh": significance_thresh,
+                    "num_hypotheses": len(group_pvals_flat),
+                    "num_rejections": np.sum(
+                        group_pvals_flat <= significance_thresh
+                    ).item(),
+                }
+
+                # Loop over the indices of subgroups for which we computed pvalues
+                for i, j in idx_valid:
+                    subgroup_i: str = i_tuples[i]
+                    subgroup_j: str = j_tuples[j]
+
+                    df_subgroup_i = df_group[df_group[i_col] == subgroup_i]
+                    df_subgroup_j = df_group[df_group[j_col] == subgroup_j]
+
+                    mu1: Dihedral = _subgroup_centroid(
+                        df_subgroup_i, input_degrees=True
+                    )
+                    mu2: Dihedral = _subgroup_centroid(
+                        df_subgroup_j, input_degrees=True
+                    )
+                    d12 = Dihedral.flat_torus_distance(
+                        mu1, mu2, degrees=True, squared=False
+                    )
+
+                    df_data.append(
+                        {
+                            CONDITION_COL: group,
+                            f"{SUBGROUP_COL}1": subgroup_i,
+                            f"{SUBGROUP_COL}2": subgroup_j,
+                            "n1": len(df_subgroup_i),
+                            "n2": len(df_subgroup_j),
+                            "phi1_mean": mu1.phi_deg,
+                            "psi1_mean": mu1.psi_deg,
+                            "phi2_mean": mu2.phi_deg,
+                            "psi2_mean": mu2.psi_deg,
+                            "d12": d12,
+                            "pval": group_pvals[i, j],
+                            "t2": group_t2s[i, j],
+                            "significant": group_pvals[i, j] <= significance_thresh,
+                        }
+                    )
+
+            df_pvals = pd.DataFrame(data=df_data)
+            csv_path = str(out_dir.joinpath(f"{result_type}-pvals.csv"))
+            df_pvals.to_csv(csv_path)
+            LOGGER.info(f"Wrote {csv_path}")
+
+        self._dump_intermediate("significance", significance_metadata)
+        return {"significance": significance_metadata}
 
     def _plot_results(self, pool: mp.pool.Pool):
         """
@@ -882,9 +875,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         """
         LOGGER.info(f"Plotting results...")
 
-        ap_labels = [
-            _cols2label(phi_col, psi_col) for phi_col, psi_col in self.angle_pairs
-        ]
+        ap_label = _cols2label(
+            PHI_COL + ("+0" if self.codon_tuple_len == 1 else "+1"), PSI_COL + "+0"
+        )
 
         async_results = []
 
@@ -919,77 +912,46 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 pool.apply_async(
                     _plot_full_dkdes,
                     args=(full_dkde,),
-                    kwds=dict(out_dir=self.out_dir, angle_pair_labels=ap_labels),
+                    kwds=dict(
+                        out_dir=self.out_dir,
+                        angle_pair_label=ap_label,
+                        vmin=0.0,
+                        vmax=5e-4,
+                    ),
                 )
             )
             del full_dkde
 
-        # Distance matrices and p-vals
-        distance_types = it.product(
-            ["aa", "codon", "aac"],
-            ["dkde", "dihedral"],
-            ["d2s", "t2s", "pvals"],
-            ["", "exp"],
-            ["block", ""],
-        )
-        for aa_codon, dkde_dihedral, dist_type, exp, block_diag in distance_types:
-            result_name = str.join(
-                "-", filter(None, [aa_codon, dkde_dihedral, dist_type, exp])
-            )
-            dists = self._load_intermediate(result_name, True)
-            if dists is None:
-                continue
-
-            out_dir = self.out_dir.joinpath(result_name)
-            if aa_codon == "aa":
-                row_labels = col_labels = ACIDS
-            elif aa_codon == "codon":
-                row_labels = col_labels = AA_CODONS
-            else:  # aac
-                row_labels = ACIDS
-                col_labels = AA_CODONS
-
-            block_diagonal_pairs = None
-            if block_diag:
-                if aa_codon == "codon":
-                    block_diagonal_pairs = SYN_CODON_IDX
-                else:
-                    continue  # Prevent plotting twice
-
-            vmin, vmax = None, None
-            if dist_type == "pvals":
-                vmin, vmax = 0.0, 1.0
-
-            for group_idx, d2_matrices in dists.items():
-                async_results.append(
-                    pool.apply_async(
-                        _plot_dist_matrices,
-                        kwds=dict(
-                            group_idx=group_idx,
-                            d2_matrices=d2_matrices,
-                            out_dir=out_dir,
-                            titles=ap_labels if len(ap_labels) > 1 else None,
-                            row_labels=row_labels,
-                            col_labels=col_labels,
-                            vmin=vmin,
-                            vmax=vmax,
-                            annotate_mu=False,
-                            plot_std=False,
-                            block_diagonal=block_diagonal_pairs,
-                            tag=block_diag,
-                        ),
-                    )
-                )
-            del dists, d2_matrices
-
-        # Averaged Dihedral KDEs of each codon in each group
+        # Dihedral KDEs of each codon in each group
+        df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
+        df_groups = df_processed.groupby(by=CONDITION_COL)
         group_sizes: dict = self._load_intermediate("group-sizes", True)
         for aa_codon in ["aa", "codon"]:
-            avg_dkdes: dict = self._load_intermediate(f"{aa_codon}-dkdes", True)
+
+            avg_dkdes: dict = self._load_intermediate(f"{aa_codon}-dihedral-kdes", True)
             if avg_dkdes is None:
                 continue
+
             for group_idx, dkdes in avg_dkdes.items():
-                subgroup_sizes = group_sizes[group_idx]["subgroups"]
+                subgroup_sizes = group_sizes[group_idx][SUBGROUP_COL]
+
+                # Create glob patterns to define which ramachandran plots will go
+                # into the same figure
+                split_subgroups_glob = None
+                if self.codon_tuple_len > 1:
+                    tuple_elements = ACIDS if aa_codon == "aa" else AA_CODONS
+                    split_subgroups_glob = [f"{s}*" for s in tuple_elements]
+                    # For AAs, also include the reverse glob
+                    if aa_codon == "aa":
+                        split_subgroups_glob.extend([f"*{s}" for s in tuple_elements])
+
+                # Get the samples (angles) of all subgroups in this group
+                subgroup_col = AA_COL if aa_codon == "aa" else CODON_COL
+                df_group: pd.DataFrame = df_groups.get_group(group_idx)
+                df_group_samples: pd.DataFrame = df_group[[subgroup_col, *ANGLE_COLS]]
+                df_group_samples = df_group_samples.rename(
+                    columns={subgroup_col: SUBGROUP_COL}
+                )
 
                 async_results.append(
                     pool.apply_async(
@@ -997,231 +959,60 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         kwds=dict(
                             group_idx=group_idx,
                             subgroup_sizes=subgroup_sizes,
+                            split_subgroups_glob=split_subgroups_glob,
                             dkdes=dkdes,
+                            df_group_samples=df_group_samples,
                             out_dir=self.out_dir.joinpath(f"{aa_codon}-dkdes"),
-                            angle_pair_labels=ap_labels,
+                            angle_pair_label=ap_label,
+                            vmin=0.0,
+                            vmax=5e-4,
                         ),
                     )
                 )
             del avg_dkdes, dkdes
 
+        # pvalues
+        significance_meta: dict = self._load_intermediate("significance", True)
+        group_sizes: dict = self._load_intermediate("group-sizes", True)
+        type_to_pvals = {
+            result_type: self._load_intermediate(
+                f"{result_type}-dihedral-pvals", True, raise_if_missing=True
+            )
+            for result_type in ["aa", "codon", "aac"]
+        }
+        async_results.append(
+            pool.apply_async(
+                _plot_pvals_hist,
+                kwds=dict(
+                    pvals=type_to_pvals,
+                    group_sizes=group_sizes,
+                    significance_meta=significance_meta,
+                    out_dir=self.out_dir.joinpath(f"pvals"),
+                ),
+            )
+        )
+
         # Wait for plotting to complete. Each function returns a path
         fig_paths = self._handle_async_results(async_results, collect=True)
 
 
-class PGroupPointwiseCodonDistanceAnalyzer(PointwiseCodonDistanceAnalyzer):
-    def __init__(
-        self,
-        dataset_dir: Union[str, Path],
-        out_dir: Union[str, Path] = None,
-        pointwise_filename: str = "data-pointwise.csv",
-        condition_on_prev="codon",
-        condition_on_ss=True,
-        consolidate_ss=DSSP_TO_SS_TYPE.copy(),
-        strict_codons=True,
-        cross_residue=False,
-        kde_nbins=128,
-        kde_k1=30.0,
-        kde_k2=30.0,
-        kde_k3=0.0,
-        bs_niter=1,
-        bs_randstate=None,
-        bs_fixed_n: str = None,
-        n_parallel_groups: int = 2,
-        t2_n_max: int = 1000,
-        t2_permutations: int = 1000,
-        out_tag: str = None,
-    ):
-        """
-        Analyzes a pointwise dataset generated by protein groups collection
-        to produce a matrix of distances between codons Dij.
-        Each entry ij in Dij corresponds to codons i and j, and the value is a
-        distance metric between the distributions of dihedral angles coming
-        from these codons.
+def _subgroup_centroid(
+    df_subgroup: pd.DataFrame, input_degrees: bool = False
+) -> Dihedral:
+    """
+    Calculates centroid angle from a subgroup dataframe containing phi,psi dihedral
+    angles in degrees under the columns ANGLE_COLS.
+    :param df_subgroup: The dataframe.
+    :param input_degrees: Whether the input data in the ANGLE_COLS is in degrees.
+    :return: A Dihedral angles object containing the result.
+    """
+    raw_angles = df_subgroup[[*ANGLE_COLS]].values
+    if input_degrees:
+        raw_angles = np.deg2rad(raw_angles)
 
-        :param dataset_dir: Path to directory with the pointwise collector
-        output.
-        :param out_dir: Path to output directory. Defaults to <dataset_dir>/results.
-        :param pointwise_filename: Filename of the pointwise dataset.
-        :param consolidate_ss: Dict mapping from DSSP secondary structure to
-        the consolidated SS types used in this analysis.
-        :param condition_on_prev: What to condition on from previous residue of
-            each sample. Options are 'codon', 'aa', or None/''.
-        :param condition_on_ss: Whether to condition on secondary structure
-            (of two consecutive residues, after consolidation).
-        :param strict_codons: Enforce only one known codon per residue
-            (reject residues where DNA matching was ambiguous).
-        :param cross_residue: Whether to calculate pointwise distributions and codon
-            distances for cross-residue angles, i.e. (phi+0,phi-1).
-        :param kde_nbins: Number of angle binds for KDE estimation.
-        :param kde_k1: KDE concentration parameter for phi.
-        :param kde_k2: KDE concentration parameter for psi.
-        :param kde_k3: KDE joint concentration parameter.
-        :param bs_niter: Number of bootstrap iterations.
-        :param bs_randstate: Random state for bootstrap.
-        :param bs_fixed_n: Whether to fix number of samples in each
-        bootstrap iteration for each subgroup to the number of samples in the
-        smallest subgroup ('min'), largest subgroup ('max') or no limit ('').
-        :param n_parallel_groups: Number of groups to process in parallel.
-        :param t2_n_max: Maximal sample-size to use when calculating
-            p-value of distances with the T^2 statistic. If there are larger samples,
-            bootstrap sampling with the given maximal sample size will be performed.
-        :param t2_permutations: Number of permutations to use when calculating
-            p-value of distances with the T^2 statistic.
-        :param out_tag: Tag for output.
-        """
-        super().__init__(
-            dataset_dir=dataset_dir,
-            out_dir=out_dir,
-            pointwise_filename=pointwise_filename,
-            condition_on_ss=condition_on_ss,
-            consolidate_ss=consolidate_ss,
-            strict_codons=strict_codons,
-            kde_nbins=kde_nbins,
-            kde_k1=kde_k1,
-            kde_k2=kde_k2,
-            kde_k3=kde_k3,
-            bs_niter=bs_niter,
-            bs_randstate=bs_randstate,
-            bs_fixed_n=bs_fixed_n,
-            n_parallel_groups=n_parallel_groups,
-            t2_n_max=t2_n_max,
-            t2_permutations=t2_permutations,
-            out_tag=out_tag,
-        )
-
-        condition_on_prev = (
-            "" if condition_on_prev is None else condition_on_prev.lower()
-        )
-        if condition_on_prev not in {"codon", "aa", ""}:
-            raise ValueError(f"invalid condition_on_prev: {condition_on_prev}")
-
-        self.condition_on_prev = condition_on_prev
-        self.angle_pairs = [(f"phi+0", f"psi+0")]
-        if cross_residue:
-            self.angle_pairs += [(f"phi+0", f"psi-1")]
-        self.angle_cols = sorted(set(it.chain(*self.angle_pairs)))
-        self.codon_cols = [f"codon-1", f"codon+0"]
-        self.codon_opts_cols = [f"codon_opts-1", f"codon_opts+0"]
-        self.secondary_cols = [f"secondary-1", f"secondary+0"]
-
-    def _collection_functions(
-        self,
-    ) -> Dict[str, Callable[[mp.pool.Pool], Optional[Dict]]]:
-        return {
-            **super()._collection_functions(),
-            "codon-dists-expected": self._codon_dists_expected,
-        }
-
-    def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
-        # Specifies which columns to read from the CSV
-        def col_filter(col_name: str):
-            # Keep only columns from prev and current
-            if col_name.endswith("-1") or col_name.endswith("+0"):
-                return True
-            return False
-
-        df_pointwise_reader = pd.read_csv(
-            str(self.input_file), usecols=col_filter, chunksize=10_000,
-        )
-
-        # Parallelize loading and preprocessing
-        sub_dfs = pool.map(self._preprocess_subframe, df_pointwise_reader)
-
-        # Dump processed dataset
-        df_preproc = pd.concat(sub_dfs, axis=0, ignore_index=True)
-        LOGGER.info(
-            f"Loaded {self.input_file}: {len(df_preproc)} rows\n"
-            f"{df_preproc}\n{df_preproc.dtypes}"
-        )
-
-        self._dump_intermediate("dataset", df_preproc)
-        return {
-            "n_TOTAL": len(df_preproc),
-        }
-
-    def _preprocess_subframe(self, df_sub: pd.DataFrame):
-        # Logic for consolidating secondary structure between a pair of curr
-        # and prev residues
-        def ss_consolidator(row: pd.Series):
-            ss_m1 = row[self.secondary_cols[0]]  # e.g. 'H' or e.g. 'H/G'
-            ss_p0 = row[self.secondary_cols[1]]
-
-            # The first SS type is always the reference SS type,
-            # so we compare those. If they match, this is the SS type of
-            # the pair, otherwise this row is useless for us
-            if not self.consolidate_ss:
-                ss_m1 = ss_m1[0]
-                ss_p0 = ss_p0[0]
-            else:
-                ss_m1 = self.consolidate_ss.get(ss_m1[0])
-                ss_p0 = self.consolidate_ss.get(ss_p0[0])
-
-            if ss_m1 == ss_p0:
-                return ss_m1
-
-            # TODO: only reject if we condition on prev?
-            return None
-
-        # Based on the configuration, we create a column that represents
-        # the group a sample belongs to when conditioning
-        def assign_condition_group(row: pd.Series):
-            prev_aac = row[self.codon_cols[0]]  # AA-CODON
-
-            cond_groups = []
-
-            if self.condition_on_prev == "codon":
-                # Keep AA-CODON
-                cond_groups.append(prev_aac)
-            elif self.condition_on_prev == "aa":
-                # Keep only AA
-                cond_groups.append(prev_aac[0])
-            else:
-                cond_groups.append(CODON_TYPE_ANY)
-
-            if self.condition_on_ss:
-                cond_groups.append(row[self.secondary_col])
-            else:
-                cond_groups.append(SS_TYPE_ANY)
-
-            return str.join("_", cond_groups)
-
-        # Remove rows where ambiguous codons exist
-        if self.strict_codons:
-            idx_single_codon = df_sub[self.codon_opts_cols[0]].isnull()
-            idx_single_codon &= df_sub[self.codon_opts_cols[1]].isnull()
-            df_sub = df_sub[idx_single_codon]
-
-        ss_consolidated = df_sub.apply(ss_consolidator, axis=1)
-
-        # Keep only angle and codon columns from the full dataset
-        df_pointwise = pd.DataFrame(data=df_sub[self.angle_cols + self.codon_cols],)
-
-        # Add consolidated SS
-        df_pointwise[self.secondary_col] = ss_consolidated
-
-        # Remove rows without consolidated SS (this means the residues
-        # pairs didn't have the same SS)
-        has_ss = ~df_pointwise[self.secondary_col].isnull()
-        df_pointwise = df_pointwise[has_ss]
-
-        # Convert angles to radians
-        angles_rad = df_pointwise[self.angle_cols].applymap(np.deg2rad)
-        df_pointwise[self.angle_cols] = angles_rad
-
-        # Convert angle columns to float32
-        dtype = {col: np.float32 for col in self.angle_cols}
-        df_pointwise = df_pointwise.astype(dtype)
-
-        # Convert codon columns to AA-CODON
-        aac = df_pointwise[self.codon_cols].applymap(codon2aac)
-        df_pointwise[self.codon_cols] = aac
-
-        # Add a column representing what we condition on
-        condition_groups = df_pointwise.apply(assign_condition_group, axis=1)
-        df_pointwise[self.condition_col] = condition_groups
-
-        return df_pointwise
+    angles = [Dihedral.from_rad(phi, psi) for phi, psi in raw_angles]
+    centroid = Dihedral.circular_centroid(*angles)
+    return centroid
 
 
 def _subgroup_tw2_test(
@@ -1308,64 +1099,60 @@ def _subgroup_tw2_test(
 def _dihedral_kde_single_group(
     group_idx: str,
     df_group: pd.DataFrame,
-    angle_pairs: Sequence[Tuple[str, str]],
+    angle_cols: Tuple[str, str],
     kde_args: Dict[str, Any],
-):
+) -> Tuple[str, np.ndarray]:
     """
     Computes kernel density estimation for a dataframe of angles belonging to a
         condition group (e.g same SS).
     :param group_idx: Identifier of the group.
     :param df_group: Dataframe containing the group's data, specifically all the
         angle columns.
-    :param angle_pairs: A list of 2-tuples containing the angle column names.
+    :param angle_cols: A 2-tuple containing the angle column names.
     :param kde_args: arguments for KDE.
     :return: A tuple:
         - The group id
-        - A list of KDEs, each an array of shape (M, M).
+        - A KDE of shape (M, M) where M is the number of bins.
     """
     kde = BvMKernelDensityEstimator(**kde_args)
 
-    # Creates 2D KDE for each angle pair
-    dkdes = []
-    for phi_col, psi_col in angle_pairs:
-        phi = df_group[phi_col].values
-        psi = df_group[psi_col].values
-        dkde = kde(phi, psi)
-        dkdes.append(dkde)
+    phi_col, psi_col = angle_cols
+    phi = np.deg2rad(df_group[phi_col].values)
+    psi = np.deg2rad(df_group[psi_col].values)
+    dkde = kde(phi, psi)
 
-    return group_idx, dkdes
+    return group_idx, dkde
 
 
 def _codon_dkdes_single_subgroup(
     group_idx: str,
     subgroup_idx: str,
     df_subgroup: pd.DataFrame,
-    angle_pairs: Sequence[Tuple[str, str]],
+    angle_cols: Tuple[str, str],
     kde_args: dict,
     bs_niter: int,
     bs_nsamples: int,
     bs_randstate: Optional[int],
-) -> Tuple[str, List[np.ndarray]]:
+) -> Tuple[str, np.ndarray]:
     """
     Calculates (bootstrapped) KDEs of angle distributions for a subgroup of data
     (e.g. a specific codon).
     :param group_idx: Identifier of the given data's group (e.g. SS).
-    :param subgroup_idx: Identifier of the given data's subbgroup (e.g. codon).
+    :param subgroup_idx: Identifier of the given data's subgroup (e.g. codon).
     :param df_subgroup: Dataframe with the angle data.
-    :param angle_pairs: A sequence fot two-tuples each with names of angle columns.
-    :param kde_args: Argumetns for density estimation.
+    :param angle_cols: A two-tuple with names of angle columns.
+    :param kde_args: Arguments for density estimation.
     :param bs_niter: Number of bootstrap iterations.
     :param bs_nsamples: Number of times to sample the group in each bootstrap iteration.
     :param bs_randstate: Random state for bootstrapping.
     :return: A tuple:
         - The subgroup id.
-        - A sequence of KDEs of shape (B, M, M), one for each angle pair.
+        - A KDE of shape (B, M, M)
     """
 
-    # Create a 3D tensor to hold the bootstrapped KDEs (for each angle
-    # pair), of shape (B,M,M)
+    # Create a 3D tensor to hold the bootstrapped KDE, of shape (B,M,M)
     bs_kde_shape = (bs_niter, kde_args["n_bins"], kde_args["n_bins"])
-    bs_dkdes = [np.empty(bs_kde_shape, np.float32) for _ in angle_pairs]
+    bs_dkde = np.empty(bs_kde_shape, np.float32)
 
     # We want a different random state in each subgroup, but still
     # should be reproducible
@@ -1382,14 +1169,12 @@ def _codon_dkdes_single_subgroup(
             axis=0, replace=bs_niter > 1, n=bs_nsamples,
         )
 
-        # dkdes contains one KDE for each pair in angle_pairs
-        _, dkdes = _dihedral_kde_single_group(
-            subgroup_idx, df_subgroup_sampled, angle_pairs, kde_args
+        _, dkde = _dihedral_kde_single_group(
+            subgroup_idx, df_subgroup_sampled, angle_cols, kde_args
         )
 
         # Save the current iteration's KDE into the results tensor
-        for angle_pair_idx, dkde in enumerate(dkdes):
-            bs_dkdes[angle_pair_idx][bootstrap_idx, ...] = dkde
+        bs_dkde[bootstrap_idx, ...] = dkde
 
     t_elapsed = time.time() - t_start
     bs_rate_iter = bs_niter / t_elapsed
@@ -1401,35 +1186,37 @@ def _codon_dkdes_single_subgroup(
         f"elapsed={t_elapsed:.1f} sec"
     )
 
-    return subgroup_idx, bs_dkdes
+    return subgroup_idx, bs_dkde
 
 
 def _dkde_dists_single_group(
     group_idx: str,
-    bs_codon_dkdes: Dict[str, List[np.ndarray]],
+    bs_codon_dkdes: Dict[str, Optional[np.ndarray]],
     subgroup_sizes: Dict[str, int],
     bs_randstate: int,
     t2_n_max: int,
     t2_permutations: int,
     kde_dist_metric: Callable,
 ) -> Tuple[
-    Sequence[np.ndarray],
-    Sequence[np.ndarray],
-    Sequence[np.ndarray],
-    Dict[str, Sequence[np.ndarray]],
-    Sequence[np.ndarray],
-    Sequence[np.ndarray],
-    Sequence[np.ndarray],
-    Dict[str, Sequence[np.ndarray]],
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    Dict[str, np.ndarray],
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    Dict[str, np.ndarray],
 ]:
     """
-    Calculates the pairwise distance matrix for codons and AAs.
+    Calculates the pairwise distance matrix for codons and AAs based on permutation
+    tests between bootstrapped KDEs from different codons.
+
     Also averages the bootstrapped KDEs to obtain a single KDE estimate per
     codon or AA in the group.
 
     :param group_idx: Identifier of the group this data is from.
-    :param bs_codon_dkdes: A dict mapping from an AA-codon to the bootstrapped KDEs
-        of that codon (one KDE for each angle pair).
+    :param bs_codon_dkdes: A dict mapping from an AA-codon to the bootstrapped KDE
+       of that codon.
     :param subgroup_sizes: A dict mapping from subgroup name (AA or AA-codon) to the
         number of samples (dataset rows) available for that AA or AA-codon.
     :param bs_randstate: Random state for bootstrapping.
@@ -1438,20 +1225,15 @@ def _dkde_dists_single_group(
         statistic.
     :param kde_dist_metric: Function to compute distance between two KDEs.
     :return: A tuple:
-        - Codon pairwise KDE-distance matrices
-        - Codon pairwise t2-distance matrices
-        - Codon pairwise-pvalue matrices
-        - Codon averaged KDEs
-        - AA pairwise KDE-distance matrices
-        - AA pairwise t2-distance matrices
-        - AA pairwise-pvalue matrices
-        - AA averaged KDEs
+        - Codon pairwise KDE-distance matrix
+        - Codon pairwise t2-distance matrix
+        - Codon pairwise-pvalue matrix
+        - Codon averaged KDE
+        - AA pairwise KDE-distance matrix
+        - AA pairwise t2-distance matrix
+        - AA pairwise-pvalue matrix
+        - AA averaged KDE
     """
-
-    # Number of different KDEs per codon (e.g. due to different angle pairs).
-    n_kdes_all = [len(kdes) for kdes in bs_codon_dkdes.values()]
-    n_kdes = n_kdes_all[0]
-    assert all(n_kdes == n for n in n_kdes_all)
 
     tstart = time.time()
     # Codon distance matrix and average codon KDEs
@@ -1472,26 +1254,29 @@ def _dkde_dists_single_group(
     # AA distance matrix and average AA KDEs
     # First, we compute a weighted sum of the codon dkdes to obtain AA dkdes.
     tstart = time.time()
-    bs_aa_dkdes = {aac[0]: None for aac in bs_codon_dkdes.keys()}
+    bs_aa_dkdes: Dict[str, Optional[np.ndarray]] = {
+        aac[0]: None for aac, dkde in bs_codon_dkdes.items()
+    }
     for aa in ACIDS:
         # Total number of samples from all subgroups (codons) of this AA
         n_aa_samples = subgroup_sizes[aa]
-        for aac, bs_dkdes in bs_codon_dkdes.items():
+        for aac, bs_dkde in bs_codon_dkdes.items():
             if aac[0] != aa:
                 continue
             if subgroup_sizes[aac] == 0:
+                continue
+            if bs_dkde is None:
                 continue
 
             # Empirical probability of this codon subgroup within its AA
             p = subgroup_sizes[aac] / n_aa_samples
 
-            # Initialize KDE of each angle pair to zero so we can accumulate
+            # Initialize KDE of current AA to zero so we can accumulate
             if bs_aa_dkdes[aa] is None:
-                bs_aa_dkdes[aa] = [0] * n_kdes
+                bs_aa_dkdes[aa] = np.zeros_like(bs_dkde)
 
             # Weighted sum of codon dkdes belonging to the current AA
-            for pair_idx in range(n_kdes):
-                bs_aa_dkdes[aa][pair_idx] += p * bs_codon_dkdes[aac][pair_idx]
+            bs_aa_dkdes[aa] += p * bs_dkde
 
     # Now, we apply the pairwise distance between pairs of AA KDEs, as for the
     # codons
@@ -1517,33 +1302,31 @@ def _dkde_dists_single_group(
 
 def _dkde_dists_pairwise(
     group_idx: str,
-    bs_dkdes: Dict[str, List[np.ndarray]],
+    bs_dkdes: Dict[str, Optional[np.ndarray]],
     bs_randstate: int,
     t2_n_max: int,
     t2_permutations: int,
     kde_dist_metric: Callable[[np.ndarray, np.ndarray], np.ndarray],
-) -> Tuple[Sequence[np.ndarray], Sequence[np.ndarray], Sequence[np.ndarray]]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate a distance matrix based on the distance between each pair of
-    subgroups (codons or AAs) for which we have a multiple bootstrapped KDEs.
+    subgroups (codons or AAs) for which we have a bootstrapped KDE.
 
     :param group_idx: Name of the current group.
-    :param bs_dkdes: A dict from a subgroup identifier to a list of bootstrapped KDEs.
+    :param bs_dkdes: A dict from a subgroup identifier to a bootstrapped KDE.
     :param bs_randstate: Random state for bootstrapping.
     :param t2_n_max: Maximum sample size for t-test.
     :param t2_permutations: Number of permutations to use when calculating T^2
         statistic.
     :param kde_dist_metric: A function to compute the distance between two KDEs.
     :return: A tuple:
-        - List of pairwise KDE-distance matrices between subgroups.
-          Each distance matrix will be complex, where the real value is the average
+        - Pairwise KDE-distance matrix between subgroups.
+          The distance matrix will be complex, where the real value is the average
           distance over the bootstrapped samples and the imag is the std.
-        - List of pairwise t2-distance matrices.
-        - List of pairwise p-value matrices. These contain the p-value, i.e the
+        - Pairwise t2-distance matrix.
+        - Pairwise p-value matrix. Contains the p-value, i.e the
           probability that the real distance between the distributions is zero between
           each pair of subgroups.
-        These lists correspond to the list of bootstrapped KDEs for each subgroup,
-        e.g. one for each angle pair.
     """
 
     def _dkde_to_tw_observation(dkde: np.ndarray):
@@ -1556,110 +1339,92 @@ def _dkde_dists_pairwise(
         X = np.log(X + 1e-43)
         return X
 
-    n_kdes = [len(kdes) for kdes in bs_dkdes.values()][0]
-
     dkde_names = list(bs_dkdes.keys())
     N = len(dkde_names)
 
-    # Calculate distance matrices and p-values
-    d2_matrices = []
-    t2_matrices = []
-    pval_matrices = []
-    for pair_idx in range(n_kdes):
-        # For each angle pair we have N dkde matrices,
-        # so we compute the distance between each such pair.
-        # We use a complex array to store mu as the real part and sigma
-        # as the imaginary part in a single array.
-        d2_mat = np.full((N, N), np.nan, np.complex64)
-        t2_mat = np.full((N, N), np.nan, np.float32)
-        pval_mat = np.full((N, N), np.nan, np.float32)
+    # We have N dkde matrices, so we compute the distance between each such pair.
+    # We use a complex array to store mu as the real part and sigma
+    # as the imaginary part in a single array.
+    d2_mat = np.full((N, N), np.nan, np.complex64)
+    t2_mat = np.full((N, N), np.nan, np.float32)
+    pval_mat = np.full((N, N), np.nan, np.float32)
 
-        dkde_pairs = it.product(enumerate(dkde_names), enumerate(dkde_names))
-        for (i, ci), (j, cj) in dkde_pairs:
-            if bs_dkdes[ci] is None:
-                continue
+    dkde_pairs = it.product(enumerate(dkde_names), enumerate(dkde_names))
+    for (i, ci), (j, cj) in dkde_pairs:
+        if bs_dkdes[ci] is None:
+            continue
 
-            if j < i or bs_dkdes[cj] is None:
-                continue
+        if j < i or bs_dkdes[cj] is None:
+            continue
 
-            t_start = time.time()
+        t_start = time.time()
 
-            # Get the two dihedral KDEs arrays to compare, each is of
-            # shape (B, M, M) due to bootstrapping B times
-            dkde1 = bs_dkdes[ci][pair_idx]
-            dkde2 = bs_dkdes[cj][pair_idx]
-            B, M, M = dkde1.shape
+        # Get the two dihedral KDEs arrays to compare, each is of
+        # shape (B, M, M) due to bootstrapping B times
+        dkde1 = bs_dkdes[ci]
+        dkde2 = bs_dkdes[cj]
 
-            # If ci is cj, randomize the order of the KDEs when
-            # comparing, so that different bootstrapped KDEs are
-            # compared
-            if i == j:
-                # This permutes the order along the first axis
-                dkde2 = np.random.permutation(dkde2)
+        # If ci is cj, randomize the order of the KDEs when
+        # comparing, so that different bootstrapped KDEs are
+        # compared
+        if i == j:
+            # This permutes the order along the first axis
+            dkde2 = np.random.permutation(dkde2)
 
-            # Compute the distances, of shape (B,)
-            d2 = kde_dist_metric(dkde1, dkde2)
-            d2_mu = np.nanmean(d2)
-            d2_sigma = np.nanstd(d2)
+        # Compute the distances, of shape (B,)
+        d2 = kde_dist_metric(dkde1, dkde2)
+        d2_mu = np.nanmean(d2)
+        d2_sigma = np.nanstd(d2)
 
-            # Store distance mu and std as a complex number
-            d2_mat[i, j] = d2_mat[j, i] = d2_mu + 1j * d2_sigma
+        # Store distance mu and std as a complex number
+        d2_mat[i, j] = d2_mat[j, i] = d2_mu + 1j * d2_sigma
 
-            t_elapsed = time.time() - t_start
-            LOGGER.info(
-                f"Calculated d2 {group_idx=}, {ci=}, {cj=}, value={d2_mu:.3e}±"
-                f"{d2_sigma:.3e}, elapsed={t_elapsed:.2f}s"
-            )
+        t_elapsed = time.time() - t_start
+        LOGGER.info(
+            f"Calculated d2 {group_idx=}, {ci=}, {cj=}, value={d2_mu:.3e}±"
+            f"{d2_sigma:.3e}, elapsed={t_elapsed:.2f}s"
+        )
 
-            #  Calculate statistical significance of the distance based on T_w^2 metric
-            t2, pval = _subgroup_tw2_test(
-                group_idx=group_idx,
-                subgroup1_idx=ci,
-                subgroup2_idx=cj,
-                subgroup1_data=_dkde_to_tw_observation(dkde1),
-                subgroup2_data=_dkde_to_tw_observation(dkde2),
-                t2_n_max=t2_n_max,
-                randstate=bs_randstate,
-                t2_permutations=t2_permutations,
-                t2_metric="sqeuclidean",
-            )
-            t2_mat[i, j] = t2_mat[j, i] = t2
-            pval_mat[i, j] = pval_mat[j, i] = pval
+        #  Calculate statistical significance of the distance based on T_w^2 metric
+        t2, pval = _subgroup_tw2_test(
+            group_idx=group_idx,
+            subgroup1_idx=ci,
+            subgroup2_idx=cj,
+            subgroup1_data=_dkde_to_tw_observation(dkde1),
+            subgroup2_data=_dkde_to_tw_observation(dkde2),
+            t2_n_max=t2_n_max,
+            randstate=bs_randstate,
+            t2_permutations=t2_permutations,
+            t2_metric="sqeuclidean",
+        )
+        t2_mat[i, j] = t2_mat[j, i] = t2
+        pval_mat[i, j] = pval_mat[j, i] = pval
 
-        d2_matrices.append(d2_mat)
-        t2_matrices.append(t2_mat)
-        pval_matrices.append(pval_mat)
-
-    return d2_matrices, t2_matrices, pval_matrices
+    return d2_mat, t2_mat, pval_mat
 
 
-def _dkde_average(
-    bs_dkdes: Dict[str, List[np.ndarray]]
-) -> Dict[str, Sequence[np.ndarray]]:
+def _dkde_average(bs_dkdes: Dict[str, Optional[np.ndarray]]) -> Dict[str, np.ndarray]:
     """
     Averages the KDEs from all bootstraps, to obtain a single KDE per subgroup
     (codon or AA). Note that this KDE will also include the variance in each bin,
     so we'll save as a complex matrix where real is the KDE value and imag is the std.
 
-    :param bs_dkdes: A dict from a subgroup identifier to a list of bootstrapped KDEs.
-    :return: A dict mapping from a group identifier (codon or AA) to a list of
-        averaged KDEs for that subgroup. Each averaged KDE will actually be a
+    :param bs_dkdes: A dict from a subgroup identifier to a bootstrapped KDE.
+    :return: A dict mapping from a group identifier (codon or AA) to an
+        averaged KDE for that subgroup. The averaged KDE will actually be a
         complex matrix where the real part is average and the imag is std.
     """
 
-    n_kdes = [len(kdes) for kdes in bs_dkdes.values()][0]
-
-    avg_dkdes = {c: [] for c in bs_dkdes.keys()}
+    avg_dkdes = {c: None for c in bs_dkdes.keys()}
     for subgroup, bs_dkde in bs_dkdes.items():
         if bs_dkde is None:
             continue
 
-        for pair_idx in range(n_kdes):
-            # bs_dkde[pair_idx] here is of shape (B, N, N) due to
-            # bootstrapping. Average it over the bootstrap dimension
-            mean_dkde = np.nanmean(bs_dkde[pair_idx], axis=0, dtype=np.float32)
-            std_dkde = np.nanstd(bs_dkde[pair_idx], axis=0, dtype=np.float32)
-            avg_dkdes[subgroup].append(mean_dkde + 1j * std_dkde)
+        # bs_dkde here is of shape (B, N, N) due to bootstrapping.
+        # Average it over the bootstrap dimension
+        mean_dkde = np.nanmean(bs_dkde, axis=0, dtype=np.float32)
+        std_dkde = np.nanstd(bs_dkde, axis=0, dtype=np.float32)
+        avg_dkdes[subgroup] = mean_dkde + 1j * std_dkde
 
     return avg_dkdes
 
@@ -1709,40 +1474,49 @@ def _plot_likelihoods(
     return str(fig_filename)
 
 
-def _plot_full_dkdes(full_dkde: dict, angle_pair_labels: List[str], out_dir: Path):
+def _plot_full_dkdes(
+    full_dkde: Dict[str, Optional[np.ndarray]],
+    angle_pair_label: str,
+    out_dir: Path,
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
+):
     fig_filename = out_dir.joinpath("full-dkdes.pdf")
     with mpl.style.context(PP5_MPL_STYLE):
-        fig_rows, fig_cols = len(full_dkde) // 2, 2
-        fig, ax = mpl.pyplot.subplots(
+        fig_rows, fig_cols = len(full_dkde) // 2 + len(full_dkde) % 2, 2
+        fig, ax = plt.subplots(
             fig_rows,
             fig_cols,
             figsize=(5 * fig_cols, 5 * fig_rows),
             sharex="all",
             sharey="all",
         )
-        fig: mpl.pyplot.Figure
-        ax: np.ndarray[mpl.pyplot.Axes] = ax.reshape(-1)
+        fig: Figure
+        axes: Sequence[Axes] = ax.reshape(-1)
 
-        vmin, vmax = 0.0, 5e-4
-        for i, (group_idx, dkdes) in enumerate(full_dkde.items()):
+        for i, (group_idx, dkde) in enumerate(full_dkde.items()):
             pp5.plot.ramachandran(
-                dkdes,
-                angle_pair_labels,
+                dkde,
+                angle_pair_label,
                 title=group_idx,
-                ax=ax[i],
+                ax=axes[i],
                 vmin=vmin,
                 vmax=vmax,
             )
+
+        while i + 1 < len(axes):
+            i += 1
+            axes[i].set_axis_off()
 
         pp5.plot.savefig(fig, fig_filename, close=True)
 
     return str(fig_filename)
 
 
-def _plot_dist_matrices(
+def _plot_dist_matrix(
     group_idx: str,
-    d2_matrices: List[np.ndarray],
-    titles: List[str],
+    d2: np.ndarray,
+    title: Optional[str],
     row_labels: List[str],
     col_labels: List[str],
     out_dir: Path,
@@ -1753,19 +1527,17 @@ def _plot_dist_matrices(
     block_diagonal: Sequence[Tuple[int, int]] = None,
     tag: str = None,
 ):
-    # d2_matrices contains a matrix for each analyzed angle pair.
-    # Split the mu and sigma from the complex d2 matrices
-    d2_mu_sigma = [(np.real(d2), np.imag(d2)) for d2 in d2_matrices]
-    d2_mu, d2_sigma = list(zip(*d2_mu_sigma))
+    # Split the mu and sigma from the complex d2 matrix
+    d2_mu, d2_sigma = np.real(d2), np.imag(d2)
 
     # Instead of plotting the std matrix separately, we can also use
     # annotations to denote the value of the std in each cell.
     # We'll annotate according to the quartiles of the std.
-    pct = [np.nanpercentile(s, [25, 50, 75]) for s in d2_sigma]
+    pct = np.nanpercentile(d2_sigma, [25, 50, 75])
 
-    def quartile_ann_fn(ap_idx, j, k):
-        std = d2_sigma[ap_idx][j, k]
-        p25, p50, p75 = pct[ap_idx]
+    def quartile_ann_fn(_, j, k):
+        std = d2_sigma[j, k]
+        p25, p50, p75 = pct
         if std < p25:
             return "*"
         elif std < p50:
@@ -1791,9 +1563,9 @@ def _plot_dist_matrices(
         # of the desired block diagonal structure. The rest is set to nan.
         if block_diagonal:
             ii, jj = zip(*block_diagonal)
-            mask = np.full_like(d2[0], fill_value=np.nan)
+            mask = np.full_like(d2, fill_value=np.nan)
             mask[ii, jj] = 1.0
-            d2 = [mask * d2i for d2i in d2]
+            d2 = mask * d2
 
         filename = str.join(
             "-", filter(None, [group_idx, avg_std if plot_std else None, tag])
@@ -1801,10 +1573,10 @@ def _plot_dist_matrices(
         fig_filepath = out_dir.joinpath(f"{filename}.png")
 
         pp5.plot.multi_heatmap(
-            d2,
+            [d2],
             row_labels=row_labels,
             col_labels=col_labels,
-            titles=titles,
+            titles=[title] if title else None,
             fig_size=20,
             vmin=vmin,
             vmax=vmax,
@@ -1821,45 +1593,154 @@ def _plot_dist_matrices(
 def _plot_dkdes(
     group_idx: str,
     subgroup_sizes: Dict[str, int],
-    dkdes: Dict[str, List[np.ndarray]],
-    angle_pair_labels: List[str],
+    split_subgroups_glob: Sequence[str],
+    dkdes: Dict[str, Optional[np.ndarray]],
+    df_group_samples: Optional[pd.DataFrame],
+    angle_pair_label: Optional[str],
     out_dir: Path,
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
 ):
+    """
+    :param group_idx: Name of group.
+    :param subgroup_sizes: Dict from subgroup name to number of samples.
+    :param split_subgroups_glob: Sequence of glob patterns to use for splitting sub
+        groups into separate figures
+    :param dkdes: The data to plot, maps from subgroup name to a KDE
+    :param df_group_samples: The data of the current group. Optional, if provided,
+        samples will be plotted on top of each ramachandran plot.
+    :param angle_pair_label: Label for plot legend.
+    :param out_dir: Output directory.
+    :param vmin: Normalization min value.
+    :param vmax: Normalization max value.
+    """
     # Plot the kdes and distance matrices
-    LOGGER.info(f"Plotting KDEs for {group_idx}")
+    LOGGER.info(f"Plotting KDEs for {group_idx} into {out_dir!s}")
 
-    N = len(dkdes)
-    fig_cols = int(np.ceil(np.sqrt(N)))
-    fig_rows = int(np.ceil(N / fig_cols))
+    from fnmatch import fnmatchcase
 
-    with mpl.style.context(PP5_MPL_STYLE):
-        vmin, vmax = 0.0, 5e-4
-        fig, ax = mpl.pyplot.subplots(
-            fig_rows,
-            fig_cols,
-            figsize=(5 * fig_cols, 5 * fig_rows),
-            sharex="all",
-            sharey="all",
-        )
-        ax: np.ndarray[mpl.pyplot.Axes] = np.reshape(ax, -1)
+    if not split_subgroups_glob:
+        split_subgroups_glob = ["*"]
 
-        for i, (codon, dkdes) in enumerate(dkdes.items()):
-            title = f"{codon} ({subgroup_sizes.get(codon, 0)})"
-            if not dkdes:
-                ax[i].set_title(title)
-                continue
+    fig_filenames = []
+    for subgroup_glob in split_subgroups_glob:
 
-            # Remove the std of the DKDE
-            dkdes = [np.real(dkde) for dkde in dkdes]
+        filtered_dkdes = {
+            sub: dkde for sub, dkde in dkdes.items() if fnmatchcase(sub, subgroup_glob)
+        }
 
-            pp5.plot.ramachandran(
-                dkdes, angle_pair_labels, title=title, ax=ax[i], vmin=vmin, vmax=vmax,
+        N = len(filtered_dkdes)
+        if N < 1:
+            continue
+
+        fig_cols = int(np.ceil(np.sqrt(N)))
+        fig_rows = int(np.ceil(N / fig_cols))
+
+        with matplotlib.style.context(PP5_MPL_STYLE):
+            fig, ax = plt.subplots(
+                fig_rows,
+                fig_cols,
+                figsize=(5 * fig_cols, 5 * fig_rows),
+                sharex="all",
+                sharey="all",
             )
+            axes: Sequence[Axes] = np.reshape(ax, -1)
 
-        fig_filename = out_dir.joinpath(f"{group_idx}.png")
-        pp5.plot.savefig(fig, fig_filename, close=True)
+            for i, (subgroup_idx, d2) in enumerate(filtered_dkdes.items()):
+                title = f"{subgroup_idx} ({subgroup_sizes.get(subgroup_idx, 0)})"
+                if d2 is None:
+                    axes[i].set_title(title)
+                    continue
 
-    return str(fig_filename)
+                # Remove the std of the DKDE
+                d2_real = np.real(d2)
+
+                samples = None
+                if df_group_samples is not None:
+                    idx_samples = df_group_samples[SUBGROUP_COL] == subgroup_idx
+                    samples = np.deg2rad(
+                        df_group_samples[idx_samples][[*ANGLE_COLS]].values
+                    )
+
+                pp5.plot.ramachandran(
+                    d2_real,
+                    angle_pair_label,
+                    title=title,
+                    ax=axes[i],
+                    samples=samples,
+                    vmin=vmin,
+                    vmax=vmax,
+                )
+
+            while i + 1 < len(axes):
+                i += 1
+                axes[i].set_axis_off()
+
+            fig_filename = out_dir.joinpath(f"{group_idx}").joinpath(
+                f"{subgroup_glob}.png"
+            )
+            pp5.plot.savefig(fig, fig_filename, close=True)
+            fig_filenames.append(fig_filename)
+
+    return str(fig_filenames)
+
+
+def _plot_pvals_hist(
+    pvals: Dict[str, np.ndarray],
+    group_sizes: Dict[str, int],
+    significance_meta: Dict[str, dict],
+    out_dir: Path,
+    n_bins: int = 50,
+):
+    """
+    Plots pvalue histogram.
+    :param pvals: Dict mapping from result_type to an array of pvalues.
+    :param group_sizes: Dict from group_name to size ('total') and subgroup sizes ('subgroup').
+    :param significance_meta: A dict mapping from result_type to group_name to a dict
+        containing the significance information.
+    :return: Path of output figure.
+    """
+
+    n_groups = len(group_sizes.keys())
+
+    fig_filename = out_dir.joinpath("pvals_hist.pdf")
+    with mpl.style.context(PP5_MPL_STYLE):
+        fig_cols = 2 if n_groups > 1 else 1
+        fig_rows = n_groups // 2 + n_groups % 2
+        fig, ax = plt.subplots(
+            fig_rows, fig_cols, figsize=(5 * fig_cols, 5 * fig_rows), squeeze=False,
+        )
+        fig: Figure
+        axes: Sequence[Axes] = ax.reshape(-1)
+
+        for i, (group_name, group_sizes) in enumerate(group_sizes.items()):
+            ax = axes[i]
+
+            for result_type, group_to_pvals in pvals.items():
+                pvals_2d = group_to_pvals[group_name]
+                pvals_flat = pvals_2d[~np.isnan(pvals_2d)]
+                meta = significance_meta[result_type][group_name]
+                ax.hist(
+                    pvals_flat,
+                    bins=n_bins,
+                    density=True,
+                    log=True,
+                    alpha=0.5,
+                    label=(
+                        f"{result_type} t={meta['pval_thresh']:.4f}, "
+                        f"({meta['num_rejections']}/{meta['num_hypotheses']})"
+                    ),
+                )
+            ax.set_title(f"{group_name} ({group_sizes['total']})")
+            ax.set_ylabel("log-density")
+            ax.set_xlabel("pval")
+            ax.legend()
+
+        while i + 1 < len(axes):
+            i += 1
+            axes[i].set_axis_off()
+
+        return pp5.plot.savefig(fig, fig_filename, close=True)
 
 
 def _cols2label(phi_col: str, psi_col: str):

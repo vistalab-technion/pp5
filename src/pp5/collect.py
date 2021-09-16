@@ -26,6 +26,21 @@ from pp5.external_dbs import pdb, unp, pdb_api
 
 LOGGER = logging.getLogger(__name__)
 
+COL_UNP_ID = "unp_id"
+COL_PDB_ID = "pdb_id"
+COL_ENA_ID = "ena_id"
+COL_RESOLUTION = "resolution"
+COL_SEQ_LEN = "seq_len"
+COL_DESCRIPTION = "description"
+COL_SRC_ORG = "src_org"
+COL_HOST_ORG = "host_org"
+COL_LIGANDS = "ligands"
+COL_R_FREE = "r_free"
+COL_R_WORK = "r_work"
+COL_SPACE_GROUP = "space_group"
+COL_CG_PH = "cg_ph"
+COL_CG_TEMP = "cg_temp"
+
 
 @dataclass(repr=False)
 class CollectorStep:
@@ -260,12 +275,13 @@ class ProteinRecordCollector(ParallelDataCollector):
 
     def __init__(
         self,
-        resolution: float,
-        expr_sys: str = pp5.get_config("DEFAULT_EXPR_SYS"),
-        source_taxid: int = pp5.get_config("DEFAULT_SOURCE_TAXID"),
+        resolution: float = pp5.get_config("DEFAULT_RES"),
+        r_free: Optional[float] = pp5.get_config("DEFAULT_RFREE"),
+        expr_sys: Optional[str] = pp5.get_config("DEFAULT_EXPR_SYS"),
+        source_taxid: Optional[int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         prec_init_args=None,
         out_dir: Path = pp5.out_subdir("prec-collected"),
-        out_tag: str = None,
+        out_tag: Optional[str] = None,
         prec_out_dir: Path = pp5.out_subdir("prec"),
         write_csv=True,
         async_timeout=60,
@@ -288,11 +304,25 @@ class ProteinRecordCollector(ParallelDataCollector):
         super().__init__(
             async_timeout=async_timeout, out_dir=out_dir, tag=out_tag, create_zip=False
         )
-        queries = [pdb_api.PDBXRayResolutionQuery(resolution=resolution)]
-        if expr_sys:
-            queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys=expr_sys))
-        if source_taxid:
-            queries.append(pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=source_taxid))
+        if resolution is None:
+            raise ValueError("Must specify resolution cutoff for collection")
+
+        self.resolution = float(resolution)
+        self.r_free = float(r_free) if r_free is not None else None
+        self.expr_sys = str(expr_sys) if expr_sys else None
+        self.source_taxid = (
+            int(source_taxid) if (source_taxid not in (None, "")) else None
+        )
+
+        queries = [pdb_api.PDBXRayResolutionQuery(resolution=self.resolution)]
+        if self.r_free:
+            queries.append(pdb_api.PDBRFreeQuery(rfree=self.r_free))
+        if self.expr_sys:
+            queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys=self.expr_sys))
+        if self.source_taxid:
+            queries.append(
+                pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=self.source_taxid)
+            )
         self.query = pdb_api.PDBCompositeQuery(
             *queries,
             logical_operator="and",
@@ -339,6 +369,10 @@ class ProteinRecordCollector(ParallelDataCollector):
 
         # Create a dataframe from the collected data
         df_all = pd.DataFrame(pdb_id_data)
+
+        # Filter collected at the metadata level
+        df_all = self._filter_collected(df_all)
+
         _write_df_csv(df_all, self.out_dir, self.ALL_STRUCTS_FILENAME)
 
         meta["n_collected"] = count
@@ -386,6 +420,30 @@ class ProteinRecordCollector(ParallelDataCollector):
         LOGGER.info(f"Wrote {filepath} ({n_entries=}, {dataset_size_mb:.2f}MB)")
         meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}", "n_entries": n_entries}
         return meta
+
+    def _filter_collected(self, df_all: pd.DataFrame) -> pd.DataFrame:
+        """
+        Filters collected structures according to conditions on their metadata.
+        :param df_all: A dataframe with all structures and their metadata fields.
+            Rows are structures, and metadata are columns.
+        :return:A dataframe with the same columns, where some rows were possible
+            removed.
+        """
+        idx = pd.Series(data=[True] * len(df_all), index=df_all.index)
+        n_filtered = 0
+
+        # Even though we query by resolution, the metadata resolution is different
+        # than what we can query on. Metadata shows resolution after refinement,
+        # while the query is usnig data collection resolution.
+        idx &= df_all[COL_RESOLUTION].astype(float) <= self.resolution
+        n_filtered_delta = (~idx).sum() - n_filtered
+        n_filtered += n_filtered_delta
+        LOGGER.info(
+            f"Filtered {n_filtered_delta} structures due to {COL_RESOLUTION} > "
+            f"{self.resolution}"
+        )
+
+        return df_all[idx]
 
 
 class ProteinGroupCollector(ParallelDataCollector):
@@ -745,22 +803,22 @@ def _collect_single_structure(
             continue
 
         chain_data.append(
-            dict(
-                unp_id=unp_id,
-                pdb_id=pdb_id_full,
-                ena_id=prec.ena_id,
-                resolution=resolution,
-                seq_len=seq_len,
-                description=meta.description,
-                src_org=meta.src_org,
-                host_org=meta.host_org,
-                ligands=meta.ligands,
-                r_free=meta.r_free,
-                r_work=meta.r_work,
-                space_group=meta.space_group,
-                cg_ph=meta.cg_ph,
-                cg_temp=meta.cg_temp,
-            )
+            {
+                COL_UNP_ID: unp_id,
+                COL_PDB_ID: pdb_id_full,
+                COL_ENA_ID: prec.ena_id,
+                COL_RESOLUTION: resolution,
+                COL_SEQ_LEN: seq_len,
+                COL_DESCRIPTION: meta.description,
+                COL_SRC_ORG: meta.src_org,
+                COL_HOST_ORG: meta.host_org,
+                COL_LIGANDS: meta.ligands,
+                COL_R_FREE: meta.r_free,
+                COL_R_WORK: meta.r_work,
+                COL_SPACE_GROUP: meta.space_group,
+                COL_CG_PH: meta.cg_ph,
+                COL_CG_TEMP: meta.cg_temp,
+            }
         )
 
     LOGGER.info(

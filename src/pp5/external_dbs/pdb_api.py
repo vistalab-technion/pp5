@@ -524,6 +524,27 @@ class PDBSourceTaxonomyIdQuery(PDBAttributeSearchQuery):
         )
 
 
+class PDBRFreeQuery(PDBAttributeSearchQuery):
+    """
+    Queries for structures by the R_free value
+    """
+
+    def __init__(
+        self, rfree: float = pp5.get_config("DEFAULT_RFREE"), **base_kwargs,
+    ):
+        """
+        :param taxonomy_id: The taxonomy ID of the source organism.
+        :param base_kwargs: Args for PDBQuery.
+        """
+        super().__init__(
+            attribute_name="refine.ls_R_factor_R_free",
+            attribute_value=float(rfree),
+            comparison_type="less_or_equal",
+            attribute_display_name="R_Free",
+            **base_kwargs,
+        )
+
+
 class PDBXRayResolutionQuery(PDBCompositeQuery):
     """
     Queries for structures which were collected using X-Ray diffraction and with a

@@ -6,6 +6,8 @@ from abc import ABC
 from typing import Dict, Union
 from pathlib import Path
 
+import pandas as pd
+
 from pp5.collect import ParallelDataCollector
 
 LOGGER = logging.getLogger(__name__)
@@ -66,7 +68,7 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
         # Create dict for storing paths of intermediate results
         self._intermediate_files: Dict[str, Path] = {}
 
-    def _dump_intermediate(self, name: str, obj):
+    def _dump_intermediate(self, name: str, obj, debug=False) -> Path:
         # Update dict of intermediate files
         path = self.intermediate_dir.joinpath(f"{name}.pkl")
         self._intermediate_files[name] = path
@@ -76,6 +78,13 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
 
         size_mbytes = os.path.getsize(path) / 1024 / 1024
         LOGGER.info(f"Wrote intermediate file {path} ({size_mbytes:.1f}MB)")
+
+        if debug and isinstance(obj, pd.DataFrame):
+            csv_path = self.intermediate_dir.joinpath(f"{name}.csv")
+            obj.to_csv(csv_path, index=False)
+            size_mbytes = os.path.getsize(csv_path) / 1024 / 1024
+            LOGGER.info(f"Wrote intermediate file {csv_path} ({size_mbytes:.1f}MB)")
+
         return path
 
     def _load_intermediate(self, name, allow_old=True, raise_if_missing=False):

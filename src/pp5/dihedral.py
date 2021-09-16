@@ -293,10 +293,21 @@ class Dihedral(object):
         # Note: arccos returns values in [0, pi]
         return np.mean(np.arccos(np.cos(phi0 - phi1)) ** 2)
 
-    def __repr__(self, deg=True):
+    def to_str(self, deg=True, with_omega=True) -> str:
+        """
+        Creates a string representation of this object.
+        :param deg: Whether to write angles in degrees (True) or radians (False).
+        :param with_omega: Whether to include the omega angle.
+        :return: A string representation.
+        """
+        return self.__repr__(deg=deg, with_omega=with_omega)
+
+    def __repr__(self, deg=True, with_omega=True):
         reprs = []
         unit_sym = self.SYMBOLS["deg" if deg else "rad"]
         for name in self.NAMES:
+            if not with_omega and name == "omega":
+                continue
             val_attr = f"{name}_deg" if deg else name
             std_attr = f"{name}_std_deg" if deg else f"{name}_std"
             val = getattr(self, val_attr)
