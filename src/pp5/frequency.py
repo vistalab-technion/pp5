@@ -5,8 +5,8 @@ import numpy as np
 from pandas import DataFrame
 from scipy.stats import norm
 
-from pp5.stats import histogram, relative_histogram
 from pp5.codons import ACIDS, CODONS, CODON_TABLE
+from pp5.stats.histograms import histogram, relative_histogram
 
 CODON_DELIMITER = "-"
 
