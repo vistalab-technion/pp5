@@ -1,4 +1,4 @@
-from typing import Tuple, Union, Callable, Optional
+from typing import Tuple, Callable
 
 import numba
 import numpy as np
@@ -10,7 +10,7 @@ _NUMBA_PARALLEL = False
 
 
 @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def tw2_statistic(D: ndarray, nx: int, ny: int) -> float:
+def _tw2_statistic(D: ndarray, nx: int, ny: int) -> float:
     """
     Calculates T statistic of a distance matrix
     :param D: Matrix of squared distances of two pooled samples (X and Y) of
@@ -31,7 +31,7 @@ def tw2_statistic(D: ndarray, nx: int, ny: int) -> float:
 
 
 @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def mmd_statistic(K: np.ndarray, nx: int, ny: int) -> float:
+def _mmd_statistic(K: np.ndarray, nx: int, ny: int) -> float:
     """
     Calculates MMD statistic of a kernel matrix
 
@@ -48,70 +48,79 @@ def mmd_statistic(K: np.ndarray, nx: int, ny: int) -> float:
 
 
 @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def _kernel_ident(x: ndarray):
+def _identity_kernel(x: ndarray):
+    """
+    Identity function, to use as a kernel.
+    """
     return x
 
 
 @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def _inner_prod(x: ndarray, y: ndarray):
-    return np.dot(x, y)
-
-
-@numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def _kernel_gaussian(x: ndarray, sigma: float = 1):
+def _gaussian_kernel(x: ndarray, sigma: float = 1):
+    """
+    Gaussian kernel function.
+    """
     return np.exp(-0.5 * (x ** 2) / sigma ** 2)
 
 
-def tw_test(X: ndarray, Y: ndarray, k: int = 1000) -> Tuple[float, float]:
+def tw_test(
+    X: ndarray,
+    Y: ndarray,
+    k: int = 1000,
+    similarity_fn: Callable[[ndarray, ndarray], float] = sqeuclidean,
+    kernel_fn: Callable[[ndarray], ndarray] = _identity_kernel,
+) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
     that two distributions are identical can be rejected, using the Tw^2 Welch
     statistic based on pairwise squared-euclidean distances.
 
-    :param X: (n, Nx) array containing a sample X, where Nx is the number of
-        observations in the sample and n is the dimension of each observation.
-    :param Y: (n, Ny) array containing sample Y with Ny observations of dimension n.
-    :param k: number of permutations for significance evaluation.
+    For parameters, see documentation of :obj:`two_sample_kernel_permutation_test`.
+
     :return: Tw^2 statistic value, p-value (significance).
     """
     return two_sample_kernel_permutation_test(
         X,
         Y,
         k,
-        similarity_fn=sqeuclidean,
-        kernel_fn=_kernel_ident,
-        statistic_fn=tw2_statistic,
+        similarity_fn=similarity_fn,
+        kernel_fn=kernel_fn,
+        statistic_fn=_tw2_statistic,
     )
 
 
-def mmd_test(X: ndarray, Y: ndarray, k: int = 1000) -> Tuple[float, float]:
+def mmd_test(
+    X: ndarray,
+    Y: ndarray,
+    k: int = 1000,
+    similarity_fn: Callable[[ndarray, ndarray], float] = sqeuclidean,
+    kernel_fn: Callable[[ndarray], ndarray] = _gaussian_kernel,
+) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
     that two distributions are identical can be rejected, using the MMD approach.
 
-    :param X: (n, Nx) array containing a sample X, where Nx is the number of
-        observations in the sample and n is the dimension of each observation.
-    :param Y: (n, Ny) array containing sample Y with Ny observations of dimension n.
-    :param k: number of permutations for significance evaluation.
+    For parameters, see documentation of :obj:`two_sample_kernel_permutation_test`.
+
     :return: MMD statistic value, p-value (significance).
     """
     return two_sample_kernel_permutation_test(
         X,
         Y,
         k,
-        similarity_fn=sqeuclidean,
-        kernel_fn=_kernel_gaussian,
-        statistic_fn=mmd_statistic,
+        similarity_fn=similarity_fn,
+        kernel_fn=kernel_fn,
+        statistic_fn=_mmd_statistic,
     )
 
 
 def two_sample_kernel_permutation_test(
     X: ndarray,
     Y: ndarray,
-    k: int = 1000,
-    similarity_fn: Callable[[ndarray, ndarray], float] = _inner_prod,
-    kernel_fn: Callable[[ndarray], ndarray] = _kernel_ident,
-    statistic_fn: Callable[[ndarray, int, int], float] = mmd_statistic,
+    k: int,
+    similarity_fn: Callable[[ndarray, ndarray], float],
+    kernel_fn: Callable[[ndarray], ndarray],
+    statistic_fn: Callable[[ndarray, int, int], float],
 ) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
@@ -137,6 +146,7 @@ def two_sample_kernel_permutation_test(
     :param k: number of permutations for significance evaluation
     :param similarity_fn: h(x, y), a scalar bivariate similarity function.
     :param kernel_fn: k(z), a scalar univariate kernel function.
+        The full bivariate kernel will be K(x,y)=k(h(x,y)).
     :param statistic_fn: A callable describing the statistic.
     :return: Tuple containing the statistic value for (X, Y) and the p-value (
         significance) for the null-hypothesis that P_X = P_Y.
@@ -157,12 +167,13 @@ def two_sample_kernel_permutation_test(
     return _two_sample_kernel_permutation_test_inner(K, nx, ny, k, statistic_fn)
 
 
-@numba.jit(nopython=True, parallel=False)  # parallel doesn't seem to help
+@numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
 def _two_sample_kernel_permutation_test_inner(
     K: ndarray, nx: int, ny: int, k: int, statistic_fn: Callable
 ) -> Tuple[float, float]:
     """
-    Calculates p-value based on Tw^2 test.
+    Calculates p-value for an H0 of P_X=P_Y, based on permutation testing.
+
     :param K: Gram matrix of of two pooled samples (X and Y) of shape (nx+ny, nx+ny).
     :param nx: Number of observations from X.
     :param ny: Number of observations from Y.
