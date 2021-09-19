@@ -16,10 +16,11 @@ import matplotlib.style
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+from scipy.spatial.distance import sqeuclidean
 
 import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
-from pp5.stats import mht_bh, tw_test
+from pp5.stats import mht_bh, tw_test, mmd_test
 from pp5.utils import sort_dict
 from pp5.codons import (
     ACIDS,
@@ -120,11 +121,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             parallel. Note that the sub-groups in each group will be parallelized over
             all available cores.
         :param t2_n_max: Maximal sample-size to use when calculating
-            p-value of distances with the T^2 statistic. If there are larger samples,
+            p-value of distances with a statistical test. If there are larger samples,
             bootstrap sampling with the given maximal sample size will be performed.
             If None or zero, sample size wont be limited.
         :param t2_permutations: Number of permutations to use when calculating
-            p-value of distances with the T^2 statistic.
+            p-value of distances with a statistical test.
         :param fdr: False discovery rate for multiple hypothesis testing using
             Benjamini-Hochberg method.
         :param out_tag: Tag for output.
@@ -685,7 +686,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         flat_torus_distance,
                     )
 
-                    res = pool.apply_async(_subgroup_tw2_test, args=args)
+                    res = pool.apply_async(_subgroup_permutation_test, args=args)
                     async_results[(group, sub1, sub2)] = res
 
         return async_results
@@ -1015,7 +1016,7 @@ def _subgroup_centroid(
     return centroid
 
 
-def _subgroup_tw2_test(
+def _subgroup_permutation_test(
     group_idx: str,
     subgroup1_idx: str,
     subgroup2_idx: str,
@@ -1068,11 +1069,11 @@ def _subgroup_tw2_test(
     # Run bootstrapped tests
     t2s, pvals = np.empty(n_iter, dtype=np.float32), np.empty(n_iter, dtype=np.float32)
     for i in range(n_iter):
-        t2s[i], pvals[i] = tw_test(
+        t2s[i], pvals[i] = mmd_test(
             X=_bootstrap_sample(subgroup1_data).transpose(),
             Y=_bootstrap_sample(subgroup2_data).transpose(),
             k=t2_permutations,
-            metric=t2_metric,
+            similarity_fn=t2_metric,
         )
 
     # Calculate the t2 corresponding to the maximal (worst) p-value, and that p-value.
@@ -1386,7 +1387,7 @@ def _dkde_dists_pairwise(
         )
 
         #  Calculate statistical significance of the distance based on T_w^2 metric
-        t2, pval = _subgroup_tw2_test(
+        t2, pval = _subgroup_permutation_test(
             group_idx=group_idx,
             subgroup1_idx=ci,
             subgroup2_idx=cj,
@@ -1395,7 +1396,7 @@ def _dkde_dists_pairwise(
             t2_n_max=t2_n_max,
             randstate=bs_randstate,
             t2_permutations=t2_permutations,
-            t2_metric="sqeuclidean",
+            t2_metric=sqeuclidean,
         )
         t2_mat[i, j] = t2_mat[j, i] = t2
         pval_mat[i, j] = pval_mat[j, i] = pval
