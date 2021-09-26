@@ -5,7 +5,7 @@ import logging
 import itertools as it
 import multiprocessing as mp
 from math import ceil, floor
-from typing import Any, Dict, List, Tuple, Union, Callable, Optional, Sequence
+from typing import Any, Dict, List, Tuple, Union, Callable, Iterator, Optional, Sequence
 from pathlib import Path
 from multiprocessing.pool import AsyncResult
 
@@ -503,7 +503,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
         group_sizes = {}
         curr_codon_col = CODON_COL
-        df_groups = df_processed.groupby(by=CONDITION_COL)
+        df_groups = groupby_with_full_group(
+            df_processed, full_group_name=SS_TYPE_ANY, full_first=True, by=CONDITION_COL
+        )
         for group_idx, df_group in df_groups:
             df_subgroups = df_group.groupby(curr_codon_col)
 
@@ -574,7 +576,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 dtype=np.float32,
             )
 
-            group_names = sorted(set(df_processed[CONDITION_COL]))
+            group_names = sorted(set(df_processed[CONDITION_COL]).union({SS_TYPE_ANY}))
             collected_t2s: Dict[str, np.ndarray] = {
                 g: np.full(**default) for g in group_names
             }
@@ -629,7 +631,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         Helper function that submits pairs of subgroups for pointwise angle-based
         analysis.
         """
-        df_groups = df_processed.groupby(by=CONDITION_COL)
+        df_groups = groupby_with_full_group(
+            df_processed, full_group_name=SS_TYPE_ANY, full_first=True, by=CONDITION_COL
+        )
         async_results: Dict[Tuple[str, str, str], AsyncResult] = {}
 
         LOGGER.info(
@@ -697,12 +701,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         Ramachandran plot, using kernel density estimation (KDE).
         """
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
-        df_groups = df_processed.groupby(by=SECONDARY_COL)
-        df_groups_count: pd.DataFrame = df_groups.count()
-        ss_counts = {
-            f"n_{ss_type}": count
-            for ss_type, count in df_groups_count.max(axis=1).to_dict().items()
-        }
+        df_groups = tuple(
+            groupby_with_full_group(
+                df_processed,
+                full_group_name=SS_TYPE_ANY,
+                full_first=True,
+                by=CONDITION_COL,
+            )
+        )
+        ss_counts = {f"n_{ss_type}": len(df_group) for ss_type, df_group in df_groups}
 
         LOGGER.info(f"Secondary-structure groups:\n{ss_counts})")
         LOGGER.info(f"Calculating dihedral distribution per SS type...")
@@ -725,7 +732,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         Estimates dihedral angle distributions of subgroups (AA and codon tuples).
         """
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
-        df_groups = df_processed.groupby(by=CONDITION_COL)
+        df_groups = tuple(
+            groupby_with_full_group(
+                df_processed,
+                full_group_name=SS_TYPE_ANY,
+                full_first=True,
+                by=CONDITION_COL,
+            )
+        )
 
         result_types_to_subgroup_pairs = {
             "aa": (AA_COL, self._aa_tuple_to_idx),
@@ -760,7 +774,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         _dihedral_kde_single_group, args=args
                     )
 
-            group_names = sorted(set(df_processed[CONDITION_COL]))
+            group_names = sorted(set(df_processed[CONDITION_COL]).union({SS_TYPE_ANY}))
             collected_kdes: Dict[str, Dict[str, np.ndarray]] = {
                 g: {} for g in group_names
             }
@@ -774,7 +788,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
     def _write_pvals(self, pool: mp.pool.Pool) -> dict:
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
-        df_groups = df_processed.groupby(by=CONDITION_COL)
+        df_groups = tuple(
+            groupby_with_full_group(
+                df_processed,
+                full_group_name=SS_TYPE_ANY,
+                full_first=True,
+                by=CONDITION_COL,
+            )
+        )
 
         out_dir = self.out_dir.joinpath("pvals")
         os.makedirs(out_dir, exist_ok=True)
@@ -925,7 +946,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Dihedral KDEs of each codon in each group
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
-        df_groups = df_processed.groupby(by=CONDITION_COL)
+        df_groups = {
+            group_name: df_group
+            for group_name, df_group in groupby_with_full_group(
+                df_processed,
+                full_group_name=SS_TYPE_ANY,
+                full_first=True,
+                by=CONDITION_COL,
+            )
+        }
         group_sizes: dict = self._load_intermediate("group-sizes", True)
         for aa_codon in ["aa", "codon"]:
 
@@ -948,7 +977,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
                 # Get the samples (angles) of all subgroups in this group
                 subgroup_col = AA_COL if aa_codon == "aa" else CODON_COL
-                df_group: pd.DataFrame = df_groups.get_group(group_idx)
+                df_group: pd.DataFrame = df_groups[group_idx]
                 df_group_samples: pd.DataFrame = df_group[[subgroup_col, *ANGLE_COLS]]
                 df_group_samples = df_group_samples.rename(
                     columns={subgroup_col: SUBGROUP_COL}
@@ -1752,3 +1781,36 @@ def _cols2label(phi_col: str, psi_col: str):
         return col
 
     return rf"${rep(phi_col)}, {rep(psi_col)}$"
+
+
+def groupby_with_full_group(
+    df: pd.DataFrame,
+    full_group_name: Union[str, Tuple[str, ...]],
+    full_first: bool = False,
+    **groupby_kwargs,
+) -> Iterator[Tuple[Union[str, Tuple[str, ...]], pd.DataFrame]]:
+    """
+    Performs a groupby on a pandas dataframe, yields all groups and then yields the
+    "full" group, i.e. the entire dataframe.
+    :param df: The data frame.
+    :param full_group_name: Name of the full group. Should be a column name or a
+        tuple of column names, depending on the "by" argument of groupby.
+    :param full_first: Whether to add the full-group first (True) or last (False).
+    :param groupby_kwargs: kwargs to be passed as-is to groupby.
+    :return: Yields tuples of (group_name, group_df). The first or last yielded tuple
+        will contain the full dataframe. If there's another group with the same name
+        as full_group_name, it will not be yielded.
+    """
+    yielded_group_names = set()
+
+    if full_first:
+        yielded_group_names.add(full_group_name)
+        yield (full_group_name, df)
+
+    for group_name, df_group in df.groupby(**groupby_kwargs):
+        if group_name not in yielded_group_names:
+            yielded_group_names.add(group_name)
+            yield group_name, df_group
+
+    if not full_first and (full_group_name not in yielded_group_names):
+        yield (full_group_name, df)
