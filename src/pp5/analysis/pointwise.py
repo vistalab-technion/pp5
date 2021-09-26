@@ -1706,9 +1706,13 @@ def _plot_dkdes(
                 i += 1
                 axes[i].set_axis_off()
 
-            fig_filename = out_dir.joinpath(f"{group_idx}").joinpath(
-                f"{subgroup_glob}.png"
-            )
+            if subgroup_glob != "*":
+                fig_filename = out_dir.joinpath(f"{group_idx}").joinpath(
+                    f"{subgroup_glob.replace('*', '_')}.png"
+                )
+            else:
+                fig_filename = out_dir.joinpath(f"{group_idx}.png")
+
             pp5.plot.savefig(fig, fig_filename, close=True)
             fig_filenames.append(fig_filename)
 
