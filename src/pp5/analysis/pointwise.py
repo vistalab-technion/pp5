@@ -1659,6 +1659,9 @@ def _plot_dkdes(
             sub: dkde for sub, dkde in dkdes.items() if fnmatchcase(sub, subgroup_glob)
         }
 
+        # Sort the filtered dict by key
+        filtered_dkdes = dict(sorted(filtered_dkdes.items(), key=lambda item: item[0]))
+
         N = len(filtered_dkdes)
         if N < 1:
             continue
