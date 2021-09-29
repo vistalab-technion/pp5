@@ -344,6 +344,7 @@ class ProteinRecordCollector(ParallelDataCollector):
     def _collection_functions(self):
         return {
             "Collect ProteinRecords": self._collect_precs,
+            "Filter Collected": self._filter_collected,
             "Write dataset": self._write_dataset,
         }
 
@@ -363,23 +364,21 @@ class ProteinRecordCollector(ParallelDataCollector):
             r = pool.apply_async(_collect_single_structure, args, kwds)
             async_results.append(r)
 
-        count, elapsed, pdb_id_data = self._handle_async_results(
+        _, elapsed, pdb_id_data = self._handle_async_results(
             async_results, collect=True, flatten=True
         )
 
         # Create a dataframe from the collected data
         df_all = pd.DataFrame(pdb_id_data)
-
-        # Filter collected at the metadata level
-        df_all = self._filter_collected(df_all)
+        n_collected = len(df_all)
 
         _write_df_csv(df_all, self.out_dir, self.ALL_STRUCTS_FILENAME)
 
-        meta["n_collected"] = count
+        meta["n_collected"] = n_collected
         LOGGER.info(
-            f"Done: {count}/{len(pdb_ids)} proteins collected "
+            f"Done collecting: {n_collected}/{len(pdb_ids)} proteins collected "
             f"(elapsed={elapsed:.2f} seconds, "
-            f"{count / elapsed:.1f} proteins/sec)."
+            f"{len(pdb_ids) / elapsed:.1f} proteins/sec)."
         )
         return meta
 
@@ -402,7 +401,7 @@ class ProteinRecordCollector(ParallelDataCollector):
                     pool.apply_async(_load_prec_df_from_cache, args=(pdb_id,))
                 )
 
-            count, elapsed, pdb_id_dataframes = self._handle_async_results(
+            _, elapsed, pdb_id_dataframes = self._handle_async_results(
                 async_results, collect=True, flatten=False,
             )
 
@@ -421,14 +420,15 @@ class ProteinRecordCollector(ParallelDataCollector):
         meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}", "n_entries": n_entries}
         return meta
 
-    def _filter_collected(self, df_all: pd.DataFrame) -> pd.DataFrame:
+    def _filter_collected(self, pool: mp.Pool) -> dict:
         """
         Filters collected structures according to conditions on their metadata.
-        :param df_all: A dataframe with all structures and their metadata fields.
-            Rows are structures, and metadata are columns.
-        :return:A dataframe with the same columns, where some rows were possible
-            removed.
         """
+
+        filtered_meta = {}
+
+        df_all: pd.DataFrame = _read_df_csv(self.out_dir, self.ALL_STRUCTS_FILENAME)
+
         idx = pd.Series(data=[True] * len(df_all), index=df_all.index)
         n_filtered = 0
 
@@ -436,14 +436,19 @@ class ProteinRecordCollector(ParallelDataCollector):
         # than what we can query on. Metadata shows resolution after refinement,
         # while the query is usnig data collection resolution.
         idx &= df_all[COL_RESOLUTION].astype(float) <= self.resolution
-        n_filtered_delta = (~idx).sum() - n_filtered
-        n_filtered += n_filtered_delta
+        n_filtered_resolution = (~idx).sum() - n_filtered
+        n_filtered += n_filtered_resolution
         LOGGER.info(
-            f"Filtered {n_filtered_delta} structures due to {COL_RESOLUTION} > "
+            f"Filtered {n_filtered_resolution} structures due to {COL_RESOLUTION} > "
             f"{self.resolution}"
         )
+        filtered_meta["resolution"] = n_filtered_resolution
+        df_all = df_all[idx]
 
-        return df_all[idx]
+        # Write the filtered structures
+        _write_df_csv(df_all, self.out_dir, self.ALL_STRUCTS_FILENAME)
+
+        return {"n_filtered": filtered_meta, "n_collected_post_filter": len(df_all)}
 
 
 class ProteinGroupCollector(ParallelDataCollector):
@@ -822,8 +827,8 @@ def _collect_single_structure(
         )
 
     LOGGER.info(
-        f"Collected {pdb_id} {pdb2unp.get_chain_to_unp_ids()} "
-        f"({idx[0] + 1}/{idx[1]})"
+        f"Collected {len(chain_data)} chains from {pdb_id} "
+        f"{pdb2unp.get_chain_to_unp_ids()} ({idx[0] + 1}/{idx[1]})"
     )
 
     return chain_data
