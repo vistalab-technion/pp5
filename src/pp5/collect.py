@@ -397,7 +397,7 @@ class ProteinRecordCollector(ParallelDataCollector):
 
     def _write_dataset(self, pool: mp.Pool) -> dict:
         df_pdb_ids: pd.DataFrame = _read_df_csv(
-            self.out_dir, self.ALL_STRUCTS_FILENAME, usecols=["pdb_id"]
+            self.out_dir, self.FILTERED_STRUCTS_FILENAME, usecols=["pdb_id"]
         )
         pdb_ids = df_pdb_ids["pdb_id"]
         LOGGER.info(f"Creating dataset file for {len(pdb_ids)} precs...")
@@ -470,7 +470,7 @@ class ProteinRecordCollector(ParallelDataCollector):
                 kwds=dict(
                     query_pdb_id=all_pdb_ids[i],
                     target_pdb_id=all_pdb_ids[j],
-                    idx=(idx, n_structs),
+                    idx=(idx, len(ii)),
                 ),
             )
 
@@ -970,6 +970,10 @@ def _pairwise_align_single_structure(
     query_prec = ProteinRecord.from_pdb(query_pdb_id, cache=True)
     target_prec = ProteinRecord.from_pdb(target_pdb_id, cache=True)
     alignment = aligner.align(query_prec.protein_seq.seq, target_prec.protein_seq.seq)
+
+    if (idx[0] % 1000) == 0 or (idx[0] == idx[1] - 1):
+        LOGGER.info(f"Computing pairwise similarity scores ({idx[0]+1}/{idx[1]})")
+
     return alignment.score
 
 
