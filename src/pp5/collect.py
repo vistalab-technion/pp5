@@ -8,13 +8,15 @@ import logging
 import zipfile
 import multiprocessing as mp
 from pprint import pformat
-from typing import Dict, List, Callable, Iterable, Optional
+from typing import Dict, List, Callable, Iterable, Optional, Sequence
 from pathlib import Path
 from dataclasses import dataclass
 from multiprocessing.pool import AsyncResult
 
+import numpy as np
 import pandas as pd
 import more_itertools
+from Bio.Align import PairwiseAligner
 
 import pp5
 import pp5.parallel
@@ -271,6 +273,8 @@ class ParallelDataCollector(abc.ABC):
 class ProteinRecordCollector(ParallelDataCollector):
     DEFAULT_PREC_INIT_ARGS = dict()
     ALL_STRUCTS_FILENAME = "meta-structs_all"
+    FILTERED_STRUCTS_FILENAME = "meta-structs_filtered"
+    BLAST_SCORES_FILENAME = "meta-blast_scores"
     DATASET_FILENAME = "data-precs"
 
     def __init__(
@@ -279,6 +283,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         r_free: Optional[float] = pp5.get_config("DEFAULT_RFREE"),
         expr_sys: Optional[str] = pp5.get_config("DEFAULT_EXPR_SYS"),
         source_taxid: Optional[int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
+        seq_similarity_thresh: float = pp5.get_config("DEFAULT_SEQ_SIMILARITY_THRESH"),
         prec_init_args=None,
         out_dir: Path = pp5.out_subdir("prec-collected"),
         out_tag: Optional[str] = None,
@@ -292,6 +297,10 @@ class ProteinRecordCollector(ParallelDataCollector):
         :param resolution: Resolution cutoff value in Angstroms.
         :param expr_sys: Expression system name.
         :param source_taxid: Taxonomy ID of source organism.
+        :param seq_similarity_thresh: PDB sequence similarity threshold. This is a
+            fraction between 0 and 1.0 which represents the maximal percentage of
+            similarity allowed between two collected structures. Use 1.0 to set no
+            filter.
         :param out_dir: Output folder for collected metadata.
         :param out_tag: Extra tag to add to the output file names.
         :param prec_out_dir: Output folder for prec CSV files.
@@ -313,6 +322,10 @@ class ProteinRecordCollector(ParallelDataCollector):
         self.source_taxid = (
             int(source_taxid) if (source_taxid not in (None, "")) else None
         )
+
+        if not 0.0 < seq_similarity_thresh <= 1.0:
+            raise ValueError("seq_similarity_thresh must be in (0, 1.0]")
+        self.seq_similarity_thresh = seq_similarity_thresh
 
         queries = [pdb_api.PDBXRayResolutionQuery(resolution=self.resolution)]
         if self.r_free:
@@ -438,17 +451,94 @@ class ProteinRecordCollector(ParallelDataCollector):
         idx &= df_all[COL_RESOLUTION].astype(float) <= self.resolution
         n_filtered_resolution = (~idx).sum() - n_filtered
         n_filtered += n_filtered_resolution
-        LOGGER.info(
-            f"Filtered {n_filtered_resolution} structures due to {COL_RESOLUTION} > "
-            f"{self.resolution}"
-        )
+        if n_filtered_resolution:
+            LOGGER.info(
+                f"Filtered {n_filtered_resolution} structures due to {COL_RESOLUTION} > "
+                f"{self.resolution}"
+            )
         filtered_meta["resolution"] = n_filtered_resolution
         df_all = df_all[idx]
 
-        # Write the filtered structures
-        _write_df_csv(df_all, self.out_dir, self.ALL_STRUCTS_FILENAME)
+        # Create a similarity matrix for pairs of structures (in terms of sequence)
+        all_pdb_ids = tuple(sorted(df_all[COL_PDB_ID]))
+        n_structs = len(all_pdb_ids)
+        ii, jj = np.tril_indices(n=n_structs, k=0)
+        async_results = {}
+        for idx, (i, j) in enumerate(zip(ii, jj)):
+            async_results[(i, j)] = pool.apply_async(
+                _pairwise_align_single_structure,
+                kwds=dict(
+                    query_pdb_id=all_pdb_ids[i],
+                    target_pdb_id=all_pdb_ids[j],
+                    idx=(idx, n_structs),
+                ),
+            )
 
-        return {"n_filtered": filtered_meta, "n_collected_post_filter": len(df_all)}
+        blast_matrix = np.full(shape=(n_structs, n_structs), fill_value=np.nan)
+        for (i, j), score in pp5.parallel.yield_async_results(async_results):
+            blast_matrix[i, j] = blast_matrix[j, i] = score
+
+        # Normalize each row and col by the self-similarity score of each structure
+        # Result is that each entry S[i,j] contains the score between query i and target
+        # j, where 1.0 is the maximal similarity, i.e. S[i,i] == 1.
+        d = np.sqrt(np.diag(blast_matrix))
+        blast_matrix /= d
+        blast_matrix /= d.reshape((n_structs, 1))
+
+        # Write the BLAST scores
+        df_blast_scores = pd.DataFrame(
+            data=blast_matrix, index=all_pdb_ids, columns=all_pdb_ids
+        )
+        _write_df_csv(
+            df_blast_scores, self.out_dir, self.BLAST_SCORES_FILENAME, index=True
+        )
+
+        # Filter out similar structures
+        selected = [0]
+        unselected = set(range(1, n_structs))
+        selected_min_similarities = [0.0]
+        while len(selected) < n_structs:
+            next_selected = None
+            next_min_similarity_to_selected = np.inf
+
+            for j in unselected:
+                # Find Max similarity from unselected j to selected i
+                i = selected[np.argmax(blast_matrix[selected, j])]
+
+                if blast_matrix[i, j] < next_min_similarity_to_selected:
+                    # Min over the max similarities
+                    next_selected = j
+                    next_min_similarity_to_selected = blast_matrix[i, j]
+
+            selected.append(next_selected)
+            unselected.remove(next_selected)
+            selected_min_similarities.append(next_min_similarity_to_selected)
+            assert selected_min_similarities[-2] <= selected_min_similarities[-1]
+        assert len(unselected) == 0
+
+        # Filter based on the similarity threshold: keep only structures whose
+        # similarity to each other is less than or equal to threshold
+        idx_thresh = np.searchsorted(
+            selected_min_similarities, self.seq_similarity_thresh, side="right"
+        )
+        selected_filtered = selected[:idx_thresh]
+        filtered_pdb_ids = [all_pdb_ids[i] for i in selected_filtered]
+        n_filtered_similarity = len(all_pdb_ids) - len(filtered_pdb_ids)
+        df_all = df_all[df_all[COL_PDB_ID].isin(filtered_pdb_ids)]
+        filtered_meta["similarity"] = n_filtered_similarity
+        if n_filtered_similarity:
+            LOGGER.info(
+                f"Filtered {n_filtered_similarity} structures due to similarity > "
+                f"{self.seq_similarity_thresh}"
+            )
+
+        # Write the filtered structures
+        _write_df_csv(df_all, self.out_dir, self.FILTERED_STRUCTS_FILENAME)
+
+        return {
+            "n_filtered": filtered_meta,
+            "n_collected_post_filter": len(df_all),
+        }
 
 
 class ProteinGroupCollector(ParallelDataCollector):
@@ -642,12 +732,13 @@ class ProteinGroupCollector(ParallelDataCollector):
         # Create a local BLAST DB containing all collected PDB IDs.
         all_pdb_ids = self._df_all["pdb_id"]
         alias_name = f"pgc-{self.out_tag}"
-        blast_db = ProteinBLAST.create_db_subset_alias(all_pdb_ids, alias_name)
+        blast_db = ProteinBLAST.create_db_subset_alias(
+            all_pdb_ids, alias_name, db_autoupdate_days=7,
+        )
         blast = ProteinBLAST(
             db_name=blast_db,
             evalue_cutoff=self.evalue_cutoff,
             identity_cutoff=self.identity_cutoff,
-            db_autoupdate_days=7,
         )
 
         LOGGER.info(f"Creating ProteinGroup for each reference...")
@@ -872,6 +963,16 @@ def _collect_single_ref(group_unp_id: str, df_group: pd.DataFrame) -> Optional[d
     )
 
 
+def _pairwise_align_single_structure(
+    query_pdb_id: str, target_pdb_id: str, idx: tuple,
+):
+    aligner = PairwiseAligner()
+    query_prec = ProteinRecord.from_pdb(query_pdb_id, cache=True)
+    target_prec = ProteinRecord.from_pdb(target_pdb_id, cache=True)
+    alignment = aligner.align(query_prec.protein_seq.seq, target_prec.protein_seq.seq)
+    return alignment.score
+
+
 def _collect_single_pgroup(
     ref_pdb_id: str,
     blast: ProteinBLAST,
@@ -942,12 +1043,12 @@ def _load_prec_df_from_cache(pdb_id: str):
     return None
 
 
-def _write_df_csv(df: pd.DataFrame, out_dir: Path, filename: str) -> Path:
+def _write_df_csv(df: pd.DataFrame, out_dir: Path, filename: str, index=False) -> Path:
     filename = f"{filename}.csv"
     filepath = out_dir.joinpath(filename)
 
     with open(str(filepath), mode="w", encoding="utf-8") as f:
-        df.to_csv(f, header=True, index=False, float_format="%.2f")
+        df.to_csv(f, header=True, index=index, float_format="%.2f")
 
     LOGGER.info(f"Wrote {filepath}")
     return filepath
