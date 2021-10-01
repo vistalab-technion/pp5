@@ -1,4 +1,4 @@
-from typing import Tuple, Callable
+from typing import Any, Tuple, Callable, Optional
 
 import numba
 import numpy as np
@@ -69,6 +69,7 @@ def tw_test(
     k: int = 1000,
     similarity_fn: Callable[[ndarray, ndarray], float] = sqeuclidean,
     kernel_fn: Callable[[ndarray], ndarray] = _identity_kernel,
+    kernel_kwargs: Optional[dict] = None,
 ) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
@@ -86,6 +87,7 @@ def tw_test(
         similarity_fn=similarity_fn,
         kernel_fn=kernel_fn,
         statistic_fn=_tw2_statistic,
+        kernel_kwargs=kernel_kwargs,
     )
 
 
@@ -95,6 +97,7 @@ def mmd_test(
     k: int = 1000,
     similarity_fn: Callable[[ndarray, ndarray], float] = sqeuclidean,
     kernel_fn: Callable[[ndarray], ndarray] = _gaussian_kernel,
+    kernel_kwargs: Optional[dict] = None,
 ) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
@@ -111,6 +114,7 @@ def mmd_test(
         similarity_fn=similarity_fn,
         kernel_fn=kernel_fn,
         statistic_fn=_mmd_statistic,
+        kernel_kwargs=kernel_kwargs,
     )
 
 
@@ -119,8 +123,9 @@ def two_sample_kernel_permutation_test(
     Y: ndarray,
     k: int,
     similarity_fn: Callable[[ndarray, ndarray], float],
-    kernel_fn: Callable[[ndarray], ndarray],
+    kernel_fn: Callable[[ndarray, Optional[Any]], ndarray],
     statistic_fn: Callable[[ndarray, int, int], float],
+    kernel_kwargs: Optional[dict] = None,
 ) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
@@ -148,6 +153,7 @@ def two_sample_kernel_permutation_test(
     :param kernel_fn: k(z), a scalar univariate kernel function.
         The full bivariate kernel will be K(x,y)=k(h(x,y)).
     :param statistic_fn: A callable describing the statistic.
+    :param kernel_kwargs: Optional kwargs to pass to the kernel function.
     :return: Tuple containing the statistic value for (X, Y) and the p-value (
         significance) for the null-hypothesis that P_X = P_Y.
     """
@@ -162,7 +168,8 @@ def two_sample_kernel_permutation_test(
     D = squareform(pdist(Z.T, metric=similarity_fn))
 
     # inner products
-    K = kernel_fn(D)
+    kernel_kwargs = kernel_kwargs or {}
+    K = kernel_fn(D, **kernel_kwargs)
 
     return _two_sample_kernel_permutation_test_inner(K, nx, ny, k, statistic_fn)
 
