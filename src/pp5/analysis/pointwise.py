@@ -72,15 +72,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         min_group_size: int = 1,
         strict_codons: bool = True,
         kde_nbins: int = 128,
-        kde_k1: float = 30.0,
-        kde_k2: float = 30.0,
-        kde_k3: float = 0.0,
+        kde_width: float = 30.0,
         bs_niter: int = 1,
         bs_randstate: Optional[int] = None,
         bs_fixed_n: Optional[Union[str, int]] = None,
         n_parallel_groups: int = 2,
         t2_n_max: Optional[int] = 1000,
         t2_permutations: int = 1000,
+        t2_kernel_size: float = 10.0,
         fdr: float = 0.1,
         out_tag: str = None,
     ):
@@ -107,9 +106,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param strict_codons: Enforce only one known codon per residue
             (reject residues where DNA matching was ambiguous).
         :param kde_nbins: Number of angle binds for KDE estimation.
-        :param kde_k1: KDE concentration parameter for phi.
-        :param kde_k2: KDE concentration parameter for psi.
-        :param kde_k3: KDE joint concentration parameter.
+        :param kde_width: KDE concentration parameter (will use same for phi and psi).
         :param bs_niter: Number of bootstrap iterations.
         :param bs_randstate: Random state for bootstrap.
         :param bs_fixed_n: Whether to fix number of samples in each
@@ -126,6 +123,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             If None or zero, sample size wont be limited.
         :param t2_permutations: Number of permutations to use when calculating
             p-value of distances with a statistical test.
+        :param t2_kernel_size: Size of kernel used in MMD-based permutation test.
         :param fdr: False discovery rate for multiple hypothesis testing using
             Benjamini-Hochberg method.
         :param out_tag: Tag for output.
@@ -158,7 +156,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.strict_codons = strict_codons
         self.condition_on_prev = None
 
-        self.kde_args = dict(n_bins=kde_nbins, k1=kde_k1, k2=kde_k2, k3=kde_k3)
+        self.kde_args = dict(n_bins=kde_nbins, k1=kde_width, k2=kde_width, k3=0)
         self.kde_dist_metric = "l2"
 
         self.bs_niter = bs_niter
@@ -167,6 +165,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.n_parallel_groups = n_parallel_groups
         self.t2_n_max = t2_n_max
         self.t2_permutations = t2_permutations
+        self.t2_kernel_size = t2_kernel_size
         self.fdr = fdr
 
         # Initialize codon tuple names and corresponding indices
@@ -687,6 +686,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         self.bs_randstate,
                         self.t2_n_max,
                         self.t2_permutations,
+                        self.t2_kernel_size,
                         flat_torus_distance,
                     )
 
@@ -1054,6 +1054,7 @@ def _subgroup_permutation_test(
     randstate: int,
     t2_n_max: Optional[int],
     t2_permutations: int,
+    t2_kernel_size: float,
     t2_metric: Union[str, Callable],
 ) -> Tuple[float, float]:
     """
@@ -1103,6 +1104,7 @@ def _subgroup_permutation_test(
             Y=_bootstrap_sample(subgroup2_data).transpose(),
             k=t2_permutations,
             similarity_fn=t2_metric,
+            kernel_kwargs=dict(sigma=t2_kernel_size),
         )
 
     # Calculate the t2 corresponding to the maximal (worst) p-value, and that p-value.
@@ -1226,6 +1228,7 @@ def _dkde_dists_single_group(
     bs_randstate: int,
     t2_n_max: int,
     t2_permutations: int,
+    t2_kernel_size: float,
     kde_dist_metric: Callable,
 ) -> Tuple[
     np.ndarray,
@@ -1273,6 +1276,7 @@ def _dkde_dists_single_group(
         bs_randstate,
         t2_n_max,
         t2_permutations,
+        t2_kernel_size,
         kde_dist_metric,
     )
     codon_dkdes = _dkde_average(bs_codon_dkdes)
@@ -1311,7 +1315,13 @@ def _dkde_dists_single_group(
     # Now, we apply the pairwise distance between pairs of AA KDEs, as for the
     # codons
     aa_d2s, aa_t2s, aa_pvals = _dkde_dists_pairwise(
-        group_idx, bs_aa_dkdes, bs_randstate, t2_n_max, t2_permutations, kde_dist_metric
+        group_idx,
+        bs_aa_dkdes,
+        bs_randstate,
+        t2_n_max,
+        t2_permutations,
+        t2_kernel_size,
+        kde_dist_metric,
     )
     aa_dkdes = _dkde_average(bs_aa_dkdes)
     LOGGER.info(
@@ -1336,6 +1346,7 @@ def _dkde_dists_pairwise(
     bs_randstate: int,
     t2_n_max: int,
     t2_permutations: int,
+    t2_kernel_size: float,
     kde_dist_metric: Callable[[np.ndarray, np.ndarray], np.ndarray],
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -1425,6 +1436,7 @@ def _dkde_dists_pairwise(
             t2_n_max=t2_n_max,
             randstate=bs_randstate,
             t2_permutations=t2_permutations,
+            t2_kernel_size=t2_kernel_size,
             t2_metric=sqeuclidean,
         )
         t2_mat[i, j] = t2_mat[j, i] = t2
