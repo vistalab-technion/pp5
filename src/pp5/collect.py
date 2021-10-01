@@ -400,27 +400,45 @@ class ProteinRecordCollector(ParallelDataCollector):
         Filters collected structures according to conditions on their metadata.
         """
 
-        filtered_meta = {}
-
         df_all: pd.DataFrame = _read_df_csv(self.out_dir, self.ALL_STRUCTS_FILENAME)
+        # A boolean series representing which structures to keep.
+        filter_idx = pd.Series(data=[True] * len(df_all), index=df_all.index)
+        filtered_counts = {"total": 0}
 
-        idx = pd.Series(data=[True] * len(df_all), index=df_all.index)
-        n_filtered = 0
+        def _update_filtered_counts(filter_name: str):
+            n_filtered = (~filter_idx).sum() - filtered_counts["total"]
+            filtered_counts["total"] += n_filtered
+            if n_filtered:
+                LOGGER.info(
+                    f"Filtered {n_filtered} structures with filter '{filter_name}'"
+                )
+            filtered_counts[filter_name] = n_filtered
 
+        # Filter by metadata
+        filter_idx &= self._filter_metadata(pool, df_all)
+        _update_filtered_counts("metadata")
+
+        # Filter by sequence similarity
+        filter_idx &= self._filter_redundant_unps(pool, df_all)
+        _update_filtered_counts("redundant_unps")
+
+        # Write the filtered structures
+        df_filtered = df_all[filter_idx]
+        _write_df_csv(df_filtered, self.out_dir, self.FILTERED_STRUCTS_FILENAME)
+
+        return {
+            "n_filtered": filtered_counts,
+            "n_collected_post_filter": len(df_filtered),
+        }
+
+    def _filter_metadata(self, pool: mp.Pool, df_all: pd.DataFrame) -> pd.Series:
         # Even though we query by resolution, the metadata resolution is different
         # than what we can query on. Metadata shows resolution after refinement,
-        # while the query is usnig data collection resolution.
-        idx &= df_all[COL_RESOLUTION].astype(float) <= self.resolution
-        n_filtered_resolution = (~idx).sum() - n_filtered
-        n_filtered += n_filtered_resolution
-        if n_filtered_resolution:
-            LOGGER.info(
-                f"Filtered {n_filtered_resolution} structures due to {COL_RESOLUTION} > "
-                f"{self.resolution}"
-            )
-        filtered_meta["resolution"] = n_filtered_resolution
-        df_all = df_all[idx]
+        # while the query is using data collection resolution.
+        idx_filter = df_all[COL_RESOLUTION].astype(float) <= self.resolution
+        return idx_filter
 
+    def _filter_redundant_unps(self, pool: mp.Pool, df_all: pd.DataFrame) -> pd.Series:
         # Create a similarity matrix for pairs of structures (in terms of sequence)
         all_pdb_ids = tuple(sorted(df_all[COL_PDB_ID]))
         n_structs = len(all_pdb_ids)
@@ -485,22 +503,8 @@ class ProteinRecordCollector(ParallelDataCollector):
         )
         selected_filtered = selected[:idx_thresh]
         filtered_pdb_ids = [all_pdb_ids[i] for i in selected_filtered]
-        n_filtered_similarity = len(all_pdb_ids) - len(filtered_pdb_ids)
-        df_all = df_all[df_all[COL_PDB_ID].isin(filtered_pdb_ids)]
-        filtered_meta["similarity"] = n_filtered_similarity
-        if n_filtered_similarity:
-            LOGGER.info(
-                f"Filtered {n_filtered_similarity} structures due to similarity > "
-                f"{self.seq_similarity_thresh}"
-            )
-
-        # Write the filtered structures
-        _write_df_csv(df_all, self.out_dir, self.FILTERED_STRUCTS_FILENAME)
-
-        return {
-            "n_filtered": filtered_meta,
-            "n_collected_post_filter": len(df_all),
-        }
+        filtered_idx = df_all[COL_PDB_ID].isin(filtered_pdb_ids)
+        return filtered_idx
 
     def _write_dataset(self, pool: mp.Pool) -> dict:
         df_pdb_ids: pd.DataFrame = _read_df_csv(
