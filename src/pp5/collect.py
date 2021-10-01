@@ -43,6 +43,7 @@ COL_R_WORK = "r_work"
 COL_SPACE_GROUP = "space_group"
 COL_CG_PH = "cg_ph"
 COL_CG_TEMP = "cg_temp"
+COL_REJECTED_BY = "rejected_by"
 
 
 @dataclass(repr=False)
@@ -275,6 +276,7 @@ class ProteinRecordCollector(ParallelDataCollector):
     DEFAULT_PREC_INIT_ARGS = dict()
     ALL_STRUCTS_FILENAME = "meta-structs_all"
     FILTERED_STRUCTS_FILENAME = "meta-structs_filtered"
+    REJECTED_STRUCTS_FILENAME = "meta-structs_rejected"
     BLAST_SCORES_FILENAME = "meta-blast_scores"
     DATASET_FILENAME = "data-precs"
 
@@ -404,32 +406,45 @@ class ProteinRecordCollector(ParallelDataCollector):
         df_all: pd.DataFrame = _read_df_csv(self.out_dir, self.ALL_STRUCTS_FILENAME)
         # A boolean series representing which structures to keep.
         filter_idx = pd.Series(data=[True] * len(df_all), index=df_all.index)
-        filtered_counts = {"total": 0}
+        rejected_counts = {"total": 0}
+        rejected_idxs = {}
 
-        def _update_filtered_counts(filter_name: str):
-            n_filtered = (~filter_idx).sum() - filtered_counts["total"]
-            filtered_counts["total"] += n_filtered
-            if n_filtered:
+        def _update_rejected_counts(filter_name: str, idx: pd.Series):
+            rejected_idx = ~idx
+            n_rejected = rejected_idx.sum()
+            rejected_counts["total"] += n_rejected
+            if n_rejected:
                 LOGGER.info(
-                    f"Filtered {n_filtered} structures with filter '{filter_name}'"
+                    f"Filtered {n_rejected} structures with filter '{filter_name}'"
                 )
-            filtered_counts[filter_name] = n_filtered
+            rejected_counts[filter_name] = n_rejected
+            rejected_idxs[filter_name] = rejected_idx
 
         # Filter by metadata
-        filter_idx &= self._filter_metadata(pool, df_all)
-        _update_filtered_counts("metadata")
+        filter_idx_metadata = self._filter_metadata(pool, df_all)
+        filter_idx &= filter_idx_metadata
+        _update_rejected_counts("metadata", filter_idx_metadata)
 
         # Filter by sequence similarity
-        filter_idx &= self._filter_redundant_unps(pool, df_all)
-        _update_filtered_counts("redundant_unps")
+        filter_idx_redundant_unps = self._filter_redundant_unps(pool, df_all)
+        filter_idx &= filter_idx_redundant_unps
+        _update_rejected_counts("redundant_unps", filter_idx_redundant_unps)
 
         # Write the filtered structures
         df_filtered = df_all[filter_idx]
         _write_df_csv(df_filtered, self.out_dir, self.FILTERED_STRUCTS_FILENAME)
 
+        # Write the rejected structures and specify which filter rejected them
+        df_rejected = df_all
+        df_rejected[COL_REJECTED_BY] = ""
+        for filter_name, rejected_idx in rejected_idxs.items():
+            df_rejected.loc[rejected_idx, COL_REJECTED_BY] = filter_name
+        df_rejected = df_rejected[~filter_idx]
+        _write_df_csv(df_rejected, self.out_dir, self.REJECTED_STRUCTS_FILENAME)
+
         return {
-            "n_filtered": filtered_counts,
-            "n_collected_post_filter": len(df_filtered),
+            "n_rejected": rejected_counts,
+            "n_collected_filtered": len(df_filtered),
         }
 
     def _filter_metadata(self, pool: mp.Pool, df_all: pd.DataFrame) -> pd.Series:
