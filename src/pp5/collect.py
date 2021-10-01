@@ -448,7 +448,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         for i in range(n_unps):
             async_results[i] = pool.apply_async(
                 _pairwise_align_unp,
-                kwds=dict(query_unp_id=all_unp_ids[i], target_unp_ids=all_unp_ids,),
+                kwds=dict(query_unp_id=all_unp_ids[i], target_unp_ids=all_unp_ids[i:]),
             )
 
         blast_matrix = np.full(
@@ -456,7 +456,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         )
         for i, scores in pp5.parallel.yield_async_results(async_results):
             # i is query idx, j is target idx
-            for j, score in enumerate(scores):
+            for j, score in enumerate(scores, start=i):
                 blast_matrix[i, j] = blast_matrix[j, i] = score
 
             if (i % 100) == 0 or (i == n_unps - 1):
