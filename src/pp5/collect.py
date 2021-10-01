@@ -395,44 +395,6 @@ class ProteinRecordCollector(ParallelDataCollector):
         )
         return meta
 
-    def _write_dataset(self, pool: mp.Pool) -> dict:
-        df_pdb_ids: pd.DataFrame = _read_df_csv(
-            self.out_dir, self.FILTERED_STRUCTS_FILENAME, usecols=["pdb_id"]
-        )
-        pdb_ids = df_pdb_ids["pdb_id"]
-        LOGGER.info(f"Creating dataset file for {len(pdb_ids)} precs...")
-
-        filepath = self.out_dir.joinpath(f"{self.DATASET_FILENAME}.csv")
-        n_entries = 0
-
-        # Parallelize creation of dataframes in chunks.
-        chunk_size = 128
-        for pdb_ids_chunk in more_itertools.chunked(pdb_ids, chunk_size):
-            async_results = []
-            for i, pdb_id in enumerate(pdb_ids_chunk):
-                async_results.append(
-                    pool.apply_async(_load_prec_df_from_cache, args=(pdb_id,))
-                )
-
-            _, elapsed, pdb_id_dataframes = self._handle_async_results(
-                async_results, collect=True, flatten=False,
-            )
-
-            # Writing the dataframes to a single file must be sequential
-            with open(str(filepath), mode="a", encoding="utf-8") as f:
-                for df in pdb_id_dataframes:
-                    if df is None or df.empty:
-                        continue
-                    df.to_csv(
-                        f, header=n_entries == 0, index=False, float_format="%.2f"
-                    )
-                    n_entries += len(df)
-
-        dataset_size_mb = os.path.getsize(filepath) / 1024 / 1024
-        LOGGER.info(f"Wrote {filepath} ({n_entries=}, {dataset_size_mb:.2f}MB)")
-        meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}", "n_entries": n_entries}
-        return meta
-
     def _filter_collected(self, pool: mp.Pool) -> dict:
         """
         Filters collected structures according to conditions on their metadata.
@@ -539,6 +501,44 @@ class ProteinRecordCollector(ParallelDataCollector):
             "n_filtered": filtered_meta,
             "n_collected_post_filter": len(df_all),
         }
+
+    def _write_dataset(self, pool: mp.Pool) -> dict:
+        df_pdb_ids: pd.DataFrame = _read_df_csv(
+            self.out_dir, self.FILTERED_STRUCTS_FILENAME, usecols=["pdb_id"]
+        )
+        pdb_ids = df_pdb_ids["pdb_id"]
+        LOGGER.info(f"Creating dataset file for {len(pdb_ids)} precs...")
+
+        filepath = self.out_dir.joinpath(f"{self.DATASET_FILENAME}.csv")
+        n_entries = 0
+
+        # Parallelize creation of dataframes in chunks.
+        chunk_size = 128
+        for pdb_ids_chunk in more_itertools.chunked(pdb_ids, chunk_size):
+            async_results = []
+            for i, pdb_id in enumerate(pdb_ids_chunk):
+                async_results.append(
+                    pool.apply_async(_load_prec_df_from_cache, args=(pdb_id,))
+                )
+
+            _, elapsed, pdb_id_dataframes = self._handle_async_results(
+                async_results, collect=True, flatten=False,
+            )
+
+            # Writing the dataframes to a single file must be sequential
+            with open(str(filepath), mode="a", encoding="utf-8") as f:
+                for df in pdb_id_dataframes:
+                    if df is None or df.empty:
+                        continue
+                    df.to_csv(
+                        f, header=n_entries == 0, index=False, float_format="%.2f"
+                    )
+                    n_entries += len(df)
+
+        dataset_size_mb = os.path.getsize(filepath) / 1024 / 1024
+        LOGGER.info(f"Wrote {filepath} ({n_entries=}, {dataset_size_mb:.2f}MB)")
+        meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}", "n_entries": n_entries}
+        return meta
 
 
 class ProteinGroupCollector(ParallelDataCollector):
