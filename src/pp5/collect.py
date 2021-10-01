@@ -923,8 +923,8 @@ def _collect_single_structure(
 
         chain_data.append(
             {
-                COL_UNP_ID: unp_id,
-                COL_PDB_ID: pdb_id_full,
+                COL_UNP_ID: prec.unp_id,
+                COL_PDB_ID: prec.pdb_id,
                 COL_ENA_ID: prec.ena_id,
                 COL_RESOLUTION: resolution,
                 COL_SEQ_LEN: seq_len,
