@@ -25,6 +25,7 @@ from pp5.align import ProteinBLAST
 from pp5.utils import ReprJSONEncoder, ProteinInitError, elapsed_seconds_to_dhms
 from pp5.pgroup import ProteinGroup
 from pp5.external_dbs import pdb, unp, pdb_api
+from pp5.external_dbs.unp import unp_record
 
 LOGGER = logging.getLogger(__name__)
 
@@ -440,21 +441,25 @@ class ProteinRecordCollector(ParallelDataCollector):
 
     def _filter_redundant_unps(self, pool: mp.Pool, df_all: pd.DataFrame) -> pd.Series:
         # Create a similarity matrix for pairs of structures (in terms of sequence)
-        all_pdb_ids = tuple(sorted(df_all[COL_PDB_ID]))
-        n_structs = len(all_pdb_ids)
-        ii, jj = np.tril_indices(n=n_structs, k=0)
+        all_unp_ids = tuple(sorted(set(df_all[COL_UNP_ID])))
+        n_unps = len(all_unp_ids)
+        ii, jj = np.tril_indices(n=n_unps, k=0)
         async_results = {}
         for idx, (i, j) in enumerate(zip(ii, jj)):
             async_results[(i, j)] = pool.apply_async(
-                _pairwise_align_single_structure,
+                _pairwise_align_unp,
                 kwds=dict(
-                    query_pdb_id=all_pdb_ids[i],
-                    target_pdb_id=all_pdb_ids[j],
+                    query_unp_id=all_unp_ids[i],
+                    target_unp_id=all_unp_ids[j],
                     idx=(idx, len(ii)),
                 ),
             )
 
-        blast_matrix = np.full(shape=(n_structs, n_structs), fill_value=np.nan)
+        blast_matrix = np.full(
+            shape=(n_unps, n_unps), fill_value=np.nan, dtype=np.float32
+        )
+        np.full(shape=len(ii), fill_value=np.nan, dtype=np.float32)
+
         for (i, j), score in pp5.parallel.yield_async_results(async_results):
             blast_matrix[i, j] = blast_matrix[j, i] = score
 
@@ -463,21 +468,21 @@ class ProteinRecordCollector(ParallelDataCollector):
         # j, where 1.0 is the maximal similarity, i.e. S[i,i] == 1.
         d = np.sqrt(np.diag(blast_matrix))
         blast_matrix /= d
-        blast_matrix /= d.reshape((n_structs, 1))
+        blast_matrix /= d.reshape((n_unps, 1))
 
         # Write the BLAST scores
         df_blast_scores = pd.DataFrame(
-            data=blast_matrix, index=all_pdb_ids, columns=all_pdb_ids
+            data=blast_matrix, index=all_unp_ids, columns=all_unp_ids
         )
         _write_df_csv(
             df_blast_scores, self.out_dir, self.BLAST_SCORES_FILENAME, index=True
         )
 
-        # Filter out similar structures
+        # Filter out similar sequences
         selected = [0]
-        unselected = set(range(1, n_structs))
+        unselected = set(range(1, n_unps))
         selected_min_similarities = [0.0]
-        while len(selected) < n_structs:
+        while len(selected) < n_unps:
             next_selected = None
             next_min_similarity_to_selected = np.inf
 
@@ -502,8 +507,8 @@ class ProteinRecordCollector(ParallelDataCollector):
             selected_min_similarities, self.seq_similarity_thresh, side="right"
         )
         selected_filtered = selected[:idx_thresh]
-        filtered_pdb_ids = [all_pdb_ids[i] for i in selected_filtered]
-        filtered_idx = df_all[COL_PDB_ID].isin(filtered_pdb_ids)
+        filtered_unp_ids = [all_unp_ids[i] for i in selected_filtered]
+        filtered_idx = df_all[COL_UNP_ID].isin(filtered_unp_ids)
         return filtered_idx
 
     def _write_dataset(self, pool: mp.Pool) -> dict:
@@ -967,13 +972,13 @@ def _collect_single_ref(group_unp_id: str, df_group: pd.DataFrame) -> Optional[d
     )
 
 
-def _pairwise_align_single_structure(
-    query_pdb_id: str, target_pdb_id: str, idx: tuple,
+def _pairwise_align_unp(
+    query_unp_id: str, target_unp_id: str, idx: tuple,
 ):
     aligner = PairwiseAligner()
-    query_prec = ProteinRecord.from_pdb(query_pdb_id, cache=True)
-    target_prec = ProteinRecord.from_pdb(target_pdb_id, cache=True)
-    alignment = aligner.align(query_prec.protein_seq.seq, target_prec.protein_seq.seq)
+    query_seq = unp_record(query_unp_id).sequence
+    target_seq = unp_record(target_unp_id).sequence
+    alignment = aligner.align(query_seq, target_seq)
 
     if (idx[0] % 1000) == 0 or (idx[0] == idx[1] - 1):
         LOGGER.info(f"Computing pairwise similarity scores ({idx[0]+1}/{idx[1]})")
