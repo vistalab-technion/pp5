@@ -58,6 +58,9 @@ ANGLE_COLS = (PHI_COL, PSI_COL)
 CONDITION_COL = "condition_group"
 SUBGROUP_COL = "subgroup"
 GROUP_SIZE_COL = "group_size"
+PVAL_COL = "pval"
+T2_COL = "t2"
+SIGNIFICANT_COL = "significant"
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
@@ -800,8 +803,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         out_dir = self.out_dir.joinpath("pvals")
         os.makedirs(out_dir, exist_ok=True)
 
-        significance_metadata = {}
-
         result_types = [
             ("aa", AA_COL, AA_COL, self._idx_to_aa_tuple, self._idx_to_aa_tuple),
             (
@@ -813,6 +814,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             ),
             ("aac", AA_COL, CODON_COL, self._idx_to_aa_tuple, self._idx_to_codon_tuple),
         ]
+
+        significance_metadata = {}
+        df_data = {}
+        async_results = {}
+
         for (result_type, i_col, j_col, i_tuples, j_tuples) in result_types:
             # pvals and t2s are dicts from a group name to a dict from a
             # subgroup-pair to a pval/t2.
@@ -824,71 +830,114 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
 
             significance_metadata[result_type] = {}
-            df_data = []
+            df_data[result_type] = []
             group: str
             df_group: pd.DataFrame
             for idx_group, (group, df_group) in enumerate(df_groups):
                 group_pvals = pvals[group]
                 group_t2s = t2s[group]
 
-                # Get all indices of non-null pvals
-                idx_valid = np.argwhere(~np.isnan(group_pvals))
+                async_results[(result_type, group)] = pool.apply_async(
+                    self._write_pvals_inner,
+                    kwds=dict(
+                        result_type=result_type,
+                        i_col=i_col,
+                        j_col=j_col,
+                        i_tuples=i_tuples,
+                        j_tuples=j_tuples,
+                        group=group,
+                        df_group=df_group,
+                        group_pvals=group_pvals,
+                        group_t2s=group_t2s,
+                    ),
+                )
 
-                # Calculate significance threshold for pvalues for  multiple-hypothesis
-                # testing.
-                group_pvals_flat = group_pvals[idx_valid[:, 0], idx_valid[:, 1]]
-                significance_thresh = mht_bh(q=self.fdr, pvals=group_pvals_flat)
-                significance_metadata[result_type][group] = {
-                    "pval_thresh": significance_thresh,
-                    "num_hypotheses": len(group_pvals_flat),
-                    "num_rejections": np.sum(
-                        group_pvals_flat <= significance_thresh
-                    ).item(),
-                }
+        # Collect results
+        for (
+            (result_type, group),
+            (group_significance_meta, group_df_data),
+        ) in yield_async_results(async_results):
+            significance_metadata[result_type][group] = group_significance_meta
+            df_data[result_type].extend(group_df_data)
 
-                # Loop over the indices of subgroups for which we computed pvalues
-                for i, j in idx_valid:
-                    subgroup_i: str = i_tuples[i]
-                    subgroup_j: str = j_tuples[j]
-
-                    df_subgroup_i = df_group[df_group[i_col] == subgroup_i]
-                    df_subgroup_j = df_group[df_group[j_col] == subgroup_j]
-
-                    mu1: Dihedral = _subgroup_centroid(
-                        df_subgroup_i, input_degrees=True
-                    )
-                    mu2: Dihedral = _subgroup_centroid(
-                        df_subgroup_j, input_degrees=True
-                    )
-                    d12 = Dihedral.flat_torus_distance(
-                        mu1, mu2, degrees=True, squared=False
-                    )
-
-                    df_data.append(
-                        {
-                            CONDITION_COL: group,
-                            f"{SUBGROUP_COL}1": subgroup_i,
-                            f"{SUBGROUP_COL}2": subgroup_j,
-                            "n1": len(df_subgroup_i),
-                            "n2": len(df_subgroup_j),
-                            "phi1_mean": mu1.phi_deg,
-                            "psi1_mean": mu1.psi_deg,
-                            "phi2_mean": mu2.phi_deg,
-                            "psi2_mean": mu2.psi_deg,
-                            "d12": d12,
-                            "pval": group_pvals[i, j],
-                            "t2": group_t2s[i, j],
-                            "significant": group_pvals[i, j] <= significance_thresh,
-                        }
-                    )
-
-            df_pvals = pd.DataFrame(data=df_data)
+        # Write output
+        self._dump_intermediate("significance", significance_metadata)
+        for result_type, result_df_data in df_data.items():
+            df_pvals = pd.DataFrame(data=result_df_data)
+            df_pvals.sort_values(
+                by=[CONDITION_COL, PVAL_COL, T2_COL],
+                ascending=[True, True, False],
+                inplace=True,
+            )
             csv_path = str(out_dir.joinpath(f"{result_type}-pvals.csv"))
-            df_pvals.to_csv(csv_path)
+            df_pvals.to_csv(csv_path, index=False)
             LOGGER.info(f"Wrote {csv_path}")
 
-        self._dump_intermediate("significance", significance_metadata)
         return {"significance": significance_metadata}
+
+    def _write_pvals_inner(
+        self,
+        result_type: str,
+        i_col: str,
+        j_col,
+        i_tuples: dict,
+        j_tuples: dict,
+        group: str,
+        df_group: pd.DataFrame,
+        group_pvals: np.ndarray,
+        group_t2s: np.ndarray,
+    ):
+
+        # Get all indices of non-null pvals
+        idx_valid = np.argwhere(~np.isnan(group_pvals))
+
+        # Calculate significance threshold for pvalues for  multiple-hypothesis
+        # testing.
+        group_pvals_flat = group_pvals[idx_valid[:, 0], idx_valid[:, 1]]
+        significance_thresh = mht_bh(q=self.fdr, pvals=group_pvals_flat)
+
+        # Metadata about the significance of members in this group
+        significance_meta = {
+            "pval_thresh": significance_thresh,
+            "num_hypotheses": len(group_pvals_flat),
+            "num_rejections": np.sum(group_pvals_flat <= significance_thresh).item(),
+        }
+
+        # Loop over the indices of subgroups for which we computed pvalues
+        df_data = []
+        for i, j in idx_valid:
+            subgroup_i: str = i_tuples[i]
+            subgroup_j: str = j_tuples[j]
+
+            df_subgroup_i = df_group[df_group[i_col] == subgroup_i]
+            df_subgroup_j = df_group[df_group[j_col] == subgroup_j]
+
+            mu1: Dihedral = _subgroup_centroid(df_subgroup_i, input_degrees=True)
+            mu2: Dihedral = _subgroup_centroid(df_subgroup_j, input_degrees=True)
+            d12 = Dihedral.flat_torus_distance(mu1, mu2, degrees=True, squared=False)
+
+            df_data.append(
+                {
+                    CONDITION_COL: group,
+                    f"{SUBGROUP_COL}1": subgroup_i,
+                    f"{SUBGROUP_COL}2": subgroup_j,
+                    "n1": len(df_subgroup_i),
+                    "n2": len(df_subgroup_j),
+                    "phi1_mean": mu1.phi_deg,
+                    "psi1_mean": mu1.psi_deg,
+                    "phi2_mean": mu2.phi_deg,
+                    "psi2_mean": mu2.psi_deg,
+                    "d12": d12,
+                    PVAL_COL: group_pvals[i, j],
+                    T2_COL: group_t2s[i, j],
+                    SIGNIFICANT_COL: group_pvals[i, j] <= significance_thresh,
+                }
+            )
+
+        LOGGER.info(
+            f"Computed significance for {result_type=} {group=}: {significance_meta}"
+        )
+        return significance_meta, df_data
 
     def _plot_results(self, pool: mp.pool.Pool):
         """
