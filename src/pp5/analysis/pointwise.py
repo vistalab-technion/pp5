@@ -2,7 +2,6 @@ import os
 import re
 import time
 import logging
-import itertools as it
 import multiprocessing as mp
 from math import ceil, floor
 from typing import Any, Dict, List, Tuple, Union, Callable, Iterator, Optional, Sequence
@@ -16,7 +15,6 @@ import matplotlib.style
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from scipy.spatial.distance import sqeuclidean
 
 import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
@@ -78,8 +76,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         kde_width: float = 30.0,
         bs_niter: int = 1,
         bs_randstate: Optional[int] = None,
-        bs_fixed_n: Optional[Union[str, int]] = None,
-        n_parallel_groups: int = 2,
         t2_n_max: Optional[int] = 1000,
         t2_permutations: int = 1000,
         t2_kernel_size: float = 10.0,
@@ -112,14 +108,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param kde_width: KDE concentration parameter (will use same for phi and psi).
         :param bs_niter: Number of bootstrap iterations.
         :param bs_randstate: Random state for bootstrap.
-        :param bs_fixed_n: Whether to fix number of samples in each
-            bootstrap iteration for each subgroup.
-            Values can be "min": fix number of samples to equal the smallest
-            subgroup; "max": fix to size of largest subgroup; ""/None: no limit;
-            integer value: fix to the given number, and zero also means no limit.
-        :param n_parallel_groups: Number of groups to schedule for running in
-            parallel. Note that the sub-groups in each group will be parallelized over
-            all available cores.
         :param t2_n_max: Maximal sample-size to use when calculating
             p-value of distances with a statistical test. If there are larger samples,
             bootstrap sampling with the given maximal sample size will be performed.
@@ -140,12 +128,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             clear_intermediate=False,
         )
 
-        bs_fixed_n = bs_fixed_n or 0
-        if isinstance(bs_fixed_n, str) and bs_fixed_n not in {"", "min", "max"}:
-            raise ValueError(f"invalid bs_fixed_n: {bs_fixed_n}, must be min/max/''")
-        elif isinstance(bs_fixed_n, int) and bs_fixed_n < 0:
-            raise ValueError(f"invalid bs_fixed_n: {bs_fixed_n}, must be > 0")
-
         if codon_tuple_len < 1:
             raise ValueError(f"invalid {codon_tuple_len=}, must be >= 1")
 
@@ -164,8 +146,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
-        self.bs_fixed_n = bs_fixed_n
-        self.n_parallel_groups = n_parallel_groups
         self.t2_n_max = t2_n_max
         self.t2_permutations = t2_permutations
         self.t2_kernel_size = t2_kernel_size
@@ -1203,334 +1183,6 @@ def _dihedral_kde_single_group(
     dkde = kde(phi, psi)
 
     return group_idx, dkde
-
-
-def _codon_dkdes_single_subgroup(
-    group_idx: str,
-    subgroup_idx: str,
-    df_subgroup: pd.DataFrame,
-    angle_cols: Tuple[str, str],
-    kde_args: dict,
-    bs_niter: int,
-    bs_nsamples: int,
-    bs_randstate: Optional[int],
-) -> Tuple[str, np.ndarray]:
-    """
-    Calculates (bootstrapped) KDEs of angle distributions for a subgroup of data
-    (e.g. a specific codon).
-    :param group_idx: Identifier of the given data's group (e.g. SS).
-    :param subgroup_idx: Identifier of the given data's subgroup (e.g. codon).
-    :param df_subgroup: Dataframe with the angle data.
-    :param angle_cols: A two-tuple with names of angle columns.
-    :param kde_args: Arguments for density estimation.
-    :param bs_niter: Number of bootstrap iterations.
-    :param bs_nsamples: Number of times to sample the group in each bootstrap iteration.
-    :param bs_randstate: Random state for bootstrapping.
-    :return: A tuple:
-        - The subgroup id.
-        - A KDE of shape (B, M, M)
-    """
-
-    # Create a 3D tensor to hold the bootstrapped KDE, of shape (B,M,M)
-    bs_kde_shape = (bs_niter, kde_args["n_bins"], kde_args["n_bins"])
-    bs_dkde = np.empty(bs_kde_shape, np.float32)
-
-    # We want a different random state in each subgroup, but still
-    # should be reproducible
-    if bs_randstate is not None:
-        seed = (hash(group_idx + subgroup_idx) + bs_randstate) % (2 ** 31)
-        np.random.seed(seed)
-
-    t_start = time.time()
-
-    for bootstrap_idx in range(bs_niter):
-        # Sample from dataset with replacement, the same number of
-        # elements as it's size. This is our bootstrap sample.
-        df_subgroup_sampled = df_subgroup.sample(
-            axis=0, replace=bs_niter > 1, n=bs_nsamples,
-        )
-
-        _, dkde = _dihedral_kde_single_group(
-            subgroup_idx, df_subgroup_sampled, angle_cols, kde_args
-        )
-
-        # Save the current iteration's KDE into the results tensor
-        bs_dkde[bootstrap_idx, ...] = dkde
-
-    t_elapsed = time.time() - t_start
-    bs_rate_iter = bs_niter / t_elapsed
-    LOGGER.info(
-        f"Completed {bs_niter} bootstrap iterations for "
-        f"{group_idx}_{subgroup_idx}, size={len(df_subgroup)}, "
-        f"bs_nsamples={bs_nsamples}, "
-        f"rate={bs_rate_iter:.1f} iter/sec "
-        f"elapsed={t_elapsed:.1f} sec"
-    )
-
-    return subgroup_idx, bs_dkde
-
-
-def _dkde_dists_single_group(
-    group_idx: str,
-    bs_codon_dkdes: Dict[str, Optional[np.ndarray]],
-    subgroup_sizes: Dict[str, int],
-    bs_randstate: int,
-    t2_n_max: int,
-    t2_permutations: int,
-    t2_kernel_size: float,
-    kde_dist_metric: Callable,
-) -> Tuple[
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    Dict[str, np.ndarray],
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    Dict[str, np.ndarray],
-]:
-    """
-    Calculates the pairwise distance matrix for codons and AAs based on permutation
-    tests between bootstrapped KDEs from different codons.
-
-    Also averages the bootstrapped KDEs to obtain a single KDE estimate per
-    codon or AA in the group.
-
-    :param group_idx: Identifier of the group this data is from.
-    :param bs_codon_dkdes: A dict mapping from an AA-codon to the bootstrapped KDE
-       of that codon.
-    :param subgroup_sizes: A dict mapping from subgroup name (AA or AA-codon) to the
-        number of samples (dataset rows) available for that AA or AA-codon.
-    :param bs_randstate: Random state for bootstrapping.
-    :param t2_n_max: Maximum sample size for t-test.
-    :param t2_permutations: Number of permutations to use when calculating T^2
-        statistic.
-    :param kde_dist_metric: Function to compute distance between two KDEs.
-    :return: A tuple:
-        - Codon pairwise KDE-distance matrix
-        - Codon pairwise t2-distance matrix
-        - Codon pairwise-pvalue matrix
-        - Codon averaged KDE
-        - AA pairwise KDE-distance matrix
-        - AA pairwise t2-distance matrix
-        - AA pairwise-pvalue matrix
-        - AA averaged KDE
-    """
-
-    tstart = time.time()
-    # Codon distance matrix and average codon KDEs
-    codon_d2s, codon_t2s, codon_pvals = _dkde_dists_pairwise(
-        group_idx,
-        bs_codon_dkdes,
-        bs_randstate,
-        t2_n_max,
-        t2_permutations,
-        t2_kernel_size,
-        kde_dist_metric,
-    )
-    codon_dkdes = _dkde_average(bs_codon_dkdes)
-    LOGGER.info(
-        f"Calculated codon distance matrix and average KDE for {group_idx} "
-        f"({time.time() - tstart:.1f}s)..."
-    )
-
-    # AA distance matrix and average AA KDEs
-    # First, we compute a weighted sum of the codon dkdes to obtain AA dkdes.
-    tstart = time.time()
-    bs_aa_dkdes: Dict[str, Optional[np.ndarray]] = {
-        aac[0]: None for aac, dkde in bs_codon_dkdes.items()
-    }
-    for aa in ACIDS:
-        # Total number of samples from all subgroups (codons) of this AA
-        n_aa_samples = subgroup_sizes[aa]
-        for aac, bs_dkde in bs_codon_dkdes.items():
-            if aac[0] != aa:
-                continue
-            if subgroup_sizes[aac] == 0:
-                continue
-            if bs_dkde is None:
-                continue
-
-            # Empirical probability of this codon subgroup within its AA
-            p = subgroup_sizes[aac] / n_aa_samples
-
-            # Initialize KDE of current AA to zero so we can accumulate
-            if bs_aa_dkdes[aa] is None:
-                bs_aa_dkdes[aa] = np.zeros_like(bs_dkde)
-
-            # Weighted sum of codon dkdes belonging to the current AA
-            bs_aa_dkdes[aa] += p * bs_dkde
-
-    # Now, we apply the pairwise distance between pairs of AA KDEs, as for the
-    # codons
-    aa_d2s, aa_t2s, aa_pvals = _dkde_dists_pairwise(
-        group_idx,
-        bs_aa_dkdes,
-        bs_randstate,
-        t2_n_max,
-        t2_permutations,
-        t2_kernel_size,
-        kde_dist_metric,
-    )
-    aa_dkdes = _dkde_average(bs_aa_dkdes)
-    LOGGER.info(
-        f"Calculated AA distance matrix and average KDE for {group_idx} "
-        f"({time.time() - tstart:.1f}s)..."
-    )
-    return (
-        codon_d2s,
-        codon_t2s,
-        codon_pvals,
-        codon_dkdes,
-        aa_d2s,
-        aa_t2s,
-        aa_pvals,
-        aa_dkdes,
-    )
-
-
-def _dkde_dists_pairwise(
-    group_idx: str,
-    bs_dkdes: Dict[str, Optional[np.ndarray]],
-    bs_randstate: int,
-    t2_n_max: int,
-    t2_permutations: int,
-    t2_kernel_size: float,
-    kde_dist_metric: Callable[[np.ndarray, np.ndarray], np.ndarray],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Calculate a distance matrix based on the distance between each pair of
-    subgroups (codons or AAs) for which we have a bootstrapped KDE.
-
-    :param group_idx: Name of the current group.
-    :param bs_dkdes: A dict from a subgroup identifier to a bootstrapped KDE.
-    :param bs_randstate: Random state for bootstrapping.
-    :param t2_n_max: Maximum sample size for t-test.
-    :param t2_permutations: Number of permutations to use when calculating T^2
-        statistic.
-    :param kde_dist_metric: A function to compute the distance between two KDEs.
-    :return: A tuple:
-        - Pairwise KDE-distance matrix between subgroups.
-          The distance matrix will be complex, where the real value is the average
-          distance over the bootstrapped samples and the imag is the std.
-        - Pairwise t2-distance matrix.
-        - Pairwise p-value matrix. Contains the p-value, i.e the
-          probability that the real distance between the distributions is zero between
-          each pair of subgroups.
-    """
-
-    def _dkde_to_tw_observation(dkde: np.ndarray):
-        # Converts batch of KDEs to an observations matrix for a Tw^2 test.
-        B, M, M = dkde.shape
-        # Flatten to (B, M * M, B): We have B observations and the dimension of each
-        # observation is M*M.
-        X = dkde.reshape((B, M * M))
-        # Apply log in such a way as to scale dynamic range to [-100, 0].
-        X = np.log(X + 1e-43)
-        return X
-
-    dkde_names = list(bs_dkdes.keys())
-    N = len(dkde_names)
-
-    # We have N dkde matrices, so we compute the distance between each such pair.
-    # We use a complex array to store mu as the real part and sigma
-    # as the imaginary part in a single array.
-    d2_mat = np.full((N, N), np.nan, np.complex64)
-    t2_mat = np.full((N, N), np.nan, np.float32)
-    pval_mat = np.full((N, N), np.nan, np.float32)
-
-    dkde_pairs = it.product(enumerate(dkde_names), enumerate(dkde_names))
-    for (i, ci), (j, cj) in dkde_pairs:
-        if bs_dkdes[ci] is None:
-            continue
-
-        if j < i or bs_dkdes[cj] is None:
-            continue
-
-        t_start = time.time()
-
-        # Get the two dihedral KDEs arrays to compare, each is of
-        # shape (B, M, M) due to bootstrapping B times
-        dkde1 = bs_dkdes[ci]
-        dkde2 = bs_dkdes[cj]
-
-        # If ci is cj, randomize the order of the KDEs when
-        # comparing, so that different bootstrapped KDEs are
-        # compared
-        if i == j:
-            # This permutes the order along the first axis
-            dkde2 = np.random.permutation(dkde2)
-
-        # Compute the distances, of shape (B,)
-        d2 = kde_dist_metric(dkde1, dkde2)
-        d2_mu = np.nanmean(d2)
-        d2_sigma = np.nanstd(d2)
-
-        # Store distance mu and std as a complex number
-        d2_mat[i, j] = d2_mat[j, i] = d2_mu + 1j * d2_sigma
-
-        t_elapsed = time.time() - t_start
-        LOGGER.info(
-            f"Calculated d2 {group_idx=}, {ci=}, {cj=}, value={d2_mu:.3e}±"
-            f"{d2_sigma:.3e}, elapsed={t_elapsed:.2f}s"
-        )
-
-        #  Calculate statistical significance of the distance based on T_w^2 metric
-        t2, pval = _subgroup_permutation_test(
-            group_idx=group_idx,
-            subgroup1_idx=ci,
-            subgroup2_idx=cj,
-            subgroup1_data=_dkde_to_tw_observation(dkde1),
-            subgroup2_data=_dkde_to_tw_observation(dkde2),
-            t2_n_max=t2_n_max,
-            randstate=bs_randstate,
-            t2_permutations=t2_permutations,
-            t2_kernel_size=t2_kernel_size,
-            t2_metric=sqeuclidean,
-        )
-        t2_mat[i, j] = t2_mat[j, i] = t2
-        pval_mat[i, j] = pval_mat[j, i] = pval
-
-    return d2_mat, t2_mat, pval_mat
-
-
-def _dkde_average(bs_dkdes: Dict[str, Optional[np.ndarray]]) -> Dict[str, np.ndarray]:
-    """
-    Averages the KDEs from all bootstraps, to obtain a single KDE per subgroup
-    (codon or AA). Note that this KDE will also include the variance in each bin,
-    so we'll save as a complex matrix where real is the KDE value and imag is the std.
-
-    :param bs_dkdes: A dict from a subgroup identifier to a bootstrapped KDE.
-    :return: A dict mapping from a group identifier (codon or AA) to an
-        averaged KDE for that subgroup. The averaged KDE will actually be a
-        complex matrix where the real part is average and the imag is std.
-    """
-
-    avg_dkdes = {c: None for c in bs_dkdes.keys()}
-    for subgroup, bs_dkde in bs_dkdes.items():
-        if bs_dkde is None:
-            continue
-
-        # bs_dkde here is of shape (B, N, N) due to bootstrapping.
-        # Average it over the bootstrap dimension
-        mean_dkde = np.nanmean(bs_dkde, axis=0, dtype=np.float32)
-        std_dkde = np.nanstd(bs_dkde, axis=0, dtype=np.float32)
-        avg_dkdes[subgroup] = mean_dkde + 1j * std_dkde
-
-    return avg_dkdes
-
-
-def _kde_dist_metric_l2(kde1: np.ndarray, kde2: np.ndarray):
-    """
-    L2 distance between two bootstrapped KDEs.
-    We expect kde1 and kde2 to be of shape (B, N, N)
-    We calculate distance between each 2D NxN plane and return B distances.
-    :param kde1: First bootstrapped KDE.
-    :param kde2: Second bootstrapped KDE.
-    :return: Distances, an array of shape (B,)
-    """
-    assert kde1.ndim == 3 and kde2.ndim == 3
-    return np.nansum((kde1 - kde2) ** 2, axis=(1, 2))
 
 
 def _plot_likelihoods(
