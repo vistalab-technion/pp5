@@ -47,8 +47,7 @@ def _mmd_statistic(K: np.ndarray, nx: int, ny: int) -> float:
     return float(sum_X + sum_Y - 2.0 * sum_XY)
 
 
-@numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def _identity_kernel(x: ndarray):
+def _identity_kernel(x: ndarray, **kw):
     """
     Identity function, to use as a kernel.
     """

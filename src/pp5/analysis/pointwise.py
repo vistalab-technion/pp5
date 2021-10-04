@@ -4,7 +4,18 @@ import time
 import logging
 import multiprocessing as mp
 from math import ceil, floor
-from typing import Any, Dict, List, Tuple, Union, Callable, Iterator, Optional, Sequence
+from typing import (
+    Any,
+    Dict,
+    List,
+    Tuple,
+    Union,
+    Literal,
+    Callable,
+    Iterator,
+    Optional,
+    Sequence,
+)
 from pathlib import Path
 from multiprocessing.pool import AsyncResult
 
@@ -59,6 +70,7 @@ GROUP_SIZE_COL = "group_size"
 PVAL_COL = "pval"
 T2_COL = "t2"
 SIGNIFICANT_COL = "significant"
+TEST_STATISTICS = {"mmd": mmd_test, "tw": tw_test}
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
@@ -76,6 +88,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         kde_width: float = 30.0,
         bs_niter: int = 1,
         bs_randstate: Optional[int] = None,
+        t2_statistic: Union[Literal["mmd"], Literal["tw"]] = "mmd",
         t2_n_max: Optional[int] = 1000,
         t2_permutations: int = 1000,
         t2_kernel_size: float = 10.0,
@@ -108,13 +121,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param kde_width: KDE concentration parameter (will use same for phi and psi).
         :param bs_niter: Number of bootstrap iterations.
         :param bs_randstate: Random state for bootstrap.
+        :param t2_statistic: Statistic to use for statistical tests. Can be either
+            'mmd' or 'tw'.
         :param t2_n_max: Maximal sample-size to use when calculating
             p-value of distances with a statistical test. If there are larger samples,
             bootstrap sampling with the given maximal sample size will be performed.
             If None or zero, sample size wont be limited.
         :param t2_permutations: Number of permutations to use when calculating
             p-value of distances with a statistical test.
-        :param t2_kernel_size: Size of kernel used in MMD-based permutation test.
+        :param t2_kernel_size: Size of kernel used in MMD-based permutation test (
+            ignored if the test statistic is not MMD).
         :param fdr: False discovery rate for multiple hypothesis testing using
             Benjamini-Hochberg method.
         :param out_tag: Tag for output.
@@ -131,6 +147,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if codon_tuple_len < 1:
             raise ValueError(f"invalid {codon_tuple_len=}, must be >= 1")
 
+        if t2_statistic not in TEST_STATISTICS:
+            raise ValueError(
+                f"t2_statistic must be one of {tuple(TEST_STATISTICS.keys())}"
+            )
+
         if not 0.0 < fdr < 1.0:
             raise ValueError("FDR should be between 0 and 1, exclusive")
 
@@ -146,6 +167,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
+        self.t2_statistic_fn = TEST_STATISTICS[t2_statistic]
         self.t2_n_max = t2_n_max
         self.t2_permutations = t2_permutations
         self.t2_kernel_size = t2_kernel_size
@@ -667,6 +689,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         angles1,
                         angles2,
                         self.bs_randstate,
+                        self.t2_statistic_fn,
                         self.t2_n_max,
                         self.t2_permutations,
                         self.t2_kernel_size,
@@ -1081,6 +1104,7 @@ def _subgroup_permutation_test(
     subgroup1_data: np.ndarray,
     subgroup2_data: np.ndarray,
     randstate: int,
+    t2_statistic_fn: Callable,
     t2_n_max: Optional[int],
     t2_permutations: int,
     t2_kernel_size: float,
@@ -1128,7 +1152,7 @@ def _subgroup_permutation_test(
     # Run bootstrapped tests
     t2s, pvals = np.empty(n_iter, dtype=np.float32), np.empty(n_iter, dtype=np.float32)
     for i in range(n_iter):
-        t2s[i], pvals[i] = mmd_test(
+        t2s[i], pvals[i] = t2_statistic_fn(
             X=_bootstrap_sample(subgroup1_data).transpose(),
             Y=_bootstrap_sample(subgroup2_data).transpose(),
             k=t2_permutations,
@@ -1147,9 +1171,14 @@ def _subgroup_permutation_test(
     med_t2, med_p = t2s[median_idx], pvals[median_idx]
 
     t_elapsed = time.time() - t_start
+    t2_statistic_fn_name = [
+        k for k, v in TEST_STATISTICS.items() if v == t2_statistic_fn
+    ][0]
     LOGGER.info(
-        f"Calculated (t2, pval) {group_idx=}, {subgroup1_idx=} (n={n1}), "
-        f"{subgroup2_idx=} (n={n2}), using {n_iter=}: "
+        f"Calculated (t2, pval) [{t2_statistic_fn_name}] {group_idx=}, "
+        f"{subgroup1_idx=} (n={n1}), "
+        f"{subgroup2_idx=} (n={n2}), "
+        f"using {n_iter=}: "
         f"(med_p, max_p)=({med_p:.3f},{max_p:.3f}),"
         f"(med_t2, max_t2)=({med_t2:.2f},{max_t2:.2f}), "
         f"elapsed={t_elapsed:.2f}s"
