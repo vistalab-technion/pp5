@@ -1,3 +1,4 @@
+import shutil
 import logging
 from typing import Set, List, Union, Iterable, NamedTuple
 from pathlib import Path
@@ -64,7 +65,9 @@ def unp_download(unp_id: str, unp_dir=UNP_DIR) -> Path:
             # download that instead.
             new_unp_id = replacement_ids(unp_id)[0]
             LOGGER.warning(f"UNP id {unp_id} replaced by {new_unp_id}")
-            return unp_download(new_unp_id, unp_dir)
+            new_filename = unp_download(new_unp_id, unp_dir)
+            shutil.copy(new_filename, filename)
+            return new_filename
         else:
             # Other download error, we can't handle this here
             raise e from None

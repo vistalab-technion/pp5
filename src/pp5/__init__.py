@@ -46,6 +46,8 @@ _CONFIG = {
     "DEFAULT_RES": 1.8,
     # Default RFree for PDB queries
     "DEFAULT_RFREE": 0.24,
+    # Default PDB sequence similarity threshold for data collection
+    "DEFAULT_SEQ_SIMILARITY_THRESH": 1.0,
     # Whether to log at DEBUG level
     "LOG_DEBUG": False,
 }

@@ -422,17 +422,17 @@ class ProteinBLAST(object):
         single DB.
         :param evalue_cutoff: Maximal expectation value allowed for matches.
         :param identity_cutoff: Minimal identity (in %) between query and
-        target sequences allowed for matches.
+            target sequences allowed for matches.
         :param matrix_name: Name of scoring matrix.
         :param max_alignments: Maximum number of alignments to return. None
-        means no limit.
+            means no limit.
         :param db_name: Name of database (no file extension). Can be an alias.
         :param db_dir: Database folder. If the base PDB BLAST database is
-        not found in this folder, it will be downloaded automatically.
+            not found in this folder, it will be downloaded automatically.
         :param db_autoupdate_days: Automatically download a new base BLAST
-        DB if the local one exists but is out of date by this number of days
-        compared to the latest remote version. None means don't check whether
-        local is out of date.
+            DB if the local one exists but is out of date by this number of days
+            compared to the latest remote version. None means don't check whether
+            local is out of date.
         """
 
         if evalue_cutoff <= 0:
@@ -453,20 +453,9 @@ class ProteinBLAST(object):
 
         # Check that the base database was downloaded (we expect that the
         # archive is not deleted after download)
-        if not db_dir.joinpath(self.BLAST_FTP_DB_FILENAME).is_file():
-            LOGGER.info(
-                f"Local BLAST DB {self.BLAST_DB_NAME} not found, " f"downloading..."
-            )
-            self.blastdb_download(blastdb_dir=db_dir)
-        elif db_autoupdate_days is not None:
-            delta_days = self.blastdb_remote_timedelta(blastdb_dir=db_dir).days
-            if delta_days >= db_autoupdate_days:
-                LOGGER.info(
-                    f"Local BLAST DB {self.BLAST_DB_NAME} is out of "
-                    f"date by {delta_days} days compared to "
-                    f"latest version, downloading..."
-                )
-                self.blastdb_download(blastdb_dir=db_dir)
+        self.blastdb_auto_update(
+            blastdb_dir=db_dir, db_autoupdate_days=db_autoupdate_days
+        )
 
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
@@ -569,6 +558,32 @@ class ProteinBLAST(object):
         return df
 
     @classmethod
+    def blastdb_auto_update(
+        cls, blastdb_dir=pp5.BLASTDB_DIR, db_autoupdate_days: int = None
+    ):
+        """
+        :param blastdb_dir: Database folder. If the base PDB BLAST database is
+            not found in this folder, it will be downloaded automatically.
+        :param db_autoupdate_days: Automatically download a new base BLAST
+            DB if the local one exists but is out of date by this number of days
+            compared to the latest remote version. None means don't check whether
+            local is out of date.
+        """
+        if not blastdb_dir.joinpath(cls.BLAST_FTP_DB_FILENAME).is_file():
+            LOGGER.info(f"Local BLAST DB {cls.BLAST_DB_NAME} not found, downloading...")
+            cls.blastdb_download(blastdb_dir=blastdb_dir)
+
+        elif db_autoupdate_days is not None:
+            delta_days = cls.blastdb_remote_timedelta(blastdb_dir=blastdb_dir).days
+            if delta_days >= db_autoupdate_days:
+                LOGGER.info(
+                    f"Local BLAST DB {cls.BLAST_DB_NAME} is out of "
+                    f"date by {delta_days} days compared to "
+                    f"latest version, downloading..."
+                )
+                cls.blastdb_download(blastdb_dir=blastdb_dir)
+
+    @classmethod
     def blastdb_remote_timedelta(cls, blastdb_dir=pp5.BLASTDB_DIR) -> timedelta:
         """
         :param blastdb_dir: Directory of local BLAST database.
@@ -606,6 +621,7 @@ class ProteinBLAST(object):
         :param blastdb_dir: Directory of local BLAST database.
         :return: Path of downloaded archive.
         """
+        os.makedirs(blastdb_dir, exist_ok=True)
         local_db = blastdb_dir.joinpath(cls.BLAST_FTP_DB_FILENAME)
 
         try:
@@ -656,6 +672,7 @@ class ProteinBLAST(object):
         alias_name: str,
         source_name=BLAST_DB_NAME,
         blastdb_dir=pp5.BLASTDB_DIR,
+        db_autoupdate_days: int = None,
     ):
         """
         Creates a BLAST database which is a subset of the main (full) database.
@@ -665,16 +682,18 @@ class ProteinBLAST(object):
         :param alias_name: Name of generated alias database.
         :param source_name: Name of source database.
         :param blastdb_dir: Directory of local BLAST database.
+        :param db_autoupdate_days: Automatically download a new base BLAST
+            DB if the local one exists but is out of date by this number of days
+            compared to the latest remote version. None means don't check whether
+            local is out of date.
         :return: Name of generated database (relative to the blastdb_dir),
         which can be used as the db_name of a new ProteinBLAST instance.
         """
 
-        # Check that the base database was downloaded.
-        if not blastdb_dir.joinpath(cls.BLAST_FTP_DB_FILENAME).is_file():
-            LOGGER.info(
-                f"Local BLAST DB {cls.BLAST_DB_NAME} not found, " f"downloading..."
-            )
-            cls.blastdb_download(blastdb_dir=blastdb_dir)
+        # Check that the base database was downloaded and is up-to-date.
+        cls.blastdb_auto_update(
+            blastdb_dir=blastdb_dir, db_autoupdate_days=db_autoupdate_days
+        )
 
         aliases_dir = blastdb_dir.joinpath("aliases")
         source_rel_alias = Path("..").joinpath(source_name)
@@ -734,7 +753,7 @@ class ProteinBLAST(object):
                     f"for alias DB {alias_name}: {skipped_ids}"
                 )
 
-            # It already compleated, perform wait to reap the process
+            # It already completed, perform wait to reap the process
             sproc.wait(timeout=5)
 
         # Now we run the blastdb_aliastool to create a db alias which only

@@ -2,10 +2,20 @@ import os
 import re
 import time
 import logging
-import itertools as it
 import multiprocessing as mp
 from math import ceil, floor
-from typing import Any, Dict, List, Tuple, Union, Callable, Optional, Sequence
+from typing import (
+    Any,
+    Dict,
+    List,
+    Tuple,
+    Union,
+    Literal,
+    Callable,
+    Iterator,
+    Optional,
+    Sequence,
+)
 from pathlib import Path
 from multiprocessing.pool import AsyncResult
 
@@ -19,7 +29,7 @@ from matplotlib.figure import Figure
 
 import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
-from pp5.stats import mht_bh, tw_test
+from pp5.stats import mht_bh, tw_test, mmd_test
 from pp5.utils import sort_dict
 from pp5.codons import (
     ACIDS,
@@ -57,6 +67,10 @@ ANGLE_COLS = (PHI_COL, PSI_COL)
 CONDITION_COL = "condition_group"
 SUBGROUP_COL = "subgroup"
 GROUP_SIZE_COL = "group_size"
+PVAL_COL = "pval"
+T2_COL = "t2"
+SIGNIFICANT_COL = "significant"
+TEST_STATISTICS = {"mmd": mmd_test, "tw": tw_test}
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
@@ -71,15 +85,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         min_group_size: int = 1,
         strict_codons: bool = True,
         kde_nbins: int = 128,
-        kde_k1: float = 30.0,
-        kde_k2: float = 30.0,
-        kde_k3: float = 0.0,
+        kde_width: float = 30.0,
         bs_niter: int = 1,
         bs_randstate: Optional[int] = None,
-        bs_fixed_n: Optional[Union[str, int]] = None,
-        n_parallel_groups: int = 2,
+        t2_statistic: Union[Literal["mmd"], Literal["tw"]] = "mmd",
         t2_n_max: Optional[int] = 1000,
         t2_permutations: int = 1000,
+        t2_kernel_size: float = 10.0,
         fdr: float = 0.1,
         out_tag: str = None,
     ):
@@ -106,25 +118,19 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param strict_codons: Enforce only one known codon per residue
             (reject residues where DNA matching was ambiguous).
         :param kde_nbins: Number of angle binds for KDE estimation.
-        :param kde_k1: KDE concentration parameter for phi.
-        :param kde_k2: KDE concentration parameter for psi.
-        :param kde_k3: KDE joint concentration parameter.
+        :param kde_width: KDE concentration parameter (will use same for phi and psi).
         :param bs_niter: Number of bootstrap iterations.
         :param bs_randstate: Random state for bootstrap.
-        :param bs_fixed_n: Whether to fix number of samples in each
-            bootstrap iteration for each subgroup.
-            Values can be "min": fix number of samples to equal the smallest
-            subgroup; "max": fix to size of largest subgroup; ""/None: no limit;
-            integer value: fix to the given number, and zero also means no limit.
-        :param n_parallel_groups: Number of groups to schedule for running in
-            parallel. Note that the sub-groups in each group will be parallelized over
-            all available cores.
+        :param t2_statistic: Statistic to use for statistical tests. Can be either
+            'mmd' or 'tw'.
         :param t2_n_max: Maximal sample-size to use when calculating
-            p-value of distances with the T^2 statistic. If there are larger samples,
+            p-value of distances with a statistical test. If there are larger samples,
             bootstrap sampling with the given maximal sample size will be performed.
             If None or zero, sample size wont be limited.
         :param t2_permutations: Number of permutations to use when calculating
-            p-value of distances with the T^2 statistic.
+            p-value of distances with a statistical test.
+        :param t2_kernel_size: Size of kernel used in MMD-based permutation test (
+            ignored if the test statistic is not MMD).
         :param fdr: False discovery rate for multiple hypothesis testing using
             Benjamini-Hochberg method.
         :param out_tag: Tag for output.
@@ -138,14 +144,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             clear_intermediate=False,
         )
 
-        bs_fixed_n = bs_fixed_n or 0
-        if isinstance(bs_fixed_n, str) and bs_fixed_n not in {"", "min", "max"}:
-            raise ValueError(f"invalid bs_fixed_n: {bs_fixed_n}, must be min/max/''")
-        elif isinstance(bs_fixed_n, int) and bs_fixed_n < 0:
-            raise ValueError(f"invalid bs_fixed_n: {bs_fixed_n}, must be > 0")
-
         if codon_tuple_len < 1:
             raise ValueError(f"invalid {codon_tuple_len=}, must be >= 1")
+
+        if t2_statistic not in TEST_STATISTICS:
+            raise ValueError(
+                f"t2_statistic must be one of {tuple(TEST_STATISTICS.keys())}"
+            )
 
         if not 0.0 < fdr < 1.0:
             raise ValueError("FDR should be between 0 and 1, exclusive")
@@ -157,15 +162,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.strict_codons = strict_codons
         self.condition_on_prev = None
 
-        self.kde_args = dict(n_bins=kde_nbins, k1=kde_k1, k2=kde_k2, k3=kde_k3)
+        self.kde_args = dict(n_bins=kde_nbins, k1=kde_width, k2=kde_width, k3=0)
         self.kde_dist_metric = "l2"
 
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
-        self.bs_fixed_n = bs_fixed_n
-        self.n_parallel_groups = n_parallel_groups
+        self.t2_statistic_fn = TEST_STATISTICS[t2_statistic]
         self.t2_n_max = t2_n_max
         self.t2_permutations = t2_permutations
+        self.t2_kernel_size = t2_kernel_size
         self.fdr = fdr
 
         # Initialize codon tuple names and corresponding indices
@@ -502,7 +507,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
         group_sizes = {}
         curr_codon_col = CODON_COL
-        df_groups = df_processed.groupby(by=CONDITION_COL)
+        df_groups = groupby_with_full_group(
+            df_processed, full_group_name=SS_TYPE_ANY, full_first=True, by=CONDITION_COL
+        )
         for group_idx, df_group in df_groups:
             df_subgroups = df_group.groupby(curr_codon_col)
 
@@ -573,7 +580,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 dtype=np.float32,
             )
 
-            group_names = sorted(set(df_processed[CONDITION_COL]))
+            group_names = sorted(set(df_processed[CONDITION_COL]).union({SS_TYPE_ANY}))
             collected_t2s: Dict[str, np.ndarray] = {
                 g: np.full(**default) for g in group_names
             }
@@ -628,7 +635,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         Helper function that submits pairs of subgroups for pointwise angle-based
         analysis.
         """
-        df_groups = df_processed.groupby(by=CONDITION_COL)
+        df_groups = groupby_with_full_group(
+            df_processed, full_group_name=SS_TYPE_ANY, full_first=True, by=CONDITION_COL
+        )
         async_results: Dict[Tuple[str, str, str], AsyncResult] = {}
 
         LOGGER.info(
@@ -680,12 +689,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         angles1,
                         angles2,
                         self.bs_randstate,
+                        self.t2_statistic_fn,
                         self.t2_n_max,
                         self.t2_permutations,
+                        self.t2_kernel_size,
                         flat_torus_distance,
                     )
 
-                    res = pool.apply_async(_subgroup_tw2_test, args=args)
+                    res = pool.apply_async(_subgroup_permutation_test, args=args)
                     async_results[(group, sub1, sub2)] = res
 
         return async_results
@@ -696,12 +707,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         Ramachandran plot, using kernel density estimation (KDE).
         """
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
-        df_groups = df_processed.groupby(by=SECONDARY_COL)
-        df_groups_count: pd.DataFrame = df_groups.count()
-        ss_counts = {
-            f"n_{ss_type}": count
-            for ss_type, count in df_groups_count.max(axis=1).to_dict().items()
-        }
+        df_groups = tuple(
+            groupby_with_full_group(
+                df_processed,
+                full_group_name=SS_TYPE_ANY,
+                full_first=True,
+                by=CONDITION_COL,
+            )
+        )
+        ss_counts = {f"n_{ss_type}": len(df_group) for ss_type, df_group in df_groups}
 
         LOGGER.info(f"Secondary-structure groups:\n{ss_counts})")
         LOGGER.info(f"Calculating dihedral distribution per SS type...")
@@ -724,7 +738,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         Estimates dihedral angle distributions of subgroups (AA and codon tuples).
         """
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
-        df_groups = df_processed.groupby(by=CONDITION_COL)
+        df_groups = tuple(
+            groupby_with_full_group(
+                df_processed,
+                full_group_name=SS_TYPE_ANY,
+                full_first=True,
+                by=CONDITION_COL,
+            )
+        )
 
         result_types_to_subgroup_pairs = {
             "aa": (AA_COL, self._aa_tuple_to_idx),
@@ -759,7 +780,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         _dihedral_kde_single_group, args=args
                     )
 
-            group_names = sorted(set(df_processed[CONDITION_COL]))
+            group_names = sorted(set(df_processed[CONDITION_COL]).union({SS_TYPE_ANY}))
             collected_kdes: Dict[str, Dict[str, np.ndarray]] = {
                 g: {} for g in group_names
             }
@@ -773,12 +794,17 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
     def _write_pvals(self, pool: mp.pool.Pool) -> dict:
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
-        df_groups = df_processed.groupby(by=CONDITION_COL)
+        df_groups = tuple(
+            groupby_with_full_group(
+                df_processed,
+                full_group_name=SS_TYPE_ANY,
+                full_first=True,
+                by=CONDITION_COL,
+            )
+        )
 
         out_dir = self.out_dir.joinpath("pvals")
         os.makedirs(out_dir, exist_ok=True)
-
-        significance_metadata = {}
 
         result_types = [
             ("aa", AA_COL, AA_COL, self._idx_to_aa_tuple, self._idx_to_aa_tuple),
@@ -791,6 +817,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             ),
             ("aac", AA_COL, CODON_COL, self._idx_to_aa_tuple, self._idx_to_codon_tuple),
         ]
+
+        significance_metadata = {}
+        df_data = {}
+        async_results = {}
+
         for (result_type, i_col, j_col, i_tuples, j_tuples) in result_types:
             # pvals and t2s are dicts from a group name to a dict from a
             # subgroup-pair to a pval/t2.
@@ -802,71 +833,114 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
 
             significance_metadata[result_type] = {}
-            df_data = []
+            df_data[result_type] = []
             group: str
             df_group: pd.DataFrame
             for idx_group, (group, df_group) in enumerate(df_groups):
                 group_pvals = pvals[group]
                 group_t2s = t2s[group]
 
-                # Get all indices of non-null pvals
-                idx_valid = np.argwhere(~np.isnan(group_pvals))
+                async_results[(result_type, group)] = pool.apply_async(
+                    self._write_pvals_inner,
+                    kwds=dict(
+                        result_type=result_type,
+                        i_col=i_col,
+                        j_col=j_col,
+                        i_tuples=i_tuples,
+                        j_tuples=j_tuples,
+                        group=group,
+                        df_group=df_group,
+                        group_pvals=group_pvals,
+                        group_t2s=group_t2s,
+                    ),
+                )
 
-                # Calculate significance threshold for pvalues for  multiple-hypothesis
-                # testing.
-                group_pvals_flat = group_pvals[idx_valid[:, 0], idx_valid[:, 1]]
-                significance_thresh = mht_bh(q=self.fdr, pvals=group_pvals_flat)
-                significance_metadata[result_type][group] = {
-                    "pval_thresh": significance_thresh,
-                    "num_hypotheses": len(group_pvals_flat),
-                    "num_rejections": np.sum(
-                        group_pvals_flat <= significance_thresh
-                    ).item(),
-                }
+        # Collect results
+        for (
+            (result_type, group),
+            (group_significance_meta, group_df_data),
+        ) in yield_async_results(async_results):
+            significance_metadata[result_type][group] = group_significance_meta
+            df_data[result_type].extend(group_df_data)
 
-                # Loop over the indices of subgroups for which we computed pvalues
-                for i, j in idx_valid:
-                    subgroup_i: str = i_tuples[i]
-                    subgroup_j: str = j_tuples[j]
-
-                    df_subgroup_i = df_group[df_group[i_col] == subgroup_i]
-                    df_subgroup_j = df_group[df_group[j_col] == subgroup_j]
-
-                    mu1: Dihedral = _subgroup_centroid(
-                        df_subgroup_i, input_degrees=True
-                    )
-                    mu2: Dihedral = _subgroup_centroid(
-                        df_subgroup_j, input_degrees=True
-                    )
-                    d12 = Dihedral.flat_torus_distance(
-                        mu1, mu2, degrees=True, squared=False
-                    )
-
-                    df_data.append(
-                        {
-                            CONDITION_COL: group,
-                            f"{SUBGROUP_COL}1": subgroup_i,
-                            f"{SUBGROUP_COL}2": subgroup_j,
-                            "n1": len(df_subgroup_i),
-                            "n2": len(df_subgroup_j),
-                            "phi1_mean": mu1.phi_deg,
-                            "psi1_mean": mu1.psi_deg,
-                            "phi2_mean": mu2.phi_deg,
-                            "psi2_mean": mu2.psi_deg,
-                            "d12": d12,
-                            "pval": group_pvals[i, j],
-                            "t2": group_t2s[i, j],
-                            "significant": group_pvals[i, j] <= significance_thresh,
-                        }
-                    )
-
-            df_pvals = pd.DataFrame(data=df_data)
+        # Write output
+        self._dump_intermediate("significance", significance_metadata)
+        for result_type, result_df_data in df_data.items():
+            df_pvals = pd.DataFrame(data=result_df_data)
+            df_pvals.sort_values(
+                by=[CONDITION_COL, PVAL_COL, T2_COL],
+                ascending=[True, True, False],
+                inplace=True,
+            )
             csv_path = str(out_dir.joinpath(f"{result_type}-pvals.csv"))
-            df_pvals.to_csv(csv_path)
+            df_pvals.to_csv(csv_path, index=False)
             LOGGER.info(f"Wrote {csv_path}")
 
-        self._dump_intermediate("significance", significance_metadata)
         return {"significance": significance_metadata}
+
+    def _write_pvals_inner(
+        self,
+        result_type: str,
+        i_col: str,
+        j_col,
+        i_tuples: dict,
+        j_tuples: dict,
+        group: str,
+        df_group: pd.DataFrame,
+        group_pvals: np.ndarray,
+        group_t2s: np.ndarray,
+    ):
+
+        # Get all indices of non-null pvals
+        idx_valid = np.argwhere(~np.isnan(group_pvals))
+
+        # Calculate significance threshold for pvalues for  multiple-hypothesis
+        # testing.
+        group_pvals_flat = group_pvals[idx_valid[:, 0], idx_valid[:, 1]]
+        significance_thresh = mht_bh(q=self.fdr, pvals=group_pvals_flat)
+
+        # Metadata about the significance of members in this group
+        significance_meta = {
+            "pval_thresh": significance_thresh,
+            "num_hypotheses": len(group_pvals_flat),
+            "num_rejections": np.sum(group_pvals_flat <= significance_thresh).item(),
+        }
+
+        # Loop over the indices of subgroups for which we computed pvalues
+        df_data = []
+        for i, j in idx_valid:
+            subgroup_i: str = i_tuples[i]
+            subgroup_j: str = j_tuples[j]
+
+            df_subgroup_i = df_group[df_group[i_col] == subgroup_i]
+            df_subgroup_j = df_group[df_group[j_col] == subgroup_j]
+
+            mu1: Dihedral = _subgroup_centroid(df_subgroup_i, input_degrees=True)
+            mu2: Dihedral = _subgroup_centroid(df_subgroup_j, input_degrees=True)
+            d12 = Dihedral.flat_torus_distance(mu1, mu2, degrees=True, squared=False)
+
+            df_data.append(
+                {
+                    CONDITION_COL: group,
+                    f"{SUBGROUP_COL}1": subgroup_i,
+                    f"{SUBGROUP_COL}2": subgroup_j,
+                    "n1": len(df_subgroup_i),
+                    "n2": len(df_subgroup_j),
+                    "phi1_mean": mu1.phi_deg,
+                    "psi1_mean": mu1.psi_deg,
+                    "phi2_mean": mu2.phi_deg,
+                    "psi2_mean": mu2.psi_deg,
+                    "d12": d12,
+                    PVAL_COL: group_pvals[i, j],
+                    T2_COL: group_t2s[i, j],
+                    SIGNIFICANT_COL: group_pvals[i, j] <= significance_thresh,
+                }
+            )
+
+        LOGGER.info(
+            f"Computed significance for {result_type=} {group=}: {significance_meta}"
+        )
+        return significance_meta, df_data
 
     def _plot_results(self, pool: mp.pool.Pool):
         """
@@ -924,7 +998,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Dihedral KDEs of each codon in each group
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
-        df_groups = df_processed.groupby(by=CONDITION_COL)
+        df_groups = {
+            group_name: df_group
+            for group_name, df_group in groupby_with_full_group(
+                df_processed,
+                full_group_name=SS_TYPE_ANY,
+                full_first=True,
+                by=CONDITION_COL,
+            )
+        }
         group_sizes: dict = self._load_intermediate("group-sizes", True)
         for aa_codon in ["aa", "codon"]:
 
@@ -947,7 +1029,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
                 # Get the samples (angles) of all subgroups in this group
                 subgroup_col = AA_COL if aa_codon == "aa" else CODON_COL
-                df_group: pd.DataFrame = df_groups.get_group(group_idx)
+                df_group: pd.DataFrame = df_groups[group_idx]
                 df_group_samples: pd.DataFrame = df_group[[subgroup_col, *ANGLE_COLS]]
                 df_group_samples = df_group_samples.rename(
                     columns={subgroup_col: SUBGROUP_COL}
@@ -1015,15 +1097,17 @@ def _subgroup_centroid(
     return centroid
 
 
-def _subgroup_tw2_test(
+def _subgroup_permutation_test(
     group_idx: str,
     subgroup1_idx: str,
     subgroup2_idx: str,
     subgroup1_data: np.ndarray,
     subgroup2_data: np.ndarray,
     randstate: int,
+    t2_statistic_fn: Callable,
     t2_n_max: Optional[int],
     t2_permutations: int,
+    t2_kernel_size: float,
     t2_metric: Union[str, Callable],
 ) -> Tuple[float, float]:
     """
@@ -1068,11 +1152,12 @@ def _subgroup_tw2_test(
     # Run bootstrapped tests
     t2s, pvals = np.empty(n_iter, dtype=np.float32), np.empty(n_iter, dtype=np.float32)
     for i in range(n_iter):
-        t2s[i], pvals[i] = tw_test(
+        t2s[i], pvals[i] = t2_statistic_fn(
             X=_bootstrap_sample(subgroup1_data).transpose(),
             Y=_bootstrap_sample(subgroup2_data).transpose(),
             k=t2_permutations,
-            metric=t2_metric,
+            similarity_fn=t2_metric,
+            kernel_kwargs=dict(sigma=t2_kernel_size),
         )
 
     # Calculate the t2 corresponding to the maximal (worst) p-value, and that p-value.
@@ -1086,9 +1171,14 @@ def _subgroup_tw2_test(
     med_t2, med_p = t2s[median_idx], pvals[median_idx]
 
     t_elapsed = time.time() - t_start
+    t2_statistic_fn_name = [
+        k for k, v in TEST_STATISTICS.items() if v == t2_statistic_fn
+    ][0]
     LOGGER.info(
-        f"Calculated (t2, pval) {group_idx=}, {subgroup1_idx=} (n={n1}), "
-        f"{subgroup2_idx=} (n={n2}), using {n_iter=}: "
+        f"Calculated (t2, pval) [{t2_statistic_fn_name}] {group_idx=}, "
+        f"{subgroup1_idx=} (n={n1}), "
+        f"{subgroup2_idx=} (n={n2}), "
+        f"using {n_iter=}: "
         f"(med_p, max_p)=({med_p:.3f},{max_p:.3f}),"
         f"(med_t2, max_t2)=({med_t2:.2f},{max_t2:.2f}), "
         f"elapsed={t_elapsed:.2f}s"
@@ -1122,324 +1212,6 @@ def _dihedral_kde_single_group(
     dkde = kde(phi, psi)
 
     return group_idx, dkde
-
-
-def _codon_dkdes_single_subgroup(
-    group_idx: str,
-    subgroup_idx: str,
-    df_subgroup: pd.DataFrame,
-    angle_cols: Tuple[str, str],
-    kde_args: dict,
-    bs_niter: int,
-    bs_nsamples: int,
-    bs_randstate: Optional[int],
-) -> Tuple[str, np.ndarray]:
-    """
-    Calculates (bootstrapped) KDEs of angle distributions for a subgroup of data
-    (e.g. a specific codon).
-    :param group_idx: Identifier of the given data's group (e.g. SS).
-    :param subgroup_idx: Identifier of the given data's subgroup (e.g. codon).
-    :param df_subgroup: Dataframe with the angle data.
-    :param angle_cols: A two-tuple with names of angle columns.
-    :param kde_args: Arguments for density estimation.
-    :param bs_niter: Number of bootstrap iterations.
-    :param bs_nsamples: Number of times to sample the group in each bootstrap iteration.
-    :param bs_randstate: Random state for bootstrapping.
-    :return: A tuple:
-        - The subgroup id.
-        - A KDE of shape (B, M, M)
-    """
-
-    # Create a 3D tensor to hold the bootstrapped KDE, of shape (B,M,M)
-    bs_kde_shape = (bs_niter, kde_args["n_bins"], kde_args["n_bins"])
-    bs_dkde = np.empty(bs_kde_shape, np.float32)
-
-    # We want a different random state in each subgroup, but still
-    # should be reproducible
-    if bs_randstate is not None:
-        seed = (hash(group_idx + subgroup_idx) + bs_randstate) % (2 ** 31)
-        np.random.seed(seed)
-
-    t_start = time.time()
-
-    for bootstrap_idx in range(bs_niter):
-        # Sample from dataset with replacement, the same number of
-        # elements as it's size. This is our bootstrap sample.
-        df_subgroup_sampled = df_subgroup.sample(
-            axis=0, replace=bs_niter > 1, n=bs_nsamples,
-        )
-
-        _, dkde = _dihedral_kde_single_group(
-            subgroup_idx, df_subgroup_sampled, angle_cols, kde_args
-        )
-
-        # Save the current iteration's KDE into the results tensor
-        bs_dkde[bootstrap_idx, ...] = dkde
-
-    t_elapsed = time.time() - t_start
-    bs_rate_iter = bs_niter / t_elapsed
-    LOGGER.info(
-        f"Completed {bs_niter} bootstrap iterations for "
-        f"{group_idx}_{subgroup_idx}, size={len(df_subgroup)}, "
-        f"bs_nsamples={bs_nsamples}, "
-        f"rate={bs_rate_iter:.1f} iter/sec "
-        f"elapsed={t_elapsed:.1f} sec"
-    )
-
-    return subgroup_idx, bs_dkde
-
-
-def _dkde_dists_single_group(
-    group_idx: str,
-    bs_codon_dkdes: Dict[str, Optional[np.ndarray]],
-    subgroup_sizes: Dict[str, int],
-    bs_randstate: int,
-    t2_n_max: int,
-    t2_permutations: int,
-    kde_dist_metric: Callable,
-) -> Tuple[
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    Dict[str, np.ndarray],
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    Dict[str, np.ndarray],
-]:
-    """
-    Calculates the pairwise distance matrix for codons and AAs based on permutation
-    tests between bootstrapped KDEs from different codons.
-
-    Also averages the bootstrapped KDEs to obtain a single KDE estimate per
-    codon or AA in the group.
-
-    :param group_idx: Identifier of the group this data is from.
-    :param bs_codon_dkdes: A dict mapping from an AA-codon to the bootstrapped KDE
-       of that codon.
-    :param subgroup_sizes: A dict mapping from subgroup name (AA or AA-codon) to the
-        number of samples (dataset rows) available for that AA or AA-codon.
-    :param bs_randstate: Random state for bootstrapping.
-    :param t2_n_max: Maximum sample size for t-test.
-    :param t2_permutations: Number of permutations to use when calculating T^2
-        statistic.
-    :param kde_dist_metric: Function to compute distance between two KDEs.
-    :return: A tuple:
-        - Codon pairwise KDE-distance matrix
-        - Codon pairwise t2-distance matrix
-        - Codon pairwise-pvalue matrix
-        - Codon averaged KDE
-        - AA pairwise KDE-distance matrix
-        - AA pairwise t2-distance matrix
-        - AA pairwise-pvalue matrix
-        - AA averaged KDE
-    """
-
-    tstart = time.time()
-    # Codon distance matrix and average codon KDEs
-    codon_d2s, codon_t2s, codon_pvals = _dkde_dists_pairwise(
-        group_idx,
-        bs_codon_dkdes,
-        bs_randstate,
-        t2_n_max,
-        t2_permutations,
-        kde_dist_metric,
-    )
-    codon_dkdes = _dkde_average(bs_codon_dkdes)
-    LOGGER.info(
-        f"Calculated codon distance matrix and average KDE for {group_idx} "
-        f"({time.time() - tstart:.1f}s)..."
-    )
-
-    # AA distance matrix and average AA KDEs
-    # First, we compute a weighted sum of the codon dkdes to obtain AA dkdes.
-    tstart = time.time()
-    bs_aa_dkdes: Dict[str, Optional[np.ndarray]] = {
-        aac[0]: None for aac, dkde in bs_codon_dkdes.items()
-    }
-    for aa in ACIDS:
-        # Total number of samples from all subgroups (codons) of this AA
-        n_aa_samples = subgroup_sizes[aa]
-        for aac, bs_dkde in bs_codon_dkdes.items():
-            if aac[0] != aa:
-                continue
-            if subgroup_sizes[aac] == 0:
-                continue
-            if bs_dkde is None:
-                continue
-
-            # Empirical probability of this codon subgroup within its AA
-            p = subgroup_sizes[aac] / n_aa_samples
-
-            # Initialize KDE of current AA to zero so we can accumulate
-            if bs_aa_dkdes[aa] is None:
-                bs_aa_dkdes[aa] = np.zeros_like(bs_dkde)
-
-            # Weighted sum of codon dkdes belonging to the current AA
-            bs_aa_dkdes[aa] += p * bs_dkde
-
-    # Now, we apply the pairwise distance between pairs of AA KDEs, as for the
-    # codons
-    aa_d2s, aa_t2s, aa_pvals = _dkde_dists_pairwise(
-        group_idx, bs_aa_dkdes, bs_randstate, t2_n_max, t2_permutations, kde_dist_metric
-    )
-    aa_dkdes = _dkde_average(bs_aa_dkdes)
-    LOGGER.info(
-        f"Calculated AA distance matrix and average KDE for {group_idx} "
-        f"({time.time() - tstart:.1f}s)..."
-    )
-    return (
-        codon_d2s,
-        codon_t2s,
-        codon_pvals,
-        codon_dkdes,
-        aa_d2s,
-        aa_t2s,
-        aa_pvals,
-        aa_dkdes,
-    )
-
-
-def _dkde_dists_pairwise(
-    group_idx: str,
-    bs_dkdes: Dict[str, Optional[np.ndarray]],
-    bs_randstate: int,
-    t2_n_max: int,
-    t2_permutations: int,
-    kde_dist_metric: Callable[[np.ndarray, np.ndarray], np.ndarray],
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Calculate a distance matrix based on the distance between each pair of
-    subgroups (codons or AAs) for which we have a bootstrapped KDE.
-
-    :param group_idx: Name of the current group.
-    :param bs_dkdes: A dict from a subgroup identifier to a bootstrapped KDE.
-    :param bs_randstate: Random state for bootstrapping.
-    :param t2_n_max: Maximum sample size for t-test.
-    :param t2_permutations: Number of permutations to use when calculating T^2
-        statistic.
-    :param kde_dist_metric: A function to compute the distance between two KDEs.
-    :return: A tuple:
-        - Pairwise KDE-distance matrix between subgroups.
-          The distance matrix will be complex, where the real value is the average
-          distance over the bootstrapped samples and the imag is the std.
-        - Pairwise t2-distance matrix.
-        - Pairwise p-value matrix. Contains the p-value, i.e the
-          probability that the real distance between the distributions is zero between
-          each pair of subgroups.
-    """
-
-    def _dkde_to_tw_observation(dkde: np.ndarray):
-        # Converts batch of KDEs to an observations matrix for a Tw^2 test.
-        B, M, M = dkde.shape
-        # Flatten to (B, M * M, B): We have B observations and the dimension of each
-        # observation is M*M.
-        X = dkde.reshape((B, M * M))
-        # Apply log in such a way as to scale dynamic range to [-100, 0].
-        X = np.log(X + 1e-43)
-        return X
-
-    dkde_names = list(bs_dkdes.keys())
-    N = len(dkde_names)
-
-    # We have N dkde matrices, so we compute the distance between each such pair.
-    # We use a complex array to store mu as the real part and sigma
-    # as the imaginary part in a single array.
-    d2_mat = np.full((N, N), np.nan, np.complex64)
-    t2_mat = np.full((N, N), np.nan, np.float32)
-    pval_mat = np.full((N, N), np.nan, np.float32)
-
-    dkde_pairs = it.product(enumerate(dkde_names), enumerate(dkde_names))
-    for (i, ci), (j, cj) in dkde_pairs:
-        if bs_dkdes[ci] is None:
-            continue
-
-        if j < i or bs_dkdes[cj] is None:
-            continue
-
-        t_start = time.time()
-
-        # Get the two dihedral KDEs arrays to compare, each is of
-        # shape (B, M, M) due to bootstrapping B times
-        dkde1 = bs_dkdes[ci]
-        dkde2 = bs_dkdes[cj]
-
-        # If ci is cj, randomize the order of the KDEs when
-        # comparing, so that different bootstrapped KDEs are
-        # compared
-        if i == j:
-            # This permutes the order along the first axis
-            dkde2 = np.random.permutation(dkde2)
-
-        # Compute the distances, of shape (B,)
-        d2 = kde_dist_metric(dkde1, dkde2)
-        d2_mu = np.nanmean(d2)
-        d2_sigma = np.nanstd(d2)
-
-        # Store distance mu and std as a complex number
-        d2_mat[i, j] = d2_mat[j, i] = d2_mu + 1j * d2_sigma
-
-        t_elapsed = time.time() - t_start
-        LOGGER.info(
-            f"Calculated d2 {group_idx=}, {ci=}, {cj=}, value={d2_mu:.3e}±"
-            f"{d2_sigma:.3e}, elapsed={t_elapsed:.2f}s"
-        )
-
-        #  Calculate statistical significance of the distance based on T_w^2 metric
-        t2, pval = _subgroup_tw2_test(
-            group_idx=group_idx,
-            subgroup1_idx=ci,
-            subgroup2_idx=cj,
-            subgroup1_data=_dkde_to_tw_observation(dkde1),
-            subgroup2_data=_dkde_to_tw_observation(dkde2),
-            t2_n_max=t2_n_max,
-            randstate=bs_randstate,
-            t2_permutations=t2_permutations,
-            t2_metric="sqeuclidean",
-        )
-        t2_mat[i, j] = t2_mat[j, i] = t2
-        pval_mat[i, j] = pval_mat[j, i] = pval
-
-    return d2_mat, t2_mat, pval_mat
-
-
-def _dkde_average(bs_dkdes: Dict[str, Optional[np.ndarray]]) -> Dict[str, np.ndarray]:
-    """
-    Averages the KDEs from all bootstraps, to obtain a single KDE per subgroup
-    (codon or AA). Note that this KDE will also include the variance in each bin,
-    so we'll save as a complex matrix where real is the KDE value and imag is the std.
-
-    :param bs_dkdes: A dict from a subgroup identifier to a bootstrapped KDE.
-    :return: A dict mapping from a group identifier (codon or AA) to an
-        averaged KDE for that subgroup. The averaged KDE will actually be a
-        complex matrix where the real part is average and the imag is std.
-    """
-
-    avg_dkdes = {c: None for c in bs_dkdes.keys()}
-    for subgroup, bs_dkde in bs_dkdes.items():
-        if bs_dkde is None:
-            continue
-
-        # bs_dkde here is of shape (B, N, N) due to bootstrapping.
-        # Average it over the bootstrap dimension
-        mean_dkde = np.nanmean(bs_dkde, axis=0, dtype=np.float32)
-        std_dkde = np.nanstd(bs_dkde, axis=0, dtype=np.float32)
-        avg_dkdes[subgroup] = mean_dkde + 1j * std_dkde
-
-    return avg_dkdes
-
-
-def _kde_dist_metric_l2(kde1: np.ndarray, kde2: np.ndarray):
-    """
-    L2 distance between two bootstrapped KDEs.
-    We expect kde1 and kde2 to be of shape (B, N, N)
-    We calculate distance between each 2D NxN plane and return B distances.
-    :param kde1: First bootstrapped KDE.
-    :param kde2: Second bootstrapped KDE.
-    :return: Distances, an array of shape (B,)
-    """
-    assert kde1.ndim == 3 and kde2.ndim == 3
-    return np.nansum((kde1 - kde2) ** 2, axis=(1, 2))
 
 
 def _plot_likelihoods(
@@ -1629,6 +1401,9 @@ def _plot_dkdes(
             sub: dkde for sub, dkde in dkdes.items() if fnmatchcase(sub, subgroup_glob)
         }
 
+        # Sort the filtered dict by key
+        filtered_dkdes = dict(sorted(filtered_dkdes.items(), key=lambda item: item[0]))
+
         N = len(filtered_dkdes)
         if N < 1:
             continue
@@ -1676,9 +1451,13 @@ def _plot_dkdes(
                 i += 1
                 axes[i].set_axis_off()
 
-            fig_filename = out_dir.joinpath(f"{group_idx}").joinpath(
-                f"{subgroup_glob}.png"
-            )
+            if subgroup_glob != "*":
+                fig_filename = out_dir.joinpath(f"{group_idx}").joinpath(
+                    f"{subgroup_glob.replace('*', '_')}.png"
+                )
+            else:
+                fig_filename = out_dir.joinpath(f"{group_idx}.png")
+
             pp5.plot.savefig(fig, fig_filename, close=True)
             fig_filenames.append(fig_filename)
 
@@ -1751,3 +1530,36 @@ def _cols2label(phi_col: str, psi_col: str):
         return col
 
     return rf"${rep(phi_col)}, {rep(psi_col)}$"
+
+
+def groupby_with_full_group(
+    df: pd.DataFrame,
+    full_group_name: Union[str, Tuple[str, ...]],
+    full_first: bool = False,
+    **groupby_kwargs,
+) -> Iterator[Tuple[Union[str, Tuple[str, ...]], pd.DataFrame]]:
+    """
+    Performs a groupby on a pandas dataframe, yields all groups and then yields the
+    "full" group, i.e. the entire dataframe.
+    :param df: The data frame.
+    :param full_group_name: Name of the full group. Should be a column name or a
+        tuple of column names, depending on the "by" argument of groupby.
+    :param full_first: Whether to add the full-group first (True) or last (False).
+    :param groupby_kwargs: kwargs to be passed as-is to groupby.
+    :return: Yields tuples of (group_name, group_df). The first or last yielded tuple
+        will contain the full dataframe. If there's another group with the same name
+        as full_group_name, it will not be yielded.
+    """
+    yielded_group_names = set()
+
+    if full_first:
+        yielded_group_names.add(full_group_name)
+        yield (full_group_name, df)
+
+    for group_name, df_group in df.groupby(**groupby_kwargs):
+        if group_name not in yielded_group_names:
+            yielded_group_names.add(group_name)
+            yield group_name, df_group
+
+    if not full_first and (full_group_name not in yielded_group_names):
+        yield (full_group_name, df)

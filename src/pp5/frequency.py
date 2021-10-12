@@ -1,20 +1,12 @@
 from typing import Any, Dict, Tuple, Sequence
-from itertools import chain, product
+from itertools import product
 
 import numpy as np
-import pandas as pd
 from pandas import DataFrame
+from scipy.stats import norm
 
-from pp5.stats import (
-    norm,
-    ratio,
-    factor,
-    histogram,
-    product_histogram,
-    relative_histogram,
-    categorical_histogram,
-)
-from pp5.codons import ACIDS, CODONS, AA_CODONS, CODON_TABLE
+from pp5.codons import ACIDS, CODONS, CODON_TABLE
+from pp5.stats.histograms import histogram, relative_histogram
 
 CODON_DELIMITER = "-"
 
@@ -27,17 +19,19 @@ def codon_tuples(
     data: DataFrame, sequence_length: int = 2, allowed_ss: Sequence[str] = ()
 ):
     """
-    :param data: Pandas dataframe with the following columns present for each residue location:
+    :param data: Pandas dataframe with the following columns present for each residue
+        location:
         unp_id      -- uniprot id
         unp_idx     -- location in the uniprot sequence
         codon       -- codon identity
         codon_score -- number of coding variants matching the codon identity
         secondary   -- DSSP annotation
         name        -- residue name
-    :sequence_length: Size of the tuple to produce
-    :allowed_ss: A list of allowed DSSP annotation. Leave empty to include all SSs.
-    :return: A tuple containing a list of codon tuples and the corresponding amino acids, returned
-        as delimited strings.
+    :param sequence_length: Size of the tuple to produce.
+    :param allowed_ss: A list of allowed DSSP annotation. Leave empty to include all
+        SSs.
+    :return: A tuple containing a list of codon tuples and the corresponding amino acids,
+         returned as delimited strings.
     """
     shifts = tuple(n for n in range(sequence_length))
 
@@ -85,7 +79,7 @@ def codon_tuples(
 
 def relative_codon_histogram(
     codon_hist: Dict[Any, Tuple[float, float]], aa_hist: Dict[Any, Tuple[float, float]]
-) -> Dict[Any, Tuple[float, float]]:
+) -> Dict[Any, Dict[Any, Tuple[float, float]]]:
     """
     :param codon_hist: A histogram approximating codon distribution given as c_1...c_n:
         (p(c_1...c_n), sigma)

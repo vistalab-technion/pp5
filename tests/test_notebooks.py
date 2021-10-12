@@ -9,7 +9,7 @@ from pp5 import PROJECT_DIR
 
 NOTEBOOKS_DIR = PROJECT_DIR.joinpath("notebooks")
 
-TEST_NOTEBOOKS = ["pp5_demo"]
+TEST_NOTEBOOKS = ["pp5_demo", "ttest"]
 NOTEBOOK_PATHS = tuple(NOTEBOOKS_DIR.joinpath(f"{nb}.ipynb") for nb in TEST_NOTEBOOKS)
 CELL_TIMEOUT_SECONDS = 60 * 5
 

@@ -344,6 +344,10 @@ class ProteinRecord(object):
         self.__setstate__({})
 
         self.unp_id = unp_id
+        rec_unp_id = self.unp_rec.accessions[0]
+        if rec_unp_id != unp_id:
+            LOGGER.warning(f"Replacing outdated UNP ID: {unp_id} -> {rec_unp_id}")
+            self.unp_id = rec_unp_id
 
         # First we must find a matching PDB structure and chain for the
         # Uniprot id. If a pdb_id is given we'll try to use that, depending

@@ -8,13 +8,15 @@ import logging
 import zipfile
 import multiprocessing as mp
 from pprint import pformat
-from typing import Dict, List, Callable, Iterable, Optional
+from typing import Dict, List, Callable, Iterable, Optional, Sequence
 from pathlib import Path
 from dataclasses import dataclass
 from multiprocessing.pool import AsyncResult
 
+import numpy as np
 import pandas as pd
 import more_itertools
+from Bio.Align import PairwiseAligner
 
 import pp5
 import pp5.parallel
@@ -23,6 +25,7 @@ from pp5.align import ProteinBLAST
 from pp5.utils import ReprJSONEncoder, ProteinInitError, elapsed_seconds_to_dhms
 from pp5.pgroup import ProteinGroup
 from pp5.external_dbs import pdb, unp, pdb_api
+from pp5.external_dbs.unp import unp_record
 
 LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +43,7 @@ COL_R_WORK = "r_work"
 COL_SPACE_GROUP = "space_group"
 COL_CG_PH = "cg_ph"
 COL_CG_TEMP = "cg_temp"
+COL_REJECTED_BY = "rejected_by"
 
 
 @dataclass(repr=False)
@@ -271,6 +275,9 @@ class ParallelDataCollector(abc.ABC):
 class ProteinRecordCollector(ParallelDataCollector):
     DEFAULT_PREC_INIT_ARGS = dict()
     ALL_STRUCTS_FILENAME = "meta-structs_all"
+    FILTERED_STRUCTS_FILENAME = "meta-structs_filtered"
+    REJECTED_STRUCTS_FILENAME = "meta-structs_rejected"
+    BLAST_SCORES_FILENAME = "meta-blast_scores"
     DATASET_FILENAME = "data-precs"
 
     def __init__(
@@ -279,6 +286,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         r_free: Optional[float] = pp5.get_config("DEFAULT_RFREE"),
         expr_sys: Optional[str] = pp5.get_config("DEFAULT_EXPR_SYS"),
         source_taxid: Optional[int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
+        seq_similarity_thresh: float = pp5.get_config("DEFAULT_SEQ_SIMILARITY_THRESH"),
         prec_init_args=None,
         out_dir: Path = pp5.out_subdir("prec-collected"),
         out_tag: Optional[str] = None,
@@ -292,6 +300,10 @@ class ProteinRecordCollector(ParallelDataCollector):
         :param resolution: Resolution cutoff value in Angstroms.
         :param expr_sys: Expression system name.
         :param source_taxid: Taxonomy ID of source organism.
+        :param seq_similarity_thresh: PDB sequence similarity threshold. This is a
+            fraction between 0 and 1.0 which represents the maximal percentage of
+            similarity allowed between two collected structures. Use 1.0 to set no
+            filter.
         :param out_dir: Output folder for collected metadata.
         :param out_tag: Extra tag to add to the output file names.
         :param prec_out_dir: Output folder for prec CSV files.
@@ -313,6 +325,10 @@ class ProteinRecordCollector(ParallelDataCollector):
         self.source_taxid = (
             int(source_taxid) if (source_taxid not in (None, "")) else None
         )
+
+        if not 0.0 < seq_similarity_thresh <= 1.0:
+            raise ValueError("seq_similarity_thresh must be in (0, 1.0]")
+        self.seq_similarity_thresh = seq_similarity_thresh
 
         queries = [pdb_api.PDBXRayResolutionQuery(resolution=self.resolution)]
         if self.r_free:
@@ -344,6 +360,7 @@ class ProteinRecordCollector(ParallelDataCollector):
     def _collection_functions(self):
         return {
             "Collect ProteinRecords": self._collect_precs,
+            "Filter Collected": self._filter_collected,
             "Write dataset": self._write_dataset,
         }
 
@@ -363,29 +380,155 @@ class ProteinRecordCollector(ParallelDataCollector):
             r = pool.apply_async(_collect_single_structure, args, kwds)
             async_results.append(r)
 
-        count, elapsed, pdb_id_data = self._handle_async_results(
+        _, elapsed, pdb_id_data = self._handle_async_results(
             async_results, collect=True, flatten=True
         )
 
         # Create a dataframe from the collected data
         df_all = pd.DataFrame(pdb_id_data)
-
-        # Filter collected at the metadata level
-        df_all = self._filter_collected(df_all)
+        n_collected = len(df_all)
 
         _write_df_csv(df_all, self.out_dir, self.ALL_STRUCTS_FILENAME)
 
-        meta["n_collected"] = count
+        meta["n_collected"] = n_collected
         LOGGER.info(
-            f"Done: {count}/{len(pdb_ids)} proteins collected "
+            f"Done collecting: {n_collected}/{len(pdb_ids)} proteins collected "
             f"(elapsed={elapsed:.2f} seconds, "
-            f"{count / elapsed:.1f} proteins/sec)."
+            f"{len(pdb_ids) / elapsed:.1f} proteins/sec)."
         )
         return meta
 
+    def _filter_collected(self, pool: mp.Pool) -> dict:
+        """
+        Filters collected structures according to conditions on their metadata.
+        """
+
+        df_all: pd.DataFrame = _read_df_csv(self.out_dir, self.ALL_STRUCTS_FILENAME)
+        # A boolean series representing which structures to keep.
+        filter_idx = pd.Series(data=[True] * len(df_all), index=df_all.index)
+        rejected_counts = {"total": 0}
+        rejected_idxs = {}
+
+        def _update_rejected_counts(filter_name: str, idx: pd.Series):
+            rejected_idx = ~idx
+            n_rejected = rejected_idx.sum()
+            rejected_counts["total"] += n_rejected
+            if n_rejected:
+                LOGGER.info(
+                    f"Filtered {n_rejected} structures with filter '{filter_name}'"
+                )
+            rejected_counts[filter_name] = n_rejected
+            rejected_idxs[filter_name] = rejected_idx
+
+        # Filter by metadata
+        filter_idx_metadata = self._filter_metadata(pool, df_all)
+        filter_idx &= filter_idx_metadata
+        _update_rejected_counts("metadata", filter_idx_metadata)
+
+        # Filter by sequence similarity
+        filter_idx_redundant_unps = self._filter_redundant_unps(pool, df_all)
+        filter_idx &= filter_idx_redundant_unps
+        _update_rejected_counts("redundant_unps", filter_idx_redundant_unps)
+
+        # Write the filtered structures
+        df_filtered = df_all[filter_idx]
+        _write_df_csv(df_filtered, self.out_dir, self.FILTERED_STRUCTS_FILENAME)
+
+        # Write the rejected structures and specify which filter rejected them
+        df_rejected = df_all
+        df_rejected[COL_REJECTED_BY] = ""
+        for filter_name, rejected_idx in rejected_idxs.items():
+            df_rejected.loc[rejected_idx, COL_REJECTED_BY] = filter_name
+        df_rejected = df_rejected[~filter_idx]
+        _write_df_csv(df_rejected, self.out_dir, self.REJECTED_STRUCTS_FILENAME)
+
+        return {
+            "n_rejected": rejected_counts,
+            "n_collected_filtered": len(df_filtered),
+        }
+
+    def _filter_metadata(self, pool: mp.Pool, df_all: pd.DataFrame) -> pd.Series:
+        # Even though we query by resolution, the metadata resolution is different
+        # than what we can query on. Metadata shows resolution after refinement,
+        # while the query is using data collection resolution.
+        idx_filter = df_all[COL_RESOLUTION].astype(float) <= self.resolution
+        return idx_filter
+
+    def _filter_redundant_unps(self, pool: mp.Pool, df_all: pd.DataFrame) -> pd.Series:
+        # Create a similarity matrix for pairs of structures (in terms of sequence)
+        all_unp_ids = tuple(sorted(set(df_all[COL_UNP_ID])))
+        n_unps = len(all_unp_ids)
+
+        async_results = {}
+        for i in range(n_unps):
+            async_results[i] = pool.apply_async(
+                _pairwise_align_unp,
+                kwds=dict(query_unp_id=all_unp_ids[i], target_unp_ids=all_unp_ids[i:]),
+            )
+
+        blast_matrix = np.full(
+            shape=(n_unps, n_unps), fill_value=np.nan, dtype=np.float16
+        )
+        for i, scores in pp5.parallel.yield_async_results(async_results):
+            # i is query idx, j is target idx
+            for j, score in enumerate(scores, start=i):
+                blast_matrix[i, j] = blast_matrix[j, i] = score
+
+            if (i % 100) == 0 or (i == n_unps - 1):
+                LOGGER.info(f"Collected pairwise similarity scores ({i + 1}/{n_unps})")
+
+        # Normalize each row and col by the self-similarity score of each structure
+        # Result is that each entry S[i,j] contains the score between query i and target
+        # j, where 1.0 is the maximal similarity, i.e. S[i,i] == 1.
+        d = np.sqrt(np.diag(blast_matrix))
+        blast_matrix /= d
+        blast_matrix /= d.reshape((n_unps, 1))
+
+        # Write the BLAST scores
+        df_blast_scores = pd.DataFrame(
+            data=blast_matrix, index=all_unp_ids, columns=all_unp_ids
+        )
+        _write_df_csv(
+            df_blast_scores, self.out_dir, self.BLAST_SCORES_FILENAME, index=True
+        )
+
+        # Filter out similar sequences
+        selected = [0]
+        unselected = set(range(1, n_unps))
+        selected_min_similarities = [0.0]
+        while len(selected) < n_unps:
+            next_selected = None
+            next_min_similarity_to_selected = np.inf
+
+            # TODO: Vectorize this inner loop
+            for j in unselected:
+                # Find Max similarity from unselected j to selected i
+                i = selected[np.argmax(blast_matrix[selected, j])]
+
+                if blast_matrix[i, j] < next_min_similarity_to_selected:
+                    # Min over the max similarities
+                    next_selected = j
+                    next_min_similarity_to_selected = blast_matrix[i, j]
+
+            selected.append(next_selected)
+            unselected.remove(next_selected)
+            selected_min_similarities.append(next_min_similarity_to_selected)
+            assert selected_min_similarities[-2] <= selected_min_similarities[-1]
+        assert len(unselected) == 0
+
+        # Filter based on the similarity threshold: keep only structures whose
+        # similarity to each other is less than or equal to threshold
+        idx_thresh = np.searchsorted(
+            selected_min_similarities, self.seq_similarity_thresh, side="right"
+        )
+        selected_filtered = selected[:idx_thresh]
+        filtered_unp_ids = [all_unp_ids[i] for i in selected_filtered]
+        filtered_idx = df_all[COL_UNP_ID].isin(filtered_unp_ids)
+        return filtered_idx
+
     def _write_dataset(self, pool: mp.Pool) -> dict:
         df_pdb_ids: pd.DataFrame = _read_df_csv(
-            self.out_dir, self.ALL_STRUCTS_FILENAME, usecols=["pdb_id"]
+            self.out_dir, self.FILTERED_STRUCTS_FILENAME, usecols=["pdb_id"]
         )
         pdb_ids = df_pdb_ids["pdb_id"]
         LOGGER.info(f"Creating dataset file for {len(pdb_ids)} precs...")
@@ -402,7 +545,7 @@ class ProteinRecordCollector(ParallelDataCollector):
                     pool.apply_async(_load_prec_df_from_cache, args=(pdb_id,))
                 )
 
-            count, elapsed, pdb_id_dataframes = self._handle_async_results(
+            _, elapsed, pdb_id_dataframes = self._handle_async_results(
                 async_results, collect=True, flatten=False,
             )
 
@@ -420,30 +563,6 @@ class ProteinRecordCollector(ParallelDataCollector):
         LOGGER.info(f"Wrote {filepath} ({n_entries=}, {dataset_size_mb:.2f}MB)")
         meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}", "n_entries": n_entries}
         return meta
-
-    def _filter_collected(self, df_all: pd.DataFrame) -> pd.DataFrame:
-        """
-        Filters collected structures according to conditions on their metadata.
-        :param df_all: A dataframe with all structures and their metadata fields.
-            Rows are structures, and metadata are columns.
-        :return:A dataframe with the same columns, where some rows were possible
-            removed.
-        """
-        idx = pd.Series(data=[True] * len(df_all), index=df_all.index)
-        n_filtered = 0
-
-        # Even though we query by resolution, the metadata resolution is different
-        # than what we can query on. Metadata shows resolution after refinement,
-        # while the query is usnig data collection resolution.
-        idx &= df_all[COL_RESOLUTION].astype(float) <= self.resolution
-        n_filtered_delta = (~idx).sum() - n_filtered
-        n_filtered += n_filtered_delta
-        LOGGER.info(
-            f"Filtered {n_filtered_delta} structures due to {COL_RESOLUTION} > "
-            f"{self.resolution}"
-        )
-
-        return df_all[idx]
 
 
 class ProteinGroupCollector(ParallelDataCollector):
@@ -637,12 +756,13 @@ class ProteinGroupCollector(ParallelDataCollector):
         # Create a local BLAST DB containing all collected PDB IDs.
         all_pdb_ids = self._df_all["pdb_id"]
         alias_name = f"pgc-{self.out_tag}"
-        blast_db = ProteinBLAST.create_db_subset_alias(all_pdb_ids, alias_name)
+        blast_db = ProteinBLAST.create_db_subset_alias(
+            all_pdb_ids, alias_name, db_autoupdate_days=7,
+        )
         blast = ProteinBLAST(
             db_name=blast_db,
             evalue_cutoff=self.evalue_cutoff,
             identity_cutoff=self.identity_cutoff,
-            db_autoupdate_days=7,
         )
 
         LOGGER.info(f"Creating ProteinGroup for each reference...")
@@ -804,8 +924,8 @@ def _collect_single_structure(
 
         chain_data.append(
             {
-                COL_UNP_ID: unp_id,
-                COL_PDB_ID: pdb_id_full,
+                COL_UNP_ID: prec.unp_id,
+                COL_PDB_ID: prec.pdb_id,
                 COL_ENA_ID: prec.ena_id,
                 COL_RESOLUTION: resolution,
                 COL_SEQ_LEN: seq_len,
@@ -822,8 +942,8 @@ def _collect_single_structure(
         )
 
     LOGGER.info(
-        f"Collected {pdb_id} {pdb2unp.get_chain_to_unp_ids()} "
-        f"({idx[0] + 1}/{idx[1]})"
+        f"Collected {len(chain_data)} chains from {pdb_id} "
+        f"{pdb2unp.get_chain_to_unp_ids()} ({idx[0] + 1}/{idx[1]})"
     )
 
     return chain_data
@@ -865,6 +985,21 @@ def _collect_single_ref(group_unp_id: str, df_group: pd.DataFrame) -> Optional[d
         group_median_res=median_res,
         group_size=group_size,
     )
+
+
+def _pairwise_align_unp(
+    query_unp_id: str, target_unp_ids: Sequence[str]
+) -> Sequence[float]:
+    aligner = PairwiseAligner()
+    query_seq = unp_record(query_unp_id).sequence
+
+    scores = []
+    for target_unp_id in target_unp_ids:
+        target_seq = unp_record(target_unp_id).sequence
+        alignment = aligner.align(query_seq, target_seq)
+        scores.append(alignment.score)
+
+    return scores
 
 
 def _collect_single_pgroup(
@@ -937,12 +1072,12 @@ def _load_prec_df_from_cache(pdb_id: str):
     return None
 
 
-def _write_df_csv(df: pd.DataFrame, out_dir: Path, filename: str) -> Path:
+def _write_df_csv(df: pd.DataFrame, out_dir: Path, filename: str, index=False) -> Path:
     filename = f"{filename}.csv"
     filepath = out_dir.joinpath(filename)
 
     with open(str(filepath), mode="w", encoding="utf-8") as f:
-        df.to_csv(f, header=True, index=False, float_format="%.2f")
+        df.to_csv(f, header=True, index=index, float_format="%.2f")
 
     LOGGER.info(f"Wrote {filepath}")
     return filepath
