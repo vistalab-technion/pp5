@@ -28,7 +28,6 @@ CODON_TABLE = CodonTable.standard_dna_table.forward_table
 START_CODONS: Sequence[str] = CodonTable.standard_dna_table.start_codons
 STOP_CODONS: Sequence[str] = CodonTable.standard_dna_table.stop_codons
 CODONS: Sequence[str] = sorted(CODON_TABLE.keys())
-UNKNOWN_CODON = "---"
 N_CODONS = len(CODONS)
 AA_CODONS: Sequence[str] = sorted(codon2aac(c) for c in CODONS)
 
@@ -36,6 +35,9 @@ ACIDS = sorted(set([aac[0] for aac in AA_CODONS]))
 N_ACIDS = len(ACIDS)
 ACIDS_1TO3 = IUPACData.protein_letters_1to3
 ACIDS_1TO1AND3 = {aa: f"{aa} ({ACIDS_1TO3[aa]})" for aa in ACIDS}
+
+UNKNOWN_NUCLEOTIDE = "Z"
+UNKNOWN_CODON = UNKNOWN_NUCLEOTIDE * 3
 UNKNOWN_AA = "X"
 
 CODON_RE = re.compile(
