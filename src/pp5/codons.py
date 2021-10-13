@@ -53,6 +53,33 @@ AATuple = Tuple[AA, ...]
 AACIndexedTuple = Tuple[int, AACTuple]
 
 
+def aac_join(aa: str, c: str, validate: bool = True) -> AAC:
+    """
+    Joins an amino acid and codon into a single string separated by AAC_SEP.
+    :param aa: An amino acid.
+    :param c: A codon.
+    :param validate: Whether to raise an error if the resulting AAC is invalid.
+    :return: The AAC string.
+    """
+    aac = f"{aa}{AAC_SEP}{c}"
+    if validate and aac not in AA_CODONS:
+        raise ValueError(f"Invalid AA={aa} or codon={c}")
+    return aac
+
+
+def aac_split(aac: AAC, validate: bool = True) -> Tuple[str, str]:
+    """
+    Splits an AAC string into its AA and codon.
+    :param aac: An AAC string.
+    :param validate: Whether to raise an error if the resulting AA or codon is invalid.
+    :return: A tuple of (aa, codon).
+    """
+    aa, c, *_ = aac.split(AAC_SEP)
+    if validate and (aa not in ACIDS or c not in CODONS or len(_) > 0):
+        raise ValueError(f"Invalid AAC={aac}")
+    return aa, c
+
+
 def aac2aa(aac: AAC) -> str:
     """
     :param aac: An AA-CODON
