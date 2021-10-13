@@ -35,10 +35,14 @@ from pp5.codons import (
     ACIDS,
     AAC_SEP,
     AA_CODONS,
+    UNKNOWN_AA,
     AAC_TUPLE_SEP,
     UNKNOWN_CODON,
+    UNKNOWN_NUCLEOTIDE,
     aac2aa,
+    aac_join,
     aact2aat,
+    aac_split,
     codon2aac,
     aac_tuples,
     aact_str2tuple,
@@ -72,6 +76,10 @@ T2_COL = "t2"
 SIGNIFICANT_COL = "significant"
 TEST_STATISTICS = {"mmd": mmd_test, "tw": tw_test}
 
+CODON_TUPLE_GROUP_ANY = "any"
+CODON_TUPLE_GROUP_LAST_NUCL = "last_nucleotide"
+CODON_TUPLE_GROUPINGS = {None, CODON_TUPLE_GROUP_ANY, CODON_TUPLE_GROUP_LAST_NUCL}
+
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
     def __init__(
@@ -81,7 +89,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         pointwise_filename: str = "data-precs.csv",
         condition_on_ss: bool = True,
         consolidate_ss: dict = DSSP_TO_SS_TYPE.copy(),
-        codon_tuple_len: int = 1,
+        tuple_len: int = 1,
+        codon_grouping_type: str = None,
+        codon_grouping_position: int = 0,
         min_group_size: int = 1,
         strict_codons: bool = True,
         kde_nbins: int = 128,
@@ -89,7 +99,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         bs_niter: int = 1,
         bs_randstate: Optional[int] = None,
         t2_statistic: Union[Literal["mmd"], Literal["tw"]] = "mmd",
-        t2_n_max: Optional[int] = 1000,
+        t2_n_max: int = 1000,
         t2_permutations: int = 1000,
         t2_kernel_size: float = 10.0,
         fdr: float = 0.1,
@@ -110,8 +120,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             the consolidated SS types used in this analysis.
         :param condition_on_ss: Whether to condition on secondary structure
             (of two consecutive residues, after consolidation).
-        :param codon_tuple_len: Number of consecutive codons to analyze as a tuple.
-            Set 1 for single codons, 2 for codon pairs. Other values are not supported.
+        :param tuple_len: Number of consecutive residues to analyze as a tuple.
+            Set 1 for single, 2 for pairs. Higher values are not recommended.
+
+        :param codon_grouping_type:
+        :param codon_grouping_position:
+
         :param min_group_size: Minimal number of angle-pairs from different
             structures belonging to the same Uniprot ID, location and codon in order to
             consider the group of angles for analysis.
@@ -144,8 +158,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             clear_intermediate=False,
         )
 
-        if codon_tuple_len < 1:
-            raise ValueError(f"invalid {codon_tuple_len=}, must be >= 1")
+        if tuple_len < 1:
+            raise ValueError(f"invalid {tuple_len=}, must be >= 1")
+
+        if codon_grouping_type not in CODON_TUPLE_GROUPINGS:
+            raise ValueError(
+                f"invalid {codon_grouping_type=}, must be in {CODON_TUPLE_GROUPINGS}"
+            )
+
+        if codon_grouping_position >= tuple_len:
+            raise ValueError(
+                f"invalid {codon_grouping_position=}, must be < {tuple_len=}"
+            )
 
         if t2_statistic not in TEST_STATISTICS:
             raise ValueError(
@@ -157,7 +181,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
-        self.codon_tuple_len = codon_tuple_len
+        self.tuple_len = tuple_len
+        self.codon_grouping_type = codon_grouping_type
+        self.codon_grouping_position = codon_grouping_position
         self.min_group_size = min_group_size
         self.strict_codons = strict_codons
         self.condition_on_prev = None
@@ -174,7 +200,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.fdr = fdr
 
         # Initialize codon tuple names and corresponding indices
-        tuples = list(aac_tuples(k=self.codon_tuple_len))
+        tuples = list(aac_tuples(k=self.tuple_len))
         self._codon_tuple_to_idx = {
             aact_tuple2str(aac_tuple): idx for idx, aac_tuple in enumerate(tuples)
         }
@@ -342,7 +368,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             unp_id = group_idx
             async_results.append(
                 pool.apply_async(
-                    self._create_group_tuples, args=(df_group, self.codon_tuple_len),
+                    self._create_group_tuples, args=(df_group, self.tuple_len),
                 )
             )
 
@@ -398,6 +424,27 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if len(df_m) == 0:
             return None
 
+        # Converts codons so they can be grouped in a several ways
+        def _codon_converter(aacs: Sequence[str]) -> Sequence[str]:
+            if not self.codon_grouping_type:
+                return aacs
+
+            aacs = list(aacs)
+            aac = aacs[self.codon_grouping_position]
+            aa, c = aac_split(aac)
+
+            if self.codon_grouping_type == CODON_TUPLE_GROUP_ANY:
+                c = UNKNOWN_CODON
+                aa = UNKNOWN_AA
+
+            if self.codon_grouping_type == CODON_TUPLE_GROUP_LAST_NUCL:
+                c = f"{UNKNOWN_NUCLEOTIDE*2}{c[-1]}"
+                aa = UNKNOWN_AA
+
+            aac = aac_join(aa, c, validate=False)
+            aacs[self.codon_grouping_position] = aac
+            return aacs
+
         # Function to map rows in the merged dataframe to the final rows we'll use.
         def _row_mapper(row: pd.Series):
 
@@ -408,6 +455,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 sss.append(row[f"{p}{SECONDARY_COL}"])
                 group_sizes.append(row[f"{p}{GROUP_SIZE_COL}"])
 
+            codons = _codon_converter(codons)
             codon_tuple = aact_tuple2str(codons)
             aa_tuple = aact_tuple2str(aas)
             ss_tuple = aact_tuple2str(sss)
@@ -950,7 +998,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         LOGGER.info(f"Plotting results...")
 
         ap_label = _cols2label(
-            PHI_COL + ("+0" if self.codon_tuple_len == 1 else "+1"), PSI_COL + "+0"
+            PHI_COL + ("+0" if self.tuple_len == 1 else "+1"), PSI_COL + "+0"
         )
 
         async_results = []
@@ -1020,7 +1068,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # Create glob patterns to define which ramachandran plots will go
                 # into the same figure
                 split_subgroups_glob = None
-                if self.codon_tuple_len > 1:
+                if self.tuple_len > 1:
                     tuple_elements = ACIDS if aa_codon == "aa" else AA_CODONS
                     split_subgroups_glob = [f"{s}*" for s in tuple_elements]
                     # For AAs, also include the reverse glob
