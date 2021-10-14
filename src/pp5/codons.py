@@ -37,6 +37,7 @@ ACIDS_1TO3 = IUPACData.protein_letters_1to3
 ACIDS_1TO1AND3 = {aa: f"{aa} ({ACIDS_1TO3[aa]})" for aa in ACIDS}
 
 UNKNOWN_NUCLEOTIDE = "Z"
+MISSING_CODON = "---"
 UNKNOWN_CODON = UNKNOWN_NUCLEOTIDE * 3
 UNKNOWN_AA = "X"
 
