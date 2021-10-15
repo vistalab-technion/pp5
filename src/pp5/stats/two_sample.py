@@ -144,9 +144,9 @@ def two_sample_kernel_permutation_test(
     mix between the groups X and Y, where n_x and n_y are the number of observations
     in X and Y respectively.
 
-    :param X: (m, n_x) array containing a sample X, where n_x is the number of
+    :param X: (n_x, m) array containing a sample X, where n_x is the number of
         observations in the sample and m is the dimension of each observation.
-    :param Y: (m, n_y) array containing sample Y with n_y observations of dimension m.
+    :param Y: (n_y, m) array containing sample Y with n_y observations of dimension m.
     :param k: number of permutations for significance evaluation
     :param similarity_fn: h(x, y), a scalar bivariate similarity function.
     :param kernel_fn: k(z), a scalar univariate kernel function.
@@ -157,14 +157,14 @@ def two_sample_kernel_permutation_test(
         significance) for the null-hypothesis that P_X = P_Y.
     """
     # sample sizes
-    nx = X.shape[1]
-    ny = Y.shape[1]
+    nx = X.shape[0]
+    ny = Y.shape[0]
 
     # pooled vectors
-    Z = np.hstack((X, Y))
+    Z = np.vstack((X, Y))  # (nx+ny, m)
 
     # pairwise distances
-    D = squareform(pdist(Z.T, metric=similarity_fn))
+    D = squareform(pdist(Z, metric=similarity_fn))  # (nx+ny, nx+ny)
 
     # inner products
     kernel_kwargs = kernel_kwargs or {}
