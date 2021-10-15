@@ -28,7 +28,6 @@ CODON_TABLE = CodonTable.standard_dna_table.forward_table
 START_CODONS: Sequence[str] = CodonTable.standard_dna_table.start_codons
 STOP_CODONS: Sequence[str] = CodonTable.standard_dna_table.stop_codons
 CODONS: Sequence[str] = sorted(CODON_TABLE.keys())
-UNKNOWN_CODON = "---"
 N_CODONS = len(CODONS)
 AA_CODONS: Sequence[str] = sorted(codon2aac(c) for c in CODONS)
 
@@ -36,6 +35,10 @@ ACIDS = sorted(set([aac[0] for aac in AA_CODONS]))
 N_ACIDS = len(ACIDS)
 ACIDS_1TO3 = IUPACData.protein_letters_1to3
 ACIDS_1TO1AND3 = {aa: f"{aa} ({ACIDS_1TO3[aa]})" for aa in ACIDS}
+
+UNKNOWN_NUCLEOTIDE = "Z"
+MISSING_CODON = "---"
+UNKNOWN_CODON = UNKNOWN_NUCLEOTIDE * 3
 UNKNOWN_AA = "X"
 
 CODON_RE = re.compile(
@@ -49,6 +52,33 @@ AAC = str
 AACTuple = Tuple[AAC, ...]
 AATuple = Tuple[AA, ...]
 AACIndexedTuple = Tuple[int, AACTuple]
+
+
+def aac_join(aa: str, c: str, validate: bool = True) -> AAC:
+    """
+    Joins an amino acid and codon into a single string separated by AAC_SEP.
+    :param aa: An amino acid.
+    :param c: A codon.
+    :param validate: Whether to raise an error if the resulting AAC is invalid.
+    :return: The AAC string.
+    """
+    aac = f"{aa}{AAC_SEP}{c}"
+    if validate and aac not in AA_CODONS:
+        raise ValueError(f"Invalid AA={aa} or codon={c}")
+    return aac
+
+
+def aac_split(aac: AAC, validate: bool = True) -> Tuple[str, str]:
+    """
+    Splits an AAC string into its AA and codon.
+    :param aac: An AAC string.
+    :param validate: Whether to raise an error if the resulting AA or codon is invalid.
+    :return: A tuple of (aa, codon).
+    """
+    aa, c, *_ = aac.split(AAC_SEP)
+    if validate and (aa not in ACIDS or c not in CODONS or len(_) > 0):
+        raise ValueError(f"Invalid AAC={aac}")
+    return aa, c
 
 
 def aac2aa(aac: AAC) -> str:

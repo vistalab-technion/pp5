@@ -35,10 +35,15 @@ from pp5.codons import (
     ACIDS,
     AAC_SEP,
     AA_CODONS,
+    UNKNOWN_AA,
     AAC_TUPLE_SEP,
+    MISSING_CODON,
     UNKNOWN_CODON,
+    UNKNOWN_NUCLEOTIDE,
     aac2aa,
+    aac_join,
     aact2aat,
+    aac_split,
     codon2aac,
     aac_tuples,
     aact_str2tuple,
@@ -72,6 +77,10 @@ T2_COL = "t2"
 SIGNIFICANT_COL = "significant"
 TEST_STATISTICS = {"mmd": mmd_test, "tw": tw_test}
 
+CODON_TUPLE_GROUP_ANY = "any"
+CODON_TUPLE_GROUP_LAST_NUCL = "last_nucleotide"
+CODON_TUPLE_GROUPINGS = {None, CODON_TUPLE_GROUP_ANY, CODON_TUPLE_GROUP_LAST_NUCL}
+
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
     def __init__(
@@ -81,7 +90,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         pointwise_filename: str = "data-precs.csv",
         condition_on_ss: bool = True,
         consolidate_ss: dict = DSSP_TO_SS_TYPE.copy(),
-        codon_tuple_len: int = 1,
+        tuple_len: int = 1,
+        codon_grouping_type: str = None,
+        codon_grouping_position: int = 0,
         min_group_size: int = 1,
         strict_codons: bool = True,
         kde_nbins: int = 128,
@@ -89,7 +100,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         bs_niter: int = 1,
         bs_randstate: Optional[int] = None,
         t2_statistic: Union[Literal["mmd"], Literal["tw"]] = "mmd",
-        t2_n_max: Optional[int] = 1000,
+        t2_n_max: int = 1000,
         t2_permutations: int = 1000,
         t2_kernel_size: float = 10.0,
         fdr: float = 0.1,
@@ -110,8 +121,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             the consolidated SS types used in this analysis.
         :param condition_on_ss: Whether to condition on secondary structure
             (of two consecutive residues, after consolidation).
-        :param codon_tuple_len: Number of consecutive codons to analyze as a tuple.
-            Set 1 for single codons, 2 for codon pairs. Other values are not supported.
+        :param tuple_len: Number of consecutive residues to analyze as a tuple.
+            Set 1 for single, 2 for pairs. Higher values are not recommended.
+
+        :param codon_grouping_type:
+        :param codon_grouping_position:
+
         :param min_group_size: Minimal number of angle-pairs from different
             structures belonging to the same Uniprot ID, location and codon in order to
             consider the group of angles for analysis.
@@ -144,8 +159,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             clear_intermediate=False,
         )
 
-        if codon_tuple_len < 1:
-            raise ValueError(f"invalid {codon_tuple_len=}, must be >= 1")
+        if tuple_len < 1:
+            raise ValueError(f"invalid {tuple_len=}, must be >= 1")
+
+        if codon_grouping_type not in CODON_TUPLE_GROUPINGS:
+            raise ValueError(
+                f"invalid {codon_grouping_type=}, must be in {CODON_TUPLE_GROUPINGS}"
+            )
+
+        if codon_grouping_position >= tuple_len:
+            raise ValueError(
+                f"invalid {codon_grouping_position=}, must be < {tuple_len=}"
+            )
 
         if t2_statistic not in TEST_STATISTICS:
             raise ValueError(
@@ -157,7 +182,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
-        self.codon_tuple_len = codon_tuple_len
+        self.tuple_len = tuple_len
+        self.codon_grouping_type = codon_grouping_type
+        self.codon_grouping_position = codon_grouping_position
         self.min_group_size = min_group_size
         self.strict_codons = strict_codons
         self.condition_on_prev = None
@@ -174,7 +201,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.fdr = fdr
 
         # Initialize codon tuple names and corresponding indices
-        tuples = list(aac_tuples(k=self.codon_tuple_len))
+        tuples = aac_tuples(k=self.tuple_len)
+        tuples = sorted(set(map(self._map_codon_tuple, tuples)))
         self._codon_tuple_to_idx = {
             aact_tuple2str(aac_tuple): idx for idx, aac_tuple in enumerate(tuples)
         }
@@ -200,6 +228,33 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             "write_pvals": self._write_pvals,
             "plot_results": self._plot_results,
         }
+
+    def _map_codon_tuple(self, aacs: Sequence[str]) -> Sequence[str]:
+        """
+        Maps codons in a tuple so that they can be grouped by the grouping
+        options of this analysis.
+
+        :param aacs: A tuple (aac1, aac2).
+        :return: A tuple (aac1, aac2) after conversion.
+        """
+        if not self.codon_grouping_type:
+            return aacs
+
+        aacs = list(aacs)
+        aac = aacs[self.codon_grouping_position]
+        aa, c = aac_split(aac)
+
+        if self.codon_grouping_type == CODON_TUPLE_GROUP_ANY:
+            c = UNKNOWN_CODON
+            aa = UNKNOWN_AA
+
+        if self.codon_grouping_type == CODON_TUPLE_GROUP_LAST_NUCL:
+            c = f"{UNKNOWN_NUCLEOTIDE*2}{c[-1]}"
+            aa = UNKNOWN_AA
+
+        aac = aac_join(aa, c, validate=False)
+        aacs[self.codon_grouping_position] = aac
+        return tuple(aacs)
 
     def _preprocess_dataset(self, pool: mp.pool.Pool) -> dict:
         """
@@ -250,8 +305,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             condition_groups = SS_TYPE_ANY
         df_pointwise[CONDITION_COL] = condition_groups
 
-        # Convert codon columns to AA-CODON
-        idx_no_codon = df_pointwise[CODON_COL] == UNKNOWN_CODON
+        # Drop rows without a codon, and convert codons to AA-CODON
+        idx_no_codon = df_pointwise[CODON_COL].isin([UNKNOWN_CODON, MISSING_CODON])
         df_pointwise = df_pointwise[~idx_no_codon]
         df_pointwise[CODON_COL] = df_pointwise[[CODON_COL]].applymap(codon2aac)
 
@@ -342,7 +397,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             unp_id = group_idx
             async_results.append(
                 pool.apply_async(
-                    self._create_group_tuples, args=(df_group, self.codon_tuple_len),
+                    self._create_group_tuples, args=(df_group, self.tuple_len),
                 )
             )
 
@@ -401,14 +456,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Function to map rows in the merged dataframe to the final rows we'll use.
         def _row_mapper(row: pd.Series):
 
-            codons, aas, sss, group_sizes = [], [], [], []
+            aa_codons, sss, group_sizes = [], [], []
             for i, p in enumerate(prefixes):
-                codons.append(row[f"{p}{CODON_COL}"])
-                aas.append(row[f"{p}{AA_COL}"])
+                aa_codons.append(row[f"{p}{CODON_COL}"])
                 sss.append(row[f"{p}{SECONDARY_COL}"])
                 group_sizes.append(row[f"{p}{GROUP_SIZE_COL}"])
 
-            codon_tuple = aact_tuple2str(codons)
+            aa_codons = self._map_codon_tuple(aa_codons)
+            aas = tuple(aac2aa(aac) for aac in aa_codons)
+
+            codon_tuple = aact_tuple2str(aa_codons)
             aa_tuple = aact_tuple2str(aas)
             ss_tuple = aact_tuple2str(sss)
             if not self.condition_on_ss:
@@ -515,16 +572,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             # Not all codon may exist as subgroups. Default to zero and count each
             # existing subgroup.
-            subgroup_sizes = {
-                **{aac: 0 for aac in self._codon_tuple_to_idx.keys()},
-                **{aa: 0 for aa in self._aa_tuple_to_idx.keys()},
-            }
+            subgroup_sizes = {}
             for aac, df_sub in df_subgroups:
                 subgroup_sizes[aac] = len(df_sub)
 
                 aa = str.join(
                     AAC_TUPLE_SEP, [aac2aa(aac) for aac in aac.split(AAC_TUPLE_SEP)]
                 )
+                subgroup_sizes.setdefault(aa, 0)
                 subgroup_sizes[aa] += len(df_sub)
 
             # Count size of each codon subgroup
@@ -950,7 +1005,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         LOGGER.info(f"Plotting results...")
 
         ap_label = _cols2label(
-            PHI_COL + ("+0" if self.codon_tuple_len == 1 else "+1"), PSI_COL + "+0"
+            PHI_COL + ("+0" if self.tuple_len == 1 else "+1"), PSI_COL + "+0"
         )
 
         async_results = []
@@ -1008,7 +1063,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
         }
         group_sizes: dict = self._load_intermediate("group-sizes", True)
-        for aa_codon in ["aa", "codon"]:
+
+        def _glob_mapper(aact: str):
+            return str.join(AAC_TUPLE_SEP, aact_str2tuple(aact)[:-1])
+
+        for aa_codon in ["codon", "aa"]:
 
             avg_dkdes: dict = self._load_intermediate(f"{aa_codon}-dihedral-kdes", True)
             if avg_dkdes is None:
@@ -1020,12 +1079,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # Create glob patterns to define which ramachandran plots will go
                 # into the same figure
                 split_subgroups_glob = None
-                if self.codon_tuple_len > 1:
-                    tuple_elements = ACIDS if aa_codon == "aa" else AA_CODONS
-                    split_subgroups_glob = [f"{s}*" for s in tuple_elements]
+                if self.tuple_len > 1:
+                    if aa_codon == "codon":
+                        glob_source = self._codon_tuple_to_idx.keys()
+                    else:  # "aa"
+                        glob_source = self._aa_tuple_to_idx.keys()
+                    glob_elements = sorted(set(map(_glob_mapper, glob_source)))
+                    split_subgroups_glob = [f"{s}*" for s in glob_elements]
                     # For AAs, also include the reverse glob
                     if aa_codon == "aa":
-                        split_subgroups_glob.extend([f"*{s}" for s in tuple_elements])
+                        split_subgroups_glob.extend([f"*{s}" for s in glob_elements])
 
                 # Get the samples (angles) of all subgroups in this group
                 subgroup_col = AA_COL if aa_codon == "aa" else CODON_COL
