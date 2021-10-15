@@ -1219,8 +1219,8 @@ def _subgroup_permutation_test(
     )
     for i in range(n_iter):
         ddists[i], pvals[i] = ddist_statistic_fn(
-            X=_bootstrap_sample(subgroup1_data).transpose(),
-            Y=_bootstrap_sample(subgroup2_data).transpose(),
+            X=_bootstrap_sample(subgroup1_data),
+            Y=_bootstrap_sample(subgroup2_data),
             k=ddist_permutations,
             similarity_fn=ddist_metric,
             kernel_kwargs=dict(sigma=ddist_kernel_size),
