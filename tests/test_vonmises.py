@@ -109,7 +109,9 @@ class TestBvMKernelDensityEstimator(object):
             BvMKernelDensityEstimator(n_bins, k1, k2, k3, batchsize)
 
     def test_estimate(self):
-        kde = BvMKernelDensityEstimator(n_bins=256, k1=10, k2=20, k3=-2,)
+        kde = BvMKernelDensityEstimator(
+            n_bins=256, k1=10, k2=20, k3=-2, dtype=np.float32, batchsize=64
+        )
         phi_psi = np.random.uniform(-np.pi, np.pi, size=(500, 2))
         p = kde(phi_psi[:, 0], phi_psi[:, 1])
 

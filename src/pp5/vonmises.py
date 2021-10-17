@@ -1,5 +1,7 @@
-from typing import Tuple, Union
+from typing import Tuple, Union, Callable, Optional
+from functools import partial
 
+import numba
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -219,7 +221,13 @@ class BvMKernelDensityEstimator(object):
     """
 
     def __init__(
-        self, n_bins=128, k1=1.0, k2=1.0, k3=0.0, batchsize=64, dtype=np.float32,
+        self,
+        n_bins: int = 128,
+        k1: float = 1.0,
+        k2: float = 1.0,
+        k3: float = 0.0,
+        batchsize: Optional[int] = 64,
+        dtype: np.dtype = np.float32,
     ):
         """
         :param n_bins: Number of discrete angle bins in each axis of the 2d grid.
@@ -232,7 +240,8 @@ class BvMKernelDensityEstimator(object):
         """
         assert n_bins > 1
         assert not any(k is None for k in [k1, k2, k3])
-        assert batchsize > 0
+        if batchsize is not None:
+            assert batchsize >= 0
 
         self.n_bins = n_bins
         self.k1 = k1
@@ -241,30 +250,6 @@ class BvMKernelDensityEstimator(object):
         self.batchsize = batchsize
         self.dtype = dtype
 
-    @staticmethod
-    def bvm_kernel(phi: np.ndarray, psi: np.ndarray, k1, k2, k3):
-        """
-        Bivariate von Mises (BvM) kernel function, cosine variant.
-        All angles should be in radians.
-        k1, k2, are the concentration parameters, k3 is the correlation parameter.
-
-        Uses the cosine-variant BvM distribution, with the means taken as zero.
-        See:
-        https://en.wikipedia.org/wiki/Bivariate_von_Mises_distribution
-
-        :return: BvM kernel evaluated pointwise on the given data.
-        """
-        t1, t2, t3 = 0.0, 0.0, 0.0
-
-        if k1 != 0:
-            t1 = k1 * np.cos(phi)
-        if k2 != 0:
-            t2 = k2 * np.cos(psi)
-        if k3 != 0:
-            t3 = k3 * np.cos(phi - psi)
-
-        return np.exp(t1 + t2 + t3)
-
     def estimate(self, phi: np.ndarray, psi: np.ndarray):
         """
         Calculate KDE of set of angles, evaluated on a discrete 2d grid.
@@ -272,40 +257,126 @@ class BvMKernelDensityEstimator(object):
         :param psi: Second angle values. Must be in [-pi, pi].
         :return: The KDE, as an array of shape (M,M) where M is the number of bins.
         """
-        assert phi.ndim == psi.ndim == 1
-        assert phi.shape == psi.shape
-
-        # Create evaluation grid
-        grid = np.linspace(-np.pi, np.pi, num=self.n_bins, endpoint=False)
-        grid = grid.reshape((-1, 1)).astype(self.dtype)  # (M, 1)
-
-        # Reshape data and grid so they can be broadcast together
-        phi = phi.reshape((1, -1)).astype(self.dtype)  # (1, N)
-        psi = psi.reshape((1, -1)).astype(self.dtype)
-
-        # Process input in batches to avoid RAM explosion
-        n = np.prod(phi.shape)
-        n_chunks = int(np.ceil(n / self.batchsize))
-        P_raw = np.zeros((self.n_bins, self.n_bins), dtype=self.dtype)
-
-        for chunk_idx in range(n_chunks):
-            start = chunk_idx * self.batchsize
-            stop = np.minimum(n, (chunk_idx + 1) * self.batchsize)
-            chunk = slice(start, stop)
-
-            # Calculate grid minus data between each grid and data point
-            dphi = np.expand_dims(grid - phi[:, chunk], axis=1)  # (M, 1, N)
-            dpsi = np.expand_dims(grid - psi[:, chunk], axis=0)  # (1, M, N)
-
-            # Apply kernel pointwise, and sum all values at each grid location
-            K = self.bvm_kernel(dphi, dpsi, self.k1, self.k2, self.k3)
-            P_raw += np.nansum(K, axis=2)  # (M, M, C) -> (M, M)
-
-        # Normalize
-        P = P_raw / np.sum(P_raw)
-        return P
+        # Apply general 2D KDE, but with a bivariate von-Mises kernel.
+        return kde_2d(
+            x1=phi,
+            x2=psi,
+            kernel_fn=partial(bvm_kernel, k1=self.k1, k2=self.k2, k3=self.k3),
+            n_bins=self.n_bins,
+            batch_size=self.batchsize,
+            dtype=self.dtype,
+            reduce=True,
+        )
 
     __call__ = estimate
+
+
+def kde_2d(
+    x1: np.ndarray,
+    x2: np.ndarray,
+    kernel_fn: Callable[[np.ndarray, np.ndarray], np.ndarray],
+    n_bins: int = 128,
+    batch_size: Optional[int] = None,
+    reduce: bool = True,
+    dtype: np.dtype = np.float64,
+):
+    """
+    Calculates a kernel-density estimate, evaluated on a discrete 2d grid.
+    :param x1: First data variable, of shape (N,).
+    :param x2: Second data variable, of shape (N,).
+    :param kernel_fn: 2D kernel K(x1, x2) to apply to the samples.
+    :param n_bins: Number M of discrete bins in each axis of the 2d grid.
+    :param batch_size: Maximal number of data points to process in a
+        single batch. Increasing this will cause hgh memory usage.
+        None or zero means no batching.
+        Cannot be used with reduce=False.
+    :param reduce: Whether to reduce and normalize the contribution of each sample.
+        If True (the default), the regular 2D KDE of shape (M, M) will be returned.
+        If False, the return value will be of shape (M, M, N), corresponding to the
+        un-normalized contribution of each sample to each point on the estimation grid.
+        Cannot be used with batch_size>0.
+    :param dtype: Datatype of the result.
+    :return: The KDE, as an array of shape (M, M) where M is the number of bins.
+    """
+
+    assert x1.ndim == x2.ndim == 1
+    assert x1.shape == x2.shape
+    if batch_size and not reduce:
+        raise ValueError(f"Can't provide batch_size if reduce==False")
+
+    # Create evaluation grid
+    grid = np.linspace(-np.pi, np.pi - (2 * np.pi / n_bins), n_bins)
+    grid = grid.reshape((-1, 1)).astype(dtype)  # (M, 1)
+
+    # Reshape data and grid so they can be broadcast together
+    x1 = np.ascontiguousarray(x1, dtype=dtype)
+    x2 = np.ascontiguousarray(x2, dtype=dtype)
+    x1 = x1.reshape((1, -1))  # (1, N)
+    x2 = x2.reshape((1, -1))  # (1, N)
+
+    # Process input in batches to avoid RAM explosion
+    n = np.prod(np.array(x1.shape))
+
+    # When reduce==False, batch size must be n.
+    # Otherwise, use given or default to n.
+    batch_size = (batch_size or n) if reduce else n
+
+    n_chunks = int(np.ceil(n / batch_size))
+    P_raw = np.zeros((n_bins, n_bins), dtype=dtype)
+
+    for chunk_idx in range(n_chunks):
+        start = chunk_idx * batch_size
+        stop = np.minimum(n, (chunk_idx + 1) * batch_size)
+        chunk = slice(start, stop)
+
+        # Calculate grid minus data between each grid and data point
+        dx1 = np.expand_dims(grid - x1[:, chunk], axis=1)  # (M, 1, N)
+        dx2 = np.expand_dims(grid - x2[:, chunk], axis=0)  # (1, M, N)
+
+        # Apply kernel pointwise, and sum all values at each grid location
+        K = kernel_fn(dx1, dx2)
+        K = np.where(np.isnan(K), 0, K)  # replace NaN with zero
+
+        # If reduce==False, we know batch_size=n so we can just return K from this
+        # iteration.
+        if not reduce:
+            return K
+
+        P_raw += np.sum(K, axis=2)  # (M, M, N) -> (M, M)
+
+    # Normalize
+    P = P_raw / np.sum(P_raw)
+    return P
+
+
+@numba.jit(nopython=True)
+def bvm_kernel(phi: np.ndarray, psi: np.ndarray, k1: float, k2: float, k3: float):
+    """
+    Bivariate von Mises (BvM) kernel function, cosine variant.
+    All angles should be in radians.
+
+    Uses the cosine-variant BvM distribution, with the means taken as zero.
+    See:
+    https://en.wikipedia.org/wiki/Bivariate_von_Mises_distribution
+
+    :param phi: First angle values. Must be in [-pi, pi].
+        Can be any shape, but needs to be broadcast-able together with psi.
+    :param psi: Second angle values. Must be in [-pi, pi].
+        Can be any shape, but needs to be broadcast-able together with phi.
+    :param k1: First concentration parameter (for phi).
+    :param k2: Second concentration parameter (for psi).
+    :param k3: Correlation parameter.
+    :return: BvM kernel evaluated pointwise on the given data.
+        Output shape will the same as np.broadcast(phi, psi).
+    """
+
+    t1 = k1 * np.cos(phi)
+    t2 = k2 * np.cos(psi)
+    if k3 == 0.0:
+        return np.exp(t1 + t2)
+
+    t3 = k3 * np.cos(phi - psi)
+    return np.exp(t1 + t2 + t3)
 
 
 def bvm_pdf(
