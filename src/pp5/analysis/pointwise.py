@@ -99,7 +99,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         strict_codons: bool = True,
         kde_nbins: int = 128,
         kde_width: float = 30.0,
-        bs_niter: int = 1,
         bs_randstate: Optional[int] = None,
         ddist_statistic: Union[Literal["mmd"], Literal["tw"], Literal["kde"]] = "mmd",
         ddist_n_max: Optional[int] = 1000,
@@ -138,8 +137,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param strict_codons: Enforce only one known codon per residue
             (reject residues where DNA matching was ambiguous).
         :param kde_nbins: Number of angle binds for KDE estimation.
-        :param kde_width: KDE concentration parameter (will use same for phi and psi).
-        :param bs_niter: Number of bootstrap iterations.
+        :param kde_width: KDE concentration parameter for visualization (will use same
+            for phi and psi).
         :param bs_randstate: Random state for bootstrap.
         :param ddist_statistic: Statistical test to use for quantifying significance
             of  distances between distributions (ddists).
@@ -198,10 +197,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.strict_codons = strict_codons
         self.condition_on_prev = None
 
-        self.kde_args = dict(n_bins=kde_nbins, k1=kde_width, k2=kde_width, k3=0)
-        self.kde_dist_metric = "l2"
+        self.kde_args = dict(
+            n_bins=kde_nbins, k1=kde_width, k2=kde_width, k3=0, dtype=np.float64
+        )
 
-        self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
         self.ddist_n_max = ddist_n_max
         self.ddist_permutations = ddist_permutations
@@ -212,6 +211,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if ddist_statistic == "kde":
             self.ddist_statistic_fn = partial(
                 kde2d_test,
+                n_bins=kde_nbins,
                 kernel_fn=partial(
                     bvm_kernel,
                     k1=self.ddist_kernel_size,
