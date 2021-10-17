@@ -1,10 +1,11 @@
 from typing import Any, Tuple, Callable, Optional
-from functools import partial
 
 import numba
 import numpy as np
 from numpy import ndarray
 from scipy.spatial.distance import pdist, squareform, sqeuclidean
+
+from pp5.vonmises import kde_2d
 
 _NUMBA_PARALLEL = False
 
@@ -47,7 +48,30 @@ def _mmd_statistic(K: np.ndarray, nx: int, ny: int) -> float:
     return float(sum_X + sum_Y - 2.0 * sum_XY)
 
 
-def _identity_kernel(x: ndarray, **kw):
+@numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
+def _kde_statistic(K: np.ndarray, nx: int, ny: int) -> float:
+    """
+    Calculates KDE-based statistic of a kernel matrix
+
+    :param K: Matrix of shape (nx+ny, M, M), containing the (M, M) contributions of
+        N=nx+ny observations to the KDE estimate.
+    :param nx: Number of observations from X.
+    :param ny: Number of observations from Y.
+    :return: The KDE statistic: L1 distance between the KDEs of X and Y.
+    """
+
+    # Apply a reduction to compute X and Y's KDEs from the contribution of each
+    # of their observations
+    kde_X = np.sum(K[:nx, ...], axis=0)  # (nx, M, M) -> (M, M)
+    kde_X /= np.sum(kde_X)
+    kde_Y = np.sum(K[nx:, ...], axis=0)  # (ny, M, M) -> (M, M)
+    kde_Y /= np.sum(kde_Y)
+
+    l1_dist = np.mean(np.abs(kde_X - kde_Y)).item()
+    return l1_dist
+
+
+def identity_kernel(x: ndarray, **kw):
     """
     Identity function, to use as a kernel.
     """
@@ -55,7 +79,7 @@ def _identity_kernel(x: ndarray, **kw):
 
 
 @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def _gaussian_kernel(x: ndarray, sigma: float = 1):
+def gaussian_kernel(x: ndarray, sigma: float = 1):
     """
     Gaussian kernel function.
     """
@@ -65,9 +89,9 @@ def _gaussian_kernel(x: ndarray, sigma: float = 1):
 def tw_test(
     X: ndarray,
     Y: ndarray,
-    k: int = 1000,
+    k: int,
     similarity_fn: Callable[[ndarray, ndarray], float] = sqeuclidean,
-    kernel_fn: Callable[[ndarray], ndarray] = _identity_kernel,
+    kernel_fn: Callable[[ndarray], ndarray] = identity_kernel,
 ) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
@@ -91,9 +115,9 @@ def tw_test(
 def mmd_test(
     X: ndarray,
     Y: ndarray,
-    k: int = 1000,
+    k: int,
     similarity_fn: Callable[[ndarray, ndarray], float] = sqeuclidean,
-    kernel_fn: Callable[[ndarray], ndarray] = _gaussian_kernel,
+    kernel_fn: Callable[[ndarray], ndarray] = gaussian_kernel,
 ) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
@@ -110,6 +134,43 @@ def mmd_test(
         similarity_fn=similarity_fn,
         kernel_fn=kernel_fn,
         statistic_fn=_mmd_statistic,
+    )
+
+
+def kde2d_test(
+    X: ndarray, Y: ndarray, k: int, kernel_fn: Callable
+) -> Tuple[float, float]:
+    """
+    Applies a two-sample permutation test to determine whether the null hypothesis
+    that two distributions are identical can be rejected, using the KDE approach.
+
+    For parameters, see documentation of :obj:`two_sample_kernel_permutation_test`.
+
+    :param kernel_fn: Kernel for the 2D KDE (not for the permutation test itself).
+    :return: KDE statistic value, p-value (significance).
+    """
+
+    def _kde_2d_kernel_fn(Z: np.ndarray):
+        # Z has shape (N, 2)
+        K = kde_2d(
+            x1=Z[:, 0],
+            x2=Z[:, 1],
+            kernel_fn=kernel_fn,
+            n_bins=128,
+            reduce=False,
+            dtype=np.float64,
+        )
+        # Transpose from (M, M, N) to (N, M, M) where N=nx+ny, so that we can permute
+        # over the first dimension.
+        return K.transpose(2, 0, 1)
+
+    return two_sample_kernel_permutation_test(
+        X,
+        Y,
+        k,
+        similarity_fn=None,
+        kernel_fn=_kde_2d_kernel_fn,
+        statistic_fn=_kde_statistic,
     )
 
 
