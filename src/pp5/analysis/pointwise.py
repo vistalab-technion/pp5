@@ -17,6 +17,7 @@ from typing import (
     Sequence,
 )
 from pathlib import Path
+from functools import partial
 from multiprocessing.pool import AsyncResult
 
 import numpy as np
@@ -29,7 +30,7 @@ from matplotlib.figure import Figure
 
 import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
-from pp5.stats import mht_bh, tw_test, mmd_test
+from pp5.stats import mht_bh, tw_test, mmd_test, kde2d_test
 from pp5.utils import sort_dict
 from pp5.codons import (
     ACIDS,
@@ -54,8 +55,9 @@ from pp5.codons import (
 from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral, flat_torus_distance
 from pp5.parallel import yield_async_results
-from pp5.vonmises import BvMKernelDensityEstimator
+from pp5.vonmises import BvMKernelDensityEstimator, bvm_kernel
 from pp5.analysis.base import ParallelAnalyzer
+from pp5.stats.two_sample import gaussian_kernel
 
 LOGGER = logging.getLogger(__name__)
 
@@ -75,7 +77,7 @@ GROUP_SIZE_COL = "group_size"
 PVAL_COL = "pval"
 DDIST_COL = "ddist"
 SIGNIFICANT_COL = "significant"
-TEST_STATISTICS = {"mmd": mmd_test, "tw": tw_test}
+TEST_STATISTICS = {"mmd": mmd_test, "tw": tw_test, "kde": kde2d_test}
 
 CODON_TUPLE_GROUP_ANY = "any"
 CODON_TUPLE_GROUP_LAST_NUCL = "last_nucleotide"
@@ -99,8 +101,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         kde_width: float = 30.0,
         bs_niter: int = 1,
         bs_randstate: Optional[int] = None,
-        ddist_statistic: Union[Literal["mmd"], Literal["tw"]] = "mmd",
-        ddist_n_max: int = 1000,
+        ddist_statistic: Union[Literal["mmd"], Literal["tw"], Literal["kde"]] = "mmd",
+        ddist_n_max: Optional[int] = 1000,
         ddist_permutations: int = 1000,
         ddist_kernel_size: float = 10.0,
         fdr: float = 0.1,
@@ -136,8 +138,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param kde_width: KDE concentration parameter (will use same for phi and psi).
         :param bs_niter: Number of bootstrap iterations.
         :param bs_randstate: Random state for bootstrap.
-        :param ddist_statistic: Statistic to use for statistical tests of distances
-            between distributions (ddists). Can be either 'mmd' or 'tw'.
+        :param ddist_statistic: Statistical test to use for quantifying significance
+            of  distances between distributions (ddists).
+            Can be either 'kde', 'mmd' or 'tw'.
         :param ddist_n_max: Maximal sample-size to use when calculating
             p-value of distances with a statistical test. If there are larger samples,
             bootstrap sampling with the given maximal sample size will be performed.
@@ -194,11 +197,35 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         self.bs_niter = bs_niter
         self.bs_randstate = bs_randstate
-        self.ddist_statistic_fn = TEST_STATISTICS[ddist_statistic]
         self.ddist_n_max = ddist_n_max
         self.ddist_permutations = ddist_permutations
         self.ddist_kernel_size = ddist_kernel_size
         self.fdr = fdr
+
+        # Setup parameters for statistical tests
+        if ddist_statistic == "kde":
+            self.ddist_statistic_fn = partial(
+                kde2d_test,
+                kernel_fn=partial(
+                    bvm_kernel,
+                    k1=self.ddist_kernel_size,
+                    k2=self.ddist_kernel_size,
+                    k3=0,
+                ),
+            )
+        elif ddist_statistic == "mmd":
+            self.ddist_statistic_fn = partial(
+                mmd_test,
+                similarity_fn=flat_torus_distance,
+                kernel_fn=partial(gaussian_kernel, sigma=self.ddist_kernel_size),
+            )
+        elif ddist_statistic == "tw":
+            self.ddist_statistic_fn = partial(
+                tw_test, similarity_fn=flat_torus_distance,
+            )
+        else:
+            raise ValueError(f"Unexpected {ddist_statistic=}")
+        self.ddist_statistic_fn_name = ddist_statistic
 
         # Initialize codon tuple names and corresponding indices
         tuples = aac_tuples(k=self.tuple_len)
@@ -737,21 +764,21 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     # Analyze the angles of subgroup1 and subgroup2
                     angles1 = np.deg2rad(df_sub1[[*ANGLE_COLS]].values)
                     angles2 = np.deg2rad(df_sub2[[*ANGLE_COLS]].values)
-                    args = (
-                        group,
-                        sub1,
-                        sub2,
-                        angles1,
-                        angles2,
-                        self.bs_randstate,
-                        self.ddist_statistic_fn,
-                        self.ddist_n_max,
-                        self.ddist_permutations,
-                        self.ddist_kernel_size,
-                        flat_torus_distance,
+                    res = pool.apply_async(
+                        _subgroup_permutation_test,
+                        kwds=dict(
+                            group_idx=group,
+                            subgroup1_idx=sub1,
+                            subgroup2_idx=sub2,
+                            subgroup1_data=angles1,
+                            subgroup2_data=angles2,
+                            randstate=self.bs_randstate,
+                            ddist_statistic_fn=self.ddist_statistic_fn,
+                            ddist_statistic_fn_name=self.ddist_statistic_fn_name,
+                            ddist_n_max=self.ddist_n_max,
+                            ddist_permutations=self.ddist_permutations,
+                        ),
                     )
-
-                    res = pool.apply_async(_subgroup_permutation_test, args=args)
                     async_results[(group, sub1, sub2)] = res
 
         return async_results
@@ -1168,10 +1195,9 @@ def _subgroup_permutation_test(
     subgroup2_data: np.ndarray,
     randstate: int,
     ddist_statistic_fn: Callable,
+    ddist_statistic_fn_name: str,
     ddist_n_max: Optional[int],
     ddist_permutations: int,
-    ddist_kernel_size: float,
-    ddist_metric: Union[str, Callable],
 ) -> Tuple[float, float]:
     """
     Calculates Tw^2 statistic and p-value to determine whether the dihedral angles of a
@@ -1186,7 +1212,8 @@ def _subgroup_permutation_test(
     :param randstate: Random state for bootstrapping.
     :param ddist_n_max: Max sample size. If None or zero then no limit.
     :param ddist_permutations: Number of permutations for computing significance.
-    :param ddist_metric: Distance metric to use between observations.
+    :param ddist_statistic_fn: Permutation test function to use for comparing the
+        samples.
     :return: A Tuple (ddist, pval) containing the value of the ddist statistic and the p-value.
     """
     t_start = time.time()
@@ -1200,7 +1227,7 @@ def _subgroup_permutation_test(
 
     # We use bootstrapping if at least one of the samples is larger than ddist_n_max.
     n1, n2 = len(subgroup1_data), len(subgroup2_data)
-    n_iter = max(ceil(n1 / ddist_n_max), ceil(n2 / ddist_n_max)) if ddist_n_max else 1
+    bs_iter = max(ceil(n1 / ddist_n_max), ceil(n2 / ddist_n_max)) if ddist_n_max else 1
 
     # For a sample larger than ddist_n_max, we create a new sample from it by sampling
     # with replacement.
@@ -1214,16 +1241,14 @@ def _subgroup_permutation_test(
 
     # Run bootstrapped tests
     ddists, pvals = (
-        np.empty(n_iter, dtype=np.float32),
-        np.empty(n_iter, dtype=np.float32),
+        np.empty(bs_iter, dtype=np.float32),
+        np.empty(bs_iter, dtype=np.float32),
     )
-    for i in range(n_iter):
+    for i in range(bs_iter):
         ddists[i], pvals[i] = ddist_statistic_fn(
             X=_bootstrap_sample(subgroup1_data),
             Y=_bootstrap_sample(subgroup2_data),
             k=ddist_permutations,
-            similarity_fn=ddist_metric,
-            kernel_kwargs=dict(sigma=ddist_kernel_size),
         )
 
     # Calculate the ddist corresponding to the maximal (worst) p-value,
@@ -1233,19 +1258,17 @@ def _subgroup_permutation_test(
 
     # Calculate the ddist corresponding to the median p-value.
     sort_idx = np.argsort(pvals)
-    median_idx = sort_idx[floor(n_iter / 2)]  # note: floor is correct since indices
+    median_idx = sort_idx[floor(bs_iter / 2)]  # note: floor is correct since indices
     # are zero based
     med_ddist, med_p = ddists[median_idx], pvals[median_idx]
 
     t_elapsed = time.time() - t_start
-    ddist_statistic_fn_name = [
-        k for k, v in TEST_STATISTICS.items() if v == ddist_statistic_fn
-    ][0]
     LOGGER.info(
-        f"Calculated (ddist, pval) [{ddist_statistic_fn_name}] {group_idx=}, "
-        f"{subgroup1_idx=} (n={n1}), "
-        f"{subgroup2_idx=} (n={n2}), "
-        f"using {n_iter=}: "
+        f"Calculated (ddist, pval) [{ddist_statistic_fn_name}] "
+        f"group={group_idx}, "
+        f"sub1={subgroup1_idx} (n={n1}), "
+        f"sub2={subgroup2_idx} (n={n2}), "
+        f"using {bs_iter=}, k={ddist_permutations}: "
         f"(med_p, max_p)=({med_p:.3f},{max_p:.3f}),"
         f"(med_ddist, max_ddist)=({med_ddist:.2f},{max_ddist:.2f}), "
         f"elapsed={t_elapsed:.2f}s"
