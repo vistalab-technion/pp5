@@ -33,7 +33,6 @@ from pp5.plot import PP5_MPL_STYLE
 from pp5.stats import mht_bh, tw_test, mmd_test, kde2d_test
 from pp5.utils import sort_dict
 from pp5.codons import (
-    ACIDS,
     AAC_SEP,
     AA_CODONS,
     UNKNOWN_AA,
@@ -49,15 +48,14 @@ from pp5.codons import (
     aac_tuples,
     aact_str2tuple,
     aact_tuple2str,
-    aac_index_pairs,
     is_synonymous_tuple,
 )
 from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral, flat_torus_distance
 from pp5.parallel import yield_async_results
-from pp5.vonmises import BvMKernelDensityEstimator, bvm_kernel
 from pp5.analysis.base import ParallelAnalyzer
-from pp5.stats.two_sample import gaussian_kernel
+from pp5.distributions.kde import gaussian_kernel
+from pp5.distributions.vonmises import BvMKernelDensityEstimator, bvm_kernel
 
 LOGGER = logging.getLogger(__name__)
 

@@ -1,10 +1,11 @@
-from contextlib import contextmanager
-
 import numpy as np
 import pytest
 from pytest import approx, raises
 
-from pp5.vonmises import BvMKernelDensityEstimator, BvMMixtureDiscreteDistribution
+from pp5.distributions.vonmises import (
+    BvMKernelDensityEstimator,
+    BvMMixtureDiscreteDistribution,
+)
 
 
 class TestBvMMixtureDiscreteDistribution:

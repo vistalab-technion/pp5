@@ -1,11 +1,11 @@
-from typing import Any, Tuple, Callable, Optional
+from typing import Tuple, Callable, Optional
 
 import numba
 import numpy as np
 from numpy import ndarray
 from scipy.spatial.distance import pdist, squareform, sqeuclidean
 
-from pp5.vonmises import kde_2d
+from pp5.distributions.kde import kde_2d, gaussian_kernel
 
 _NUMBA_PARALLEL = False
 
@@ -71,27 +71,12 @@ def _kde_statistic(K: np.ndarray, nx: int, ny: int) -> float:
     return l1_dist
 
 
-def identity_kernel(x: ndarray, **kw):
-    """
-    Identity function, to use as a kernel.
-    """
-    return x
-
-
-@numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def gaussian_kernel(x: ndarray, sigma: float = 1):
-    """
-    Gaussian kernel function.
-    """
-    return np.exp(-0.5 * (x ** 2) / sigma ** 2)
-
-
 def tw_test(
     X: ndarray,
     Y: ndarray,
     k: int,
     similarity_fn: Callable[[ndarray, ndarray], float] = sqeuclidean,
-    kernel_fn: Callable[[ndarray], ndarray] = identity_kernel,
+    kernel_fn: Callable[[ndarray], ndarray] = lambda x: x,
 ) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
