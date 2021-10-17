@@ -1,9 +1,9 @@
 from typing import Any, Tuple, Callable, Optional
+from functools import partial
 
 import numba
 import numpy as np
 from numpy import ndarray
-from numpy.random import permutation
 from scipy.spatial.distance import pdist, squareform, sqeuclidean
 
 _NUMBA_PARALLEL = False
@@ -68,7 +68,6 @@ def tw_test(
     k: int = 1000,
     similarity_fn: Callable[[ndarray, ndarray], float] = sqeuclidean,
     kernel_fn: Callable[[ndarray], ndarray] = _identity_kernel,
-    kernel_kwargs: Optional[dict] = None,
 ) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
@@ -86,7 +85,6 @@ def tw_test(
         similarity_fn=similarity_fn,
         kernel_fn=kernel_fn,
         statistic_fn=_tw2_statistic,
-        kernel_kwargs=kernel_kwargs,
     )
 
 
@@ -96,7 +94,6 @@ def mmd_test(
     k: int = 1000,
     similarity_fn: Callable[[ndarray, ndarray], float] = sqeuclidean,
     kernel_fn: Callable[[ndarray], ndarray] = _gaussian_kernel,
-    kernel_kwargs: Optional[dict] = None,
 ) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
@@ -113,7 +110,6 @@ def mmd_test(
         similarity_fn=similarity_fn,
         kernel_fn=kernel_fn,
         statistic_fn=_mmd_statistic,
-        kernel_kwargs=kernel_kwargs,
     )
 
 
@@ -121,25 +117,30 @@ def two_sample_kernel_permutation_test(
     X: ndarray,
     Y: ndarray,
     k: int,
-    similarity_fn: Callable[[ndarray, ndarray], float],
-    kernel_fn: Callable[[ndarray, Optional[Any]], ndarray],
+    similarity_fn: Optional[Callable[[ndarray, ndarray], float]],
+    kernel_fn: Callable[[ndarray], ndarray],
     statistic_fn: Callable[[ndarray, int, int], float],
-    kernel_kwargs: Optional[dict] = None,
 ) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
     that two distributions are identical can be rejected.
 
-    The observations will be transformed using a Kernel function of the form
-    K(X, Y) = k(h(x,y)), where h(x, y) is a scalar similarity function, and k(z) is a
-    scalar univariate kernel to be applied on the similarity metric.
+    If a similarity_fn is provided, the observations will be transformed using a Kernel
+    function of the form K(X, Y) = k(h(x,y)), where h(x, y) is a scalar similarity
+    function, and k(z) is a scalar univariate kernel to be applied on the similarity
+    metric.
     For example,
         - RBF kernel K(x, y): Set h(x, y) = ||x-y||^2 and k(z) = exp(Ɣ z^2/σ^2).
         - Polynomial kernel K(x, y): Set h(x, y) = x^T y and k(z) = (Ɣ z + r)^d.
         - Linear kernel K(x, y): Set h(x, y) = x^T y and k(z) = z.
-
     The observation from X, Y will be pooled into Z = [X; Y], and a Gram matrix K
-    will be computed, such that K[i,j] = K(z_i, z_j).
+    will be computed, such that K[i,j] = k(h(z_i, z_j)).
+
+    If similarity_fn is not provided, the the kernel function k(z) will be applied to
+    all samples (from X and Y). The kernel doesn't have to be a scalar function in
+    this case. The resulting matrix K will be of shape (nx+ny, M) where M is the output
+    dimension of the kernel.
+
     A test-statistic s(Z; n_x, n_y) will be applied to K and to permutations of K which
     mix between the groups X and Y, where n_x and n_y are the number of observations
     in X and Y respectively.
@@ -152,48 +153,76 @@ def two_sample_kernel_permutation_test(
     :param kernel_fn: k(z), a scalar univariate kernel function.
         The full bivariate kernel will be K(x,y)=k(h(x,y)).
     :param statistic_fn: A callable describing the statistic.
-    :param kernel_kwargs: Optional kwargs to pass to the kernel function.
     :return: Tuple containing the statistic value for (X, Y) and the p-value (
         significance) for the null-hypothesis that P_X = P_Y.
     """
     # sample sizes
     nx = X.shape[0]
     ny = Y.shape[0]
+    if nx < 2 or ny < 2:
+        raise ValueError(
+            "Permutation test requires at least two observations in each sample"
+        )
 
     # pooled vectors
     Z = np.vstack((X, Y))  # (nx+ny, m)
 
     # pairwise distances
-    D = squareform(pdist(Z, metric=similarity_fn))  # (nx+ny, nx+ny)
+    if similarity_fn is not None:
+        # D is (nx+ny, nx+ny)
+        D = squareform(pdist(Z, metric=similarity_fn))  # type:ignore
+        permute_pairs = True
+    else:
+        # D is (nx+ny, m)
+        D = Z
+        permute_pairs = False
 
     # inner products
-    kernel_kwargs = kernel_kwargs or {}
-    K = kernel_fn(D, **kernel_kwargs)
+    K = kernel_fn(D)  # in general can be (nx+ny, m')
 
-    return _two_sample_kernel_permutation_test_inner(K, nx, ny, k, statistic_fn)
+    return _two_sample_kernel_permutation_test_inner(
+        K, nx, ny, k, statistic_fn, permute_pairs
+    )
 
 
 @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
 def _two_sample_kernel_permutation_test_inner(
-    K: ndarray, nx: int, ny: int, k: int, statistic_fn: Callable
+    K: ndarray,
+    nx: int,
+    ny: int,
+    k: int,
+    statistic_fn: Callable[[ndarray, int, int], float],
+    permute_pairs: bool,
 ) -> Tuple[float, float]:
     """
     Calculates p-value for an H0 of P_X=P_Y, based on permutation testing.
 
-    :param K: Gram matrix of of two pooled samples (X and Y) of shape (nx+ny, nx+ny).
+    :param K: Observations matrix of of two pooled samples (X and Y) of shape
+        (N, M, *) where '*' means any number of additional dims, and N=nx+ny the
+        total number of observations in the sample X and sample Y combined.
     :param nx: Number of observations from X.
     :param ny: Number of observations from Y.
     :param k: Number of permutations for significance evaluation.
+    :param statistic_fn: Test statistic function.
+        A callable taking an observations array K, nx, and ny, and returning a measure of
+        similarity between the sample X and the sample Y.
+    :param permute_pairs: If False, K will be permuted on first axes only,
+        i.e. K[p, ...]. If True, then K will be treated as a Gram matrix of pairwise
+        distances and permuted as K[p,:][:,p], where p are permuted indices.
     :return: Statistic value of un-permuted distances, and p-value for an H0 of P_X=P_Y.
     """
-    if nx < 2 or ny < 2:
-        raise ValueError("Tw2 test requires at least two observations in each sample")
 
     stat_val = statistic_fn(K, nx, ny)
     ss = np.zeros(k)
     for i in range(k):
-        idx = permutation(nx + ny)
-        stat_val_perm = statistic_fn(K[idx, :][:, idx], nx, ny)
+        idx = np.random.permutation(nx + ny)
+
+        if permute_pairs:
+            K_perm = K[idx, :][:, idx]
+        else:
+            K_perm = K[idx]
+
+        stat_val_perm = statistic_fn(K_perm, nx, ny)
         if stat_val <= stat_val_perm:
             ss[i] = 1
 
