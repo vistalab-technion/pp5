@@ -101,7 +101,6 @@ class TestBvMKernelDensityEstimator(object):
             (100, None, 2, 3, 16),
             (100, 1, None, 3, 16),
             (100, 1, 2, None, 16),
-            (100, 1, 2, 3, 0),
         ],
     )
     def test_init_fail(self, n_bins, k1, k2, k3, batchsize):
