@@ -212,11 +212,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             self.ddist_statistic_fn = partial(
                 kde2d_test,
                 n_bins=kde_nbins,
+                grid_low=-np.pi,
+                grid_high=np.pi,
                 kernel_fn=partial(
                     bvm_kernel,
                     k1=self.ddist_kernel_size,
                     k2=self.ddist_kernel_size,
-                    k3=0,
+                    k3=0.0,
                 ),
             )
         elif ddist_statistic == "mmd":

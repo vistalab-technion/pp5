@@ -138,7 +138,13 @@ def mmd_test(
 
 
 def kde2d_test(
-    X: ndarray, Y: ndarray, k: int, n_bins: int, kernel_fn: Callable
+    X: ndarray,
+    Y: ndarray,
+    k: int,
+    n_bins: int,
+    grid_low: float,
+    grid_high: float,
+    kernel_fn: Callable,
 ) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
@@ -147,6 +153,8 @@ def kde2d_test(
     For parameters, see documentation of :obj:`two_sample_kernel_permutation_test`.
 
     :param n_bins: Number of bins for KDE estimation.
+    :param grid_low: Smallest value on the evaluation grid, inclusive.
+    :param grid_high: Largest value on the evaluation grid, exclusive.
     :param kernel_fn: Kernel for the 2D KDE (not for the permutation test itself).
     :return: KDE statistic value, p-value (significance).
     """
@@ -158,8 +166,12 @@ def kde2d_test(
             x2=Z[:, 1],
             kernel_fn=kernel_fn,
             n_bins=n_bins,
-            reduce=False,
+            grid_low=grid_low,
+            grid_high=grid_high,
             dtype=np.float64,
+            # Disabling reduction is necessary to avoid re-calculating the entire KDE
+            # on each permutation.
+            reduce=False,
         )
         # Transpose from (M, M, N) to (N, M, M) where N=nx+ny, so that we can permute
         # over the first dimension.
