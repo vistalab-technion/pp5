@@ -79,7 +79,12 @@ TEST_STATISTICS = {"mmd": mmd_test, "tw": tw_test, "kde": kde2d_test}
 
 CODON_TUPLE_GROUP_ANY = "any"
 CODON_TUPLE_GROUP_LAST_NUCL = "last_nucleotide"
-CODON_TUPLE_GROUPINGS = {None, CODON_TUPLE_GROUP_ANY, CODON_TUPLE_GROUP_LAST_NUCL}
+CODON_TUPLE_GROUPINGS = {
+    None,
+    "",
+    CODON_TUPLE_GROUP_ANY,
+    CODON_TUPLE_GROUP_LAST_NUCL,
+}
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
