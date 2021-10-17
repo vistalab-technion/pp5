@@ -226,5 +226,9 @@ def _two_sample_kernel_permutation_test_inner(
         if stat_val <= stat_val_perm:
             ss[i] = 1
 
-    p_val = float(np.mean(ss))
+    # Calculate pval, and make sure it's not zero (it's possible that no iteration
+    # produced stat_val <= stat_val_perm, but that doesn't mean the true pval is zero).
+    # The smallest pval we can detect is 1/(k+1).
+    p_val = np.mean(ss).item()
+    p_val = max(p_val, 1 / (k + 1))
     return stat_val, p_val
