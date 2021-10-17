@@ -138,7 +138,7 @@ def mmd_test(
 
 
 def kde2d_test(
-    X: ndarray, Y: ndarray, k: int, kernel_fn: Callable
+    X: ndarray, Y: ndarray, k: int, n_bins: int, kernel_fn: Callable
 ) -> Tuple[float, float]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
@@ -146,6 +146,7 @@ def kde2d_test(
 
     For parameters, see documentation of :obj:`two_sample_kernel_permutation_test`.
 
+    :param n_bins: Number of bins for KDE estimation.
     :param kernel_fn: Kernel for the 2D KDE (not for the permutation test itself).
     :return: KDE statistic value, p-value (significance).
     """
@@ -156,7 +157,7 @@ def kde2d_test(
             x1=Z[:, 0],
             x2=Z[:, 1],
             kernel_fn=kernel_fn,
-            n_bins=128,
+            n_bins=n_bins,
             reduce=False,
             dtype=np.float64,
         )
