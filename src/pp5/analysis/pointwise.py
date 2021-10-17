@@ -125,10 +125,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             (of two consecutive residues, after consolidation).
         :param tuple_len: Number of consecutive residues to analyze as a tuple.
             Set 1 for single, 2 for pairs. Higher values are not recommended.
-
-        :param codon_grouping_type:
-        :param codon_grouping_position:
-
+        :param codon_grouping_type: When analyzing tuples with length > 1,
+            allows grouping certain codon together at a position in the tuple.
+            Can be either None (default), 'last_nucleotide' or 'any'.
+            Cannot be used with tuple_len==1.
+        :param codon_grouping_position: The (zero-indexed) position in the tuple in
+            which to group. Default is zero, which means first tuple element.
+            No effect if codon_grouping_type==None.
         :param min_group_size: Minimal number of angle-pairs from different
             structures belonging to the same Uniprot ID, location and codon in order to
             consider the group of angles for analysis.
@@ -169,6 +172,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             raise ValueError(
                 f"invalid {codon_grouping_type=}, must be in {CODON_TUPLE_GROUPINGS}"
             )
+
+        if codon_grouping_type and tuple_len == 1:
+            raise ValueError(f"codon_grouping_type, can't be used with {tuple_len=}")
 
         if codon_grouping_position >= tuple_len:
             raise ValueError(
@@ -1268,7 +1274,7 @@ def _subgroup_permutation_test(
         f"group={group_idx}, "
         f"sub1={subgroup1_idx} (n={n1}), "
         f"sub2={subgroup2_idx} (n={n2}), "
-        f"using {bs_iter=}, k={ddist_permutations}: "
+        f"{bs_iter=}, k={ddist_permutations}: "
         f"(med_p, max_p)=({med_p:.3f},{max_p:.3f}),"
         f"(med_ddist, max_ddist)=({med_ddist:.2f},{max_ddist:.2f}), "
         f"elapsed={t_elapsed:.2f}s"
