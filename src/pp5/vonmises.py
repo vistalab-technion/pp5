@@ -263,6 +263,8 @@ class BvMKernelDensityEstimator(object):
             x2=psi,
             kernel_fn=partial(bvm_kernel, k1=self.k1, k2=self.k2, k3=self.k3),
             n_bins=self.n_bins,
+            grid_low=-np.pi,
+            grid_high=np.pi,
             batch_size=self.batchsize,
             dtype=self.dtype,
             reduce=True,
@@ -275,7 +277,9 @@ def kde_2d(
     x1: np.ndarray,
     x2: np.ndarray,
     kernel_fn: Callable[[np.ndarray, np.ndarray], np.ndarray],
-    n_bins: int = 128,
+    n_bins: int,
+    grid_low: float,
+    grid_high: float,
     batch_size: Optional[int] = None,
     reduce: bool = True,
     dtype: np.dtype = np.float64,
@@ -286,6 +290,8 @@ def kde_2d(
     :param x2: Second data variable, of shape (N,).
     :param kernel_fn: 2D kernel K(x1, x2) to apply to the samples.
     :param n_bins: Number M of discrete bins in each axis of the 2d grid.
+    :param grid_low: Smallest value on the evaluation grid, inclusive.
+    :param grid_high: Largest value on the evaluation grid, exclusive.
     :param batch_size: Maximal number of data points to process in a
         single batch. Increasing this will cause hgh memory usage.
         None or zero means no batching.
@@ -305,7 +311,8 @@ def kde_2d(
         raise ValueError(f"Can't provide batch_size if reduce==False")
 
     # Create evaluation grid
-    grid = np.linspace(-np.pi, np.pi - (2 * np.pi / n_bins), n_bins)
+    grid_width = grid_high - grid_low
+    grid = np.linspace(grid_low, grid_high - (grid_width / n_bins), n_bins)
     grid = grid.reshape((-1, 1)).astype(dtype)  # (M, 1)
 
     # Reshape data and grid so they can be broadcast together
