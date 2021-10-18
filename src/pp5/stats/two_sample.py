@@ -67,7 +67,7 @@ def _kde_statistic(K: np.ndarray, nx: int, ny: int) -> float:
     kde_Y = np.sum(K[nx:, ...], axis=0)  # (ny, M, M) -> (M, M)
     kde_Y /= np.sum(kde_Y)
 
-    l1_dist = np.mean(np.abs(kde_X - kde_Y)).item()
+    l1_dist = np.sum(np.abs(kde_X - kde_Y)).item()
     return l1_dist
 
 
@@ -282,6 +282,7 @@ def _two_sample_kernel_permutation_test_inner(
             K_perm = K[idx]
 
         stat_val_perm = statistic_fn(K_perm, nx, ny)
+
         if stat_val <= stat_val_perm:
             ss[i] = 1
 
