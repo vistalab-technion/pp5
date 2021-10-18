@@ -214,9 +214,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if ddist_statistic == "kde":
             self.ddist_statistic_fn = partial(
                 kde2d_test,
-                n_bins=kde_nbins,
+                n_bins=self.kde_args["n_bins"],
                 grid_low=-np.pi,
                 grid_high=np.pi,
+                dtype=self.kde_args["dtype"],
                 kernel_fn=partial(
                     bvm_kernel,
                     k1=self.ddist_kernel_size,
