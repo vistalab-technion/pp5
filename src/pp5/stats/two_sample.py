@@ -1,4 +1,4 @@
-from typing import Tuple, Callable, Optional
+from typing import Tuple, Union, Callable, Optional
 
 import numba
 import numpy as np
@@ -49,7 +49,13 @@ def _mmd_statistic(K: np.ndarray, nx: int, ny: int) -> float:
 
 
 @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def _kde_statistic(K: np.ndarray, nx: int, ny: int) -> float:
+def _kde_statistic(
+    K: np.ndarray,
+    nx: int,
+    ny: int,
+    nx_idx: Optional[np.ndarray] = None,
+    ny_idx: Optional[np.ndarray] = None,
+) -> float:
     """
     Calculates KDE-based statistic of a kernel matrix
 
@@ -62,9 +68,17 @@ def _kde_statistic(K: np.ndarray, nx: int, ny: int) -> float:
 
     # Apply a reduction to compute X and Y's KDEs from the contribution of each
     # of their observations
-    kde_X = np.sum(K[:nx, ...], axis=0)  # (nx, M, M) -> (M, M)
+    if nx_idx is not None and ny_idx is not None:
+        kde_X = K[nx_idx]
+        kde_Y = K[ny_idx]
+    else:
+        kde_X = K[:nx]
+        kde_Y = K[nx:]
+
+    kde_X = np.sum(kde_X, axis=0)  # (nx, M, M) -> (M, M)
     kde_X /= np.sum(kde_X)
-    kde_Y = np.sum(K[nx:, ...], axis=0)  # (ny, M, M) -> (M, M)
+
+    kde_Y = np.sum(kde_Y, axis=0)  # (ny, M, M) -> (M, M)
     kde_Y /= np.sum(kde_Y)
 
     l1_dist = np.sum(np.abs(kde_X - kde_Y)).item()
@@ -129,6 +143,7 @@ def kde2d_test(
     n_bins: int,
     grid_low: float,
     grid_high: float,
+    dtype: np.dtype,
     kernel_fn: Callable,
 ) -> Tuple[float, float]:
     """
@@ -153,7 +168,7 @@ def kde2d_test(
             n_bins=n_bins,
             grid_low=grid_low,
             grid_high=grid_high,
-            dtype=np.float64,
+            dtype=dtype,
             # Disabling reduction is necessary to avoid re-calculating the entire KDE
             # on each permutation.
             reduce=False,
@@ -278,10 +293,12 @@ def _two_sample_kernel_permutation_test_inner(
 
         if permute_pairs:
             K_perm = K[idx, :][:, idx]
-        else:
-            K_perm = K[idx]
+            stat_val_perm = statistic_fn(K_perm, nx, ny)
 
-        stat_val_perm = statistic_fn(K_perm, nx, ny)
+        else:
+            nx_idx = idx[:nx]
+            ny_idx = idx[nx:]
+            stat_val_perm = statistic_fn(K, nx, ny, nx_idx, ny_idx)
 
         if stat_val <= stat_val_perm:
             ss[i] = 1
