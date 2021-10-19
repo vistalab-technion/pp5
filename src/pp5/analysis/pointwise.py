@@ -215,9 +215,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         )
 
         self.bs_randstate = bs_randstate
-        self.ddist_n_max = ddist_n_max
+        self.ddist_n_max = int(ddist_n_max) if ddist_n_max else 0
         self.ddist_k = ddist_k
-        self.ddist_k_min = ddist_k_min
+        self.ddist_k_min = int(ddist_k_min) if ddist_k_min else 0
         self.ddist_k_th = ddist_k_th
         self.ddist_kernel_size = ddist_kernel_size
         self.fdr = fdr
