@@ -104,8 +104,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         kde_width: float = 30.0,
         bs_randstate: Optional[int] = None,
         ddist_statistic: Union[Literal["mmd"], Literal["tw"], Literal["kde"]] = "mmd",
-        ddist_n_max: Optional[int] = 1000,
-        ddist_permutations: int = 1000,
+        ddist_n_max: Optional[int] = None,
+        ddist_k: int = 1000,
+        ddist_k_min: Optional[int] = None,
+        ddist_k_th: float = 50.0,
         ddist_kernel_size: float = 10.0,
         fdr: float = 0.1,
         out_tag: str = None,
@@ -150,8 +152,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             p-value of distances with a statistical test. If there are larger samples,
             bootstrap sampling with the given maximal sample size will be performed.
             If None or zero, sample size wont be limited.
-        :param ddist_permutations: Number of permutations to use when calculating
+        :param ddist_k: Number of permutations to use when calculating
             p-value of distances with a statistical test.
+        :param ddist_k_min: Minimal number of permutations to run. Setting this to a
+            truthy value enables early termination: when the number of permutations k
+            exceeds this number and pvalue >= ddist_k_th * 1/(k+1), no more
+            permutations will be performed.
+        :param ddist_k_th: Early termination threshold for permutation test. Can be
+            thought of as a factor of the smallest pvalue 1/(k+1). I.e. if k_th=50,
+            then if after k_min permutations the pvalue is 50 times larger than it's
+            smallest possible value - terminate.
         :param ddist_kernel_size: Size of kernel used in MMD-based permutation test (
             ignored if the test statistic is not MMD).
         :param fdr: False discovery rate for multiple hypothesis testing using
@@ -206,7 +216,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         self.bs_randstate = bs_randstate
         self.ddist_n_max = ddist_n_max
-        self.ddist_permutations = ddist_permutations
+        self.ddist_k = ddist_k
+        self.ddist_k_min = ddist_k_min
+        self.ddist_k_th = ddist_k_th
         self.ddist_kernel_size = ddist_kernel_size
         self.fdr = fdr
 
@@ -788,7 +800,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                             ddist_statistic_fn=self.ddist_statistic_fn,
                             ddist_statistic_fn_name=self.ddist_statistic_fn_name,
                             ddist_n_max=self.ddist_n_max,
-                            ddist_permutations=self.ddist_permutations,
+                            ddist_k=self.ddist_k,
+                            ddist_k_min=self.ddist_k_min,
+                            ddist_k_th=self.ddist_k_th,
                         ),
                     )
                     async_results[(group, sub1, sub2)] = res
@@ -1209,7 +1223,9 @@ def _subgroup_permutation_test(
     ddist_statistic_fn: Callable,
     ddist_statistic_fn_name: str,
     ddist_n_max: Optional[int],
-    ddist_permutations: int,
+    ddist_k: int,
+    ddist_k_min: int,
+    ddist_k_th: float,
 ) -> Tuple[float, float]:
     """
     Calculates Tw^2 statistic and p-value to determine whether the dihedral angles of a
@@ -1223,7 +1239,7 @@ def _subgroup_permutation_test(
         Should be a (N, M) array where N is the number of M-dimensional observations.
     :param randstate: Random state for bootstrapping.
     :param ddist_n_max: Max sample size. If None or zero then no limit.
-    :param ddist_permutations: Number of permutations for computing significance.
+    :param ddist_k: Number of permutations for computing significance.
     :param ddist_statistic_fn: Permutation test function to use for comparing the
         samples.
     :return: A Tuple (ddist, pval) containing the value of the ddist statistic and the p-value.
@@ -1252,27 +1268,25 @@ def _subgroup_permutation_test(
         return angles[sample_idxs]
 
     # Run bootstrapped tests
-    ddists, pvals = (
+    ddists, pvals, ks = (
         np.empty(bs_iter, dtype=np.float32),
         np.empty(bs_iter, dtype=np.float32),
+        np.empty(bs_iter, dtype=np.int),
     )
     for i in range(bs_iter):
-        ddists[i], pvals[i] = ddist_statistic_fn(
+        ddists[i], pvals[i], ks[i] = ddist_statistic_fn(
             X=_bootstrap_sample(subgroup1_data),
             Y=_bootstrap_sample(subgroup2_data),
-            k=ddist_permutations,
+            k=ddist_k,
+            k_min=ddist_k_min,
+            k_th=ddist_k_th,
         )
 
-    # Calculate the ddist corresponding to the maximal (worst) p-value,
-    # and that p-value.
-    argmax_p = np.argmax(pvals)
-    max_ddist, max_p = ddists[argmax_p], pvals[argmax_p]
-
-    # Calculate the ddist corresponding to the median p-value.
-    sort_idx = np.argsort(pvals)
-    median_idx = sort_idx[floor(bs_iter / 2)]  # note: floor is correct since indices
-    # are zero based
-    med_ddist, med_p = ddists[median_idx], pvals[median_idx]
+    # Weighted average of pvals is equivalent to the pval we'd get if we'd run all
+    # the sample together in the same test.
+    counts = pvals * (ks + 1) - 1
+    pval = (np.sum(counts) + 1) / (np.sum(ks) + 1)
+    ddist = np.mean(ddists)
 
     t_elapsed = time.time() - t_start
     LOGGER.info(
@@ -1280,12 +1294,12 @@ def _subgroup_permutation_test(
         f"group={group_idx}, "
         f"sub1={subgroup1_idx} (n={n1}), "
         f"sub2={subgroup2_idx} (n={n2}), "
-        f"{bs_iter=}, k={ddist_permutations}: "
-        f"(med_p, max_p)=({med_p:.3f},{max_p:.3f}),"
-        f"(med_ddist, max_ddist)=({med_ddist:.2f},{max_ddist:.2f}), "
+        f"{bs_iter=}, "
+        f"k={ks[0] if bs_iter == 1 else (np.min(ks), np.max(ks))}/{ddist_k}: "
+        f"(pval, ddist)=({pval:.3f},{ddist:.3f}),"
         f"elapsed={t_elapsed:.2f}s"
     )
-    return med_ddist, med_p
+    return ddist, pval
 
 
 def _dihedral_kde_single_group(
