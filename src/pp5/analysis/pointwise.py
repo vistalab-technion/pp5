@@ -54,7 +54,7 @@ from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral, flat_torus_distance
 from pp5.parallel import yield_async_results
 from pp5.analysis.base import ParallelAnalyzer
-from pp5.distributions.kde import bvm_kernel, gaussian_kernel
+from pp5.distributions.kde import bvm_kernel, gaussian_kernel, torus_gaussian_kernel_2d
 from pp5.distributions.vonmises import BvMKernelDensityEstimator
 
 LOGGER = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ GROUP_SIZE_COL = "group_size"
 PVAL_COL = "pval"
 DDIST_COL = "ddist"
 SIGNIFICANT_COL = "significant"
-TEST_STATISTICS = {"mmd": mmd_test, "tw": tw_test, "kde": kde2d_test}
+TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g"}
 
 CODON_TUPLE_GROUP_ANY = "any"
 CODON_TUPLE_GROUP_LAST_NUCL = "last_nucleotide"
@@ -237,6 +237,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     k3=0.0,
                 ),
             )
+        elif ddist_statistic == "kde_g":
+            self.ddist_statistic_fn = partial(
+                kde2d_test,
+                n_bins=self.kde_args["n_bins"],
+                grid_low=-np.pi,
+                grid_high=np.pi,
+                dtype=self.kde_args["dtype"],
+                kernel_fn=partial(
+                    torus_gaussian_kernel_2d, sigma=self.ddist_kernel_size,
+                ),
+            )
+
         elif ddist_statistic == "mmd":
             self.ddist_statistic_fn = partial(
                 mmd_test,
