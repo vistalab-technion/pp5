@@ -10,8 +10,8 @@ from pp5.distributions.kde import kde_2d, gaussian_kernel
 _NUMBA_PARALLEL = False
 
 
-@numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def _tw2_statistic(D: ndarray, nx: int, ny: int) -> float:
+# @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
+def _tw2_statistic(D: ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None) -> float:
     """
     Calculates T statistic of a distance matrix
     :param D: Matrix of squared distances of two pooled samples (X and Y) of
@@ -31,8 +31,8 @@ def _tw2_statistic(D: ndarray, nx: int, ny: int) -> float:
     return float(factor * enumerator / denumerator)
 
 
-@numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def _mmd_statistic(K: np.ndarray, nx: int, ny: int) -> float:
+# @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
+def _mmd_statistic(K: np.ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None) -> float:
     """
     Calculates MMD statistic of a kernel matrix
 
@@ -48,7 +48,7 @@ def _mmd_statistic(K: np.ndarray, nx: int, ny: int) -> float:
     return float(sum_X + sum_Y - 2.0 * sum_XY)
 
 
-@numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
+# @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
 def _kde_statistic(
     K: np.ndarray,
     nx: int,
@@ -91,7 +91,9 @@ def tw_test(
     k: int,
     similarity_fn: Callable[[ndarray, ndarray], float] = sqeuclidean,
     kernel_fn: Callable[[ndarray], ndarray] = lambda x: x,
-) -> Tuple[float, float]:
+    k_min: Optional[int] = None,
+    k_th: Optional[float] = float("inf"),
+) -> Tuple[float, float, int]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
     that two distributions are identical can be rejected, using the Tw^2 Welch
@@ -108,6 +110,8 @@ def tw_test(
         similarity_fn=similarity_fn,
         kernel_fn=kernel_fn,
         statistic_fn=_tw2_statistic,
+        k_min=k_min,
+        k_th=k_th,
     )
 
 
@@ -117,7 +121,9 @@ def mmd_test(
     k: int,
     similarity_fn: Callable[[ndarray, ndarray], float] = sqeuclidean,
     kernel_fn: Callable[[ndarray], ndarray] = gaussian_kernel,
-) -> Tuple[float, float]:
+    k_min: Optional[int] = None,
+    k_th: Optional[float] = float("inf"),
+) -> Tuple[float, float, int]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
     that two distributions are identical can be rejected, using the MMD approach.
@@ -133,6 +139,8 @@ def mmd_test(
         similarity_fn=similarity_fn,
         kernel_fn=kernel_fn,
         statistic_fn=_mmd_statistic,
+        k_min=k_min,
+        k_th=k_th,
     )
 
 
@@ -145,7 +153,9 @@ def kde2d_test(
     grid_high: float,
     dtype: np.dtype,
     kernel_fn: Callable,
-) -> Tuple[float, float]:
+    k_min: Optional[int] = None,
+    k_th: Optional[float] = float("inf"),
+) -> Tuple[float, float, int]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
     that two distributions are identical can be rejected, using the KDE approach.
@@ -161,6 +171,9 @@ def kde2d_test(
 
     def _kde_2d_kernel_fn(Z: np.ndarray):
         # Z has shape (N, 2)
+
+        old_np_err_settings = np.seterr(over="ignore")
+
         K = kde_2d(
             x1=Z[:, 0],
             x2=Z[:, 1],
@@ -173,6 +186,9 @@ def kde2d_test(
             # on each permutation.
             reduce=False,
         )
+
+        np.seterr(**old_np_err_settings)
+
         # Transpose from (M, M, N) to (N, M, M) where N=nx+ny, so that we can permute
         # over the first dimension.
         return K.transpose(2, 0, 1)
@@ -184,6 +200,8 @@ def kde2d_test(
         similarity_fn=None,
         kernel_fn=_kde_2d_kernel_fn,
         statistic_fn=_kde_statistic,
+        k_min=k_min,
+        k_th=k_th,
     )
 
 
@@ -194,7 +212,9 @@ def two_sample_kernel_permutation_test(
     similarity_fn: Optional[Callable[[ndarray, ndarray], float]],
     kernel_fn: Callable[[ndarray], ndarray],
     statistic_fn: Callable[[ndarray, int, int], float],
-) -> Tuple[float, float]:
+    k_min: Optional[int] = None,
+    k_th: Optional[float] = float("inf"),
+) -> Tuple[float, float, int]:
     """
     Applies a two-sample permutation test to determine whether the null hypothesis
     that two distributions are identical can be rejected.
@@ -227,8 +247,19 @@ def two_sample_kernel_permutation_test(
     :param kernel_fn: k(z), a scalar univariate kernel function.
         The full bivariate kernel will be K(x,y)=k(h(x,y)).
     :param statistic_fn: A callable describing the statistic.
-    :return: Tuple containing the statistic value for (X, Y) and the p-value (
-        significance) for the null-hypothesis that P_X = P_Y.
+    :param k_min: Minimal number of permutations to run. Setting this to a
+        truthy value enables early termination: when the number of permutations k
+        exceeds this number and pvalue >= ddist_k_th * 1/(k+1), no more
+        permutations will be performed.
+    :param k_th: Early termination threshold for permutation test. Can be
+        thought of as a factor of the smallest pvalue 1/(k+1). I.e. if k_th=50,
+        then if after k_min permutations the pvalue is 50 times larger than it's
+        smallest possible value - terminate.
+    :return: Tuple containing:
+        - statistic value for (X, Y)
+        - p-value (significance) for the null-hypothesis that P_X = P_Y
+        - number of permutations that were performed (could be less than k if early
+          termination was used).
     """
     # sample sizes
     nx = X.shape[0]
@@ -237,6 +268,10 @@ def two_sample_kernel_permutation_test(
         raise ValueError(
             "Permutation test requires at least two observations in each sample"
         )
+
+    assert k > 0
+    assert k_th > 0
+    k_min = k_min or k
 
     # pooled vectors
     Z = np.vstack((X, Y))  # (nx+ny, m)
@@ -255,11 +290,11 @@ def two_sample_kernel_permutation_test(
     K = kernel_fn(D)  # in general can be (nx+ny, m')
 
     return _two_sample_kernel_permutation_test_inner(
-        K, nx, ny, k, statistic_fn, permute_pairs
+        K, nx, ny, k, statistic_fn, permute_pairs, k_min, k_th
     )
 
 
-@numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
+# @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
 def _two_sample_kernel_permutation_test_inner(
     K: ndarray,
     nx: int,
@@ -267,7 +302,9 @@ def _two_sample_kernel_permutation_test_inner(
     k: int,
     statistic_fn: Callable[[ndarray, int, int], float],
     permute_pairs: bool,
-) -> Tuple[float, float]:
+    k_min: int,
+    k_th: float,
+) -> Tuple[float, float, int]:
     """
     Calculates p-value for an H0 of P_X=P_Y, based on permutation testing.
 
@@ -280,32 +317,42 @@ def _two_sample_kernel_permutation_test_inner(
     :param statistic_fn: Test statistic function.
         A callable taking an observations array K, nx, and ny, and returning a measure of
         similarity between the sample X and the sample Y.
+    :param k_min: Early termination min permutations.
+    :param k_th: Early termination threshold.
     :param permute_pairs: If False, K will be permuted on first axes only,
         i.e. K[p, ...]. If True, then K will be treated as a Gram matrix of pairwise
         distances and permuted as K[p,:][:,p], where p are permuted indices.
-    :return: Statistic value of un-permuted distances, and p-value for an H0 of P_X=P_Y.
+    :return: Statistic value of un-permuted distances, p-value for an H0 of P_X=P_Y,
+        and the number of permutations that were evaluated.
     """
 
+    # Value of statistic on the un-permuted data
     stat_val = statistic_fn(K, nx, ny)
-    ss = np.zeros(k)
-    for i in range(k):
+
+    pval, count, curr_permutation = 0, 0, 0
+    for curr_permutation in range(1, k + 1):
         idx = np.random.permutation(nx + ny)
 
         if permute_pairs:
             K_perm = K[idx, :][:, idx]
             stat_val_perm = statistic_fn(K_perm, nx, ny)
-
         else:
             nx_idx = idx[:nx]
             ny_idx = idx[nx:]
             stat_val_perm = statistic_fn(K, nx, ny, nx_idx, ny_idx)
 
         if stat_val <= stat_val_perm:
-            ss[i] = 1
+            count += 1
+
+        # The smallest pval this test can detect is 1/(k+1).
+        # When count is zero, pval should be 1/(i+1).
+        pval = (count + 1) / (curr_permutation + 1)
+
+        # Early termination criterion: minimal number of permutations reached,
+        # and pval is larger than some factor (k_th) times the smallest possible pvalue.
+        if (curr_permutation >= k_min) and (pval >= k_th * 1 / (curr_permutation + 1)):
+            break
 
     # Calculate pval, and make sure it's not zero (it's possible that no iteration
     # produced stat_val <= stat_val_perm, but that doesn't mean the true pval is zero).
-    # The smallest pval we can detect is 1/(k+1).
-    p_val = np.mean(ss).item()
-    p_val = max(p_val, 1 / (k + 1))
-    return stat_val, p_val
+    return stat_val, pval, curr_permutation
