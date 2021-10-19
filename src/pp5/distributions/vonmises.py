@@ -274,7 +274,7 @@ class BvMKernelDensityEstimator(object):
     __call__ = estimate
 
 
-@numba.jit(nopython=True)
+# @numba.jit(nopython=True)
 def bvm_kernel(phi: np.ndarray, psi: np.ndarray, k1: float, k2: float, k3: float):
     """
     Bivariate von Mises (BvM) kernel function, cosine variant.
