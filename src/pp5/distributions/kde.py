@@ -2,6 +2,7 @@ from typing import Callable, Optional
 
 import numpy as np
 from numpy import ndarray
+from scipy.ndimage import gaussian_filter
 
 
 def kde_2d(
@@ -138,3 +139,41 @@ def torus_gaussian_kernel_2d(phi: np.ndarray, psi: np.ndarray, sigma: float):
     """
     d2 = np.arccos(np.cos(phi)) ** 2 + np.arccos(np.cos(psi)) ** 2
     return np.exp(-0.5 * d2 / sigma ** 2)
+
+
+def w2_dist_sinkhorn(
+    p: np.ndarray,
+    q: np.ndarray,
+    niter: int = 250,
+    sigma: float = 1.0,
+    eps: float = 1e-10,
+):
+    """
+    Computes Wasserstein distance between two discrete distributions.
+    :param p:
+    :param q:
+    :param niter:
+    :param sigma:
+    :param eps:
+    :return:
+    """
+    assert p.shape == q.shape
+
+    def _smooth(_w, _sigma):
+        return np.maximum(gaussian_filter(_w, _sigma, mode="wrap", truncate=5), eps)
+        # _w /= np.sum(_w)
+        # return _w
+
+    def _log(_x):
+        return np.log(np.maximum(_x, eps))
+
+    v = np.ones_like(p)
+    w = np.ones_like(q)
+
+    for i in range(0, niter):
+        v = p / _smooth(w, sigma)
+        w = q / _smooth(v, sigma)
+
+    w2_dist = sigma * np.sum(p * _log(v) + q * _log(w))
+
+    return (w2_dist, v, w)
