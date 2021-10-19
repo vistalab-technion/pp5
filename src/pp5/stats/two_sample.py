@@ -5,7 +5,7 @@ import numpy as np
 from numpy import ndarray
 from scipy.spatial.distance import pdist, squareform, sqeuclidean
 
-from pp5.distributions.kde import kde_2d, gaussian_kernel
+from pp5.distributions.kde import kde_2d, gaussian_kernel, w2_dist_sinkhorn
 
 _NUMBA_PARALLEL = False
 
@@ -81,8 +81,8 @@ def _kde_statistic(
     kde_Y = np.sum(kde_Y, axis=0)  # (ny, M, M) -> (M, M)
     kde_Y /= np.sum(kde_Y)
 
-    l1_dist = np.sum(np.abs(kde_X - kde_Y)).item()
-    return l1_dist
+    w2_dist = w2_dist_sinkhorn(kde_X, kde_Y, sigma=1e-2, niter=250)[0]
+    return w2_dist
 
 
 def tw_test(
