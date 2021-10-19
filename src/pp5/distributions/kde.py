@@ -74,11 +74,13 @@ def kde_2d(
 
         # Apply kernel pointwise, and sum all values at each grid location
         K = kernel_fn(dx1, dx2)
-        K = np.where(np.isnan(K), 0, K)  # replace NaN with zero
+        K = np.nan_to_num(K, copy=False)
 
         # If reduce==False, we know batch_size=n so we can just return K from this
         # iteration.
         if not reduce:
+            # Normalize contribution of each sample, i.e. each (M,M) grid
+            K /= np.max(K, axis=(0, 1)).reshape((1, 1, -1))
             return K
 
         P_raw += np.sum(K, axis=2)  # (M, M, N) -> (M, M)
