@@ -1,13 +1,12 @@
 from typing import Tuple, Union, Optional
 from functools import partial
 
-import numba
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 from pp5 import plot as plot
-from pp5.distributions.kde import kde_2d
+from pp5.distributions.kde import kde_2d, bvm_kernel
 
 
 class BvMMixtureDiscreteDistribution(object):
@@ -272,36 +271,6 @@ class BvMKernelDensityEstimator(object):
         )
 
     __call__ = estimate
-
-
-# @numba.jit(nopython=True)
-def bvm_kernel(phi: np.ndarray, psi: np.ndarray, k1: float, k2: float, k3: float):
-    """
-    Bivariate von Mises (BvM) kernel function, cosine variant.
-    All angles should be in radians.
-
-    Uses the cosine-variant BvM distribution, with the means taken as zero.
-    See:
-    https://en.wikipedia.org/wiki/Bivariate_von_Mises_distribution
-
-    :param phi: First angle values. Must be in [-pi, pi].
-        Can be any shape, but needs to be broadcast-able together with psi.
-    :param psi: Second angle values. Must be in [-pi, pi].
-        Can be any shape, but needs to be broadcast-able together with phi.
-    :param k1: First concentration parameter (for phi).
-    :param k2: Second concentration parameter (for psi).
-    :param k3: Correlation parameter.
-    :return: BvM kernel evaluated pointwise on the given data.
-        Output shape will the same as np.broadcast(phi, psi).
-    """
-
-    t1 = k1 * np.cos(phi)
-    t2 = k2 * np.cos(psi)
-    if k3 == 0.0:
-        return np.exp(t1 + t2)
-
-    t3 = k3 * np.cos(phi - psi)
-    return np.exp(t1 + t2 + t3)
 
 
 def bvm_pdf(

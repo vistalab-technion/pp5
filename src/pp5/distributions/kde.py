@@ -1,6 +1,5 @@
 from typing import Callable, Optional
 
-import numba
 import numpy as np
 from numpy import ndarray
 
@@ -90,9 +89,52 @@ def kde_2d(
     return P
 
 
-@numba.jit(nopython=True)
 def gaussian_kernel(x: ndarray, sigma: float = 1):
     """
     Gaussian kernel function.
     """
     return np.exp(-0.5 * (x ** 2) / sigma ** 2)
+
+
+def bvm_kernel(phi: np.ndarray, psi: np.ndarray, k1: float, k2: float, k3: float):
+    """
+    Bivariate von Mises (BvM) kernel function, cosine variant.
+    All angles should be in radians.
+
+    Uses the cosine-variant BvM distribution, with the means taken as zero.
+    See:
+    https://en.wikipedia.org/wiki/Bivariate_von_Mises_distribution
+
+    :param phi: First angle values. Must be in [-pi, pi].
+        Can be any shape, but needs to be broadcast-able together with psi.
+    :param psi: Second angle values. Must be in [-pi, pi].
+        Can be any shape, but needs to be broadcast-able together with phi.
+    :param k1: First concentration parameter (for phi).
+    :param k2: Second concentration parameter (for psi).
+    :param k3: Correlation parameter.
+    :return: BvM kernel evaluated pointwise on the given data.
+        Output shape will the same as np.broadcast(phi, psi).
+    """
+
+    t1 = k1 * np.cos(phi)
+    t2 = k2 * np.cos(psi)
+    if k3 == 0.0:
+        return np.exp(t1 + t2)
+
+    t3 = k3 * np.cos(phi - psi)
+    return np.exp(t1 + t2 + t3)
+
+
+def torus_gaussian_kernel_2d(phi: np.ndarray, psi: np.ndarray, sigma: float):
+    """
+    Gaussian kernel function where the distance between points is calculated on the
+    2d flat-torus (i.e. it has wraparound at ±pi).
+    :param phi: First angle values. Must be in [-pi, pi].
+        Can be any shape, but needs to be broadcast-able together with psi.
+    :param psi: Second angle values. Must be in [-pi, pi].
+        Can be any shape, but needs to be broadcast-able together with phi.
+    :param sigma: Standard deviation of the kernel, in radians.
+    :return: Value of the kernel evaluated at each (phi, psi).
+    """
+    d2 = np.arccos(np.cos(phi)) ** 2 + np.arccos(np.cos(psi)) ** 2
+    return np.exp(-0.5 * d2 / sigma ** 2)

@@ -54,8 +54,8 @@ from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral, flat_torus_distance
 from pp5.parallel import yield_async_results
 from pp5.analysis.base import ParallelAnalyzer
-from pp5.distributions.kde import gaussian_kernel
-from pp5.distributions.vonmises import BvMKernelDensityEstimator, bvm_kernel
+from pp5.distributions.kde import bvm_kernel, gaussian_kernel
+from pp5.distributions.vonmises import BvMKernelDensityEstimator
 
 LOGGER = logging.getLogger(__name__)
 
