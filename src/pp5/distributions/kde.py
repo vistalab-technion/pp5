@@ -76,11 +76,12 @@ def kde_2d(
         K = kernel_fn(dx1, dx2)
         K = np.nan_to_num(K, copy=False)
 
+        # Normalize contribution of each sample, i.e. each (M,M) grid
+        K /= np.sum(K, axis=(0, 1)).reshape((1, 1, -1))
+
         # If reduce==False, we know batch_size=n so we can just return K from this
         # iteration.
         if not reduce:
-            # Normalize contribution of each sample, i.e. each (M,M) grid
-            K /= np.max(K, axis=(0, 1)).reshape((1, 1, -1))
             return K
 
         P_raw += np.sum(K, axis=2)  # (M, M, N) -> (M, M)
@@ -130,6 +131,8 @@ def torus_gaussian_kernel_2d(phi: np.ndarray, psi: np.ndarray, sigma: float):
     """
     Gaussian kernel function where the distance between points is calculated on the
     2d flat-torus (i.e. it has wraparound at ±pi).
+    All angles should be in radians.
+
     :param phi: First angle values. Must be in [-pi, pi].
         Can be any shape, but needs to be broadcast-able together with psi.
     :param psi: Second angle values. Must be in [-pi, pi].
@@ -149,13 +152,18 @@ def w2_dist_sinkhorn(
     eps: float = 1e-10,
 ):
     """
-    Computes Wasserstein distance between two discrete distributions.
-    :param p:
-    :param q:
-    :param niter:
-    :param sigma:
-    :param eps:
-    :return:
+    Computes Wasserstein distance between two discrete distributions,
+    using Sinkhorn's algorithm.
+
+    :param p: First distribution.
+    :param q: Second distribution.
+    :param niter: Number of Sinkhorn iterations.
+    :param sigma: Standard deviation of gaussian filter used to smooth the
+        distributions.
+    :param eps: Numerical precision limit.
+    :return: (w2_dist, v, w) where w_dist is the Wasserstein distance between p and
+        q, and where v and w are the vectors which can be used to construct the coupling
+        matrix Pi.
     """
     assert p.shape == q.shape
 
