@@ -103,12 +103,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         kde_nbins: int = 128,
         kde_width: float = 30.0,
         bs_randstate: Optional[int] = None,
-        ddist_statistic: Union[Literal["mmd"], Literal["tw"], Literal["kde"]] = "mmd",
+        ddist_statistic: str = "mmd",
         ddist_n_max: Optional[int] = None,
         ddist_k: int = 1000,
         ddist_k_min: Optional[int] = None,
         ddist_k_th: float = 50.0,
-        ddist_kernel_size: float = 10.0,
+        ddist_kernel_size: float = 1.0,
         fdr: float = 0.1,
         out_tag: str = None,
     ):
@@ -142,12 +142,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param strict_codons: Enforce only one known codon per residue
             (reject residues where DNA matching was ambiguous).
         :param kde_nbins: Number of angle binds for KDE estimation.
-        :param kde_width: KDE concentration parameter for visualization (will use same
-            for phi and psi).
+        :param kde_width: KDE concentration parameter for von Mises distribution (will
+            use same for phi and psi). Used for visualization and for kernel of
+            the 'kde_v' statistic.
         :param bs_randstate: Random state for bootstrap.
         :param ddist_statistic: Statistical test to use for quantifying significance
             of  distances between distributions (ddists).
-            Can be either 'kde', 'mmd' or 'tw'.
+            Can be either 'kde_v' (KDE with von Mises kernel), 'kde_g' (KDE with
+            Gaussian kernel), 'mmd' (MMD with Gaussian kernel) or 'tw' (Welch t-test).
         :param ddist_n_max: Maximal sample-size to use when calculating
             p-value of distances with a statistical test. If there are larger samples,
             bootstrap sampling with the given maximal sample size will be performed.
@@ -162,8 +164,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             thought of as a factor of the smallest pvalue 1/(k+1). I.e. if k_th=50,
             then if after k_min permutations the pvalue is 50 times larger than it's
             smallest possible value - terminate.
-        :param ddist_kernel_size: Size of kernel used in MMD-based permutation test (
-            ignored if the test statistic is not MMD).
+        :param ddist_kernel_size: Size of kernel used in 'kde_g' and 'mmd' type
+            permutation tests. Should be in degrees.
         :param fdr: False discovery rate for multiple hypothesis testing using
             Benjamini-Hochberg method.
         :param out_tag: Tag for output.
@@ -223,7 +225,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.fdr = fdr
 
         # Setup parameters for statistical tests
-        if ddist_statistic == "kde":
+        if ddist_statistic == "kde_v":
             self.ddist_statistic_fn = partial(
                 kde2d_test,
                 n_bins=self.kde_args["n_bins"],
@@ -232,9 +234,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 dtype=self.kde_args["dtype"],
                 kernel_fn=partial(
                     bvm_kernel,
-                    k1=self.ddist_kernel_size,
-                    k2=self.ddist_kernel_size,
-                    k3=0.0,
+                    k1=self.kde_args["k1"],
+                    k2=self.kde_args["k2"],
+                    k3=self.kde_args["k3"],
                 ),
             )
         elif ddist_statistic == "kde_g":
@@ -245,7 +247,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 grid_high=np.pi,
                 dtype=self.kde_args["dtype"],
                 kernel_fn=partial(
-                    torus_gaussian_kernel_2d, sigma=self.ddist_kernel_size,
+                    torus_gaussian_kernel_2d, sigma=np.deg2rad(self.ddist_kernel_size),
                 ),
             )
 
@@ -253,7 +255,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             self.ddist_statistic_fn = partial(
                 mmd_test,
                 similarity_fn=flat_torus_distance,
-                kernel_fn=partial(gaussian_kernel, sigma=self.ddist_kernel_size),
+                kernel_fn=partial(
+                    gaussian_kernel, sigma=np.deg2rad(self.ddist_kernel_size)
+                ),
             )
         elif ddist_statistic == "tw":
             self.ddist_statistic_fn = partial(
