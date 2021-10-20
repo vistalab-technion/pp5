@@ -172,8 +172,6 @@ def kde2d_test(
     def _kde_2d_kernel_fn(Z: np.ndarray):
         # Z has shape (N, 2)
 
-        old_np_err_settings = np.seterr(over="ignore")
-
         K = kde_2d(
             x1=Z[:, 0],
             x2=Z[:, 1],
@@ -186,8 +184,6 @@ def kde2d_test(
             # on each permutation.
             reduce=False,
         )
-
-        np.seterr(**old_np_err_settings)
 
         # Transpose from (M, M, N) to (N, M, M) where N=nx+ny, so that we can permute
         # over the first dimension.
