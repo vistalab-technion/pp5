@@ -168,7 +168,7 @@ def w2_dist_sinkhorn(
     assert p.shape == q.shape
 
     def _smooth(_w, _sigma):
-        return np.maximum(gaussian_filter(_w, _sigma, mode="wrap", truncate=5), eps)
+        return np.maximum(gaussian_filter(_w, _sigma, mode="wrap", truncate=32), eps)
         # _w /= np.sum(_w)
         # return _w
 

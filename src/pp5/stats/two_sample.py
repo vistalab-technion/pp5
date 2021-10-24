@@ -81,7 +81,7 @@ def _kde_statistic(
     kde_Y = np.sum(kde_Y, axis=0)  # (ny, M, M) -> (M, M)
     kde_Y /= np.sum(kde_Y)
 
-    w2_dist = w2_dist_sinkhorn(kde_X, kde_Y, sigma=1e-2, niter=250)[0]
+    w2_dist = w2_dist_sinkhorn(kde_X, kde_Y, sigma=1e-5, niter=250)[0]
     return w2_dist
 
 
