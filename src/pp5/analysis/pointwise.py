@@ -709,7 +709,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         result_types_to_subgroup_pairs = {
             "aa": (AA_COL, AA_COL, None, None),
-            "aac": (AA_COL, CODON_COL, None, None),
+            "aac": (AA_COL, CODON_COL, None, _syn_codon_pair_nmax_function,),
             "codon": (
                 CODON_COL,
                 CODON_COL,
@@ -840,6 +840,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     # Calculate ddist_nmax for pair based on custom logic
                     if pair_nmax_fn is not None:
                         ddist_n_max = pair_nmax_fn(group, sub1, sub2)
+                        # Never use more than the maximum if it was set
+                        if self.ddist_n_max:
+                            ddist_n_max = min(ddist_n_max, self.ddist_n_max)
                     else:
                         ddist_n_max = self.ddist_n_max
 
