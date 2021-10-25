@@ -81,8 +81,9 @@ def _kde_statistic(
     kde_Y = np.sum(kde_Y, axis=0)  # (ny, M, M) -> (M, M)
     kde_Y /= np.sum(kde_Y)
 
-    w2_dist = w2_dist_sinkhorn(kde_X, kde_Y, sigma=1e-5, niter=250)[0]
-    return w2_dist
+    # w2_dist = w2_dist_sinkhorn(kde_X, kde_Y, sigma=1e-5, niter=250)[0]
+    l1_dist = np.sum(np.abs(kde_X - kde_Y)).item()
+    return l1_dist
 
 
 def tw_test(
