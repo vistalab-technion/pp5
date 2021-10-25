@@ -1244,6 +1244,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     pvals=type_to_pvals,
                     group_sizes=group_sizes,
                     significance_meta=significance_meta,
+                    fdr=self.fdr,
                     out_dir=self.out_dir.joinpath(f"pvals"),
                 ),
             )
@@ -1664,6 +1665,7 @@ def _plot_pvals_hist(
     pvals: Dict[str, np.ndarray],
     group_sizes: Dict[str, int],
     significance_meta: Dict[str, dict],
+    fdr: float,
     out_dir: Path,
     n_bins: int = 50,
 ):
@@ -1678,44 +1680,101 @@ def _plot_pvals_hist(
 
     n_groups = len(group_sizes.keys())
 
-    fig_filename = out_dir.joinpath("pvals_hist.pdf")
+    out_files = []
+
     with mpl.style.context(PP5_MPL_STYLE):
-        fig_cols = 2 if n_groups > 1 else 1
-        fig_rows = n_groups // 2 + n_groups % 2
-        fig, ax = plt.subplots(
-            fig_rows, fig_cols, figsize=(5 * fig_cols, 5 * fig_rows), squeeze=False,
-        )
-        fig: Figure
-        axes: Sequence[Axes] = ax.reshape(-1)
 
-        for i, (group_name, group_sizes) in enumerate(group_sizes.items()):
-            ax = axes[i]
+        for result_type, group_to_pvals in pvals.items():
 
-            for result_type, group_to_pvals in pvals.items():
+            hist_fig_filename = out_dir.joinpath(f"pvals_hist-{result_type}.pdf")
+            pvals_fig_filename = out_dir.joinpath(f"pvals-{result_type}.pdf")
+
+            fig_cols = 2 if n_groups > 1 else 1
+            fig_rows = n_groups // 2 + n_groups % 2
+
+            # Histogram fig and axes
+            fig_hist, ax_hist = plt.subplots(
+                fig_rows, fig_cols, figsize=(5 * fig_cols, 5 * fig_rows), squeeze=False,
+            )
+            fig_hist: Figure
+            axes_hist: Sequence[Axes] = ax_hist.reshape(-1)
+
+            # pvals fig and axes
+            fig_pvals, ax_pvals = plt.subplots(
+                fig_rows, fig_cols, figsize=(5 * fig_cols, 5 * fig_rows), squeeze=False,
+            )
+            fig_pvals: Figure
+            axes_pvals: Sequence[Axes] = ax_pvals.reshape(-1)
+
+            for i, (group_name, group_sizes) in enumerate(group_sizes.items()):
                 pvals_2d = group_to_pvals[group_name]
                 pvals_flat = pvals_2d[~np.isnan(pvals_2d)]
                 meta = significance_meta[result_type][group_name]
-                ax.hist(
+
+                # Histograms
+                ax_hist = axes_hist[i]
+                ax_hist.hist(
                     pvals_flat,
                     bins=n_bins,
                     density=True,
                     log=True,
                     alpha=0.5,
                     label=(
-                        f"{result_type} t={meta['pval_thresh']:.4f}, "
+                        f"t={meta['pval_thresh']:.4f}, "
                         f"({meta['num_rejections']}/{meta['num_hypotheses']})"
                     ),
                 )
-            ax.set_title(f"{group_name} ({group_sizes['total']})")
-            ax.set_ylabel("log-density")
-            ax.set_xlabel("pval")
-            ax.legend()
+                ax_hist.set_title(f"{group_name} ({group_sizes['total']})")
+                ax_hist.set_ylabel("log-density")
+                ax_hist.set_xlabel("pval")
+                ax_hist.legend()
 
-        while i + 1 < len(axes):
-            i += 1
-            axes[i].set_axis_off()
+                # Pvals
+                ax_pvals = axes_pvals[i]
+                m = len(pvals_flat)
+                x_axis = np.arange(m)
+                pvals_sorted = np.sort(pvals_flat)
+                bhq_thresh = (np.arange(m) + 1) * (fdr / m)
 
-        return pp5.plot.savefig(fig, fig_filename, close=True)
+                ax_pvals.plot(x_axis, bhq_thresh, label=f"BH(q={fdr})")
+
+                comp_lt = pvals_sorted <= bhq_thresh
+                ax_pvals.plot(
+                    x_axis[~comp_lt],
+                    pvals_sorted[~comp_lt],
+                    label=f"non-rejections ({np.sum(~comp_lt)})",
+                    marker="x",
+                    linestyle="",
+                )
+                ax_pvals.plot(
+                    x_axis[comp_lt],
+                    pvals_sorted[comp_lt],
+                    label=f"rejections ({np.sum(comp_lt)})",
+                    marker="*",
+                    linestyle="",
+                )
+                ax_pvals.set_yscale("log")
+                ax_pvals.set_title(f"{group_name} ({group_sizes['total']})")
+                ax_pvals.set_ylabel("pval")
+                ax_pvals.set_xlabel("hypothesis number")
+                ax_pvals.grid(True)
+                ax_pvals.legend()
+
+            fig_hist.tight_layout()
+            fig_pvals.tight_layout()
+
+            # Fix for empty axes in plots
+            while i + 1 < len(axes_hist):
+                i += 1
+                axes_hist[i].set_axis_off()
+                axes_pvals[i].set_axis_off()
+
+            out_files.append(pp5.plot.savefig(fig_hist, hist_fig_filename, close=True))
+            out_files.append(
+                pp5.plot.savefig(fig_pvals, pvals_fig_filename, close=True)
+            )
+
+        return out_files
 
 
 def _cols2label(phi_col: str, psi_col: str):
