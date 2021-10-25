@@ -104,6 +104,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         kde_width: float = 30.0,
         bs_randstate: Optional[int] = None,
         ddist_statistic: str = "mmd",
+        ddist_bs_niter: int = 1,
         ddist_n_max: Optional[int] = None,
         ddist_k: int = 1000,
         ddist_k_min: Optional[int] = None,
@@ -150,6 +151,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             of  distances between distributions (ddists).
             Can be either 'kde_v' (KDE with von Mises kernel), 'kde_g' (KDE with
             Gaussian kernel), 'mmd' (MMD with Gaussian kernel) or 'tw' (Welch t-test).
+        :param ddist_bs_niter: Number of bootstrap iterations when resampling data
+            for permutation tests.
         :param ddist_n_max: Maximal sample-size to use when calculating
             p-value of distances with a statistical test. If there are larger samples,
             bootstrap sampling with the given maximal sample size will be performed.
@@ -195,6 +198,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 f"invalid {codon_grouping_position=}, must be < {tuple_len=}"
             )
 
+        if ddist_bs_niter < 1:
+            raise ValueError(f"invalid {ddist_bs_niter=}, must be >= 1")
+
         if ddist_statistic not in TEST_STATISTICS:
             raise ValueError(
                 f"ddist_statistic must be one of {tuple(TEST_STATISTICS.keys())}"
@@ -217,6 +223,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         )
 
         self.bs_randstate = bs_randstate
+        self.ddist_bs_niter = ddist_bs_niter
         self.ddist_n_max = int(ddist_n_max) if ddist_n_max else 0
         self.ddist_k = ddist_k
         self.ddist_k_min = int(ddist_k_min) if ddist_k_min else 0
@@ -670,22 +677,49 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         between two angle-pairs is calculated on the torus.
         """
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
+        group_sizes: dict = self._load_intermediate("group-sizes")
 
-        def _non_syn_codons_pair_filter(group: str, aact1: str, aact2: str):
+        def _non_syn_codons_pair_filter(group: str, aact1: str, aact2: str) -> bool:
             # Returns True if aact1 and aact2 are not synonymous (therefore should be
             # filtered out).
             return not is_synonymous_tuple(aact_str2tuple(aact1), aact_str2tuple(aact2))
 
+        def _syn_codon_pair_nmax_function(group: str, aact1: str, aact2: str) -> int:
+            # Returns the maximal sample size to use when comparing two synonymous
+            # codons. We're selecting the smallest sample size of all codons from the
+            # same AA.
+            def _aact_to_aat(aact):
+                # I-ATA -> I
+                # I-ATA_I-ATT -> I_I
+                return aact_tuple2str(aact2aat(aact_str2tuple(aact)))
+
+            aat = _aact_to_aat(aact1)
+            assert aat == _aact_to_aat(aact2)  # sanity check
+            codon_counts = {
+                aact: count
+                for aact, count in group_sizes[group][SUBGROUP_COL].items()
+                if _aact_to_aat(aact) == aat
+            }
+            # Codon counts also include the entire group, remove it
+            codon_counts.pop(aat)
+            # Use minimal group size for all codons of this AA
+            return np.min([*codon_counts.values()]).item()
+
         totals = {}
 
         result_types_to_subgroup_pairs = {
-            "aa": (AA_COL, AA_COL, None),
-            "aac": (AA_COL, CODON_COL, None),
-            "codon": (CODON_COL, CODON_COL, _non_syn_codons_pair_filter),
+            "aa": (AA_COL, AA_COL, None, None),
+            "aac": (AA_COL, CODON_COL, None, None),
+            "codon": (
+                CODON_COL,
+                CODON_COL,
+                _non_syn_codons_pair_filter,
+                _syn_codon_pair_nmax_function,
+            ),
         }
         for (
             result_name,
-            (subgroup1_col, subgroup2_col, pair_filter_fn),
+            (subgroup1_col, subgroup2_col, pair_filter_fn, pair_nmax_fn),
         ) in result_types_to_subgroup_pairs.items():
 
             sub1_names_to_idx, sub2_names_to_idx = (
@@ -717,6 +751,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 subgroup1_col,
                 subgroup2_col,
                 pair_filter_fn,
+                pair_nmax_fn,
             )
 
             for (group, sub1, sub2), result in yield_async_results(async_results):
@@ -726,7 +761,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 )
                 LOGGER.info(
                     f"Collected {result_name} pairwise-pval {group=}, {sub1=} ({i=}), "
-                    f"{sub2=} ({j=}): (d, p)={result}"
+                    f"{sub2=} ({j=})"
                 )
                 ddist, pval = result
                 ddists = collected_ddists[group]
@@ -752,6 +787,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         subgroup1_col: str,
         subgroup2_col: str,
         pair_filter_fn: Optional[Callable[[str, str, str], bool]],
+        pair_nmax_fn: Optional[Callable[[str, str, str], int]],
     ):
         """
         Helper function that submits pairs of subgroups for pointwise angle-based
@@ -793,13 +829,19 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         continue
 
                     # Skip redundant calculations: identical pairs with a different
-                    # order
-                    if subgroup2_col == subgroup1_col and j <= i:
+                    # order. Allow comparing subgroup to itself as a sanity check.
+                    if subgroup2_col == subgroup1_col and j < i:
                         continue
 
                     # Skip based on custom pair filtering logic
                     if pair_filter_fn is not None and pair_filter_fn(group, sub1, sub2):
                         continue
+
+                    # Calculate ddist_nmax for pair based on custom logic
+                    if pair_nmax_fn is not None:
+                        ddist_n_max = pair_nmax_fn(group, sub1, sub2)
+                    else:
+                        ddist_n_max = self.ddist_n_max
 
                     # Analyze the angles of subgroup1 and subgroup2
                     angles1 = np.deg2rad(df_sub1[[*ANGLE_COLS]].values)
@@ -815,7 +857,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                             randstate=self.bs_randstate,
                             ddist_statistic_fn=self.ddist_statistic_fn,
                             ddist_statistic_fn_name=self.ddist_statistic_fn_name,
-                            ddist_n_max=self.ddist_n_max,
+                            ddist_bs_niter=self.ddist_bs_niter,
+                            ddist_n_max=ddist_n_max,
                             ddist_k=self.ddist_k,
                             ddist_k_min=self.ddist_k_min,
                             ddist_k_th=self.ddist_k_th,
@@ -1238,6 +1281,7 @@ def _subgroup_permutation_test(
     randstate: int,
     ddist_statistic_fn: Callable,
     ddist_statistic_fn_name: str,
+    ddist_bs_niter: int,
     ddist_n_max: Optional[int],
     ddist_k: int,
     ddist_k_min: int,
@@ -1254,6 +1298,7 @@ def _subgroup_permutation_test(
     :param subgroup2_data: Observations of second subgroup.
         Should be a (N, M) array where N is the number of M-dimensional observations.
     :param randstate: Random state for bootstrapping.
+    :param ddist_bs_niter: Number of iterations for bootstrap sampling.
     :param ddist_n_max: Max sample size. If None or zero then no limit.
     :param ddist_k: Number of permutations for computing significance.
     :param ddist_statistic_fn: Permutation test function to use for comparing the
@@ -1269,50 +1314,69 @@ def _subgroup_permutation_test(
         np.random.seed(seed)
     random = np.random.default_rng(seed)
 
-    # We use bootstrapping if at least one of the samples is larger than ddist_n_max.
+    # We use bootstrapping if requested more than one iteration or if we need to
+    # limit the sample sizes
+    bootstrap_enabled = (ddist_bs_niter > 1) or bool(ddist_n_max)
     n1, n2 = len(subgroup1_data), len(subgroup2_data)
-    bs_iter = max(ceil(n1 / ddist_n_max), ceil(n2 / ddist_n_max)) if ddist_n_max else 1
+    if not ddist_n_max:
+        ddist_n_max = max(n1, n2)
+
+    # Bootstrapping sample size is based on the minimum size of each group
+    bs_nsample = min(min(n1, n2), ddist_n_max)
 
     # For a sample larger than ddist_n_max, we create a new sample from it by sampling
     # with replacement.
-    def _bootstrap_sample(angles: np.ndarray):
+    def _bootstrap_resample(angles: np.ndarray):
         n = len(angles)
-        if ddist_n_max and n > ddist_n_max:
-            sample_idxs = random.choice(n, ddist_n_max, replace=True)
+        if bootstrap_enabled:
+            sample_idxs = random.choice(n, bs_nsample, replace=True)
         else:
             sample_idxs = np.arange(n)
         return angles[sample_idxs]
 
     # Run bootstrapped tests
-    ddists, pvals, ks = (
-        np.empty(bs_iter, dtype=np.float32),
-        np.empty(bs_iter, dtype=np.float32),
-        np.empty(bs_iter, dtype=np.int),
-    )
-    for i in range(bs_iter):
-        ddists[i], pvals[i], ks[i] = ddist_statistic_fn(
-            X=_bootstrap_sample(subgroup1_data),
-            Y=_bootstrap_sample(subgroup2_data),
+    ddists, pvals, ks = [], [], []
+    k_total, count_total, pval = 0, 0, 0.0
+    k_max = ddist_bs_niter * ddist_k  # maximal number of permutations in all resamples
+    bs_idx = 0
+    for bs_idx in range(ddist_bs_niter):
+        curr_ddist, curr_pval, curr_k = ddist_statistic_fn(
+            X=_bootstrap_resample(subgroup1_data),
+            Y=_bootstrap_resample(subgroup2_data),
             k=ddist_k,
-            k_min=ddist_k_min,
+            # Disable early termination inside?
+            k_min=ddist_k_min,  # if not bootstrap_enabled else 0,
             k_th=ddist_k_th,
         )
+        ddists.append(curr_ddist)
+        pvals.append(curr_pval)
+        ks.append(curr_k)
 
-    # Weighted average of pvals is equivalent to the pval we'd get if we'd run all
-    # the sample together in the same test.
-    counts = pvals * (ks + 1) - 1
-    pval = (np.sum(counts) + 1) / (np.sum(ks) + 1)
-    ddist = np.mean(ddists)
+        # Aggregate total number of permutations and counts to compute pval based
+        # on all permutations across resampling. This is equivalent to the pval we'd
+        # get if we'd run all the samples together in the same test for k_total
+        # permutations.
+        k_total += curr_k
+        count_total += max(int(curr_pval * (curr_k + 1)) - 1, 0)
+        pval = (count_total + 1) / (k_total + 1)
+
+        # Early termination criterion: minimal number of permutations reached,
+        # and pval is larger than some factor (k_th) times the smallest possible pvalue.
+        if (k_total >= ddist_k_min) and (pval >= ddist_k_th * 1 / (k_total + 1)):
+            break
+
+    ddist = np.mean(ddists).item()
+    ddist_std = np.std(ddists).item()
 
     t_elapsed = time.time() - t_start
     LOGGER.info(
-        f"Calculated (ddist, pval) [{ddist_statistic_fn_name}] "
-        f"group={group_idx}, "
+        f"[{ddist_statistic_fn_name}] "
+        f"{group_idx}, "
         f"sub1={subgroup1_idx} (n={n1}), "
         f"sub2={subgroup2_idx} (n={n2}), "
-        f"{bs_iter=}, "
-        f"k={ks[0] if bs_iter == 1 else (np.min(ks), np.max(ks))}/{ddist_k}: "
-        f"(pval, ddist)=({pval:.3f},{ddist:.3f}),"
+        f"bs_niter={bs_idx+1}/{ddist_bs_niter}, {bs_nsample=}, "
+        f"k={k_total}/{k_max}: "
+        f"(pval, ddist)=({pval:.3f},{ddist:.3f}±{ddist_std:.2f}), "
         f"elapsed={t_elapsed:.2f}s"
     )
     return ddist, pval
