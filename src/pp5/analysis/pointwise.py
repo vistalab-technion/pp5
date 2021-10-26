@@ -1670,7 +1670,7 @@ def _plot_pvals_hist(
     significance_meta: Dict[str, dict],
     fdr: float,
     out_dir: Path,
-    n_bins: int = 50,
+    n_bins: int = 25,
 ):
     """
     Plots pvalue histogram.
@@ -1709,10 +1709,15 @@ def _plot_pvals_hist(
             fig_pvals: Figure
             axes_pvals: Sequence[Axes] = ax_pvals.reshape(-1)
 
-            for i, (group_name, group_sizes) in enumerate(group_sizes.items()):
+            for i, (group_name, subgroup_sizes) in enumerate(group_sizes.items()):
                 pvals_2d = group_to_pvals[group_name]
                 pvals_flat = pvals_2d[~np.isnan(pvals_2d)]
+
                 meta = significance_meta[result_type][group_name]
+                pval_thresh = meta["pval_thresh"]
+                num_rejections = meta["num_rejections"]
+                num_hypotheses = meta["num_hypotheses"]
+                assert len(pvals_flat) == num_hypotheses  # sanity
 
                 # Histograms
                 ax_hist = axes_hist[i]
@@ -1722,42 +1727,48 @@ def _plot_pvals_hist(
                     density=True,
                     log=True,
                     alpha=0.5,
-                    label=(
-                        f"t={meta['pval_thresh']:.4f}, "
-                        f"({meta['num_rejections']}/{meta['num_hypotheses']})"
-                    ),
+                    label=(f"t={pval_thresh:.4f}, ({num_rejections}/{num_hypotheses})"),
                 )
-                ax_hist.set_title(f"{group_name} ({group_sizes['total']})")
+                ax_hist.set_title(f"{group_name} ({subgroup_sizes['total']})")
                 ax_hist.set_ylabel("log-density")
                 ax_hist.set_xlabel("pval")
                 ax_hist.legend()
 
                 # Pvals
                 ax_pvals = axes_pvals[i]
-                m = len(pvals_flat)
-                x_axis = np.arange(m)
+                x_axis = np.arange(num_hypotheses)
                 pvals_sorted = np.sort(pvals_flat)
-                bhq_thresh = (np.arange(m) + 1) * (fdr / m)
+                bhq_thresh_line = (x_axis + 1) * (fdr / num_hypotheses)
+                idx_rejections = pvals_sorted <= pval_thresh
 
-                ax_pvals.plot(x_axis, bhq_thresh, label=f"BH(q={fdr})")
-
-                comp_lt = pvals_sorted <= bhq_thresh
                 ax_pvals.plot(
-                    x_axis[~comp_lt],
-                    pvals_sorted[~comp_lt],
-                    label=f"non-rejections ({np.sum(~comp_lt)})",
+                    x_axis, bhq_thresh_line, label=f"BH(q={fdr})",
+                )
+                ax_pvals.plot(
+                    x_axis[~idx_rejections],
+                    pvals_sorted[~idx_rejections],
+                    label=f"non-rejections ({np.sum(~idx_rejections)}/{num_hypotheses})",
                     marker="x",
                     linestyle="",
                 )
                 ax_pvals.plot(
-                    x_axis[comp_lt],
-                    pvals_sorted[comp_lt],
-                    label=f"rejections ({np.sum(comp_lt)})",
+                    x_axis[idx_rejections],
+                    pvals_sorted[idx_rejections],
+                    label=f"rejections ({np.sum(idx_rejections)}/{num_hypotheses})",
                     marker="*",
                     linestyle="",
                 )
+                ax_pvals.hlines(
+                    pval_thresh,
+                    x_axis[0],
+                    x_axis[-1],
+                    colors="black",
+                    linestyles="--",
+                    label=f"t={pval_thresh:.4f}",
+                )
+
                 ax_pvals.set_yscale("log")
-                ax_pvals.set_title(f"{group_name} ({group_sizes['total']})")
+                ax_pvals.set_title(f"{group_name} ({subgroup_sizes['total']})")
                 ax_pvals.set_ylabel("pval")
                 ax_pvals.set_xlabel("hypothesis number")
                 ax_pvals.grid(True)
