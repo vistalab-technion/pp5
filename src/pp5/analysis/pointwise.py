@@ -688,11 +688,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Returns the maximal sample size to use when comparing two synonymous
             # codons. We're selecting the smallest sample size of all codons from the
             # same AA.
-            def _aact_to_aat(aact):
-                # I-ATA -> I
-                # I-ATA_I-ATT -> I_I
-                return aact_tuple2str(aact2aat(aact_str2tuple(aact)))
-
             aat = _aact_to_aat(aact1)
             assert aat == _aact_to_aat(aact2)  # sanity check
             codon_counts = {
@@ -1234,12 +1229,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # pvalues
         significance_meta: dict = self._load_intermediate("significance", True)
         group_sizes: dict = self._load_intermediate("group-sizes", True)
-        type_to_pvals = {
-            result_type: self._load_intermediate(
+
+        type_to_pvals, type_to_ddists = {}, {}
+        for result_type in ["codon", "aa", "aac"]:
+            type_to_pvals[result_type] = self._load_intermediate(
                 f"{result_type}-dihedral-pvals", True, raise_if_missing=True
             )
-            for result_type in ["aa", "codon", "aac"]
-        }
+            type_to_ddists[result_type] = self._load_intermediate(
+                f"{result_type}-dihedral-ddists", True, raise_if_missing=True
+            )
+
         async_results.append(
             pool.apply_async(
                 _plot_pvals_hist,
@@ -1253,8 +1252,40 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
         )
 
+        async_results.append(
+            pool.apply_async(
+                _plot_pvals_ddists,
+                kwds=dict(
+                    type_to_pvals=type_to_pvals,
+                    type_to_ddists=type_to_ddists,
+                    idx_to_name={
+                        "aa": (self._idx_to_aa_tuple, self._idx_to_aa_tuple),
+                        "codon": (self._idx_to_codon_tuple, self._idx_to_codon_tuple),
+                        "aac": (self._idx_to_aa_tuple, self._idx_to_codon_tuple),
+                    },
+                    group_sizes=group_sizes,
+                    significance_meta=significance_meta,
+                    out_dir=self.out_dir.joinpath(f"ddists"),
+                ),
+            )
+        )
+
         # Wait for plotting to complete. Each function returns a path
         fig_paths = self._handle_async_results(async_results, collect=True)
+
+
+def _aact_to_aat(aact: str) -> str:
+    """
+    Converts an AAC or AA tuple string to an AA tuple string. For example:
+        I -> I
+        I_J -> I_J
+        I-ATA -> I
+        I-ATA_I-ATT -> I_I
+
+    :param aact: The tuple string to convert, containing only AAs or AAs and codons.
+    :return: The converted tuple, containing only the AAs.
+    """
+    return aact_tuple2str(aact2aat(aact_str2tuple(aact)))
 
 
 def _subgroup_centroid(
@@ -1485,83 +1516,6 @@ def _plot_full_dkdes(
     return str(fig_filename)
 
 
-def _plot_dist_matrix(
-    group_idx: str,
-    d2: np.ndarray,
-    title: Optional[str],
-    row_labels: List[str],
-    col_labels: List[str],
-    out_dir: Path,
-    vmin: float = None,
-    vmax: float = None,
-    annotate_mu: bool = True,
-    plot_std: bool = False,
-    block_diagonal: Sequence[Tuple[int, int]] = None,
-    tag: str = None,
-):
-    # Split the mu and sigma from the complex d2 matrix
-    d2_mu, d2_sigma = np.real(d2), np.imag(d2)
-
-    # Instead of plotting the std matrix separately, we can also use
-    # annotations to denote the value of the std in each cell.
-    # We'll annotate according to the quartiles of the std.
-    pct = np.nanpercentile(d2_sigma, [25, 50, 75])
-
-    def quartile_ann_fn(_, j, k):
-        std = d2_sigma[j, k]
-        p25, p50, p75 = pct
-        if std < p25:
-            return "*"
-        elif std < p50:
-            return ":"
-        elif std < p75:
-            return "."
-        return ""
-
-    # Here we plot a separate distance matrix for mu and for sigma.
-    fig_filenames = []
-    for avg_std, d2 in zip(("avg", "std"), (d2_mu, d2_sigma)):
-
-        # Use annotations for the standard deviation
-        if avg_std == "std":
-            ann_fn = None
-            if not plot_std:
-                continue
-        else:
-            ann_fn = quartile_ann_fn if annotate_mu else None
-
-        # Plot only the block-diagonal structure, e.g. synonymous codons.
-        # The block_diagonal variable contains a list of tuples with the indices
-        # of the desired block diagonal structure. The rest is set to nan.
-        if block_diagonal:
-            ii, jj = zip(*block_diagonal)
-            mask = np.full_like(d2, fill_value=np.nan)
-            mask[ii, jj] = 1.0
-            d2 = mask * d2
-
-        filename = str.join(
-            "-", filter(None, [group_idx, avg_std if plot_std else None, tag])
-        )
-        fig_filepath = out_dir.joinpath(f"{filename}.png")
-
-        pp5.plot.multi_heatmap(
-            [d2],
-            row_labels=row_labels,
-            col_labels=col_labels,
-            titles=[title] if title else None,
-            fig_size=20,
-            vmin=vmin,
-            vmax=vmax,
-            fig_rows=1,
-            outfile=fig_filepath,
-            data_annotation_fn=ann_fn,
-        )
-
-        fig_filenames.append(str(fig_filepath))
-
-    return fig_filenames
-
-
 def _plot_dkdes(
     group_idx: str,
     subgroup_sizes: Dict[str, int],
@@ -1664,6 +1618,100 @@ def _plot_dkdes(
     return str(fig_filenames)
 
 
+def _plot_pvals_ddists(
+    type_to_pvals: Dict[str, Dict[str, np.ndarray]],
+    type_to_ddists: Dict[str, Dict[str, np.ndarray]],
+    idx_to_name: Dict[str, Tuple[Dict[int, str], Dict[int, str]]],
+    group_sizes: Dict[str, int],
+    significance_meta: Dict[str, dict],
+    out_dir: Path,
+):
+    """
+    Plots distances between AAs and codons, and highlights significant ones based on pval.
+    :param type_to_pvals: Dict mapping from result_type to a dict from a group name
+        to an array of pvalues.
+    :param type_to_ddists: Dict mapping from result_type to a dict from a group name to
+        an array of ddists.
+    :param idx_to_name: Maps from result_type to two dicts, one for mapping from
+        index i to a name and the second for mapping from index j to a name.
+    :param group_sizes: Dict from group_name to size ('total') and subgroup sizes ('subgroup').
+    :param significance_meta: A dict mapping from result_type to group_name to a dict
+        containing the significance information.
+    :return: Path of output figure.
+    """
+    out_files = []
+
+    result_types = tuple(type_to_pvals.keys())
+    assert result_types == tuple(type_to_ddists.keys())
+
+    for result_type in result_types:
+        group_to_pvals = type_to_pvals[result_type]
+        group_to_ddists = type_to_ddists[result_type]
+        i_to_name, j_to_name = idx_to_name[result_type]
+
+        group_names = tuple(group_to_pvals.keys())
+        assert group_names == tuple(group_to_ddists.keys())
+
+        for group_name in group_names:
+            pvals: np.ndarray = group_to_pvals[group_name]  # 2d array
+            ddists: np.ndarray = group_to_ddists[group_name]
+            ij_valid = np.argwhere(~np.isnan(pvals))
+
+            pval_thresh = significance_meta[result_type][group_name]["pval_thresh"]
+
+            plot_datas = []
+            plot_titles = []
+            plot_row_labels = []
+            plot_col_labels = []
+            plot_data_annotations = []
+
+            # Create a mapping from each AA name to the synonymous indices in the
+            # distance matrix
+            aa_to_ijs = {}
+            for i, j in ij_valid:
+                i_name, j_name = i_to_name[i], j_to_name[j]
+                i_aa_name, j_aa_name = _aact_to_aat(i_name), _aact_to_aat(j_name)
+
+                if i_aa_name == j_aa_name:
+                    aa_name = i_aa_name
+                    aa_to_ijs.setdefault(aa_name, [])
+                    aa_to_ijs[aa_name].append((i, j))
+
+            if result_type == "aa":
+                plot_datas.append(ddists)
+                plot_titles.append("")
+                plot_row_labels.append(tuple(i_to_name.values()))
+                plot_col_labels.append(tuple(j_to_name.values()))
+
+            else:
+                for aa_name, ijs in aa_to_ijs.items():
+                    # Extract square ddist sub-matrix of synonymous codons
+                    ijs = np.array(ijs)  # (n,2)
+                    i_slice = slice(np.min(ijs[:, 0]), np.max(ijs[:, 0]) + 1)
+                    j_slice = slice(np.min(ijs[:, 1]), np.max(ijs[:, 1]) + 1)
+                    plot_datas.append(ddists[i_slice, j_slice])
+                    plot_titles.append(aa_name)
+                    plot_row_labels.append(
+                        [i_to_name[i] for i in sorted(set(ijs[:, 0]))]
+                    )
+                    plot_col_labels.append(
+                        [j_to_name[j] for j in sorted(set(ijs[:, 1]))]
+                    )
+                    plot_data_annotations.append(pvals[i_slice, j_slice] <= pval_thresh)
+
+            fig, _ = pp5.plot.multi_heatmap(
+                datas=plot_datas,
+                titles=plot_titles,
+                row_labels=plot_row_labels,
+                col_labels=plot_col_labels,
+                fig_rows=int(np.ceil(np.sqrt(len(plot_datas)))),
+                fig_size=6,
+                data_annotations=plot_data_annotations,
+            )
+            fig_filename = out_dir.joinpath(f"{result_type}-{group_name}.png")
+            out_files.append(pp5.plot.savefig(fig, fig_filename, close=True))
+
+
 def _plot_pvals_hist(
     pvals: Dict[str, np.ndarray],
     group_sizes: Dict[str, int],
@@ -1674,7 +1722,8 @@ def _plot_pvals_hist(
 ):
     """
     Plots pvalue histogram.
-    :param pvals: Dict mapping from result_type to an array of pvalues.
+    :param pvals: Dict mapping from result_type to a dict from a group name
+        to an array of pvalues.
     :param group_sizes: Dict from group_name to size ('total') and subgroup sizes ('subgroup').
     :param significance_meta: A dict mapping from result_type to group_name to a dict
         containing the significance information.
