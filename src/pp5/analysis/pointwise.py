@@ -1682,6 +1682,7 @@ def _plot_pvals_ddists(
                 plot_titles.append("")
                 plot_row_labels.append(tuple(i_to_name.values()))
                 plot_col_labels.append(tuple(j_to_name.values()))
+                plot_data_annotations.append(pvals <= pval_thresh)
 
             else:
                 for aa_name, ijs in aa_to_ijs.items():
@@ -1706,9 +1707,9 @@ def _plot_pvals_ddists(
                 col_labels=plot_col_labels,
                 fig_rows=int(np.ceil(np.sqrt(len(plot_datas)))),
                 fig_size=6,
-                data_annotations=plot_data_annotations,
+                data_annotation_locations=plot_data_annotations,
             )
-            fig_filename = out_dir.joinpath(f"{result_type}-{group_name}.png")
+            fig_filename = out_dir.joinpath(f"{result_type}-{group_name}.pdf")
             out_files.append(pp5.plot.savefig(fig, fig_filename, close=True))
 
 
