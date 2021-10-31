@@ -152,13 +152,17 @@ def multi_heatmap(
     fig_rows: int = 1,
     vmin: float = None,
     vmax: float = None,
-    data_annotations: Optional[Sequence[np.ndarray]] = None,
+    data_annotation_locations: Optional[Sequence[np.ndarray]] = None,
+    data_annotation_fn: Optional[Callable[[int, int, int], Dict]] = None,
     style=PP5_MPL_STYLE,
     outfile: Union[Path, str] = None,
 ) -> Optional[Tuple[Figure, Iterable[Axes]]]:
     """
-    Plots multiple 2D heatmaps horizontally next to each other while
+    Plots multiple 2D heatmaps/matrices horizontally next to each other while
     normalizing them to the same scale.
+    Each 2D matrix could be of different size, in which case they will all be plotted
+    such that each cell has equal size.
+
     :param datas: List of 2D arrays, or a single 3D array (the first
         dimension will be treated as a list).
     :param row_labels: Labels for the heatmap rows.
@@ -170,43 +174,53 @@ def multi_heatmap(
     :param fig_rows: How many rows of heatmaps to create in the figure.
     :param vmin: Minimum value for scaling.
     :param vmax: Maximum value for scaling.
+    :param data_annotation_locations: A list of boolean arrays specifying coordinates to
+        annotate.
+    :param data_annotation_fn: Callable accepting three integers (n, i, j) where n is
+        the data index and i,j are coordinates within the data, and returns a dict
+        with parameters for Axes.text() which will be used to create annotation at
+        (n, i, j).
     :param style: Style name or stylefile path.
     :param outfile: Optional path to write output figure to.
     :return: If figure was written to file, return nothing. Otherwise
     returns Tuple of figure, axes objects.
     """
-    n = len(datas)
+    N = len(datas)
 
     # If row/col labels is a list of strings, duplicate for each data matrix
     if row_labels and isinstance(row_labels[0], str):
-        row_labels = [row_labels] * n
+        row_labels = [row_labels] * N
 
     if col_labels and isinstance(col_labels[0], str):
-        col_labels = [col_labels] * n
+        col_labels = [col_labels] * N
 
     if titles:
-        assert len(titles) == n, "Inconsistent number of titles"
+        assert len(titles) == N, "Inconsistent number of titles"
 
-    for i, d in enumerate(datas):
+    for n, d in enumerate(datas):
         assert d.ndim == 2, "Invalid data shape"
         if row_labels:
-            assert d.shape[0] == len(row_labels[i]), "Inconsistent label number"
+            assert d.shape[0] == len(row_labels[n]), "Inconsistent label number"
         if col_labels:
-            assert d.shape[1] == len(col_labels[i]), "Inconsistent label number"
+            assert d.shape[1] == len(col_labels[n]), "Inconsistent label number"
 
     assert fig_rows >= 1, "Invalid number of rows"
 
-    if data_annotations:
-        assert len(data_annotations) == n
+    if data_annotation_locations:
+        assert len(data_annotation_locations) == N
         assert all(
-            ann.shape == datas[i].shape for i, ann in enumerate(data_annotations)
+            ann.shape == datas[i].shape
+            for i, ann in enumerate(data_annotation_locations)
         )
 
     vmin = vmin or min(np.nanmin(d) for d in datas)
     vmax = vmax or max(np.nanmax(d) for d in datas)
     norm = mpl.colors.Normalize(vmin, vmax)
 
-    fig_cols = int(np.ceil(n / fig_rows))
+    max_y = max(d.shape[0] for d in datas)
+    max_x = max(d.shape[1] for d in datas)
+
+    fig_cols = int(np.ceil(N / fig_rows))
 
     if isinstance(fig_size, (int, float)):
         fig_size = (fig_cols * fig_size, fig_rows * fig_size)
@@ -217,48 +231,71 @@ def multi_heatmap(
         # None will use default from style
         raise ValueError(f"Invalid fig_size: {fig_size}")
 
+    if not data_annotation_fn:
+        default_annotation_dict = dict(
+            s="*",
+            ha="center",
+            va="center",
+            color="darkred",
+            fontdict={"size": "small"},
+        )
+        data_annotation_fn = lambda *a: default_annotation_dict
+
     with mpl.style.context(style, after_reset=False):
         fig, ax = plt.subplots(fig_rows, fig_cols, figsize=fig_size)
         ax: Sequence[plt.Axes] = np.reshape(ax, -1)
 
-        for i in range(n):
-            data = datas[i]
-            im = ax[i].imshow(data, interpolation=None, norm=norm)
+        for n in range(N):
+            data = datas[n]
+            data_ymax, data_xmax = data.shape
 
-            for edge, spine in ax[i].spines.items():
+            if titles:
+                ax[n].set_title(titles[n])
+
+            # Make sure all grids are the same size
+            ax[n].set_xlim(0 - 1, max_x)
+            ax[n].set_ylim(0 - 1, max_y)
+
+            im = ax[n].imshow(
+                data,
+                interpolation=None,
+                norm=norm,
+                origin="upper",
+                extent=(0 - 0.5, data_xmax - 0.5, 0 - 0.5, data_ymax - 0.5),
+            )
+
+            for edge, spine in ax[n].spines.items():
                 spine.set_visible(False)
 
-            ax[i].set_xticks(np.arange(data.shape[1]))
-            ax[i].set_yticks(np.arange(data.shape[0]))
+            # Configure MAJOR grid
+            ax[n].set_xticks(np.arange(data_xmax), minor=False)
+            ax[n].set_yticks(np.arange(data_ymax), minor=False)
             if col_labels:
-                ax[i].set_xticklabels(col_labels[i])
+                ax[n].set_xticklabels(col_labels[n], minor=False)
             if row_labels:
-                ax[i].set_yticklabels(row_labels[i])
-            if titles:
-                ax[i].set_title(titles[i])
+                # labels REVERSED because of coordinate system
+                ax[n].set_yticklabels(reversed(row_labels[n]), minor=False)
 
-            ax[i].tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
+            ax[n].tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
             plt.setp(
-                ax[i].get_xticklabels(), rotation=45, ha="left", rotation_mode="anchor"
+                ax[n].get_xticklabels(), rotation=45, ha="left", rotation_mode="anchor"
             )
-            ax[i].set_xticks(np.arange(data.shape[1] + 1) - 0.5, minor=True)
-            ax[i].set_yticks(np.arange(data.shape[0] + 1) - 0.5, minor=True)
-            ax[i].grid(which="minor", color=(0.9,) * 3, linestyle="-", linewidth=0.5)
-            ax[i].tick_params(which="minor", bottom=False, left=False)
 
-            if data_annotations:
-                ann = data_annotations[i]
+            # Configure MINOR grid
+            ax[n].set_xticks(np.arange(data_xmax + 1) - 0.5, minor=True)
+            ax[n].set_yticks(np.arange(data_ymax + 1) - 0.5, minor=True)
+            ax[n].grid(which="minor", color=(0.9,) * 3, linestyle="-", linewidth=0.5)
+            ax[n].tick_params(which="minor", bottom=False, left=False)
+
+            if data_annotation_locations:
+                ann = data_annotation_locations[n]
                 ij_ann = np.argwhere(ann)
-                for ij in ij_ann:
-                    ax[i].text(
-                        # flip i,j because of image coordinate system
-                        ij[1],
-                        ij[0],
-                        "*",
-                        ha="center",
-                        va="center",
-                        color="k",
-                        # fontdict={"size": "xx-small"},
+                for i, j in ij_ann:
+                    ax[n].text(
+                        # need to flip y due to image coordinate system
+                        y=data_ymax - 1 - i,
+                        x=j,
+                        **data_annotation_fn(n, i, j),
                     )
 
         fig.colorbar(im, ax=ax, orientation="vertical", pad=0.05, shrink=0.7)
