@@ -145,14 +145,14 @@ def ramachandran(
 
 def multi_heatmap(
     datas: Union[np.ndarray, List[np.ndarray]],
-    row_labels: List[str] = None,
-    col_labels: List[str] = None,
-    titles: List[str] = None,
-    fig_size=None,
-    fig_rows=1,
+    row_labels: Optional[Union[Sequence[str], Sequence[Sequence[str]]]] = None,
+    col_labels: Optional[Union[Sequence[str], Sequence[Sequence[str]]]] = None,
+    titles: Optional[Sequence[str]] = None,
+    fig_size: Optional[Union[float, Tuple[float, float]]] = None,
+    fig_rows: int = 1,
     vmin: float = None,
     vmax: float = None,
-    data_annotation_fn: Callable[[int, int, int], str] = None,
+    data_annotations: Optional[Sequence[np.ndarray]] = None,
     style=PP5_MPL_STYLE,
     outfile: Union[Path, str] = None,
 ) -> Optional[Tuple[Figure, Iterable[Axes]]]:
@@ -160,41 +160,52 @@ def multi_heatmap(
     Plots multiple 2D heatmaps horizontally next to each other while
     normalizing them to the same scale.
     :param datas: List of 2D arrays, or a single 3D array (the first
-    dimension will be treated as a list).
+        dimension will be treated as a list).
     :param row_labels: Labels for the heatmap rows.
     :param col_labels: Labels for the heatmap columns.
     :param titles: Title for each axes.
     :param fig_size: Size of figure. If scalar it will be used as a base
-    size and scaled by the number of rows and columns in the figure.
-    Otherwise it should be a tuple of (width, height).
+        size and scaled by the number of rows and columns in the figure.
+        Otherwise it should be a tuple of (width, height).
     :param fig_rows: How many rows of heatmaps to create in the figure.
     :param vmin: Minimum value for scaling.
     :param vmax: Maximum value for scaling.
-    :param data_annotation_fn: An optional callable accepting three indices
-    (i,j, k) into the given datas. It should return a string which will be
-    used as an annotation (drawn inside the corresponding location in the
-    heatmap).
     :param style: Style name or stylefile path.
     :param outfile: Optional path to write output figure to.
     :return: If figure was written to file, return nothing. Otherwise
     returns Tuple of figure, axes objects.
     """
+    n = len(datas)
 
-    for d in datas:
+    # If row/col labels is a list of strings, duplicate for each data matrix
+    if row_labels and isinstance(row_labels[0], str):
+        row_labels = [row_labels] * n
+
+    if col_labels and isinstance(col_labels[0], str):
+        col_labels = [col_labels] * n
+
+    if titles:
+        assert len(titles) == n, "Inconsistent number of titles"
+
+    for i, d in enumerate(datas):
         assert d.ndim == 2, "Invalid data shape"
         if row_labels:
-            assert d.shape[0] == len(row_labels), "Inconsistent label number"
+            assert d.shape[0] == len(row_labels[i]), "Inconsistent label number"
         if col_labels:
-            assert d.shape[1] == len(col_labels), "Inconsistent label number"
-    if titles:
-        assert len(datas) == len(titles), "Inconsistent number of titles"
+            assert d.shape[1] == len(col_labels[i]), "Inconsistent label number"
+
     assert fig_rows >= 1, "Invalid number of rows"
+
+    if data_annotations:
+        assert len(data_annotations) == n
+        assert all(
+            ann.shape == datas[i].shape for i, ann in enumerate(data_annotations)
+        )
 
     vmin = vmin or min(np.nanmin(d) for d in datas)
     vmax = vmax or max(np.nanmax(d) for d in datas)
     norm = mpl.colors.Normalize(vmin, vmax)
 
-    n = len(datas)
     fig_cols = int(np.ceil(n / fig_rows))
 
     if isinstance(fig_size, (int, float)):
@@ -208,7 +219,7 @@ def multi_heatmap(
 
     with mpl.style.context(style, after_reset=False):
         fig, ax = plt.subplots(fig_rows, fig_cols, figsize=fig_size)
-        ax: np.ndarray[plt.Axes] = np.reshape(ax, -1)
+        ax: Sequence[plt.Axes] = np.reshape(ax, -1)
 
         for i in range(n):
             data = datas[i]
@@ -220,9 +231,9 @@ def multi_heatmap(
             ax[i].set_xticks(np.arange(data.shape[1]))
             ax[i].set_yticks(np.arange(data.shape[0]))
             if col_labels:
-                ax[i].set_xticklabels(col_labels)
+                ax[i].set_xticklabels(col_labels[i])
             if row_labels:
-                ax[i].set_yticklabels(row_labels)
+                ax[i].set_yticklabels(row_labels[i])
             if titles:
                 ax[i].set_title(titles[i])
 
@@ -235,18 +246,19 @@ def multi_heatmap(
             ax[i].grid(which="minor", color=(0.9,) * 3, linestyle="-", linewidth=0.5)
             ax[i].tick_params(which="minor", bottom=False, left=False)
 
-            if data_annotation_fn is not None:
-                rc_ind = it.product(range(data.shape[0]), range(data.shape[1]))
-                for r, c in rc_ind:
-                    annotation = str(data_annotation_fn(i, r, c))
+            if data_annotations:
+                ann = data_annotations[i]
+                ij_ann = np.argwhere(ann)
+                for ij in ij_ann:
                     ax[i].text(
-                        c,
-                        r,
-                        annotation,
+                        # flip i,j because of image coordinate system
+                        ij[1],
+                        ij[0],
+                        "*",
                         ha="center",
                         va="center",
-                        color="w",
-                        fontdict={"size": "xx-small"},
+                        color="k",
+                        # fontdict={"size": "xx-small"},
                     )
 
         fig.colorbar(im, ax=ax, orientation="vertical", pad=0.05, shrink=0.7)
