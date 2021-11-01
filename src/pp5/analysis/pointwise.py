@@ -1266,6 +1266,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     group_sizes=group_sizes,
                     significance_meta=significance_meta,
                     out_dir=self.out_dir.joinpath(f"ddists"),
+                    normalize=True,
                 ),
             )
         )
@@ -1625,6 +1626,7 @@ def _plot_pvals_ddists(
     group_sizes: Dict[str, int],
     significance_meta: Dict[str, dict],
     out_dir: Path,
+    normalize: bool = False,
 ):
     """
     Plots distances between AAs and codons, and highlights significant ones based on pval.
@@ -1637,6 +1639,9 @@ def _plot_pvals_ddists(
     :param group_sizes: Dict from group_name to size ('total') and subgroup sizes ('subgroup').
     :param significance_meta: A dict mapping from result_type to group_name to a dict
         containing the significance information.
+    :param out_dir: Where to write the figures to.
+    :param normalize: Whether to normalize each distance matrix so that the main
+        diagonal is 1, i.e. Dij -> Dij/sqrt(Dii * Djj).
     :return: Path of output figure.
     """
     out_files = []
@@ -1699,6 +1704,15 @@ def _plot_pvals_ddists(
                         [j_to_name[j] for j in sorted(set(ijs[:, 1]))]
                     )
                     plot_data_annotations.append(pvals[i_slice, j_slice] <= pval_thresh)
+
+            if normalize:
+                # Normalizing: Dij -> Dij/sqrt(Dii * Djj)
+                # TODO: how to normalize the AAC case?
+                for i, d in enumerate(plot_datas):
+                    normalization = np.sqrt(
+                        np.diag(d).reshape(-1, 1) * np.diag(d).reshape(1, -1)
+                    )
+                    plot_datas[i] = d / normalization
 
             fig, _ = pp5.plot.multi_heatmap(
                 datas=plot_datas,
