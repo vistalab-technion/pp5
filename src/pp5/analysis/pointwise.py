@@ -1722,6 +1722,13 @@ def _plot_pvals_ddists(
                 fig_rows=int(np.ceil(np.sqrt(len(plot_datas)))),
                 fig_size=6,
                 data_annotation_locations=plot_data_annotations,
+                data_annotation_fn=lambda *a: dict(
+                    s="*",
+                    ha="center",
+                    va="center",
+                    color="darkred",
+                    fontdict={"size": "medium"},
+                ),
             )
             fig_filename = out_dir.joinpath(f"{result_type}-{group_name}.pdf")
             out_files.append(pp5.plot.savefig(fig, fig_filename, close=True))
