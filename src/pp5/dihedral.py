@@ -182,7 +182,8 @@ class Dihedral(object):
         """
 
         dist = flat_torus_distance(
-            np.array([a1.phi, a1.psi]), np.array([a2.phi, a2.psi])
+            np.array([a1.phi, a1.psi]).reshape(-1, 2),
+            np.array([a2.phi, a2.psi]).reshape(-1, 2),
         )[0]
         if not squared:
             dist = math.sqrt(dist)
@@ -348,6 +349,25 @@ def flat_torus_distance(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
     absdiff_min = np.minimum(absdiff, absdiff_2pi)
     dist = np.sum(absdiff_min ** 2, axis=1)
     return dist
+
+
+@numba.jit(nopython=True)
+def flat_torus_distance2(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
+    """
+    Another way to calculate the flat-torus distance. Should be equivalent.
+
+    Computes the distance between pairs of dihedral angles as if they were on a
+    "flat torus" (also a Ramachandran Plot). Calculates a euclidean
+    distance, but with a "wrap-around" at +-180, so e.g. the distance
+    between -178 and 178 degrees is actually 4 degrees.
+    :param phi_psi0: (N,2) containing N (phi, psi) pairs in radians within [-pi, pi].
+    :param phi_psi1: Angles corresponding to phi_psi0, must be same shape.
+    :return: An array of shape (N,) containing the flat torus distances.
+    """
+    dphi = phi_psi0[:, 0] - phi_psi1[:, 0]
+    dpsi = phi_psi0[:, 1] - phi_psi1[:, 1]
+    d2 = np.arccos(np.cos(dphi)) ** 2 + np.arccos(np.cos(dpsi)) ** 2
+    return d2
 
 
 class DihedralAnglesEstimator(object):
