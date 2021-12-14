@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from math import nan
-from typing import List, Optional
+from typing import List, Union, Optional, Sequence
 
 import numba
 import numpy as np
@@ -283,12 +283,6 @@ class Dihedral(object):
 
     @staticmethod
     @numba.jit(nopython=True)
-    def _wraparound_diff(a1: float, a2: float):
-        d = math.fabs(a1 - a2)
-        return min(d, 2 * math.pi - d)
-
-    @staticmethod
-    @numba.jit(nopython=True)
     def _mean_sq_metric_s1(phi0, phi1):
         # A metric function for S1 (mean squared)
         # Note: arccos returns values in [0, pi]
@@ -368,6 +362,40 @@ def flat_torus_distance2(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
     dpsi = phi_psi0[:, 1] - phi_psi1[:, 1]
     d2 = np.arccos(np.cos(dphi)) ** 2 + np.arccos(np.cos(dpsi)) ** 2
     return d2
+
+
+@numba.jit(nopython=True)
+def wraparound_diff(
+    a1: Union[float, np.ndarray], a2: Union[float, np.ndarray], deg: bool = False
+):
+    d = np.fabs(a1 - a2)
+    if deg:
+        return np.minimum(d, 2 * 180.0 - d)
+    else:
+        return np.minimum(d, 2 * np.pi - d)
+
+
+@numba.jit(nopython=True)
+def wraparound_mean(angles: Union[np.ndarray, Sequence[float]], deg: bool = False):
+    """
+    Calculates an average of multiple angles with wrap-around at pi.
+    :param angles: An (N,) array of angles in any value range.
+    :param deg: Whether the input is in degrees (True) or radians (False). Also
+        determines output units.
+    :return: The mean angle, wrapped around to ±pi.
+    """
+    if deg:
+        angles_rad = np.deg2rad(angles)
+    else:
+        angles_rad = angles
+
+    angles_sin = np.sin(angles_rad)
+    angles_cos = np.cos(angles_rad)
+    atan_rad = np.arctan2(np.nansum(angles_sin), np.nansum(angles_cos))
+
+    if deg:
+        return np.rad2deg(atan_rad)
+    return atan_rad
 
 
 class DihedralAnglesEstimator(object):
