@@ -223,7 +223,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if not 0.0 < fdr < 1.0:
             raise ValueError("FDR should be between 0 and 1, exclusive")
 
-        comparison_types = comparison_types or COMP_TYPES
+        comparison_types = [c for c in comparison_types if c] or COMP_TYPES
         if any(ct not in COMP_TYPES for ct in comparison_types):
             raise ValueError(
                 f"One or more invalid {comparison_types}, must be one of {COMP_TYPES}"
