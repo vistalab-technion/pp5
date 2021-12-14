@@ -3,7 +3,7 @@ import re
 import inspect
 import argparse
 import logging.config
-from typing import Any, Dict, Callable
+from typing import Any, Dict, Callable, Sequence
 from pathlib import Path
 
 import pp5
@@ -89,6 +89,7 @@ def _generate_cli_from_func(func: Callable, skip=()):
         args["help"] = param_doc.get(param.name)
         args["required"] = False
         args["default"] = param.default
+
         if args["default"] == inspect.Parameter.empty:
             args["default"] = None
             args["required"] = True
@@ -115,6 +116,11 @@ def _generate_cli_from_func(func: Callable, skip=()):
                 args["action"] = "store_true"
             # cant specify both store_true/false and type
             args.pop("type")
+
+        # For sequences (but not strings), add 'nargs'
+        if args.get("type") not in (str, None) and issubclass(args["type"], Sequence):
+            args["nargs"] = "+"
+            args["type"] = str  # type of each element
 
         args["names"] = [f"--{arg_name_long}"]
 
