@@ -51,7 +51,7 @@ from pp5.codons import (
     is_synonymous_tuple,
 )
 from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
-from pp5.dihedral import Dihedral, flat_torus_distance
+from pp5.dihedral import Dihedral, wraparound_mean, flat_torus_distance
 from pp5.parallel import yield_async_results
 from pp5.analysis.base import ParallelAnalyzer
 from pp5.distributions.kde import bvm_kernel, gaussian_kernel, torus_gaussian_kernel_2d
@@ -68,7 +68,9 @@ CODON_SCORE_COL = "codon_score"
 SECONDARY_COL = "secondary"
 PHI_COL = "phi"
 PSI_COL = "psi"
-ANGLE_COLS = (PHI_COL, PSI_COL)
+OMEGA_COL = "omega"
+PHI_PSI_COLS = (PHI_COL, PSI_COL)
+ANGLE_COLS = (PHI_COL, PSI_COL, OMEGA_COL)
 CONDITION_COL = "condition_group"
 SUBGROUP_COL = "subgroup"
 GROUP_SIZE_COL = "group_size"
@@ -439,7 +441,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             subgroup_ss = secondaries.pop()
 
             # Make sure all angles have a value
-            if np.any(df_subgroup[[*ANGLE_COLS]].isnull()):
+            if np.any(df_subgroup[[*PHI_PSI_COLS]].isnull()):
                 continue
 
             # Calculate average angle from the different structures in this sub group
@@ -454,6 +456,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     SECONDARY_COL: subgroup_ss,
                     PHI_COL: centroid.phi_deg,
                     PSI_COL: centroid.psi_deg,
+                    OMEGA_COL: wraparound_mean(
+                        np.array(df_subgroup[OMEGA_COL]), deg=True
+                    ),
                     GROUP_SIZE_COL: len(df_subgroup),
                 }
             )
@@ -559,6 +564,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # Use Psi0, Phi1 (current psi, next (or last) phi)
                 PHI_COL: row[f"{prefixes[-1]}{PHI_COL}"],
                 PSI_COL: row[PSI_COL],
+                OMEGA_COL: row[OMEGA_COL],
                 GROUP_SIZE_COL: int(min(group_sizes)),
             }
 
@@ -849,8 +855,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         ddist_n_max = self.ddist_n_max
 
                     # Analyze the angles of subgroup1 and subgroup2
-                    angles1 = np.deg2rad(df_sub1[[*ANGLE_COLS]].values)
-                    angles2 = np.deg2rad(df_sub2[[*ANGLE_COLS]].values)
+                    angles1 = np.deg2rad(df_sub1[[*PHI_PSI_COLS]].values)
+                    angles2 = np.deg2rad(df_sub2[[*PHI_PSI_COLS]].values)
                     res = pool.apply_async(
                         _subgroup_permutation_test,
                         kwds=dict(
@@ -893,7 +899,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         LOGGER.info(f"Calculating dihedral distribution per SS type...")
 
         args = (
-            (group_idx, df_group, ANGLE_COLS, self.kde_args)
+            (group_idx, df_group, PHI_PSI_COLS, self.kde_args)
             for group_idx, df_group in df_groups
         )
 
@@ -944,7 +950,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     args = (
                         group_idx,
                         df_sub,
-                        ANGLE_COLS,
+                        PHI_PSI_COLS,
                         self.kde_args,
                     )
 
@@ -1213,7 +1219,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # Get the samples (angles) of all subgroups in this group
                 subgroup_col = AA_COL if aa_codon == "aa" else CODON_COL
                 df_group: pd.DataFrame = df_groups[group_idx]
-                df_group_samples: pd.DataFrame = df_group[[subgroup_col, *ANGLE_COLS]]
+                df_group_samples: pd.DataFrame = df_group[[subgroup_col, *PHI_PSI_COLS]]
                 df_group_samples = df_group_samples.rename(
                     columns={subgroup_col: SUBGROUP_COL}
                 )
@@ -1304,12 +1310,12 @@ def _subgroup_centroid(
 ) -> Dihedral:
     """
     Calculates centroid angle from a subgroup dataframe containing phi,psi dihedral
-    angles in degrees under the columns ANGLE_COLS.
+    angles in degrees under the columns PHI_PSI_COLS.
     :param df_subgroup: The dataframe.
-    :param input_degrees: Whether the input data in the ANGLE_COLS is in degrees.
+    :param input_degrees: Whether the input data in the PHI_PSI_COLS is in degrees.
     :return: A Dihedral angles object containing the result.
     """
-    raw_angles = df_subgroup[[*ANGLE_COLS]].values
+    raw_angles = df_subgroup[[*PHI_PSI_COLS]].values
     if input_degrees:
         raw_angles = np.deg2rad(raw_angles)
 
@@ -1599,7 +1605,7 @@ def _plot_dkdes(
                 if df_group_samples is not None:
                     idx_samples = df_group_samples[SUBGROUP_COL] == subgroup_idx
                     samples = np.deg2rad(
-                        df_group_samples[idx_samples][[*ANGLE_COLS]].values
+                        df_group_samples[idx_samples][[*PHI_PSI_COLS]].values
                     )
 
                 pp5.plot.ramachandran(
