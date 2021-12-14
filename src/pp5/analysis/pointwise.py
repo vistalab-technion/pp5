@@ -698,7 +698,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Codon counts also include the entire group, remove it
             codon_counts.pop(aat)
             # Use minimal group size for all codons of this AA
-            return np.min([*codon_counts.values()]).item()
+            min_group_size = np.min([*codon_counts.values()]).item()
+            # Make sure we have at least two samples (statistical analysis requires it)
+            if min_group_size < 2:
+                LOGGER.warning(
+                    f"Only one sample of smallest codon group for {group=},"
+                    f" {aact1=}, {aact2=}."
+                )
+            return max(min_group_size, 2)
 
         totals = {}
 
@@ -1062,7 +1069,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Calculate significance threshold for pvalues for  multiple-hypothesis
         # testing.
         group_pvals_flat = group_pvals[idx_valid[:, 0], idx_valid[:, 1]]
-        significance_thresh = mht_bh(q=self.fdr, pvals=group_pvals_flat)
+        if len(group_pvals_flat) > 1:
+            significance_thresh = mht_bh(q=self.fdr, pvals=group_pvals_flat)
+        else:
+            significance_thresh = 0.0
 
         # Metadata about the significance of members in this group
         significance_meta = {
