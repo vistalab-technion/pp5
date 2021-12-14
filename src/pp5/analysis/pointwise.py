@@ -118,6 +118,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         ddist_kernel_size: float = 1.0,
         fdr: float = 0.1,
         comparison_types: Sequence[str] = COMP_TYPES,
+        ss_group_any: bool = False,
         out_tag: str = None,
     ):
         """
@@ -182,6 +183,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             Values can be "aa" for comparing amino-acid pairs, "cc" for comparins codon
             pairs, or "aac" for comparing pairs of (a, c) where c is a codon coding for
             the amino acid a. None or empy means all comparison types will be used.
+        :param ss_group_any: Whether to add an ANY group to the analysis which contains
+            all SS types, even when conditioning by SS type.
         :param out_tag: Tag for output.
         """
         super().__init__(
@@ -248,6 +251,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.ddist_kernel_size = ddist_kernel_size
         self.fdr = fdr
         self.comparison_types = comparison_types
+        self.ss_group_any = ss_group_any
+        if condition_on_ss:
+            consolidated_ss_types = [ss for ss in consolidate_ss.values() if ss]
+            if self.ss_group_any:
+                consolidated_ss_types.append(SS_TYPE_ANY)
+            self.ss_group_names = tuple(sorted(set(consolidated_ss_types)))
+        else:
+            self.ss_group_names = (SS_TYPE_ANY,)
 
         # Setup parameters for statistical tests
         if ddist_statistic == "kde_v":
@@ -661,7 +672,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         group_sizes = {}
         curr_codon_col = CODON_COL
         df_groups = groupby_with_full_group(
-            df_processed, full_group_name=SS_TYPE_ANY, full_first=True, by=CONDITION_COL
+            df_processed,
+            full_group_name=SS_TYPE_ANY,
+            full_first=True,
+            by=CONDITION_COL,
+            skip_full_group=not self.ss_group_any,
         )
         for group_idx, df_group in df_groups:
             df_subgroups = df_group.groupby(curr_codon_col)
@@ -766,12 +781,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 dtype=np.float32,
             )
 
-            group_names = sorted(set(df_processed[CONDITION_COL]).union({SS_TYPE_ANY}))
             collected_ddists: Dict[str, np.ndarray] = {
-                g: np.full(**default) for g in group_names
+                g: np.full(**default) for g in self.ss_group_names
             }
             collected_pvals: Dict[str, np.ndarray] = {
-                g: np.full(**default) for g in group_names
+                g: np.full(**default) for g in self.ss_group_names
             }
 
             async_results = self._pointwise_dists_dihedral_subgroup_pairs(
@@ -824,7 +838,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         analysis.
         """
         df_groups = groupby_with_full_group(
-            df_processed, full_group_name=SS_TYPE_ANY, full_first=True, by=CONDITION_COL
+            df_processed,
+            full_group_name=SS_TYPE_ANY,
+            full_first=True,
+            by=CONDITION_COL,
+            skip_full_group=not self.ss_group_any,
         )
         async_results: Dict[Tuple[str, str, str], AsyncResult] = {}
 
@@ -913,6 +931,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 full_group_name=SS_TYPE_ANY,
                 full_first=True,
                 by=CONDITION_COL,
+                skip_full_group=not self.ss_group_any,
             )
         )
         ss_counts = {f"n_{ss_type}": len(df_group) for ss_type, df_group in df_groups}
@@ -944,6 +963,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 full_group_name=SS_TYPE_ANY,
                 full_first=True,
                 by=CONDITION_COL,
+                skip_full_group=not self.ss_group_any,
             )
         )
 
@@ -986,9 +1006,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         _dihedral_kde_single_group, args=args
                     )
 
-            group_names = sorted(set(df_processed[CONDITION_COL]).union({SS_TYPE_ANY}))
             collected_kdes: Dict[str, Dict[str, np.ndarray]] = {
-                g: {} for g in group_names
+                g: {} for g in self.ss_group_names
             }
             for ((group, sub), result) in yield_async_results(async_results):
                 i = sub_names_to_idx[sub]
@@ -1006,6 +1025,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 full_group_name=SS_TYPE_ANY,
                 full_first=True,
                 by=CONDITION_COL,
+                skip_full_group=not self.ss_group_any,
             )
         )
 
@@ -1229,6 +1249,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 full_group_name=SS_TYPE_ANY,
                 full_first=True,
                 by=CONDITION_COL,
+                skip_full_group=not self.ss_group_any,
             )
         }
         group_sizes: dict = self._load_intermediate("group-sizes", True)
@@ -1941,6 +1962,7 @@ def groupby_with_full_group(
     df: pd.DataFrame,
     full_group_name: Union[str, Tuple[str, ...]],
     full_first: bool = False,
+    skip_full_group: bool = True,
     **groupby_kwargs,
 ) -> Iterator[Tuple[Union[str, Tuple[str, ...]], pd.DataFrame]]:
     """
@@ -1950,6 +1972,8 @@ def groupby_with_full_group(
     :param full_group_name: Name of the full group. Should be a column name or a
         tuple of column names, depending on the "by" argument of groupby.
     :param full_first: Whether to add the full-group first (True) or last (False).
+    :param skip_full_group: If True, the full group will not be returned. Use this
+        flag to conditionally turn this method into a regular group_by.
     :param groupby_kwargs: kwargs to be passed as-is to groupby.
     :return: Yields tuples of (group_name, group_df). The first or last yielded tuple
         will contain the full dataframe. If there's another group with the same name
@@ -1957,7 +1981,7 @@ def groupby_with_full_group(
     """
     yielded_group_names = set()
 
-    if full_first:
+    if not skip_full_group and full_first:
         yielded_group_names.add(full_group_name)
         yield (full_group_name, df)
 
@@ -1966,5 +1990,9 @@ def groupby_with_full_group(
             yielded_group_names.add(group_name)
             yield group_name, df_group
 
-    if not full_first and (full_group_name not in yielded_group_names):
+    if (
+        not skip_full_group
+        and not full_first
+        and (full_group_name not in yielded_group_names)
+    ):
         yield (full_group_name, df)
