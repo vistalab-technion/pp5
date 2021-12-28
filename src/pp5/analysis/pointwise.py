@@ -574,12 +574,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             codon_tuple = aact_tuple2str(aa_codons)
             aa_tuple = aact_tuple2str(aas)
             ss_tuple = aact_tuple2str(sss)
+
             if not self.condition_on_ss:
                 condition_group = SS_TYPE_ANY
             elif all(ss == sss[0] for ss in sss):
                 condition_group = sss[0]
             else:
-                condition_group = SS_TYPE_MIXED
+                # Drop tuples with inconsistent SS
+                return None
 
             return {
                 UNP_ID_COL: row[UNP_ID_COL],
