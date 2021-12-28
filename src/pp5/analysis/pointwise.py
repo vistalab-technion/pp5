@@ -718,12 +718,25 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
         group_sizes: dict = self._load_intermediate("group-sizes")
 
-        def _non_syn_codons_pair_filter(group: str, aact1: str, aact2: str) -> bool:
-            # Returns True if aact1 and aact2 are not synonymous (therefore should be
-            # filtered out).
-            return not is_synonymous_tuple(aact_str2tuple(aact1), aact_str2tuple(aact2))
+        def _non_syn_codons_pair_filter_fn(group: str, aact1: str, aact2: str) -> bool:
+            # Returns True if aact1 and aact2 are synonymous (therefore should be
+            # analyzed).
+            return is_synonymous_tuple(aact_str2tuple(aact1), aact_str2tuple(aact2))
 
-        def _syn_codon_pair_nmax_function(group: str, aact1: str, aact2: str) -> int:
+        def _aa_tuples_filter_fn(group: str, aat1: str, aat2: str):
+            # Returns True if aat1 and aat2 are either single AAs or AA tuples with
+            # the same first AA.
+            aa11, *aa1_ = aact_str2tuple(aat1)
+            aa21, *aa2_ = aact_str2tuple(aat2)
+
+            # don't filter any singleton tuples
+            if len(aa1_) == 0:
+                return True
+
+            # Only analyze tuples where the first AA matches, e.g. A_X and A_Y.
+            return aa11 == aa21
+
+        def _syn_codon_pair_nmax_fn(group: str, aact1: str, aact2: str) -> int:
             # Returns the maximal sample size to use when comparing two synonymous
             # codons. We're selecting the smallest sample size of all codons from the
             # same AA.
@@ -749,13 +762,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         totals = {}
 
         comp_types_to_subgroup_pairs = {
-            COMP_TYPE_AA: (AA_COL, AA_COL, None, None),
-            COMP_TYPE_AAC: (AA_COL, CODON_COL, None, _syn_codon_pair_nmax_function,),
+            COMP_TYPE_AA: (AA_COL, AA_COL, _aa_tuples_filter_fn, None),
+            COMP_TYPE_AAC: (AA_COL, CODON_COL, None, _syn_codon_pair_nmax_fn,),
             COMP_TYPE_CC: (
                 CODON_COL,
                 CODON_COL,
-                _non_syn_codons_pair_filter,
-                _syn_codon_pair_nmax_function,
+                _non_syn_codons_pair_filter_fn,
+                _syn_codon_pair_nmax_fn,
             ),
         }
 
@@ -884,7 +897,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         continue
 
                     # Skip based on custom pair filtering logic
-                    if pair_filter_fn is not None and pair_filter_fn(group, sub1, sub2):
+                    if pair_filter_fn is not None and (
+                        not pair_filter_fn(group, sub1, sub2)
+                    ):
                         continue
 
                     # Calculate ddist_nmax for pair based on custom logic
