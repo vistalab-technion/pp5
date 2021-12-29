@@ -32,6 +32,7 @@ from pp5.plot import PP5_MPL_STYLE
 from pp5.stats import mht_bh, tw_test, mmd_test, kde2d_test
 from pp5.utils import sort_dict
 from pp5.codons import (
+    ACIDS,
     AAC_SEP,
     AA_CODONS,
     UNKNOWN_AA,
@@ -1349,6 +1350,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
         )
 
+        # ddists
         async_results.append(
             pool.apply_async(
                 _plot_pvals_ddists,
@@ -1756,6 +1758,7 @@ def _plot_pvals_ddists(
         group_to_pvals = type_to_pvals[comp_type]
         group_to_ddists = type_to_ddists[comp_type]
         i_to_name, j_to_name = idx_to_name[comp_type]
+        tuple_len = len(aact_str2tuple(i_to_name[0]))
 
         group_names = tuple(group_to_pvals.keys())
         assert group_names == tuple(group_to_ddists.keys())
@@ -1773,38 +1776,55 @@ def _plot_pvals_ddists(
             plot_col_labels = []
             plot_data_annotations = []
 
-            # Create a mapping from each AA name to the synonymous indices in the
-            # distance matrix
-            aa_to_ijs = {}
+            single_aa_to_ijs = {}
+            aat_to_ijs = {}
             for i, j in ij_valid:
                 i_name, j_name = i_to_name[i], j_to_name[j]
-                i_aa_name, j_aa_name = _aact_to_aat(i_name), _aact_to_aat(j_name)
 
-                if i_aa_name == j_aa_name:
-                    aa_name = i_aa_name
-                    aa_to_ijs.setdefault(aa_name, [])
-                    aa_to_ijs[aa_name].append((i, j))
+                aat_i, aat_j = _aact_to_aat(i_name), _aact_to_aat(j_name)
+                aa_i, aa_j = aact_str2tuple(aat_i)[0], aact_str2tuple(aat_j)[0]
 
-            if comp_type == COMP_TYPE_AA:
+                # single_aa_to_ijs: A mapping from each single AA name to the AA-tuple
+                # indices in the distance matrix
+                if aa_i == aa_j:
+                    single_aa_to_ijs.setdefault(aa_i, [])
+                    single_aa_to_ijs[aa_i].append((i, j))
+
+                # aat_to_ijs: A mapping from each AA-tuple name to the synonymous
+                # indices in the distance matrix
+                if aat_i == aat_j:
+                    aat_name = aat_i
+                    aat_to_ijs.setdefault(aat_name, [])
+                    aat_to_ijs[aat_name].append((i, j))
+
+            if comp_type == COMP_TYPE_AA and tuple_len == 1:
                 plot_datas.append(ddists)
                 plot_titles.append("")
                 plot_row_labels.append(tuple(i_to_name.values()))
                 plot_col_labels.append(tuple(j_to_name.values()))
                 plot_data_annotations.append(pvals <= pval_thresh)
 
-            else:
-                for aa_name, ijs in aa_to_ijs.items():
-                    # Extract square ddist sub-matrix of synonymous codons
+            else:  # CC or AC
+                # For AA, t>1: Plot a separate distance matrix for every single AA
+                # For CC, AC: Plot a separate distance matrix for every AA-tuple
+                # Choose one of the above mappings accordingly
+                selected_aa_to_ijs = (
+                    single_aa_to_ijs if comp_type == COMP_TYPE_AA else aat_to_ijs
+                )
+
+                # Populate plot data based on indices from mapping
+                for aat_name, ijs in selected_aa_to_ijs.items():
+                    # Extract square ddist sub-matrix
                     ijs = np.array(ijs)  # (n,2)
                     i_slice = slice(np.min(ijs[:, 0]), np.max(ijs[:, 0]) + 1)
                     j_slice = slice(np.min(ijs[:, 1]), np.max(ijs[:, 1]) + 1)
                     plot_datas.append(ddists[i_slice, j_slice])
-                    plot_titles.append(aa_name)
+                    plot_titles.append(aat_name)
                     plot_row_labels.append(
-                        [i_to_name[i] for i in sorted(set(ijs[:, 0]))]
+                        [i_to_name[i] for i in range(i_slice.start, i_slice.stop)]
                     )
                     plot_col_labels.append(
-                        [j_to_name[j] for j in sorted(set(ijs[:, 1]))]
+                        [j_to_name[j] for j in range(j_slice.start, j_slice.stop)]
                     )
                     plot_data_annotations.append(pvals[i_slice, j_slice] <= pval_thresh)
 
@@ -1815,7 +1835,7 @@ def _plot_pvals_ddists(
                     normalization = np.sqrt(
                         np.diag(d).reshape(-1, 1) * np.diag(d).reshape(1, -1)
                     )
-                    plot_datas[i] = d / normalization
+                    plot_datas[i] = d / (normalization + 1e-12)
 
             fig, _ = pp5.plot.multi_heatmap(
                 datas=plot_datas,
