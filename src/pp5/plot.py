@@ -17,6 +17,11 @@ from numpy import ndarray
 from pandas import DataFrame
 from matplotlib.pyplot import Axes, Figure
 
+from numpy.random import randn, permutation, seed
+from functools import partial
+import seaborn as sns
+from pp5.distributions.kde import kde_2d, torus_gaussian_kernel_2d
+
 import pp5
 
 LOGGER = logging.getLogger(__name__)
@@ -744,3 +749,161 @@ def bar_plot(
             ax.add_artist(r)
 
     plt.yticks([i for i in range(len(all_keys))], all_keys)
+
+
+def _level_th(p, level):
+    """
+    Calculates level set threshold in an image.
+    """
+    pp = sorted(p.reshape(-1))
+    cc = np.cumsum(pp)
+    icut = (np.argwhere(cc<=-level)[-1] if level < 0 else np.argwhere(cc>=level)[0])[0]
+    pcut = pp[icut]
+    return pcut
+
+
+def _level_image(p, level):
+    """
+    Calculates level image.
+    """
+    pcut = _level_th(p, level)
+    return p >= pcut
+
+
+def contour_ramachandran(
+    angles: Dict[str, np.ndarray],
+    ranges: Tuple[float, float, float, float] = [-np.pi, +np.pi, -np.pi, +np.pi],
+    bin_width: float = 3.*np.pi/180.,
+    levels: Sequence[float] = [0.1, 0.5, 0.9],
+    confidence: float = 0.1,
+    max_samples: int = 200,
+    num_bootstraps: int = 100,
+    show_samples: bool = True,
+    show_uncertainty: bool = True,
+    show_means: bool = True,
+    *,
+    ax=None,
+    sigma: float = 8. * np.pi / 180,
+    kernel_fn: Optional[
+        Callable[[np.ndarray, np.ndarray], np.ndarray]
+    ] = None,
+    colors: Optional[Dict[str, Tuple[float, float, float]]] = None
+):
+    """
+    Plots countours of Ramachandran KDEs.
+    :param angles: A dictionary of angles. Keys of the dictionary serve as lables,
+        angles are represented as an (N,2) array with the columns being
+        phi, psi in radians.
+    :param ranges: Ranges of the plot box (min_phi, max_phi, min_psi, max_psi) in
+        radians.
+    :param bin_width: Bin width in radians.
+    :param levels: A list of levels to plot.
+    :param confidence: Width of the confidence region around the level lines.
+        Plotted as [confidence, 1-confidence] quantile.
+    :param max_samples: Maximum number of samples. The minimum between max_samples
+        and the smallest sample size in angles will be used in each bootstrapped
+        sample.
+    :param num_bootstraps: Number of bootstraps for uncertainty estimation.
+    :param show_samples: Whether to plot the samples.
+    :param show_uncertainty: Whether to plot the uncertainty regions.
+    :param show_means: Whether to plot the mean level lines.
+    :param ax: Axes to plot on. If omitted, current axis will be used.
+    :param sigma: Kernel width in radians.
+    :param kernel_fn: Optional kernel function to use. If specified, sigma will be
+        ignored.
+    :param colors: Colors to use. Must be specified in a dictionary with the keys
+        matching the angle labels.
+    """
+    if colors is None:
+        colors = sns.color_palette("tab10", len(angles))
+        colors = {
+            c: col
+            for c, col in zip(angles.keys(), colors)
+        }
+
+    if set(colors.keys()) != set(angles.keys()):
+        raise ValueError("Inconsistently keyed colors specified")
+
+    min_angle = [ranges[0], ranges[2]]
+    max_angle = [ranges[1], ranges[3]]
+    n_bins = [
+        int(np.round((mx - mn) / bin_width)) for mn, mx in zip(min_angle, max_angle)
+    ]
+
+    # Subsample
+    N = min(max_samples, min([a.shape[0] for a in angles.values()]))
+
+    angles_bootstrap = {
+        c: [
+            angles[c][np.random.choice(angles[c].shape[0], N, replace=True), :]
+            for n in range(num_bootstraps)
+        ]
+        for c, a in angles.items()
+    }
+
+    kernel_fn = kernel_fn or partial(torus_gaussian_kernel_2d, sigma=sigma)
+
+    def _kde(angles):
+        # Estimate KDEs
+        return kde_2d(
+            angles[:, 0],
+            angles[:, 1],
+            kernel_fn,
+            n_bins,
+            min_angle,
+            max_angle,
+            return_bins=True,
+        )
+
+    # Estimate KDEs
+    kdes = {
+        c: [_kde(a) for a in angs]
+        for c, angs in angles_bootstrap.items()
+    }
+    P = {
+        c: [p for p, *_ in ps]
+        for c, ps in kdes.items()
+    }
+    bins = {
+        c: [p.reshape(-1) for p in ps[0][1:]]
+        for c, ps in kdes.items()
+    }
+
+    ax = ax or plt.gca()
+
+    if show_samples:
+        for c in angles.keys():
+            ax.plot(
+                angles[c][:, 0] * 180 / np.pi,
+                angles[c][:, 1] * 180 / np.pi,
+                '+', color=colors[c], markersize=1., alpha=0.5, #label=c
+            )
+            # Dummy plot for the legend
+            ax.plot(
+                [2 * max_angle[0], 2 * max_angle[0] + 0],
+                [2 * max_angle[0], 2 * max_angle[0] + 0],
+                '-', color=colors[c], linewidth=2.5, label=c,
+            )
+
+    for c in angles.keys():
+        phi, psi = bins[c]
+        phi = phi * 180 / np.pi
+        psi = psi * 180 / np.pi
+        for level in levels:
+            if show_uncertainty:
+                pp = np.array([_level_image(p, level) for p in P[c]]).mean(0)
+                ax.contourf(phi, psi, pp.T, levels=[confidence, 1 - confidence],
+                            colors=[colors[c]], alpha=.4)
+            if show_means:
+                p = np.array(P[c]).mean(0)
+                pth = _level_th(p, level)
+                ax.contour(phi, psi, p.T, levels=[pth], colors=[colors[c]], alpha=1,
+                           linewidths=[2.5])
+
+    ax.set_xlim(phi[0], phi[-1])
+    ax.set_ylim(psi[0], psi[-1])
+    ax.set_aspect('equal')
+    ax.set_xlabel('φ')
+    ax.set_ylabel('ψ')
+    ax.grid()
+    ax.legend()

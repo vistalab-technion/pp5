@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, Union, Tuple, Sequence
 
 import numpy as np
 from numpy import ndarray
@@ -9,21 +9,25 @@ def kde_2d(
     x1: np.ndarray,
     x2: np.ndarray,
     kernel_fn: Callable[[np.ndarray, np.ndarray], np.ndarray],
-    n_bins: int,
-    grid_low: float,
-    grid_high: float,
+    n_bins: Union[float, Tuple[int, int]],
+    grid_low: Union[float, Tuple[float, float]],
+    grid_high: Union[float, Tuple[float, float]],
     batch_size: Optional[int] = None,
     reduce: bool = True,
     dtype: np.dtype = np.float64,
+    return_bins: bool = False,
 ):
     """
     Calculates a kernel-density estimate, evaluated on a discrete 2d grid.
     :param x1: First data variable, of shape (N,).
     :param x2: Second data variable, of shape (N,).
     :param kernel_fn: 2D kernel K(x1, x2) to apply to the samples.
-    :param n_bins: Number M of discrete bins in each axis of the 2d grid.
-    :param grid_low: Smallest value on the evaluation grid, inclusive.
-    :param grid_high: Largest value on the evaluation grid, exclusive.
+    :param n_bins: Number M of discrete bins in each axis of the 2d grid, or a tuple
+        (M1, M2) specifying a different number of bins per axis.
+    :param grid_low: Smallest value on the evaluation grid, inclusive. Can be specified
+        as a single number for both axes or as a tuple for each axis separately.
+    :param grid_high: Largest value on the evaluation grid, exclusive. Can be specified
+        as a single number for both axes or as a tuple for each axis separately.
     :param batch_size: Maximal number of data points to process in a
         single batch. Increasing this will cause hgh memory usage.
         None or zero means no batching.
@@ -34,7 +38,11 @@ def kde_2d(
         un-normalized contribution of each sample to each point on the estimation grid.
         Cannot be used with batch_size>0.
     :param dtype: Datatype of the result.
+    :param return_bins: Whether to return the grid bins.
     :return: The KDE, as an array of shape (M, M) where M is the number of bins.
+        If :param:`return_bins` is set to True, the function will return a tuple
+        containing the KDE matrix followed by two arrays corresponding to the axes
+        bins.
     """
 
     assert x1.ndim == x2.ndim == 1
@@ -42,10 +50,20 @@ def kde_2d(
     if batch_size and not reduce:
         raise ValueError(f"Can't provide batch_size if reduce==False")
 
+    if not isinstance(n_bins, Sequence):
+        n_bins = [n_bins, n_bins]
+    if not isinstance(grid_low, Sequence):
+        grid_low = [grid_low, grid_low]
+    if not isinstance(grid_high, Sequence):
+        grid_high = [grid_high, grid_high]
+
     # Create evaluation grid
-    grid_width = grid_high - grid_low
-    grid = np.linspace(grid_low, grid_high - (grid_width / n_bins), n_bins)
-    grid = grid.reshape((-1, 1)).astype(dtype)  # (M, 1)
+    grid_widths = [h - l for l, h in zip(grid_low, grid_high)]
+    grids = [
+        # (Mi, 1)
+        np.linspace(l, h - (w / n), n).reshape((-1, 1)).astype(dtype)
+        for l, h, w, n in zip(grid_low, grid_high, grid_widths, n_bins)
+    ]
 
     # Reshape data and grid so they can be broadcast together
     x1 = np.ascontiguousarray(x1, dtype=dtype)
@@ -61,7 +79,7 @@ def kde_2d(
     batch_size = (batch_size or n) if reduce else n
 
     n_chunks = int(np.ceil(n / batch_size))
-    P_raw = np.zeros((n_bins, n_bins), dtype=dtype)
+    P_raw = np.zeros(n_bins, dtype=dtype)
 
     for chunk_idx in range(n_chunks):
         start = chunk_idx * batch_size
@@ -69,14 +87,14 @@ def kde_2d(
         chunk = slice(start, stop)
 
         # Calculate grid minus data between each grid and data point
-        dx1 = np.expand_dims(grid - x1[:, chunk], axis=1)  # (M, 1, N)
-        dx2 = np.expand_dims(grid - x2[:, chunk], axis=0)  # (1, M, N)
+        dx1 = np.expand_dims(grids[0] - x1[:, chunk], axis=1)  # (M1, 1, N)
+        dx2 = np.expand_dims(grids[1] - x2[:, chunk], axis=0)  # (1, M2, N)
 
         # Apply kernel pointwise, and sum all values at each grid location
         K = kernel_fn(dx1, dx2)
         K = np.nan_to_num(K, copy=False)
 
-        # Normalize contribution of each sample, i.e. each (M,M) grid
+        # Normalize contribution of each sample, i.e. each (M1,M2) grid
         K /= np.sum(K, axis=(0, 1)).reshape((1, 1, -1))
 
         # If reduce==False, we know batch_size=n so we can just return K from this
@@ -84,11 +102,11 @@ def kde_2d(
         if not reduce:
             return K
 
-        P_raw += np.sum(K, axis=2)  # (M, M, N) -> (M, M)
+        P_raw += np.sum(K, axis=2)  # (M1, M2, N) -> (M1, M2)
 
     # Normalize
     P = P_raw / np.sum(P_raw)
-    return P
+    return P if not return_bins else (P, *grids)
 
 
 def gaussian_kernel(x: ndarray, sigma: float = 1):
