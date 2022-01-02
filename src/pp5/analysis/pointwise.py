@@ -546,12 +546,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         df_m = pd.concat(shifted_dfs, axis=1)
 
-        # Only keep rows where the next residue is in the same protein and has the
-        # successive index.
+        # Construct a dataframe query that only keeps rows where:
+        # 1. The next residue is in the same protein (unp id).
+        # 2. The next residue has the successive index (i+1).
+        # 3. The next residue has the same secondary structure.
         queries = []
         for i, prefix in enumerate(prefixes[1:], start=1):
             queries.append(f"{UNP_ID_COL} == {prefix}{UNP_ID_COL}")
             queries.append(f"{UNP_IDX_COL} + {i} == {prefix}{UNP_IDX_COL}")
+            queries.append(f"{SECONDARY_COL} == {prefix}{SECONDARY_COL}")
 
         query = str.join(" and ", queries)
         if query:
@@ -576,13 +579,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             aa_tuple = aact_tuple2str(aas)
             ss_tuple = aact_tuple2str(sss)
 
-            if not self.condition_on_ss:
-                condition_group = SS_TYPE_ANY
-            elif all(ss == sss[0] for ss in sss):
-                condition_group = sss[0]
-            else:
-                # Drop tuples with inconsistent SS
-                return None
+            # Make sure there's no ambiguity in the SS type of the tuple
+            if not all(ss == sss[0] for ss in sss):
+                raise RuntimeError(
+                    f"Expecting all members of tuple to have the same SS type. "
+                    f"Offending row: {row}"
+                )
+            condition_group = sss[0]
 
             return {
                 UNP_ID_COL: row[UNP_ID_COL],
