@@ -391,18 +391,45 @@ class TestWraparoundDiff(object):
         ((180, -180), 0),
         ((-20, 30), 50),
         ((30, 30), 0),
+        (
+            (np.array([170, 180, -20, 30]), np.array([-170, -180, 30, 30])),
+            np.array([20, 0, 50, 0]),
+        ),
     ]
 
     @pytest.mark.parametrize(("angles", "expected"), TEST_CASES)
-    def test_wraparound_diff(self, angles, expected):
+    @pytest.mark.parametrize("deg", [False, True])
+    def test_wraparound_diff(self, angles, expected, deg):
         a1, a2 = angles
-        a1, a2 = math.radians(a1), math.radians(a2)
 
-        actual = dihedral.Dihedral._wraparound_diff(a1, a2)
-        assert actual == approx(math.radians(expected))
+        if not deg:
+            a1, a2 = np.radians(a1), np.radians(a2)
+            expected = np.radians(expected)
 
-        actual2 = dihedral.Dihedral._wraparound_diff(a2, a1)
-        assert actual2 == approx(math.radians(expected))
+        actual1 = dihedral.wraparound_diff(a1, a2, deg=deg)
+        assert actual1 == approx(expected)
+
+        actual2 = dihedral.wraparound_diff(a2, a1, deg=deg)
+        assert actual2 == approx(expected)
+
+
+class TestWraparoundMean(object):
+    TEST_CASES = [
+        (np.array([-175.0, -180.0]), -177.5),
+        (np.array([175.0, 180.0]), 177.5),
+        (np.array([175.0, 180.0, -175.0, -180]), 180.0),
+        (np.array([np.nan, 175.0, 180.0, -175.0, -180]), 180.0),
+    ]
+
+    @pytest.mark.parametrize(("angles", "expected"), TEST_CASES)
+    @pytest.mark.parametrize("deg", [False, True])
+    def test_wraparound_mean(self, angles, expected, deg):
+        if not deg:
+            angles = np.radians(angles)
+            expected = np.radians(expected)
+
+        actual = dihedral.wraparound_mean(angles, deg=deg)
+        assert actual == approx(expected)
 
 
 class TestFlatTorusDistance:

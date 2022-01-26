@@ -3,7 +3,6 @@ import re
 import time
 import logging
 import multiprocessing as mp
-from math import ceil, floor
 from typing import (
     Any,
     Dict,
@@ -33,6 +32,7 @@ from pp5.plot import PP5_MPL_STYLE
 from pp5.stats import mht_bh, tw_test, mmd_test, kde2d_test
 from pp5.utils import sort_dict
 from pp5.codons import (
+    ACIDS,
     AAC_SEP,
     AA_CODONS,
     UNKNOWN_AA,
@@ -51,7 +51,7 @@ from pp5.codons import (
     is_synonymous_tuple,
 )
 from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
-from pp5.dihedral import Dihedral, flat_torus_distance
+from pp5.dihedral import Dihedral, wraparound_mean, flat_torus_distance_sq
 from pp5.parallel import yield_async_results
 from pp5.analysis.base import ParallelAnalyzer
 from pp5.distributions.kde import bvm_kernel, gaussian_kernel, torus_gaussian_kernel_2d
@@ -68,14 +68,22 @@ CODON_SCORE_COL = "codon_score"
 SECONDARY_COL = "secondary"
 PHI_COL = "phi"
 PSI_COL = "psi"
-ANGLE_COLS = (PHI_COL, PSI_COL)
+OMEGA_COL = "omega"
+PHI_PSI_COLS = (PHI_COL, PSI_COL)
+ANGLE_COLS = (PHI_COL, PSI_COL, OMEGA_COL)
 CONDITION_COL = "condition_group"
 SUBGROUP_COL = "subgroup"
 GROUP_SIZE_COL = "group_size"
+GROUP_STD_COL = "group_std"
 PVAL_COL = "pval"
 DDIST_COL = "ddist"
 SIGNIFICANT_COL = "significant"
 TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g"}
+
+COMP_TYPE_AA = "aa"
+COMP_TYPE_CC = "cc"
+COMP_TYPE_AAC = "aac"
+COMP_TYPES = (COMP_TYPE_AA, COMP_TYPE_CC, COMP_TYPE_AAC)
 
 CODON_TUPLE_GROUP_ANY = "any"
 CODON_TUPLE_GROUP_LAST_NUCL = "last_nucleotide"
@@ -111,6 +119,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         ddist_k_th: float = 50.0,
         ddist_kernel_size: float = 1.0,
         fdr: float = 0.1,
+        comparison_types: Sequence[str] = COMP_TYPES,
+        ss_group_any: bool = False,
+        ignore_omega: bool = False,
         out_tag: str = None,
     ):
         """
@@ -171,6 +182,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             permutation tests. Should be in degrees.
         :param fdr: False discovery rate for multiple hypothesis testing using
             Benjamini-Hochberg method.
+        :param comparison_types: One or more types of entities to compare pointwise.
+            Values can be "aa" for comparing amino-acid pairs, "cc" for comparins codon
+            pairs, or "aac" for comparing pairs of (a, c) where c is a codon coding for
+            the amino acid a. None or empy means all comparison types will be used.
+        :param ss_group_any: Whether to add an ANY group to the analysis which contains
+            all SS types, even when conditioning by SS type.
+        :param ignore_omega: Whether to ignore the omega angle or process it.
         :param out_tag: Tag for output.
         """
         super().__init__(
@@ -209,6 +227,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if not 0.0 < fdr < 1.0:
             raise ValueError("FDR should be between 0 and 1, exclusive")
 
+        comparison_types = [c for c in comparison_types if c] or COMP_TYPES
+        if any(ct not in COMP_TYPES for ct in comparison_types):
+            raise ValueError(
+                f"One or more invalid {comparison_types}, must be one of {COMP_TYPES}"
+            )
+
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
         self.tuple_len = tuple_len
@@ -230,6 +254,17 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.ddist_k_th = ddist_k_th
         self.ddist_kernel_size = ddist_kernel_size
         self.fdr = fdr
+        self.comparison_types = comparison_types
+        self.ss_group_any = ss_group_any
+        self.ignore_omega = ignore_omega
+
+        if condition_on_ss:
+            consolidated_ss_types = [ss for ss in consolidate_ss.values() if ss]
+            if self.ss_group_any:
+                consolidated_ss_types.append(SS_TYPE_ANY)
+            self.ss_group_names = tuple(sorted(set(consolidated_ss_types)))
+        else:
+            self.ss_group_names = (SS_TYPE_ANY,)
 
         # Setup parameters for statistical tests
         if ddist_statistic == "kde_v":
@@ -261,14 +296,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         elif ddist_statistic == "mmd":
             self.ddist_statistic_fn = partial(
                 mmd_test,
-                similarity_fn=flat_torus_distance,
+                similarity_fn=flat_torus_distance_sq,
                 kernel_fn=partial(
                     gaussian_kernel, sigma=np.deg2rad(self.ddist_kernel_size)
                 ),
             )
         elif ddist_statistic == "tw":
             self.ddist_statistic_fn = partial(
-                tw_test, similarity_fn=flat_torus_distance,
+                tw_test, similarity_fn=flat_torus_distance_sq,
             )
         else:
             raise ValueError(f"Unexpected {ddist_statistic=}")
@@ -336,6 +371,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         analysis.
         """
 
+        angle_cols = ANGLE_COLS if not self.ignore_omega else (PHI_COL, PSI_COL)
+
         input_cols = (
             PDB_ID_COL,
             UNP_ID_COL,
@@ -343,12 +380,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             CODON_COL,
             CODON_SCORE_COL,
             SECONDARY_COL,
-            *ANGLE_COLS,
+            *angle_cols,
         )
 
         # Specifying this dtype allows an integer column with missing values
         dtype = {UNP_IDX_COL: "Int64"}
-        dtype = {**dtype, **{ac: "float32" for ac in ANGLE_COLS}}
+        dtype = {**dtype, **{ac: "float32" for ac in angle_cols}}
 
         # Consolidate different SS types into the ones we support
         converters = {SECONDARY_COL: lambda ss: self.consolidate_ss.get(ss, "")}
@@ -439,11 +476,23 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             subgroup_ss = secondaries.pop()
 
             # Make sure all angles have a value
-            if np.any(df_subgroup[[*ANGLE_COLS]].isnull()):
+            if np.any(df_subgroup[[*PHI_PSI_COLS]].isnull()):
                 continue
 
             # Calculate average angle from the different structures in this sub group
-            centroid = _subgroup_centroid(df_subgroup, input_degrees=True)
+            angles_centroid = _subgroup_centroid(df_subgroup, input_degrees=True)
+
+            # Calculate variance of the angles around the centroid: average of
+            # squared distances to the centroid
+            angles_variance_rad = np.mean(
+                flat_torus_distance_sq(
+                    np.array([[angles_centroid.phi, angles_centroid.psi]]),
+                    np.deg2rad(df_subgroup[[*PHI_PSI_COLS]].values),
+                )
+            )
+            # Convert to standard deviation in degrees
+            angle_std_deg = np.rad2deg(np.sqrt(angles_variance_rad)).item()
+
             processed_subgroups.append(
                 {
                     UNP_ID_COL: unp_id,
@@ -452,9 +501,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     CODON_COL: aa_codon,
                     CONDITION_COL: group_id,
                     SECONDARY_COL: subgroup_ss,
-                    PHI_COL: centroid.phi_deg,
-                    PSI_COL: centroid.psi_deg,
+                    PHI_COL: angles_centroid.phi_deg,
+                    PSI_COL: angles_centroid.psi_deg,
+                    OMEGA_COL: wraparound_mean(
+                        np.array(df_subgroup[OMEGA_COL]), deg=True
+                    )
+                    if not self.ignore_omega
+                    else np.nan,
                     GROUP_SIZE_COL: len(df_subgroup),
+                    GROUP_STD_COL: angle_std_deg,
                 }
             )
         return processed_subgroups
@@ -513,12 +568,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         df_m = pd.concat(shifted_dfs, axis=1)
 
-        # Only keep rows where the next residue is in the same protein and has the
-        # successive index.
+        # Construct a dataframe query that only keeps rows where:
+        # 1. The next residue is in the same protein (unp id).
+        # 2. The next residue has the successive index (i+1).
+        # 3. The next residue has the same secondary structure.
         queries = []
         for i, prefix in enumerate(prefixes[1:], start=1):
             queries.append(f"{UNP_ID_COL} == {prefix}{UNP_ID_COL}")
             queries.append(f"{UNP_IDX_COL} + {i} == {prefix}{UNP_IDX_COL}")
+            queries.append(f"{SECONDARY_COL} == {prefix}{SECONDARY_COL}")
 
         query = str.join(" and ", queries)
         if query:
@@ -530,11 +588,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Function to map rows in the merged dataframe to the final rows we'll use.
         def _row_mapper(row: pd.Series):
 
-            aa_codons, sss, group_sizes = [], [], []
+            aa_codons, sss, group_sizes, group_stds = [], [], [], []
             for i, p in enumerate(prefixes):
                 aa_codons.append(row[f"{p}{CODON_COL}"])
                 sss.append(row[f"{p}{SECONDARY_COL}"])
                 group_sizes.append(row[f"{p}{GROUP_SIZE_COL}"])
+                group_stds.append(row[f"{p}{GROUP_STD_COL}"])
 
             aa_codons = self._map_codon_tuple(aa_codons)
             aas = tuple(aac2aa(aac) for aac in aa_codons)
@@ -542,12 +601,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             codon_tuple = aact_tuple2str(aa_codons)
             aa_tuple = aact_tuple2str(aas)
             ss_tuple = aact_tuple2str(sss)
-            if not self.condition_on_ss:
-                condition_group = SS_TYPE_ANY
-            elif all(ss == sss[0] for ss in sss):
-                condition_group = sss[0]
-            else:
-                condition_group = SS_TYPE_MIXED
+
+            # Make sure there's no ambiguity in the SS type of the tuple
+            if not all(ss == sss[0] for ss in sss):
+                raise RuntimeError(
+                    f"Expecting all members of tuple to have the same SS type. "
+                    f"Offending row: {row}"
+                )
+            condition_group = sss[0]
 
             return {
                 UNP_ID_COL: row[UNP_ID_COL],
@@ -559,7 +620,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # Use Psi0, Phi1 (current psi, next (or last) phi)
                 PHI_COL: row[f"{prefixes[-1]}{PHI_COL}"],
                 PSI_COL: row[PSI_COL],
+                OMEGA_COL: row[OMEGA_COL] if not self.ignore_omega else np.nan,
                 GROUP_SIZE_COL: int(min(group_sizes)),
+                GROUP_STD_COL: max(group_stds),  # use worst-case
             }
 
         df_tuples = df_m.apply(_row_mapper, axis=1, raw=False, result_type="expand")
@@ -639,7 +702,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         group_sizes = {}
         curr_codon_col = CODON_COL
         df_groups = groupby_with_full_group(
-            df_processed, full_group_name=SS_TYPE_ANY, full_first=True, by=CONDITION_COL
+            df_processed,
+            full_group_name=SS_TYPE_ANY,
+            full_first=True,
+            by=CONDITION_COL,
+            skip_full_group=not self.ss_group_any,
         )
         for group_idx, df_group in df_groups:
             df_subgroups = df_group.groupby(curr_codon_col)
@@ -679,12 +746,25 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
         group_sizes: dict = self._load_intermediate("group-sizes")
 
-        def _non_syn_codons_pair_filter(group: str, aact1: str, aact2: str) -> bool:
-            # Returns True if aact1 and aact2 are not synonymous (therefore should be
-            # filtered out).
-            return not is_synonymous_tuple(aact_str2tuple(aact1), aact_str2tuple(aact2))
+        def _non_syn_codons_pair_filter_fn(group: str, aact1: str, aact2: str) -> bool:
+            # Returns True if aact1 and aact2 are synonymous (therefore should be
+            # analyzed).
+            return is_synonymous_tuple(aact_str2tuple(aact1), aact_str2tuple(aact2))
 
-        def _syn_codon_pair_nmax_function(group: str, aact1: str, aact2: str) -> int:
+        def _aa_tuples_filter_fn(group: str, aat1: str, aat2: str):
+            # Returns True if aat1 and aat2 are either single AAs or AA tuples with
+            # the same first AA.
+            aa11, *aa1_ = aact_str2tuple(aat1)
+            aa21, *aa2_ = aact_str2tuple(aat2)
+
+            # don't filter any singleton tuples
+            if len(aa1_) == 0:
+                return True
+
+            # Only analyze tuples where the first AA matches, e.g. A_X and A_Y.
+            return aa11 == aa21
+
+        def _syn_codon_pair_nmax_fn(group: str, aact1: str, aact2: str) -> int:
             # Returns the maximal sample size to use when comparing two synonymous
             # codons. We're selecting the smallest sample size of all codons from the
             # same AA.
@@ -698,24 +778,37 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Codon counts also include the entire group, remove it
             codon_counts.pop(aat)
             # Use minimal group size for all codons of this AA
-            return np.min([*codon_counts.values()]).item()
+            min_group_size = np.min([*codon_counts.values()]).item()
+            # Make sure we have at least two samples (statistical analysis requires it)
+            if min_group_size < 2:
+                LOGGER.warning(
+                    f"Only one sample of smallest codon group for {group=},"
+                    f" {aact1=}, {aact2=}."
+                )
+            return max(min_group_size, 2)
 
         totals = {}
 
-        result_types_to_subgroup_pairs = {
-            "aa": (AA_COL, AA_COL, None, None),
-            "aac": (AA_COL, CODON_COL, None, _syn_codon_pair_nmax_function,),
-            "codon": (
+        comp_types_to_subgroup_pairs = {
+            COMP_TYPE_AA: (AA_COL, AA_COL, _aa_tuples_filter_fn, None),
+            COMP_TYPE_AAC: (AA_COL, CODON_COL, None, _syn_codon_pair_nmax_fn,),
+            COMP_TYPE_CC: (
                 CODON_COL,
                 CODON_COL,
-                _non_syn_codons_pair_filter,
-                _syn_codon_pair_nmax_function,
+                _non_syn_codons_pair_filter_fn,
+                _syn_codon_pair_nmax_fn,
             ),
         }
+
         for (
-            result_name,
+            comp_type,
             (subgroup1_col, subgroup2_col, pair_filter_fn, pair_nmax_fn),
-        ) in result_types_to_subgroup_pairs.items():
+        ) in comp_types_to_subgroup_pairs.items():
+
+            # Only run the requested comparison types
+            if comp_type not in self.comparison_types:
+                LOGGER.info(f"Skipping {comp_type=} in pairwise analysis")
+                continue
 
             sub1_names_to_idx, sub2_names_to_idx = (
                 self._aa_tuple_to_idx
@@ -731,18 +824,17 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 dtype=np.float32,
             )
 
-            group_names = sorted(set(df_processed[CONDITION_COL]).union({SS_TYPE_ANY}))
             collected_ddists: Dict[str, np.ndarray] = {
-                g: np.full(**default) for g in group_names
+                g: np.full(**default) for g in self.ss_group_names
             }
             collected_pvals: Dict[str, np.ndarray] = {
-                g: np.full(**default) for g in group_names
+                g: np.full(**default) for g in self.ss_group_names
             }
 
             async_results = self._pointwise_dists_dihedral_subgroup_pairs(
                 pool,
                 df_processed,
-                result_name,
+                comp_type,
                 subgroup1_col,
                 subgroup2_col,
                 pair_filter_fn,
@@ -755,7 +847,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     sub2_names_to_idx[sub2],
                 )
                 LOGGER.info(
-                    f"Collected {result_name} pairwise-pval {group=}, {sub1=} ({i=}), "
+                    f"Collected {comp_type} pairwise-pval {group=}, {sub1=} ({i=}), "
                     f"{sub2=} ({j=})"
                 )
                 ddist, pval = result
@@ -764,10 +856,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 ddists[i, j] = ddist
                 pvals[i, j] = pval
 
-            self._dump_intermediate(f"{result_name}-dihedral-ddists", collected_ddists)
-            self._dump_intermediate(f"{result_name}-dihedral-pvals", collected_pvals)
+            self._dump_intermediate(f"{comp_type}-dihedral-ddists", collected_ddists)
+            self._dump_intermediate(f"{comp_type}-dihedral-pvals", collected_pvals)
 
-            totals[result_name] = {
+            totals[comp_type] = {
                 g: np.sum(~np.isnan(pvals)) for g, pvals in collected_pvals.items()
             }
 
@@ -778,7 +870,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self,
         pool: mp.pool.Pool,
         df_processed: pd.DataFrame,
-        result_name: str,
+        comp_type: str,
         subgroup1_col: str,
         subgroup2_col: str,
         pair_filter_fn: Optional[Callable[[str, str, str], bool]],
@@ -789,13 +881,17 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         analysis.
         """
         df_groups = groupby_with_full_group(
-            df_processed, full_group_name=SS_TYPE_ANY, full_first=True, by=CONDITION_COL
+            df_processed,
+            full_group_name=SS_TYPE_ANY,
+            full_first=True,
+            by=CONDITION_COL,
+            skip_full_group=not self.ss_group_any,
         )
         async_results: Dict[Tuple[str, str, str], AsyncResult] = {}
 
         LOGGER.info(
             f"Calculating dihedral angle differences between pairs of "
-            f"{result_name}-tuples..."
+            f"{comp_type}-tuples..."
         )
 
         # Group by the conditioning criteria, e.g. SS
@@ -829,7 +925,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         continue
 
                     # Skip based on custom pair filtering logic
-                    if pair_filter_fn is not None and pair_filter_fn(group, sub1, sub2):
+                    if pair_filter_fn is not None and (
+                        not pair_filter_fn(group, sub1, sub2)
+                    ):
                         continue
 
                     # Calculate ddist_nmax for pair based on custom logic
@@ -842,8 +940,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         ddist_n_max = self.ddist_n_max
 
                     # Analyze the angles of subgroup1 and subgroup2
-                    angles1 = np.deg2rad(df_sub1[[*ANGLE_COLS]].values)
-                    angles2 = np.deg2rad(df_sub2[[*ANGLE_COLS]].values)
+                    angles1 = np.deg2rad(df_sub1[[*PHI_PSI_COLS]].values)
+                    angles2 = np.deg2rad(df_sub2[[*PHI_PSI_COLS]].values)
                     res = pool.apply_async(
                         _subgroup_permutation_test,
                         kwds=dict(
@@ -878,6 +976,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 full_group_name=SS_TYPE_ANY,
                 full_first=True,
                 by=CONDITION_COL,
+                skip_full_group=not self.ss_group_any,
             )
         )
         ss_counts = {f"n_{ss_type}": len(df_group) for ss_type, df_group in df_groups}
@@ -886,7 +985,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         LOGGER.info(f"Calculating dihedral distribution per SS type...")
 
         args = (
-            (group_idx, df_group, ANGLE_COLS, self.kde_args)
+            (group_idx, df_group, PHI_PSI_COLS, self.kde_args)
             for group_idx, df_group in df_groups
         )
 
@@ -909,20 +1008,27 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 full_group_name=SS_TYPE_ANY,
                 full_first=True,
                 by=CONDITION_COL,
+                skip_full_group=not self.ss_group_any,
             )
         )
 
-        result_types_to_subgroup_pairs = {
-            "aa": (AA_COL, self._aa_tuple_to_idx),
-            "codon": (CODON_COL, self._codon_tuple_to_idx),
+        comp_types_to_subgroup_pairs = {
+            COMP_TYPE_AA: (AA_COL, self._aa_tuple_to_idx),
+            COMP_TYPE_CC: (CODON_COL, self._codon_tuple_to_idx),
         }
+
         for (
-            result_name,
+            comp_type,
             (subgroup_col, sub_names_to_idx),
-        ) in result_types_to_subgroup_pairs.items():
+        ) in comp_types_to_subgroup_pairs.items():
+
+            # Only run the requested comparison types
+            if comp_type not in self.comparison_types:
+                LOGGER.info(f"Skipping {comp_type=} in dihedral distributions")
+                continue
 
             LOGGER.info(
-                f"Calculating dihedral angle distributions for {result_name}-tuples..."
+                f"Calculating dihedral angle distributions for {comp_type}-tuples..."
             )
 
             async_results: Dict[Tuple[str, str], AsyncResult] = {}
@@ -937,7 +1043,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     args = (
                         group_idx,
                         df_sub,
-                        ANGLE_COLS,
+                        PHI_PSI_COLS,
                         self.kde_args,
                     )
 
@@ -945,17 +1051,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         _dihedral_kde_single_group, args=args
                     )
 
-            group_names = sorted(set(df_processed[CONDITION_COL]).union({SS_TYPE_ANY}))
             collected_kdes: Dict[str, Dict[str, np.ndarray]] = {
-                g: {} for g in group_names
+                g: {} for g in self.ss_group_names
             }
             for ((group, sub), result) in yield_async_results(async_results):
                 i = sub_names_to_idx[sub]
                 _, kde = result
                 collected_kdes[group][sub] = kde
-                LOGGER.info(f"Collected {result_name} KDEs {group=}, {sub=} ({i=})")
+                LOGGER.info(f"Collected {comp_type} KDEs {group=}, {sub=} ({i=})")
 
-            self._dump_intermediate(f"{result_name}-dihedral-kdes", collected_kdes)
+            self._dump_intermediate(f"{comp_type}-dihedral-kdes", collected_kdes)
 
     def _write_pvals(self, pool: mp.pool.Pool) -> dict:
         df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
@@ -965,50 +1070,66 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 full_group_name=SS_TYPE_ANY,
                 full_first=True,
                 by=CONDITION_COL,
+                skip_full_group=not self.ss_group_any,
             )
         )
 
         out_dir = self.out_dir.joinpath("pvals")
         os.makedirs(out_dir, exist_ok=True)
 
-        result_types = [
-            ("aa", AA_COL, AA_COL, self._idx_to_aa_tuple, self._idx_to_aa_tuple),
+        comp_types = [
             (
-                "codon",
+                COMP_TYPE_AA,
+                AA_COL,
+                AA_COL,
+                self._idx_to_aa_tuple,
+                self._idx_to_aa_tuple,
+            ),
+            (
+                COMP_TYPE_CC,
                 CODON_COL,
                 CODON_COL,
                 self._idx_to_codon_tuple,
                 self._idx_to_codon_tuple,
             ),
-            ("aac", AA_COL, CODON_COL, self._idx_to_aa_tuple, self._idx_to_codon_tuple),
+            (
+                COMP_TYPE_AAC,
+                AA_COL,
+                CODON_COL,
+                self._idx_to_aa_tuple,
+                self._idx_to_codon_tuple,
+            ),
         ]
 
         significance_metadata = {}
         df_data = {}
         async_results = {}
 
-        for (result_type, i_col, j_col, i_tuples, j_tuples) in result_types:
+        for (comp_type, i_col, j_col, i_tuples, j_tuples) in comp_types:
+            if comp_type not in self.comparison_types:
+                continue
+
             # pvals and ddists are dicts from a group name to a dict from a
             # subgroup-pair to a pval/ddist.
             pvals = self._load_intermediate(
-                f"{result_type}-dihedral-pvals", True, raise_if_missing=True
+                f"{comp_type}-dihedral-pvals", True, raise_if_missing=True
             )
             ddists = self._load_intermediate(
-                f"{result_type}-dihedral-ddists", True, raise_if_missing=True
+                f"{comp_type}-dihedral-ddists", True, raise_if_missing=True
             )
 
-            significance_metadata[result_type] = {}
-            df_data[result_type] = []
+            significance_metadata[comp_type] = {}
+            df_data[comp_type] = []
             group: str
             df_group: pd.DataFrame
             for idx_group, (group, df_group) in enumerate(df_groups):
                 group_pvals = pvals[group]
                 group_ddists = ddists[group]
 
-                async_results[(result_type, group)] = pool.apply_async(
+                async_results[(comp_type, group)] = pool.apply_async(
                     self._write_pvals_inner,
                     kwds=dict(
-                        result_type=result_type,
+                        comp_type=comp_type,
                         i_col=i_col,
                         j_col=j_col,
                         i_tuples=i_tuples,
@@ -1022,22 +1143,22 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Collect results
         for (
-            (result_type, group),
+            (comp_type, group),
             (group_significance_meta, group_df_data),
         ) in yield_async_results(async_results):
-            significance_metadata[result_type][group] = group_significance_meta
-            df_data[result_type].extend(group_df_data)
+            significance_metadata[comp_type][group] = group_significance_meta
+            df_data[comp_type].extend(group_df_data)
 
         # Write output
         self._dump_intermediate("significance", significance_metadata)
-        for result_type, result_df_data in df_data.items():
+        for comp_type, result_df_data in df_data.items():
             df_pvals = pd.DataFrame(data=result_df_data)
             df_pvals.sort_values(
                 by=[CONDITION_COL, PVAL_COL, DDIST_COL],
                 ascending=[True, True, False],
                 inplace=True,
             )
-            csv_path = str(out_dir.joinpath(f"{result_type}-pvals.csv"))
+            csv_path = str(out_dir.joinpath(f"{comp_type}-pvals.csv"))
             df_pvals.to_csv(csv_path, index=False)
             LOGGER.info(f"Wrote {csv_path}")
 
@@ -1045,7 +1166,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
     def _write_pvals_inner(
         self,
-        result_type: str,
+        comp_type: str,
         i_col: str,
         j_col,
         i_tuples: dict,
@@ -1062,7 +1183,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Calculate significance threshold for pvalues for  multiple-hypothesis
         # testing.
         group_pvals_flat = group_pvals[idx_valid[:, 0], idx_valid[:, 1]]
-        significance_thresh = mht_bh(q=self.fdr, pvals=group_pvals_flat)
+        if len(group_pvals_flat) > 1:
+            significance_thresh = mht_bh(q=self.fdr, pvals=group_pvals_flat)
+        else:
+            significance_thresh = 0.0
 
         # Metadata about the significance of members in this group
         significance_meta = {
@@ -1103,7 +1227,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
 
         LOGGER.info(
-            f"Computed significance for {result_type=} {group=}: {significance_meta}"
+            f"Computed significance for {comp_type=} {group=}: {significance_meta}"
         )
         return significance_meta, df_data
 
@@ -1170,6 +1294,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 full_group_name=SS_TYPE_ANY,
                 full_first=True,
                 by=CONDITION_COL,
+                skip_full_group=not self.ss_group_any,
             )
         }
         group_sizes: dict = self._load_intermediate("group-sizes", True)
@@ -1177,7 +1302,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         def _glob_mapper(aact: str):
             return str.join(AAC_TUPLE_SEP, aact_str2tuple(aact)[:-1])
 
-        for aa_codon in ["codon", "aa"]:
+        for aa_codon in [COMP_TYPE_AA, COMP_TYPE_CC]:
 
             avg_dkdes: dict = self._load_intermediate(f"{aa_codon}-dihedral-kdes", True)
             if avg_dkdes is None:
@@ -1190,20 +1315,20 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # into the same figure
                 split_subgroups_glob = None
                 if self.tuple_len > 1:
-                    if aa_codon == "codon":
+                    if aa_codon == COMP_TYPE_CC:
                         glob_source = self._codon_tuple_to_idx.keys()
                     else:  # "aa"
                         glob_source = self._aa_tuple_to_idx.keys()
                     glob_elements = sorted(set(map(_glob_mapper, glob_source)))
                     split_subgroups_glob = [f"{s}*" for s in glob_elements]
                     # For AAs, also include the reverse glob
-                    if aa_codon == "aa":
+                    if aa_codon == COMP_TYPE_AA:
                         split_subgroups_glob.extend([f"*{s}" for s in glob_elements])
 
                 # Get the samples (angles) of all subgroups in this group
-                subgroup_col = AA_COL if aa_codon == "aa" else CODON_COL
+                subgroup_col = AA_COL if aa_codon == COMP_TYPE_AA else CODON_COL
                 df_group: pd.DataFrame = df_groups[group_idx]
-                df_group_samples: pd.DataFrame = df_group[[subgroup_col, *ANGLE_COLS]]
+                df_group_samples: pd.DataFrame = df_group[[subgroup_col, *PHI_PSI_COLS]]
                 df_group_samples = df_group_samples.rename(
                     columns={subgroup_col: SUBGROUP_COL}
                 )
@@ -1231,12 +1356,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         group_sizes: dict = self._load_intermediate("group-sizes", True)
 
         type_to_pvals, type_to_ddists = {}, {}
-        for result_type in ["codon", "aa", "aac"]:
-            type_to_pvals[result_type] = self._load_intermediate(
-                f"{result_type}-dihedral-pvals", True, raise_if_missing=True
+        for comp_type in self.comparison_types:
+            type_to_pvals[comp_type] = self._load_intermediate(
+                f"{comp_type}-dihedral-pvals", True, raise_if_missing=True
             )
-            type_to_ddists[result_type] = self._load_intermediate(
-                f"{result_type}-dihedral-ddists", True, raise_if_missing=True
+            type_to_ddists[comp_type] = self._load_intermediate(
+                f"{comp_type}-dihedral-ddists", True, raise_if_missing=True
             )
 
         async_results.append(
@@ -1252,6 +1377,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
         )
 
+        # ddists
         async_results.append(
             pool.apply_async(
                 _plot_pvals_ddists,
@@ -1259,9 +1385,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     type_to_pvals=type_to_pvals,
                     type_to_ddists=type_to_ddists,
                     idx_to_name={
-                        "aa": (self._idx_to_aa_tuple, self._idx_to_aa_tuple),
-                        "codon": (self._idx_to_codon_tuple, self._idx_to_codon_tuple),
-                        "aac": (self._idx_to_aa_tuple, self._idx_to_codon_tuple),
+                        COMP_TYPE_AA: (self._idx_to_aa_tuple, self._idx_to_aa_tuple),
+                        COMP_TYPE_CC: (
+                            self._idx_to_codon_tuple,
+                            self._idx_to_codon_tuple,
+                        ),
+                        COMP_TYPE_AAC: (
+                            self._idx_to_aa_tuple,
+                            self._idx_to_codon_tuple,
+                        ),
                     },
                     group_sizes=group_sizes,
                     significance_meta=significance_meta,
@@ -1294,12 +1426,12 @@ def _subgroup_centroid(
 ) -> Dihedral:
     """
     Calculates centroid angle from a subgroup dataframe containing phi,psi dihedral
-    angles in degrees under the columns ANGLE_COLS.
+    angles in degrees under the columns PHI_PSI_COLS.
     :param df_subgroup: The dataframe.
-    :param input_degrees: Whether the input data in the ANGLE_COLS is in degrees.
+    :param input_degrees: Whether the input data in the PHI_PSI_COLS is in degrees.
     :return: A Dihedral angles object containing the result.
     """
-    raw_angles = df_subgroup[[*ANGLE_COLS]].values
+    raw_angles = df_subgroup[[*PHI_PSI_COLS]].values
     if input_degrees:
         raw_angles = np.deg2rad(raw_angles)
 
@@ -1589,7 +1721,7 @@ def _plot_dkdes(
                 if df_group_samples is not None:
                     idx_samples = df_group_samples[SUBGROUP_COL] == subgroup_idx
                     samples = np.deg2rad(
-                        df_group_samples[idx_samples][[*ANGLE_COLS]].values
+                        df_group_samples[idx_samples][[*PHI_PSI_COLS]].values
                     )
 
                 pp5.plot.ramachandran(
@@ -1630,14 +1762,14 @@ def _plot_pvals_ddists(
 ):
     """
     Plots distances between AAs and codons, and highlights significant ones based on pval.
-    :param type_to_pvals: Dict mapping from result_type to a dict from a group name
+    :param type_to_pvals: Dict mapping from comparison type to a dict from a group name
         to an array of pvalues.
-    :param type_to_ddists: Dict mapping from result_type to a dict from a group name to
+    :param type_to_ddists: Dict mapping from comparison type to a dict from a group name to
         an array of ddists.
-    :param idx_to_name: Maps from result_type to two dicts, one for mapping from
+    :param idx_to_name: Maps from comparison type to two dicts, one for mapping from
         index i to a name and the second for mapping from index j to a name.
     :param group_sizes: Dict from group_name to size ('total') and subgroup sizes ('subgroup').
-    :param significance_meta: A dict mapping from result_type to group_name to a dict
+    :param significance_meta: A dict mapping from comparison type to group_name to a dict
         containing the significance information.
     :param out_dir: Where to write the figures to.
     :param normalize: Whether to normalize each distance matrix so that the main
@@ -1646,13 +1778,14 @@ def _plot_pvals_ddists(
     """
     out_files = []
 
-    result_types = tuple(type_to_pvals.keys())
-    assert result_types == tuple(type_to_ddists.keys())
+    comp_types = tuple(type_to_pvals.keys())
+    assert comp_types == tuple(type_to_ddists.keys())
 
-    for result_type in result_types:
-        group_to_pvals = type_to_pvals[result_type]
-        group_to_ddists = type_to_ddists[result_type]
-        i_to_name, j_to_name = idx_to_name[result_type]
+    for comp_type in comp_types:
+        group_to_pvals = type_to_pvals[comp_type]
+        group_to_ddists = type_to_ddists[comp_type]
+        i_to_name, j_to_name = idx_to_name[comp_type]
+        tuple_len = len(aact_str2tuple(i_to_name[0]))
 
         group_names = tuple(group_to_pvals.keys())
         assert group_names == tuple(group_to_ddists.keys())
@@ -1662,7 +1795,7 @@ def _plot_pvals_ddists(
             ddists: np.ndarray = group_to_ddists[group_name]
             ij_valid = np.argwhere(~np.isnan(pvals))
 
-            pval_thresh = significance_meta[result_type][group_name]["pval_thresh"]
+            pval_thresh = significance_meta[comp_type][group_name]["pval_thresh"]
 
             plot_datas = []
             plot_titles = []
@@ -1670,38 +1803,55 @@ def _plot_pvals_ddists(
             plot_col_labels = []
             plot_data_annotations = []
 
-            # Create a mapping from each AA name to the synonymous indices in the
-            # distance matrix
-            aa_to_ijs = {}
+            single_aa_to_ijs = {}
+            aat_to_ijs = {}
             for i, j in ij_valid:
                 i_name, j_name = i_to_name[i], j_to_name[j]
-                i_aa_name, j_aa_name = _aact_to_aat(i_name), _aact_to_aat(j_name)
 
-                if i_aa_name == j_aa_name:
-                    aa_name = i_aa_name
-                    aa_to_ijs.setdefault(aa_name, [])
-                    aa_to_ijs[aa_name].append((i, j))
+                aat_i, aat_j = _aact_to_aat(i_name), _aact_to_aat(j_name)
+                aa_i, aa_j = aact_str2tuple(aat_i)[0], aact_str2tuple(aat_j)[0]
 
-            if result_type == "aa":
+                # single_aa_to_ijs: A mapping from each single AA name to the AA-tuple
+                # indices in the distance matrix
+                if aa_i == aa_j:
+                    single_aa_to_ijs.setdefault(aa_i, [])
+                    single_aa_to_ijs[aa_i].append((i, j))
+
+                # aat_to_ijs: A mapping from each AA-tuple name to the synonymous
+                # indices in the distance matrix
+                if aat_i == aat_j:
+                    aat_name = aat_i
+                    aat_to_ijs.setdefault(aat_name, [])
+                    aat_to_ijs[aat_name].append((i, j))
+
+            if comp_type == COMP_TYPE_AA and tuple_len == 1:
                 plot_datas.append(ddists)
                 plot_titles.append("")
                 plot_row_labels.append(tuple(i_to_name.values()))
                 plot_col_labels.append(tuple(j_to_name.values()))
                 plot_data_annotations.append(pvals <= pval_thresh)
 
-            else:
-                for aa_name, ijs in aa_to_ijs.items():
-                    # Extract square ddist sub-matrix of synonymous codons
+            else:  # CC or AC
+                # For AA, t>1: Plot a separate distance matrix for every single AA
+                # For CC, AC: Plot a separate distance matrix for every AA-tuple
+                # Choose one of the above mappings accordingly
+                selected_aa_to_ijs = (
+                    single_aa_to_ijs if comp_type == COMP_TYPE_AA else aat_to_ijs
+                )
+
+                # Populate plot data based on indices from mapping
+                for aat_name, ijs in selected_aa_to_ijs.items():
+                    # Extract square ddist sub-matrix
                     ijs = np.array(ijs)  # (n,2)
                     i_slice = slice(np.min(ijs[:, 0]), np.max(ijs[:, 0]) + 1)
                     j_slice = slice(np.min(ijs[:, 1]), np.max(ijs[:, 1]) + 1)
                     plot_datas.append(ddists[i_slice, j_slice])
-                    plot_titles.append(aa_name)
+                    plot_titles.append(aat_name)
                     plot_row_labels.append(
-                        [i_to_name[i] for i in sorted(set(ijs[:, 0]))]
+                        [i_to_name[i] for i in range(i_slice.start, i_slice.stop)]
                     )
                     plot_col_labels.append(
-                        [j_to_name[j] for j in sorted(set(ijs[:, 1]))]
+                        [j_to_name[j] for j in range(j_slice.start, j_slice.stop)]
                     )
                     plot_data_annotations.append(pvals[i_slice, j_slice] <= pval_thresh)
 
@@ -1712,7 +1862,7 @@ def _plot_pvals_ddists(
                     normalization = np.sqrt(
                         np.diag(d).reshape(-1, 1) * np.diag(d).reshape(1, -1)
                     )
-                    plot_datas[i] = d / normalization
+                    plot_datas[i] = d / (normalization + 1e-12)
 
             fig, _ = pp5.plot.multi_heatmap(
                 datas=plot_datas,
@@ -1730,7 +1880,7 @@ def _plot_pvals_ddists(
                     fontdict={"size": "medium"},
                 ),
             )
-            fig_filename = out_dir.joinpath(f"{result_type}-{group_name}.pdf")
+            fig_filename = out_dir.joinpath(f"{comp_type}-{group_name}.pdf")
             out_files.append(pp5.plot.savefig(fig, fig_filename, close=True))
 
 
@@ -1744,10 +1894,10 @@ def _plot_pvals_hist(
 ):
     """
     Plots pvalue histogram.
-    :param pvals: Dict mapping from result_type to a dict from a group name
+    :param pvals: Dict mapping from comparison type to a dict from a group name
         to an array of pvalues.
     :param group_sizes: Dict from group_name to size ('total') and subgroup sizes ('subgroup').
-    :param significance_meta: A dict mapping from result_type to group_name to a dict
+    :param significance_meta: A dict mapping from comparison type to group_name to a dict
         containing the significance information.
     :return: Path of output figure.
     """
@@ -1758,10 +1908,10 @@ def _plot_pvals_hist(
 
     with mpl.style.context(PP5_MPL_STYLE):
 
-        for result_type, group_to_pvals in pvals.items():
+        for comp_type, group_to_pvals in pvals.items():
 
-            hist_fig_filename = out_dir.joinpath(f"pvals_hist-{result_type}.pdf")
-            pvals_fig_filename = out_dir.joinpath(f"pvals-{result_type}.pdf")
+            hist_fig_filename = out_dir.joinpath(f"pvals_hist-{comp_type}.pdf")
+            pvals_fig_filename = out_dir.joinpath(f"pvals-{comp_type}.pdf")
 
             fig_cols = 2 if n_groups > 1 else 1
             fig_rows = n_groups // 2 + n_groups % 2
@@ -1784,7 +1934,7 @@ def _plot_pvals_hist(
                 pvals_2d = group_to_pvals[group_name]
                 pvals_flat = pvals_2d[~np.isnan(pvals_2d)]
 
-                meta = significance_meta[result_type][group_name]
+                meta = significance_meta[comp_type][group_name]
                 pval_thresh = meta["pval_thresh"]
                 num_rejections = meta["num_rejections"]
                 num_hypotheses = meta["num_hypotheses"]
@@ -1876,6 +2026,7 @@ def groupby_with_full_group(
     df: pd.DataFrame,
     full_group_name: Union[str, Tuple[str, ...]],
     full_first: bool = False,
+    skip_full_group: bool = True,
     **groupby_kwargs,
 ) -> Iterator[Tuple[Union[str, Tuple[str, ...]], pd.DataFrame]]:
     """
@@ -1885,6 +2036,8 @@ def groupby_with_full_group(
     :param full_group_name: Name of the full group. Should be a column name or a
         tuple of column names, depending on the "by" argument of groupby.
     :param full_first: Whether to add the full-group first (True) or last (False).
+    :param skip_full_group: If True, the full group will not be returned. Use this
+        flag to conditionally turn this method into a regular group_by.
     :param groupby_kwargs: kwargs to be passed as-is to groupby.
     :return: Yields tuples of (group_name, group_df). The first or last yielded tuple
         will contain the full dataframe. If there's another group with the same name
@@ -1892,7 +2045,7 @@ def groupby_with_full_group(
     """
     yielded_group_names = set()
 
-    if full_first:
+    if not skip_full_group and full_first:
         yielded_group_names.add(full_group_name)
         yield (full_group_name, df)
 
@@ -1901,5 +2054,9 @@ def groupby_with_full_group(
             yielded_group_names.add(group_name)
             yield group_name, df_group
 
-    if not full_first and (full_group_name not in yielded_group_names):
+    if (
+        not skip_full_group
+        and not full_first
+        and (full_group_name not in yielded_group_names)
+    ):
         yield (full_group_name, df)

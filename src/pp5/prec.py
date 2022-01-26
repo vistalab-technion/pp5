@@ -304,7 +304,7 @@ class ProteinRecord(object):
         unp_id: str,
         pdb_id: str,
         pdb_dict: dict = None,
-        dihedral_est_name="erp",
+        dihedral_est_name=None,
         dihedral_est_args: dict = None,
         max_ena=None,
         strict_unp_xref=True,
@@ -546,7 +546,9 @@ class ProteinRecord(object):
         this ProteinRecord.
         """
         # use the iterator of this class to get the residue recs
-        data = [res_rec.as_dict(skip_omega=True, convert_none=True) for res_rec in self]
+        data = [
+            res_rec.as_dict(skip_omega=False, convert_none=True) for res_rec in self
+        ]
         df = pd.DataFrame(data)
 
         if with_ids:

@@ -372,7 +372,7 @@ class PDBUnstructuredSearchQuery(PDBQuery):
     def _raw_query_data(self) -> dict:
         return {
             "type": "terminal",
-            "service": "text",
+            "service": "full_text",
             "parameters": {"value": self.query_value,},
         }
 

@@ -298,6 +298,10 @@ def multi_heatmap(
                         **data_annotation_fn(n, i, j),
                     )
 
+        # If there are more axes than data, hide them
+        for n in range(n + 1, len(ax)):
+            ax[n].set_axis_off()
+
         fig.colorbar(im, ax=ax, orientation="vertical", pad=0.05, shrink=0.7)
 
     if outfile is not None:
