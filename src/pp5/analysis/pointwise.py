@@ -74,6 +74,7 @@ ANGLE_COLS = (PHI_COL, PSI_COL, OMEGA_COL)
 CONDITION_COL = "condition_group"
 SUBGROUP_COL = "subgroup"
 GROUP_SIZE_COL = "group_size"
+GROUP_STD_COL = "group_std"
 PVAL_COL = "pval"
 DDIST_COL = "ddist"
 SIGNIFICANT_COL = "significant"
@@ -479,7 +480,19 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 continue
 
             # Calculate average angle from the different structures in this sub group
-            centroid = _subgroup_centroid(df_subgroup, input_degrees=True)
+            angles_centroid = _subgroup_centroid(df_subgroup, input_degrees=True)
+
+            # Calculate variance of the angles around the centroid: average of
+            # squared distances to the centroid
+            angles_variance_rad = np.mean(
+                flat_torus_distance_sq(
+                    np.array([[angles_centroid.phi, angles_centroid.psi]]),
+                    np.deg2rad(df_subgroup[[*PHI_PSI_COLS]].values),
+                )
+            )
+            # Convert to standard deviation in degrees
+            angle_std_deg = np.rad2deg(np.sqrt(angles_variance_rad)).item()
+
             processed_subgroups.append(
                 {
                     UNP_ID_COL: unp_id,
@@ -488,14 +501,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     CODON_COL: aa_codon,
                     CONDITION_COL: group_id,
                     SECONDARY_COL: subgroup_ss,
-                    PHI_COL: centroid.phi_deg,
-                    PSI_COL: centroid.psi_deg,
+                    PHI_COL: angles_centroid.phi_deg,
+                    PSI_COL: angles_centroid.psi_deg,
                     OMEGA_COL: wraparound_mean(
                         np.array(df_subgroup[OMEGA_COL]), deg=True
                     )
                     if not self.ignore_omega
                     else np.nan,
                     GROUP_SIZE_COL: len(df_subgroup),
+                    GROUP_STD_COL: angle_std_deg,
                 }
             )
         return processed_subgroups
@@ -574,11 +588,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # Function to map rows in the merged dataframe to the final rows we'll use.
         def _row_mapper(row: pd.Series):
 
-            aa_codons, sss, group_sizes = [], [], []
+            aa_codons, sss, group_sizes, group_stds = [], [], [], []
             for i, p in enumerate(prefixes):
                 aa_codons.append(row[f"{p}{CODON_COL}"])
                 sss.append(row[f"{p}{SECONDARY_COL}"])
                 group_sizes.append(row[f"{p}{GROUP_SIZE_COL}"])
+                group_stds.append(row[f"{p}{GROUP_STD_COL}"])
 
             aa_codons = self._map_codon_tuple(aa_codons)
             aas = tuple(aac2aa(aac) for aac in aa_codons)
@@ -607,6 +622,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 PSI_COL: row[PSI_COL],
                 OMEGA_COL: row[OMEGA_COL] if not self.ignore_omega else np.nan,
                 GROUP_SIZE_COL: int(min(group_sizes)),
+                GROUP_STD_COL: max(group_stds),  # use worst-case
             }
 
         df_tuples = df_m.apply(_row_mapper, axis=1, raw=False, result_type="expand")
