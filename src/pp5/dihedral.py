@@ -181,7 +181,7 @@ class Dihedral(object):
         :return: The angle difference.
         """
 
-        dist = flat_torus_distance(
+        dist = flat_torus_distance_sq(
             np.array([a1.phi, a1.psi]).reshape(-1, 2),
             np.array([a2.phi, a2.psi]).reshape(-1, 2),
         )[0]
@@ -328,15 +328,15 @@ class Dihedral(object):
 
 
 @numba.jit(nopython=True)
-def flat_torus_distance(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
+def flat_torus_distance_sq(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
     """
-    Computes the distance between pairs of dihedral angles as if they were on a
-    "flat torus" (also a Ramachandran Plot). Calculates a euclidean
-    distance, but with a "wrap-around" at +-180, so e.g. the distance
-    between -178 and 178 degrees is actually 4 degrees.
+    Computes the **squared** distance between pairs of dihedral angles as if they were
+    on a "flat torus" (also a Ramachandran Plot).
+    Calculates a squared-euclidean distance, but with a "wrap-around" at +-180, so e.g.
+    the distance between -178 and 178 degrees is actually 4 degrees.
     :param phi_psi0: (N,2) containing N (phi, psi) pairs in radians within [-pi, pi].
     :param phi_psi1: Angles corresponding to phi_psi0, must be same shape.
-    :return: An array of shape (N,) containing the flat torus distances.
+    :return: An array of shape (N,) containing the flat torus squared-distances.
     """
     absdiff = np.fabs(phi_psi0.reshape(-1, 2) - phi_psi1.reshape(-1, 2))
     absdiff_2pi = 2 * np.pi - absdiff
@@ -346,17 +346,17 @@ def flat_torus_distance(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
 
 
 @numba.jit(nopython=True)
-def flat_torus_distance2(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
+def flat_torus_distance2_sq(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
     """
     Another way to calculate the flat-torus distance. Should be equivalent.
 
-    Computes the distance between pairs of dihedral angles as if they were on a
-    "flat torus" (also a Ramachandran Plot). Calculates a euclidean
-    distance, but with a "wrap-around" at +-180, so e.g. the distance
-    between -178 and 178 degrees is actually 4 degrees.
+    Computes the **squared** distance between pairs of dihedral angles as if they were
+    on a "flat torus" (also a Ramachandran Plot).
+    Calculates a squared-euclidean distance, but with a "wrap-around" at +-180, so e.g.
+    the distance between -178 and 178 degrees is actually 4 degrees.
     :param phi_psi0: (N,2) containing N (phi, psi) pairs in radians within [-pi, pi].
     :param phi_psi1: Angles corresponding to phi_psi0, must be same shape.
-    :return: An array of shape (N,) containing the flat torus distances.
+    :return: An array of shape (N,) containing the flat torus squared-distances.
     """
     dphi = phi_psi0[:, 0] - phi_psi1[:, 0]
     dpsi = phi_psi0[:, 1] - phi_psi1[:, 1]

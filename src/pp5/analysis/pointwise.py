@@ -51,7 +51,7 @@ from pp5.codons import (
     is_synonymous_tuple,
 )
 from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
-from pp5.dihedral import Dihedral, wraparound_mean, flat_torus_distance
+from pp5.dihedral import Dihedral, wraparound_mean, flat_torus_distance_sq
 from pp5.parallel import yield_async_results
 from pp5.analysis.base import ParallelAnalyzer
 from pp5.distributions.kde import bvm_kernel, gaussian_kernel, torus_gaussian_kernel_2d
@@ -291,14 +291,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         elif ddist_statistic == "mmd":
             self.ddist_statistic_fn = partial(
                 mmd_test,
-                similarity_fn=flat_torus_distance,
+                similarity_fn=flat_torus_distance_sq,
                 kernel_fn=partial(
                     gaussian_kernel, sigma=np.deg2rad(self.ddist_kernel_size)
                 ),
             )
         elif ddist_statistic == "tw":
             self.ddist_statistic_fn = partial(
-                tw_test, similarity_fn=flat_torus_distance,
+                tw_test, similarity_fn=flat_torus_distance_sq,
             )
         else:
             raise ValueError(f"Unexpected {ddist_statistic=}")
