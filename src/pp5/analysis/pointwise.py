@@ -120,6 +120,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         fdr: float = 0.1,
         comparison_types: Sequence[str] = COMP_TYPES,
         ss_group_any: bool = False,
+        ignore_omega: bool = False,
         out_tag: str = None,
     ):
         """
@@ -186,6 +187,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             the amino acid a. None or empy means all comparison types will be used.
         :param ss_group_any: Whether to add an ANY group to the analysis which contains
             all SS types, even when conditioning by SS type.
+        :param ignore_omega: Whether to ignore the omega angle or process it.
         :param out_tag: Tag for output.
         """
         super().__init__(
@@ -253,6 +255,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.fdr = fdr
         self.comparison_types = comparison_types
         self.ss_group_any = ss_group_any
+        self.ignore_omega = ignore_omega
+
         if condition_on_ss:
             consolidated_ss_types = [ss for ss in consolidate_ss.values() if ss]
             if self.ss_group_any:
@@ -366,6 +370,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         analysis.
         """
 
+        angle_cols = ANGLE_COLS if not self.ignore_omega else (PHI_COL, PSI_COL)
+
         input_cols = (
             PDB_ID_COL,
             UNP_ID_COL,
@@ -373,12 +379,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             CODON_COL,
             CODON_SCORE_COL,
             SECONDARY_COL,
-            *ANGLE_COLS,
+            *angle_cols,
         )
 
         # Specifying this dtype allows an integer column with missing values
         dtype = {UNP_IDX_COL: "Int64"}
-        dtype = {**dtype, **{ac: "float32" for ac in ANGLE_COLS}}
+        dtype = {**dtype, **{ac: "float32" for ac in angle_cols}}
 
         # Consolidate different SS types into the ones we support
         converters = {SECONDARY_COL: lambda ss: self.consolidate_ss.get(ss, "")}
@@ -486,7 +492,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     PSI_COL: centroid.psi_deg,
                     OMEGA_COL: wraparound_mean(
                         np.array(df_subgroup[OMEGA_COL]), deg=True
-                    ),
+                    )
+                    if not self.ignore_omega
+                    else np.nan,
                     GROUP_SIZE_COL: len(df_subgroup),
                 }
             )
@@ -597,7 +605,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 # Use Psi0, Phi1 (current psi, next (or last) phi)
                 PHI_COL: row[f"{prefixes[-1]}{PHI_COL}"],
                 PSI_COL: row[PSI_COL],
-                OMEGA_COL: row[OMEGA_COL],
+                OMEGA_COL: row[OMEGA_COL] if not self.ignore_omega else np.nan,
                 GROUP_SIZE_COL: int(min(group_sizes)),
             }
 
