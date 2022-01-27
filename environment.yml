@@ -6,37 +6,40 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  # Basic
+  - pip
   - python=3.8.*
-  - pymol-bundle
-  - biopython
+  # Development
+  - black
   - ipython
   - jupyter
   - jupyterlab
-  - requests
   - nodejs
-  - numpy
-  - scikit-learn
-  - pandas
+  - pre-commit
   - pytest
   - pytest-benchmark
+  - pytest-cov
   - pytest-repeat
   - pytest-xdist
-  - pytest-cov
-  - pre-commit
-  - black
-  - tqdm
-  - matplotlib
-  - numba
-  - hdf5
-  - h5py
-  - yattag
-  - uncertainties
-  - muscle
-  - clustalo
+  # Project Dependencies
+  - biopython
   - blast
+  - clustalo
   - dssp
+  - h5py
+  - hdf5
+  - matplotlib
+  - muscle
   - nglview
-  - pip
+  - numba
+  - numpy
+  - pandas
+  - pymol-bundle
+  - requests
+  - scikit-learn
+  - tqdm
+  - uncertainties
+  # pip dependencies
   - pip:
     - nbmerge
-    - -e . # install this package
+    - --no-deps -e . # install this package
