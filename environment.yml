@@ -43,4 +43,4 @@ dependencies:
   # pip dependencies
   - pip:
     - nbmerge
-    - --no-deps -e . # install this package
+    - -e .  # install this package
