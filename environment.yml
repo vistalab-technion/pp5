@@ -1,18 +1,14 @@
 name: proteins
 channels:
-  - defaults
-  - conda-forge
   - schrodinger # pymol
   - bioconda    # clustal, muscle, blast
   - salilab     # dssp
+  - conda-forge
+  - defaults
 dependencies:
-  # Note about pymol: On macos 10.15 installing pymol from conda seems to work but
-  # then pymol fails to start.
-  # To fix it, after installing this env, we need to do:
-  # conda uninstall -y pymol-bundle && conda install -y --force-reinstall -c schrodinger pymol-bundle=2.4.1
   - python=3.8.*
-  - pymol-bundle=2.4.1
-  - biopython=1.78
+  - pymol-bundle
+  - biopython
   - ipython
   - jupyter
   - jupyterlab
@@ -32,7 +28,7 @@ dependencies:
   - matplotlib
   - numba
   - hdf5
-  - h5py>=2.10
+  - h5py
   - yattag
   - uncertainties
   - muscle
