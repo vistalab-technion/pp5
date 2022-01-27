@@ -1,0 +1,15 @@
+name: arpeggio
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # Base
+  - pip
+  - python=3.7.*
+  # Deps for arpeggio
+  # https://github.com/PDBeurope/arpeggio
+  - biopython
+  - numpy
+  - openbabel<3
+  - pip:
+    - 'git+https://github.com/PDBeurope/arpeggio.git@master#egg=arpeggio'
