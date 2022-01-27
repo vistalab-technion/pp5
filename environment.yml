@@ -37,6 +37,7 @@ dependencies:
   - pymol-bundle
   - requests
   - scikit-learn
+  - toml
   - tqdm
   - uncertainties
   # pip dependencies
