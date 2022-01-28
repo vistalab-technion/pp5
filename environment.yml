@@ -1,9 +1,9 @@
 name: proteins
 channels:
+  - conda-forge
   - schrodinger # pymol
   - bioconda    # clustal, muscle, blast
   - salilab     # dssp
-  - conda-forge
   - defaults
 dependencies:
   # Basic
@@ -26,8 +26,6 @@ dependencies:
   - blast
   - clustalo
   - dssp
-  - h5py
-  - hdf5
   - matplotlib
   - muscle
   - nglview
