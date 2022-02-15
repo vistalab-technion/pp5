@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Tuple, Union, Callable, Iterable, Iterator, 
 from pathlib import Path
 from collections import OrderedDict
 
+import numpy as np
 import pandas as pd
 from pytest import approx
 from Bio.PDB import PPBuilder
@@ -54,6 +55,7 @@ class ResidueRecord(object):
         angles: Dihedral,
         bfactor: float,
         secondary: str,
+        backbone_coords: Optional[np.ndarray],
     ):
         """
 
@@ -68,6 +70,8 @@ class ResidueRecord(object):
         :param angles: A Dihedral objet containing the dihedral angles.
         :param bfactor: Average b-factor along of the residue's backbone atoms.
         :param secondary: Single-letter secondary structure code.
+        :param backbone_coords: 3x3 np array containing atom coordinates.
+            Rows represent N, CA, C atoms.
         """
         self.res_id, self.name = str(res_id).strip(), name
         self.unp_idx = unp_idx
@@ -78,11 +82,15 @@ class ResidueRecord(object):
             self.codon_opts = str.join("/", codon_opts)
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
 
+        if backbone_coords is not None:
+            assert tuple(backbone_coords.shape) == (3, 3)
+        self.backbone_coords = backbone_coords
+
     def as_dict(self, skip_omega=False, convert_none=False):
         """
         Creates a dict representation of the data in this residue. The angles object
         will we flattened out so its attributes will be placed directly in the
-        resulting dict.
+        resulting dict. The backbone angles will be converted to a nested list.
         :param skip_omega: Whether to not include the omega angle in the output.
         :param convert_none: Whether to convert None to an empty string.
         :return:
@@ -95,6 +103,13 @@ class ResidueRecord(object):
         d.pop("angles")
         a = self.angles
         d.update(a.as_dict(degrees=True, with_std=True, skip_omega=skip_omega))
+
+        # Flatten coords into a tuple
+        d.pop("backbone_coords", None)
+        d["backbone_coords"] = (
+            self.backbone_coords.tolist() if self.backbone_coords is not None else []
+        )
+
         return d
 
     def __repr__(self):
@@ -383,12 +398,21 @@ class ProteinRecord(object):
             dihedral_est_name, dihedral_est_args
         )
 
+        def _backbone_coords(res):
+            try:
+                n = res["N"]
+                ca = res["CA"]
+                c = res["C"]
+            except KeyError:
+                return None
+            return np.stack([n.coord, ca.coord, c.coord])
+
         # Extract the PDB AA sequence, dihedral angles and b-factors
         # from the PDB structure.
         # Even though we're working with one PDB chain, the results is a
         # list of multiple Polypeptide objects because we split them at
         # non-standard residues (HETATM atoms in PDB).
-        pdb_aa_seq, aa_ids, angles, bfactors, sstructs = "", [], [], [], []
+        pdb_aa_seq, aa_ids, angles, bfactors, sstructs, coords = "", [], [], [], [], []
         for i, pp in enumerate(self.polypeptides):
             curr_start_idx = pp[0].get_id()[1]
             curr_end_idx = pp[-1].get_id()[1]
@@ -405,6 +429,7 @@ class ProteinRecord(object):
                 angles.extend([Dihedral.empty()] * gap_len)
                 bfactors.extend([math.nan] * gap_len)
                 sstructs.extend(["-"] * gap_len)
+                coords.extend([None] * gap_len)
 
             pdb_aa_seq += str(pp.get_sequence())
             aa_ids.extend([str.join("", map(str, res.get_id())) for res in pp])
@@ -413,6 +438,7 @@ class ProteinRecord(object):
             res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
             sss = (ss_dict.get(res_id, "-") for res_id in res_ids)
             sstructs.extend(sss)
+            coords.extend(_backbone_coords(res) for res in pp)
 
         # Find the alignment between the PDB AA sequence and the Uniprot AA sequence.
         pdb_to_unp_idx = self._find_unp_alignment(pdb_aa_seq, self.unp_rec.sequence)
@@ -447,6 +473,7 @@ class ProteinRecord(object):
                 angles=angles[i],
                 bfactor=bfactors[i],
                 secondary=sstructs[i],
+                backbone_coords=coords[i],
             )
             residue_recs.append(rr)
 
