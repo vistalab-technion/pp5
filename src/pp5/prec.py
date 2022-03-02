@@ -126,8 +126,8 @@ class ResidueRecord(object):
             return False
         for k, v in self.__dict__.items():
             other_v = other.__dict__.get(k, math.inf)
-            if isinstance(v, float):
-                equal = v == approx(other_v, nan_ok=True)
+            if isinstance(v, (float, list, tuple, np.ndarray)):
+                equal = np.allclose(v, other_v, equal_nan=True)
             else:
                 equal = v == other_v
             if not equal:
