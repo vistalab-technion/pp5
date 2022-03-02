@@ -27,6 +27,7 @@ dependencies:
   - clustalo
   - dssp
   - matplotlib
+  - more-itertools
   - muscle
   - nglview
   - numba
