@@ -4,6 +4,7 @@ import io
 import os
 import re
 import sys
+import json
 import ftplib
 import signal
 import logging
@@ -12,6 +13,7 @@ import tempfile
 import warnings
 import contextlib
 import subprocess
+from time import time
 from typing import Tuple, Union, Iterable, Optional
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -795,3 +797,137 @@ class ProteinBLAST(object):
 BLOSUM62 = substitution_matrices.load("BLOSUM62")
 BLOSUM80 = substitution_matrices.load("BLOSUM80")
 BLOSUM90 = substitution_matrices.load("BLOSUM90")
+
+
+class Arpeggio(object):
+    """
+    A wrapper for running the arpeggio tool for contact annotation.
+
+    https://github.com/PDBeurope/arpeggio
+    """
+
+    def __init__(
+        self,
+        out_dir: Union[Path, str] = pp5.out_subdir("arpeggio"),
+        interaction_cutoff: float = 0.1,
+        arpeggio_command: Optional[str] = None,
+        use_conda_env: Optional[str] = None,
+    ):
+        """
+        :param out_dir: Output directory. JSON files will be written there with the
+        names <pdb_id>.json
+        :param interaction_cutoff: Cutoff (in angstroms) for detected interactions.
+        :param arpeggio_command: Custom command name or path to the arpeggio executable.
+        :param use_conda_env: Name of conda environment to use. This is useful,
+        since arpeggio can be tricky to install with new versions of python.
+        If this arg is provided, the arpeggio command will be run via `conda run`.
+        The conda executable will be detected by from the `CONDA_EXE` env variable.
+        """
+        self.out_dir = Path(out_dir)
+        self.interaction_cutoff = interaction_cutoff
+        self.arpeggio_command = arpeggio_command or "arpeggio"
+
+        if use_conda_env:
+            # Use conda run to execute the arpeggio command in the specified conda env.
+            conda_exe = os.getenv("CONDA_EXE", "conda")
+            self.arpeggio_command = (
+                f"{conda_exe} run --no-capture-output -n {use_conda_env} "
+                f"{self.arpeggio_command}"
+            )
+
+    @classmethod
+    def can_execute(
+        cls,
+        arpeggio_command: Optional[str] = None,
+        use_conda_env: Optional[str] = None,
+    ) -> bool:
+        """
+        Checks whether arpeggio can be executed on the current machine.
+        Arguments are the same as for init.
+        :return: True if arpeggio can be executed successfully.
+        """
+        arpeggio = cls(arpeggio_command=arpeggio_command, use_conda_env=use_conda_env)
+
+        try:
+            exit_code = subprocess.Popen(
+                args=[*arpeggio.arpeggio_command.split(), "--help"],
+                encoding="utf-8",
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                shell=False,
+            ).wait(timeout=1)
+        except Exception:
+            return False
+
+        return exit_code == 0
+
+    def pdb(self, pdb_id: str) -> pd.DataFrame:
+        """
+        Run arpeggio against a protein specified by a PDB ID.
+        :param pdb_id: The PDB ID to BLAST against. Must include chain.
+        :return: A dataframe with the Arpeggio results.
+        """
+        pdb_id, chain_id = pdb.split_id(pdb_id)
+        if not chain_id:
+            raise ValueError("Must specify a chain")
+
+        pdb_cif_path = pdb.pdb_download(pdb_id)
+        df = self._run_arpeggio(pdb_cif_path, chain_id)
+        return df
+
+    def _run_arpeggio(self, pdf_cif_path: Path, pdb_chain_id: str) -> pd.DataFrame:
+        """
+        Helper to run the arpeggio command line.
+        :param pdf_cif_path: Path to downloaded PDB file.
+        :param pdb_chain_id: Chain id, e.g. "A".
+        :return: A dataframe with the Arpeggio results.
+        """
+
+        # Construct the command-line for the arpeggio executable
+        cline = [
+            *self.arpeggio_command.split(),
+            *f"-o {self.out_dir.absolute()!s}".split(),
+            *f"-s /{pdb_chain_id}//".split(),
+            *f"-i {self.interaction_cutoff:.2f}".split(),
+            f"{pdf_cif_path!s}",
+        ]
+
+        LOGGER.info(f"Executing arpeggio command:\n{str.join(' ', cline)}")
+
+        # Execute
+        start_time = time()
+        child_proc = subprocess.Popen(
+            args=cline,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            shell=False,
+        )
+
+        stdout, stderr = child_proc.communicate()
+        elapsed_time = time() - start_time
+
+        LOGGER.info(
+            f"Arpeggio run completed in {elapsed_time:.2f}s with code"
+            f"={child_proc.returncode}"
+        )
+        if child_proc.returncode != 0:
+            raise ValueError(
+                f"Arpeggio returned code {child_proc.returncode}\n"
+                f"{stdout=}\n\n{stderr=}"
+            )
+        LOGGER.debug(f"Arpeggio output\n{stdout=}\n\n{stderr=}")
+
+        # Load and parse the result
+        out_file_path = self.out_dir.absolute() / f"{pdf_cif_path.stem }.json"
+        LOGGER.info(f"Parsing arpeggio output from {out_file_path!s}")
+
+        with open(out_file_path, "r") as f:
+            out_json = json.load(f)
+
+        # Convert nested json to dataframe and sort the columns
+        out_df = pd.json_normalize(out_json).sort_index(axis=1)
+        return out_df
