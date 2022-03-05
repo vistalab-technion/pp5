@@ -930,4 +930,10 @@ class Arpeggio(object):
 
         # Convert nested json to dataframe and sort the columns
         out_df = pd.json_normalize(out_json).sort_index(axis=1)
+
+        # Sort and index by (Chain, Residue)
+        index_cols = ["bgn.auth_asym_id", "bgn.auth_seq_id"]
+        out_df.sort_values(by=index_cols, inplace=True)
+        out_df.set_index(index_cols, inplace=True)
+
         return out_df
