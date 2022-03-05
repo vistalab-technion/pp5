@@ -812,6 +812,7 @@ class Arpeggio(object):
         interaction_cutoff: float = 0.1,
         arpeggio_command: Optional[str] = None,
         use_conda_env: Optional[str] = None,
+        cache: bool = False,
     ):
         """
         :param out_dir: Output directory. JSON files will be written there with the
@@ -822,10 +823,13 @@ class Arpeggio(object):
         since arpeggio can be tricky to install with new versions of python.
         If this arg is provided, the arpeggio command will be run via `conda run`.
         The conda executable will be detected by from the `CONDA_EXE` env variable.
+        :param cache: Whether to load arpeggio results from cache if available.
         """
+
         self.out_dir = Path(out_dir)
         self.interaction_cutoff = interaction_cutoff
         self.arpeggio_command = arpeggio_command or "arpeggio"
+        self.cache = cache
 
         if use_conda_env:
             # Use conda run to execute the arpeggio command in the specified conda env.
@@ -834,6 +838,31 @@ class Arpeggio(object):
                 f"{conda_exe} run --no-capture-output -n {use_conda_env} "
                 f"{self.arpeggio_command}"
             )
+
+    def contact_df(self, pdb_id: str) -> pd.DataFrame:
+        """
+        :param pdb_id: The PDB ID to run arpeggio against. Must include chain.
+        :return: A dataframe with the arpeggio contacts
+        """
+        pdb_base_id, pdb_chain_id = pdb.split_id(pdb_id)
+        if not pdb_chain_id:
+            raise ValueError("Must specify a chain")
+
+        arpeggio_out_path = self._run_arpeggio(pdb_id)
+
+        LOGGER.info(f"Parsing arpeggio output from {arpeggio_out_path!s}")
+        with open(arpeggio_out_path, "r") as f:
+            out_json = json.load(f)
+
+        # Convert nested json to dataframe and sort the columns
+        df: pd.DataFrame = pd.json_normalize(out_json).sort_index(axis=1)
+
+        # Sort and index by (Chain, Residue)
+        index_cols = ["bgn.auth_asym_id", "bgn.auth_seq_id"]
+        df.sort_values(by=index_cols, inplace=True)
+        df.set_index(index_cols, inplace=True)
+
+        return df
 
     @classmethod
     def can_execute(
@@ -862,27 +891,27 @@ class Arpeggio(object):
 
         return exit_code == 0
 
-    def pdb(self, pdb_id: str) -> pd.DataFrame:
-        """
-        Run arpeggio against a protein specified by a PDB ID.
-        :param pdb_id: The PDB ID to BLAST against. Must include chain.
-        :return: A dataframe with the Arpeggio results.
-        """
-        pdb_id, chain_id = pdb.split_id(pdb_id)
-        if not chain_id:
-            raise ValueError("Must specify a chain")
-
-        pdb_cif_path = pdb.pdb_download(pdb_id)
-        df = self._run_arpeggio(pdb_cif_path, chain_id)
-        return df
-
-    def _run_arpeggio(self, pdf_cif_path: Path, pdb_chain_id: str) -> pd.DataFrame:
+    def _run_arpeggio(self, pdb_id: str) -> Path:
         """
         Helper to run the arpeggio command line.
-        :param pdf_cif_path: Path to downloaded PDB file.
-        :param pdb_chain_id: Chain id, e.g. "A".
-        :return: A dataframe with the Arpeggio results.
+        :return: Path of arpeggio output file.
         """
+
+        pdb_base_id, pdb_chain_id = pdb.split_id(pdb_id)
+
+        # Use cache if available
+        cached_out_filename = (
+            f"{pdb_base_id.upper()}_"
+            f"{pdb_chain_id.upper()}-"
+            f"i{self.interaction_cutoff:.1f}.json"
+        )
+        cached_out_path = self.out_dir.absolute() / cached_out_filename
+        if self.cache and cached_out_path.is_file():
+            LOGGER.info(f"Loading cached arpegio result from {cached_out_path!s}")
+            return cached_out_path
+
+        # Download structure cif file
+        pdb_cif_path = pdb.pdb_download(pdb_id)
 
         # Construct the command-line for the arpeggio executable
         cline = [
@@ -890,7 +919,7 @@ class Arpeggio(object):
             *f"-o {self.out_dir.absolute()!s}".split(),
             *f"-s /{pdb_chain_id}//".split(),
             *f"-i {self.interaction_cutoff:.2f}".split(),
-            f"{pdf_cif_path!s}",
+            f"{pdb_cif_path!s}",
         ]
 
         LOGGER.info(f"Executing arpeggio command:\n{str.join(' ', cline)}")
@@ -921,19 +950,9 @@ class Arpeggio(object):
             )
         LOGGER.debug(f"Arpeggio output\n{stdout=}\n\n{stderr=}")
 
-        # Load and parse the result
-        out_file_path = self.out_dir.absolute() / f"{pdf_cif_path.stem }.json"
-        LOGGER.info(f"Parsing arpeggio output from {out_file_path!s}")
+        # Cache the result
+        out_file_path = self.out_dir.absolute() / f"{pdb_cif_path.stem }.json"
+        if self.cache:
+            out_file_path = out_file_path.rename(cached_out_path)
 
-        with open(out_file_path, "r") as f:
-            out_json = json.load(f)
-
-        # Convert nested json to dataframe and sort the columns
-        out_df = pd.json_normalize(out_json).sort_index(axis=1)
-
-        # Sort and index by (Chain, Residue)
-        index_cols = ["bgn.auth_asym_id", "bgn.auth_seq_id"]
-        out_df.sort_values(by=index_cols, inplace=True)
-        out_df.set_index(index_cols, inplace=True)
-
-        return out_df
+        return out_file_path

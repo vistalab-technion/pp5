@@ -2,6 +2,7 @@ import os
 
 import pytest
 
+from tests import get_tmp_path
 from pp5.align import Arpeggio
 
 CONDA_ENV_NAME = "arpeggio"
@@ -13,12 +14,17 @@ CONDA_ENV_NAME = "arpeggio"
 class TestArpeggio:
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.arpeggio = Arpeggio(interaction_cutoff=0.1, use_conda_env=CONDA_ENV_NAME,)
+        self.arpeggio = Arpeggio(
+            out_dir=get_tmp_path("arpeggio", clear=True),
+            interaction_cutoff=0.1,
+            use_conda_env=CONDA_ENV_NAME,
+            cache=True,
+        )
 
     def test_no_chain(self):
         with pytest.raises(ValueError, match="chain"):
-            self.arpeggio.pdb("2WUR")
+            self.arpeggio.contact_df("2WUR")
 
     def test_from_pdb(self):
-        df = self.arpeggio.pdb("2WUR:A")
+        df = self.arpeggio.contact_df("2WUR:A")
         assert len(df) > 0
