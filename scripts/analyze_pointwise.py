@@ -28,7 +28,7 @@ from pp5.utils import elapsed_seconds_to_dhms
 
 PROCESSES = 90
 
-TUPLE_LEN = 2
+TUPLE_LEN = 1
 MIN_GROUP = 1
 KDE_NBINS = 128
 KDE_WIDTH = 200
@@ -78,7 +78,7 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
         f"--min-group-size={MIN_GROUP}",
         f"--tuple-len={TUPLE_LEN}",
         f"--codon-grouping-type={CODON_GROUPING_TYPE}",
-        f"--kde-width={KDE_WIDTH}",  # visualiazation only
+        f"--kde-width={KDE_WIDTH}",
         f"--kde-nbins={KDE_NBINS}",
         f"--ddist-statistic={DDIST_STATISTIC}",
         f"--ddist-k={DDIST_K}",
