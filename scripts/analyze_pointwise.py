@@ -46,6 +46,7 @@ COMPARISON_TYPES = [
     "cc",
 ]
 SS_GROUP_ANY = False
+IGNORE_OMEGA = True
 
 DATASET_PATHS = [
     Path("out/prec-collected/20211001_124553-aida-ex_EC-src_EC/"),
@@ -88,10 +89,10 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
         f"--ddist-kernel-size={DDIST_KERNEL_SIZE}",
         f"--fdr={FDR}",
         f"--comparison-types",
-        f"{str.join(' ', COMPARISON_TYPES)}",
+        *COMPARISON_TYPES,
         f"--ss-group-any" if SS_GROUP_ANY else "",
-        # f"--out-tag={tag}",
-        f"--out-tag=natcom",
+        f"--ignore-omega" if IGNORE_OMEGA else "",
+        f"--out-tag={tag}",
     ]
 
     out_file_path = OUT_DIR.joinpath(f"analyze-pointwise_{dataset_name}-{tag}.log")
