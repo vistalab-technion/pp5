@@ -20,9 +20,9 @@ When using this code, please cite the above work.
    Follow the installation instructions for your platform. Note that it's
    recommended to install the `mambaforge` variant as using `mamba` is much faster than
    `conda`.
-2. Install `conda-lock` and `mamba` by running
+2. Install `conda-lock` by running
    ```shell
-   conda install -n base -c conda-forge conda-lock`
+   conda install -n base -c conda-forge conda-lock
    ```
 3. Use `conda-lock` to create a virtual environment for the project based on the
    supplied lock file. From the project root directory, run
@@ -35,11 +35,8 @@ When using this code, please cite the above work.
    ```shell
    conda activate pp5
    ```
-5. Install the `pp5` package itself: `pip install -e .`.
-6. To make sure everything is working, simply run all the tests by typing
-    ```shell
-    pytest
-    ```
+5. Install the `pp5` package itself: `pip install -e .` (make sure to note the `.`).
+6. To make sure everything is working, simply run all the tests by typing `pytest`.
 
 ## Using the CLI
 
