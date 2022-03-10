@@ -43,3 +43,6 @@ dependencies:
   - pip:
     - nbmerge
     - -e .  # install this package
+platforms:
+  - linux-64
+  - osx-64
