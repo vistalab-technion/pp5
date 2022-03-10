@@ -8,10 +8,7 @@ from pathlib import Path
 
 import pp5
 from pp5.prec import ProteinRecord
-from pp5.pgroup import ProteinGroup
-from pp5.collect import ProteinGroupCollector, ProteinRecordCollector
-from pp5.analysis.cdist import CodonDistanceAnalyzer
-from pp5.analysis.pairwise import PairwiseCodonDistanceAnalyzer
+from pp5.collect import ProteinRecordCollector
 from pp5.analysis.pointwise import PointwiseCodonDistanceAnalyzer
 
 _LOG = logging.getLogger(__name__)
@@ -196,38 +193,10 @@ def _parse_cli():
         sp_prec.add_argument(*names, **arg_dict)
 
     ##########
-    # pgroup
-    ##########
-    desc, args = _generate_cli_from_func(ProteinGroup.from_pdb_ref)
-    _, init_args = _generate_cli_from_func(
-        ProteinGroup.__init__, skip=["ref_pdb_id", "query_pdb_ids"]
-    )
-    _, csv_args = _generate_cli_from_func(ProteinGroup.to_csv)
-
-    def _handle_pgroup(
-        args=args, init_args=init_args, csv_args=csv_args, **parsed_args
-    ):
-        kw1 = {k: parsed_args[k] for k in _merge_dicts(args, init_args)}
-        pgroup = ProteinGroup.from_pdb_ref(**kw1)
-
-        kw2 = {k: parsed_args[k] for k in csv_args}
-        pgroup.to_csv(**kw2)
-
-    sp_pgroup = sp.add_parser("pgroup", help=desc, formatter_class=hf)
-    sp_pgroup.set_defaults(handler=_handle_pgroup)
-    for _, arg_dict in _merge_dicts(args, init_args, csv_args).items():
-        arg_dict = arg_dict.copy()
-        names = arg_dict.pop("names")
-        sp_pgroup.add_argument(*names, **arg_dict)
-
-    ##########
     # Data collectors
     ##########
     prec_collector_desc, prec_collector_args = _generate_cli_from_func(
         ProteinRecordCollector.__init__, skip=["prec_init_args"]
-    )
-    pgroup_collector_desc, pgroup_collector_args = _generate_cli_from_func(
-        ProteinGroupCollector.__init__, skip=[]
     )
 
     def _handle_collect(collector_cls, collector_args, **parsed_args):
@@ -246,62 +215,6 @@ def _parse_cli():
         arg_dict = arg_dict.copy()
         names = arg_dict.pop("names")
         sp_collect_prec.add_argument(*names, **arg_dict)
-
-    sp_collect_pgroup = sp.add_parser(
-        "collect-pgroup", help=pgroup_collector_desc, formatter_class=hf
-    )
-    sp_collect_pgroup.set_defaults(
-        handler=lambda **kw: _handle_collect(
-            ProteinGroupCollector, pgroup_collector_args, **kw
-        )
-    )
-    for _, arg_dict in pgroup_collector_args.items():
-        arg_dict = arg_dict.copy()
-        names = arg_dict.pop("names")
-        sp_collect_pgroup.add_argument(*names, **arg_dict)
-
-    ##########
-    # Analysis: cdist
-    ##########
-    cdist_desc, cdist_args = _generate_cli_from_func(
-        CodonDistanceAnalyzer.__init__, skip=["pointwise_extra_kw", "pairwise_extra_kw"]
-    )
-
-    # Get pointwise args and subtract all common args
-    pointwise_desc, pointwise_args = _generate_cli_from_func(
-        PointwiseCodonDistanceAnalyzer.__init__
-    )
-    pointwise_args = _subtract_dicts(pointwise_args, cdist_args)
-
-    # Get pairwise args and subtract all common args
-    pairwise_desc, pairwise_args = _generate_cli_from_func(
-        PairwiseCodonDistanceAnalyzer.__init__
-    )
-    pairwise_args = _subtract_dicts(pairwise_args, cdist_args)
-
-    def _handle_pointwise_cdist(
-        common_args=cdist_args,
-        pointwise_args=pointwise_args,
-        pairwise_args=pairwise_args,
-        **parsed_args,
-    ):
-        analyzer = CodonDistanceAnalyzer(
-            **{k: parsed_args[k] for k in common_args},
-            pointwise_extra_kw={k: parsed_args[k] for k in pointwise_args},
-            pairwise_extra_kw={k: parsed_args[k] for k in pairwise_args},
-        )
-        analyzer.analyze()
-
-    cdist_desc = f"{cdist_desc} Pointwise: {pointwise_desc} Pairwise: {pairwise_desc}"
-    sp_pointwise_cdist = sp.add_parser(
-        "analyze-cdist", help=cdist_desc, formatter_class=hf
-    )
-
-    sp_pointwise_cdist.set_defaults(handler=_handle_pointwise_cdist)
-    for _, arg_dict in _merge_dicts(cdist_args, pointwise_args, pairwise_args).items():
-        arg_dict = arg_dict.copy()
-        names = arg_dict.pop("names")
-        sp_pointwise_cdist.add_argument(*names, **arg_dict)
 
     ##########
     # Analysis: pointwise
