@@ -2,5 +2,9 @@
 *.png
 *.pdf
 
+# Output folders
+out/
+out_paper/
+
 # Ignore everything by default, we'll explicitly add notebooks when needed
 *.ipynb
