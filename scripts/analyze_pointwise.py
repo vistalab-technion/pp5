@@ -90,7 +90,8 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
         f"--comparison-types",
         f"{str.join(' ', COMPARISON_TYPES)}",
         f"--ss-group-any" if SS_GROUP_ANY else "",
-        f"--out-tag={tag}",
+        # f"--out-tag={tag}",
+        f"--out-tag=natcom",
     ]
 
     out_file_path = OUT_DIR.joinpath(f"analyze-pointwise_{dataset_name}-{tag}.log")
