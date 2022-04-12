@@ -869,6 +869,7 @@ class Arpeggio(object):
         cls,
         arpeggio_command: Optional[str] = None,
         use_conda_env: Optional[str] = None,
+        **kw,
     ) -> bool:
         """
         Checks whether arpeggio can be executed on the current machine.

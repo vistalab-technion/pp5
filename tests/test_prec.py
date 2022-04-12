@@ -5,12 +5,13 @@ import pytest
 import pp5
 from tests import get_tmp_path
 from pp5.prec import ProteinRecord
+from pp5.align import Arpeggio
 from pp5.utils import ProteinInitError
 from pp5.external_dbs import unp
 
 
 class TestMethods:
-    @pytest.fixture(autouse=False, scope="class", params=["102L:A", "4N6V:9"])
+    @pytest.fixture(autouse=False, scope="class", params=["102L:A", "2WUR:A"])
     def prec(self, request):
         pdb_id = request.param
         prec = ProteinRecord.from_pdb(pdb_id)
@@ -21,12 +22,24 @@ class TestMethods:
         backbone = prec.backbone_coordinates(with_oxygen=with_oxygen)
         for res_id, coords in backbone.items():
             assert res_id in prec
+            if coords is None:
+                j = 3
             assert coords.shape == (4, 3) if with_oxygen else (3, 3)
 
     @pytest.mark.parametrize("with_ids", [True, False])
     @pytest.mark.parametrize("with_backbone", [True, False])
-    def test_to_dataframe(self, prec, with_ids, with_backbone):
-        df = prec.to_dataframe(with_ids=with_ids, with_backbone=with_backbone)
+    @pytest.mark.parametrize(
+        "with_contacts",
+        [False, dict(interaction_cutoff=4.5, use_conda_env="arpeggio", cache=True)],
+    )
+    def test_to_dataframe(self, prec, with_ids, with_backbone, with_contacts):
+        if isinstance(with_contacts, dict):
+            if not Arpeggio.can_execute(**with_contacts):
+                pytest.skip()
+
+        df = prec.to_dataframe(
+            with_ids=with_ids, with_backbone=with_backbone, with_contacts=with_contacts
+        )
         assert len(df) == len(prec)
 
         if with_ids:
@@ -35,6 +48,9 @@ class TestMethods:
 
         if with_backbone:
             assert "backbone" in df.columns
+
+        if with_contacts:
+            assert "contact_count" in df.columns
 
 
 class TestFromUnp:
