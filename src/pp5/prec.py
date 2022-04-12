@@ -5,13 +5,23 @@ import math
 import pickle
 import logging
 import warnings
-from typing import Any, Dict, List, Tuple, Union, Callable, Iterable, Iterator, Optional
+from typing import (
+    Any,
+    Dict,
+    List,
+    Tuple,
+    Union,
+    Callable,
+    Iterable,
+    Iterator,
+    Optional,
+    ItemsView,
+)
 from pathlib import Path
 from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
-from pytest import approx
 from Bio.PDB import PPBuilder
 from Bio.Seq import Seq
 from Bio.Align import PairwiseAligner
@@ -479,7 +489,9 @@ class ProteinRecord(object):
 
         self._protein_seq = pdb_aa_seq
         self._dna_seq = dna_seq
-        self._residue_recs = tuple(residue_recs)
+        self._residue_recs: Dict[str, ResidueRecord] = {
+            rr.res_id: rr for rr in residue_recs
+        }
 
     @property
     def unp_rec(self) -> UNPRecord:
@@ -531,16 +543,16 @@ class ProteinRecord(object):
         return SeqRecord(Seq(self._protein_seq), self.pdb_id, "", "")
 
     @property
-    def codons(self) -> List[str]:
+    def codons(self) -> Dict[str, str]:
         """
         :return: Protein sequence based on translating DNA sequence with
         standard codon table.
         """
-        return [x.codon for x in self]
+        return {x.res_id: x.codon for x in self}
 
     @property
-    def dihedral_angles(self) -> List[Dihedral]:
-        return [x.angles for x in self]
+    def dihedral_angles(self) -> Dict[str, Dihedral]:
+        return {x.res_id: x.angles for x in self}
 
     @property
     def polypeptides(self) -> List[Polypeptide]:
@@ -870,10 +882,20 @@ class ProteinRecord(object):
         return d_est, b_est
 
     def __iter__(self) -> Iterator[ResidueRecord]:
-        return iter(self._residue_recs)
+        return iter(self._residue_recs.values())
 
-    def __getitem__(self, item: int) -> ResidueRecord:
-        return self._residue_recs[item]
+    def __getitem__(self, item: Union[str, int]) -> ResidueRecord:
+        """
+        :param item: A PDB residue id, either as an int e.g. 42 or a str e.g. 42A.
+        :return: the corresponding residue record.
+        """
+        return self._residue_recs[str(item)]
+
+    def items(self) -> ItemsView[str, ResidueRecord]:
+        """
+        :return: Entries of this prec as (residue id, residue record).
+        """
+        return self._residue_recs.items()
 
     def __repr__(self):
         return f"({self.unp_id}, {self.pdb_id})"
