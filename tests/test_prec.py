@@ -9,6 +9,20 @@ from pp5.utils import ProteinInitError
 from pp5.external_dbs import unp
 
 
+class TestProperties:
+    @pytest.fixture(autouse=True, params=["102L:A", "4N6V:9"])
+    def setup(self, request):
+        pdb_id = request.param
+        self.prec = ProteinRecord.from_pdb(pdb_id)
+
+    @pytest.mark.parametrize("with_oxygen", [True, False])
+    def test_backbone(self, with_oxygen):
+        backbone = self.prec.backbone_coordinates(with_oxygen=with_oxygen)
+        for res_id, coords in backbone.items():
+            assert res_id in self.prec
+            assert coords.shape == (4, 3) if with_oxygen else (3, 3)
+
+
 class TestFromUnp:
     def test_from_unp_default_selector(self):
         unp_id = "P00720"
