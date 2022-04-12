@@ -86,7 +86,6 @@ class ResidueRecord(object):
         angles: Dihedral,
         bfactor: float,
         secondary: str,
-        backbone_coords: Optional[np.ndarray],
     ):
         """
 
@@ -101,8 +100,6 @@ class ResidueRecord(object):
         :param angles: A Dihedral objet containing the dihedral angles.
         :param bfactor: Average b-factor along of the residue's backbone atoms.
         :param secondary: Single-letter secondary structure code.
-        :param backbone_coords: 3x3 np array containing atom coordinates.
-            Rows represent N, CA, C atoms.
         """
         self.res_id, self.name = str(res_id), name
         self.unp_idx = unp_idx
@@ -112,10 +109,6 @@ class ResidueRecord(object):
         else:
             self.codon_opts = str.join("/", codon_opts)
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
-
-        if backbone_coords is not None:
-            assert tuple(backbone_coords.shape) == (3, 3)
-        self.backbone_coords = backbone_coords
 
     def as_dict(self, skip_omega=False, convert_none=False):
         """
@@ -134,12 +127,6 @@ class ResidueRecord(object):
         d.pop("angles")
         a = self.angles
         d.update(a.as_dict(degrees=True, with_std=True, skip_omega=skip_omega))
-
-        # Flatten coords into a tuple
-        d.pop("backbone_coords", None)
-        d["backbone_coords"] = (
-            self.backbone_coords.tolist() if self.backbone_coords is not None else []
-        )
 
         return d
 
@@ -434,7 +421,7 @@ class ProteinRecord(object):
         # Even though we're working with one PDB chain, the results is a
         # list of multiple Polypeptide objects because we split them at
         # non-standard residues (HETATM atoms in PDB).
-        pdb_aa_seq, res_ids, angles, bfactors, sstructs, coords = "", [], [], [], [], []
+        pdb_aa_seq, res_ids, angles, bfactors, sstructs = "", [], [], [], []
         for i, pp in enumerate(self.polypeptides):
             curr_start_idx = pp[0].get_id()[1]
             curr_end_idx = pp[-1].get_id()[1]
@@ -451,7 +438,6 @@ class ProteinRecord(object):
                 angles.extend([Dihedral.empty()] * gap_len)
                 bfactors.extend([math.nan] * gap_len)
                 sstructs.extend(["-"] * gap_len)
-                coords.extend([None] * gap_len)
 
             pdb_aa_seq += str(pp.get_sequence())
             res_ids.extend(_residue_to_res_id(res) for res in pp)
@@ -460,7 +446,6 @@ class ProteinRecord(object):
             chain_res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
             sss = (ss_dict.get(res_id, "-") for res_id in chain_res_ids)
             sstructs.extend(sss)
-            coords.extend(_backbone_coords(res) for res in pp)
 
         # Find the alignment between the PDB AA sequence and the Uniprot AA sequence.
         pdb_to_unp_idx = self._find_unp_alignment(pdb_aa_seq, self.unp_rec.sequence)
@@ -495,7 +480,6 @@ class ProteinRecord(object):
                 angles=angles[i],
                 bfactor=bfactors[i],
                 secondary=sstructs[i],
-                backbone_coords=coords[i],
             )
             residue_recs.append(rr)
 
