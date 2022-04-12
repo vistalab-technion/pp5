@@ -18,6 +18,7 @@ from typing import (
     ItemsView,
 )
 from pathlib import Path
+from itertools import chain
 from collections import OrderedDict
 
 import numpy as np
@@ -30,9 +31,9 @@ from Bio.PDB.Residue import Residue
 from Bio.PDB.Polypeptide import Polypeptide
 
 import pp5
-from pp5.align import BLOSUM80, BLOSUM90
+from pp5.align import BLOSUM80, BLOSUM90, Arpeggio
 from pp5.utils import ProteinInitError
-from pp5.codons import UNKNOWN_AA, CODON_TABLE, STOP_CODONS, UNKNOWN_CODON
+from pp5.codons import ACIDS_3TO1, UNKNOWN_AA, CODON_TABLE, STOP_CODONS, UNKNOWN_CODON
 from pp5.dihedral import (
     Dihedral,
     AtomLocationUncertainty,
@@ -566,9 +567,143 @@ class ProteinRecord(object):
             res: Residue
             for res in pp:
                 res_id = _residue_to_res_id(res)
-                backbone_coords[res_id] = _backbone_coords(res, with_oxygen=with_oxygen)
+                coords = _backbone_coords(res, with_oxygen=with_oxygen)
+                if coords is not None:
+                    backbone_coords[res_id] = coords
 
         return backbone_coords
+
+    def _contact_features(self, **arpeggio_kwargs) -> pd.DataFrame:
+        """
+        Generates tertiary contact features per residue by invoking arpeggio.
+        :param arpeggio_kwargs: Keyword-args for the Arpeggio wrapper's init. See
+        relevant documentation of :class:`Arpeggio`.
+        :return: A dataframe indexed by residue id (same index used by this protein
+        record) and with columns corresponding to a summary of contacts per reisdue.
+        """
+        LOGGER.info(f"Generating contact features for {self}, {arpeggio_kwargs=}...")
+
+        # Invoke arpeggio to get the raw contact features.
+        arpeggio = Arpeggio(**arpeggio_kwargs)
+        df_arp = arpeggio.contact_df(self.pdb_id)
+
+        # Create a temp df to work with
+        df = df_arp.copy().reset_index()
+
+        # Convert 'contact' column to text
+        df["contact"] = df["contact"].apply(lambda x: str.join(",", sorted(x)))
+
+        # Ignore any water contacts
+        idx_non_water = ~df["interacting_entities"].isin(
+            ["SELECTION_WATER", "NON_SELECTION_WATER", "WATER_WATER"]
+        )
+        LOGGER.info(
+            f"non-water proportion: "  #
+            f"{sum(idx_non_water) / len(idx_non_water):.2f}"
+        )
+
+        # Ignore contacts which are of type 'proximal' only
+        idx_non_proximal_only = df["contact"] != "proximal"
+        LOGGER.info(
+            f"non-proximal proportion: "
+            f"{sum(idx_non_proximal_only) / len(idx_non_proximal_only):.2f}"
+        )
+
+        # Ignore contacts starting from another chain
+        idx_non_other_chain = (
+            df["bgn.auth_asym_id"].str.lower() == self.pdb_chain_id.lower()
+        )
+        LOGGER.info(
+            f"start-in-chain proportion: "
+            f"{sum(idx_non_other_chain) / len(idx_non_other_chain):.2f}"
+        )
+
+        # Find contacts ending on other chain
+        idx_end_other_chain = (
+            df["end.auth_asym_id"].str.lower() != self.pdb_chain_id.lower()
+        )
+        LOGGER.info(
+            f"end-other-chain proportion: "
+            f"{sum(idx_end_other_chain) / len(idx_end_other_chain):.2f}"
+        )
+        contact_any_ooc = df["end.auth_asym_id"].copy()
+        contact_any_ooc[~idx_end_other_chain] = ""
+
+        # Calculate sequence distance for each contact
+        contact_sequence_dist = (df["end.auth_seq_id"] - df["bgn.auth_seq_id"]).abs()
+
+        # If end is not on chain, set sdist to NaN to clarify that it's invalid
+        contact_sequence_dist[idx_end_other_chain] = float("nan")
+
+        # Find interactions with non-AAs (ligands)
+        contact_non_aa = df["end.label_comp_id"].copy()
+        idx_end_non_aa = ~contact_non_aa.isin(list(ACIDS_3TO1.keys()))
+        contact_non_aa[~idx_end_non_aa] = ""
+        LOGGER.info(
+            f"end-non-aa proportion: "
+            f"{sum(idx_end_non_aa) / len(idx_end_non_aa):.2f}"
+        )
+
+        # Filter only contacting and assign extra features
+        df_filt = df[idx_non_water & idx_non_proximal_only & idx_non_other_chain]
+        df_filt = df_filt.assign(
+            # Note: this assign works because after filtering, the index remains intact
+            contact_sdist=contact_sequence_dist,
+            contact_any_ooc=contact_any_ooc,
+            contact_non_aa=contact_non_aa,
+        )
+        df_filt = df_filt.drop("bgn.auth_asym_id", axis="columns")
+        df_filt = df_filt.astype({"bgn.auth_seq_id": str})
+        df_filt = df_filt.set_index(["bgn.auth_seq_id"])
+        df_filt = df_filt.sort_values(by=["bgn.auth_seq_id"])
+        df_filt = df_filt.rename_axis("res_id")
+
+        # Aggregate contacts per AA
+        def _agg_contact(items):
+            return str.join(
+                ",", sorted(set(chain(*[str.split(it, ",") for it in items if it])))
+            )
+
+        df_groups = df_filt.groupby(by=["res_id"]).aggregate(
+            {
+                "contact": ["count", _agg_contact],
+                "distance": ["min", "max",],
+                # note: min and max will ignore nans, and the lambda will count them
+                "contact_sdist": ["min", "max"],
+                "contact_any_ooc": [_agg_contact],
+                "contact_non_aa": [_agg_contact],
+            }
+        )
+
+        df_contacts = df_groups.set_axis(
+            labels=[
+                "contact_count",
+                "contact_types",
+                "contact_dmin",
+                "contact_dmax",
+                "contact_smin",
+                "contact_smax",
+                "contact_ooc",
+                "contact_non_aa",
+            ],
+            axis="columns",
+        )
+        df_contacts["contact_count"].fillna(0, inplace=True)
+        df_contacts = (
+            df_contacts.reset_index()
+            .astype(
+                {
+                    "res_id": str,
+                    "contact_count": pd.Int64Dtype(),
+                    "contact_smin": pd.Int64Dtype(),
+                    "contact_smax": pd.Int64Dtype(),
+                }
+            )
+            .set_index("res_id")
+            .sort_values(by=["res_id"])
+        )
+
+        return df_contacts
 
     @property
     def polypeptides(self) -> List[Polypeptide]:
@@ -592,13 +727,19 @@ class ProteinRecord(object):
 
         return self._pp
 
-    def to_dataframe(self, with_ids=False, with_backbone=False):
+    def to_dataframe(
+        self,
+        with_ids: bool = False,
+        with_backbone: bool = False,
+        with_contacts: Union[bool, Dict[str, Any]] = False,
+    ):
         """
         :param with_ids: Whether to include pdb_id and unp_id columns. Usually this
         is redundant since it's the same for all rows, but can be useful if this
         dataframe is combined with others.
-        :param with_backbone: Whther to include a 'backbone' column which contain the
+        :param with_backbone: Whether to include a 'backbone' column which contain the
         backbone atom coordinates of each residue in the order N, CA, C, O.
+        :param with_contacts: Whether to include tertiary contact features per residue.
         :return: A Pandas dataframe where each row is a ResidueRecord from
         this ProteinRecord.
         """
@@ -615,13 +756,20 @@ class ProteinRecord(object):
                 )
             df_data.append(res_rec_dict)
 
-        df = pd.DataFrame(df_data)
+        df_prec = pd.DataFrame(df_data)
+
+        if with_contacts:
+            contact_kwargs = with_contacts if isinstance(with_contacts, dict) else {}
+            df_contacts = self._contact_features(**contact_kwargs)
+            df_prec = df_prec.join(df_contacts, how="left", on="res_id")
+            df_prec["contact_count"].fillna(0, inplace=True)
+            df_prec["contact_types"].fillna("", inplace=True)
 
         if with_ids:
-            df.insert(loc=0, column="unp_id", value=self.unp_id)
-            df.insert(loc=0, column="pdb_id", value=self.pdb_id)
+            df_prec.insert(loc=0, column="unp_id", value=self.unp_id)
+            df_prec.insert(loc=0, column="pdb_id", value=self.pdb_id)
 
-        return df
+        return df_prec
 
     def to_csv(self, out_dir=pp5.out_subdir("prec"), tag=None, **to_dataframe_kwargs):
         """
