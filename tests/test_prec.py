@@ -9,18 +9,32 @@ from pp5.utils import ProteinInitError
 from pp5.external_dbs import unp
 
 
-class TestProperties:
-    @pytest.fixture(autouse=True, params=["102L:A", "4N6V:9"])
-    def setup(self, request):
+class TestMethods:
+    @pytest.fixture(autouse=False, scope="class", params=["102L:A", "4N6V:9"])
+    def prec(self, request):
         pdb_id = request.param
-        self.prec = ProteinRecord.from_pdb(pdb_id)
+        prec = ProteinRecord.from_pdb(pdb_id)
+        return prec
 
     @pytest.mark.parametrize("with_oxygen", [True, False])
-    def test_backbone(self, with_oxygen):
-        backbone = self.prec.backbone_coordinates(with_oxygen=with_oxygen)
+    def test_backbone(self, prec, with_oxygen):
+        backbone = prec.backbone_coordinates(with_oxygen=with_oxygen)
         for res_id, coords in backbone.items():
-            assert res_id in self.prec
+            assert res_id in prec
             assert coords.shape == (4, 3) if with_oxygen else (3, 3)
+
+    @pytest.mark.parametrize("with_ids", [True, False])
+    @pytest.mark.parametrize("with_backbone", [True, False])
+    def test_to_dataframe(self, prec, with_ids, with_backbone):
+        df = prec.to_dataframe(with_ids=with_ids, with_backbone=with_backbone)
+        assert len(df) == len(prec)
+
+        if with_ids:
+            assert "unp_id" in df.columns
+            assert "pdb_id" in df.columns
+
+        if with_backbone:
+            assert "backbone" in df.columns
 
 
 class TestFromUnp:

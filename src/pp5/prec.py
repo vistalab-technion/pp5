@@ -67,7 +67,7 @@ def _backbone_coords(res: Residue, with_oxygen: bool = False) -> Optional[np.nda
             coords.append(res["O"].coord)
     except KeyError:
         return None
-    return np.stack(coords)
+    return np.stack(coords).astype(float)
 
 
 class ResidueRecord(object):
@@ -592,19 +592,30 @@ class ProteinRecord(object):
 
         return self._pp
 
-    def to_dataframe(self, with_ids=False):
+    def to_dataframe(self, with_ids=False, with_backbone=False):
         """
         :param with_ids: Whether to include pdb_id and unp_id columns. Usually this
-            is redundant since it's the same for all rows, but can be useful if this
-            dataframe is combined with others.
+        is redundant since it's the same for all rows, but can be useful if this
+        dataframe is combined with others.
+        :param with_backbone: Whther to include a 'backbone' column which contain the
+        backbone atom coordinates of each residue in the order N, CA, C, O.
         :return: A Pandas dataframe where each row is a ResidueRecord from
         this ProteinRecord.
         """
-        # use the iterator of this class to get the residue recs
-        data = [
-            res_rec.as_dict(skip_omega=False, convert_none=True) for res_rec in self
-        ]
-        df = pd.DataFrame(data)
+        backbone_coords = (
+            self.backbone_coordinates(with_oxygen=True) if with_backbone else None
+        )
+        df_data = []
+        for res_id, res_rec in self.items():
+            res_rec_dict = res_rec.as_dict(skip_omega=False, convert_none=True)
+            if with_backbone:
+                res_backbone = backbone_coords.get(res_id)
+                res_rec_dict["backbone"] = (
+                    res_backbone.round(4).tolist() if res_backbone is not None else []
+                )
+            df_data.append(res_rec_dict)
+
+        df = pd.DataFrame(df_data)
 
         if with_ids:
             df.insert(loc=0, column="unp_id", value=self.unp_id)
@@ -612,7 +623,7 @@ class ProteinRecord(object):
 
         return df
 
-    def to_csv(self, out_dir=pp5.out_subdir("prec"), tag=None):
+    def to_csv(self, out_dir=pp5.out_subdir("prec"), tag=None, **to_dataframe_kwargs):
         """
         Writes the ProteinRecord as a CSV file.
         Filename will be <PDB_ID>_<CHAIN_ID>_<TAG>.csv.
@@ -625,7 +636,7 @@ class ProteinRecord(object):
         """
         os.makedirs(out_dir, exist_ok=True)
         filepath = pdb_tagged_filepath(self.pdb_id, out_dir, "csv", tag)
-        df = self.to_dataframe()
+        df = self.to_dataframe(**to_dataframe_kwargs)
         df.to_csv(
             filepath,
             na_rep="nan",
