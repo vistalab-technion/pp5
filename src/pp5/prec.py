@@ -731,7 +731,7 @@ class ProteinRecord(object):
         self,
         with_ids: bool = False,
         with_backbone: bool = False,
-        with_contacts: Union[bool, Dict[str, Any]] = False,
+        with_contacts: Optional[Union[bool, Dict[str, Any]]] = False,
     ):
         """
         :param with_ids: Whether to include pdb_id and unp_id columns. Usually this
