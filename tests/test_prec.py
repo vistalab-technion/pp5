@@ -94,14 +94,14 @@ class TestFromPDB:
 class TestInit:
     def test_init_no_chain(self):
         unp_id = "P00720"
-        pdb_id = "5JDT"
+        pdb_id = "102L"
         prec = ProteinRecord(unp_id, pdb_id)
         assert prec.unp_id == "P00720"
         assert prec.pdb_id == f"{pdb_id}:A"
 
     def test_init_with_chain(self):
         unp_id = "P00720"
-        pdb_id = "5JDT:A"
+        pdb_id = "102L:A"
         prec = ProteinRecord(unp_id, pdb_id)
         assert prec.unp_id == "P00720"
         assert prec.pdb_id == pdb_id
