@@ -9,6 +9,7 @@ import ftplib
 import signal
 import logging
 import tarfile
+import zipfile
 import tempfile
 import warnings
 import contextlib
@@ -851,8 +852,11 @@ class Arpeggio(object):
         arpeggio_out_path = self._run_arpeggio(pdb_id)
 
         LOGGER.info(f"Parsing arpeggio output from {arpeggio_out_path!s}")
-        with open(arpeggio_out_path, "r") as f:
-            out_json = json.load(f)
+        with zipfile.ZipFile(arpeggio_out_path, "r") as zipf:
+            with zipf.open(arpeggio_out_path.stem) as f:
+                out_json = json.load(f)
+        # with open(arpeggio_out_path, "r") as f:
+        #     out_json = json.load(f)
 
         # Convert nested json to dataframe and sort the columns
         df: pd.DataFrame = pd.json_normalize(out_json).sort_index(axis=1)
@@ -904,7 +908,7 @@ class Arpeggio(object):
         cached_out_filename = (
             f"{pdb_base_id.upper()}_"
             f"{pdb_chain_id.upper()}-"
-            f"i{self.interaction_cutoff:.1f}.json"
+            f"i{self.interaction_cutoff:.1f}.json.zip"
         )
         cached_out_path = self.out_dir.absolute() / cached_out_filename
         if self.cache and cached_out_path.is_file():
@@ -952,8 +956,13 @@ class Arpeggio(object):
         LOGGER.debug(f"Arpeggio output\n{stdout=}\n\n{stderr=}")
 
         # Cache the result
-        out_file_path = self.out_dir.absolute() / f"{pdb_cif_path.stem }.json"
+        out_file_path = self.out_dir.absolute() / f"{pdb_cif_path.stem}.json"
         if self.cache:
-            out_file_path = out_file_path.rename(cached_out_path)
+            with zipfile.ZipFile(
+                cached_out_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
+            ) as out_zipfile:
+                out_zipfile.write(out_file_path, arcname=cached_out_path.stem)
+            out_file_path.unlink()
+            out_file_path = cached_out_path
 
         return out_file_path
