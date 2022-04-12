@@ -26,6 +26,7 @@ from Bio.PDB import PPBuilder
 from Bio.Seq import Seq
 from Bio.Align import PairwiseAligner
 from Bio.SeqRecord import SeqRecord
+from Bio.PDB.Residue import Residue
 from Bio.PDB.Polypeptide import Polypeptide
 
 import pp5
@@ -47,6 +48,26 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _residue_to_res_id(res: Residue) -> str:
+    """
+    Converts a biopython residue object to a string representing its ID.
+    """
+    return str.join("", map(str, res.get_id())).strip()
+
+
+def _backbone_coords(res: Residue, with_oxygen: bool = False) -> Optional[np.ndarray]:
+    coords = []
+    try:
+        coords.append(res["N"].coord)
+        coords.append(res["CA"].coord)
+        coords.append(res["C"].coord)
+        if with_oxygen:
+            coords.append(res["O"].coord)
+    except KeyError:
+        return None
+    return np.stack(coords)
 
 
 class ResidueRecord(object):
@@ -83,7 +104,7 @@ class ResidueRecord(object):
         :param backbone_coords: 3x3 np array containing atom coordinates.
             Rows represent N, CA, C atoms.
         """
-        self.res_id, self.name = str(res_id).strip(), name
+        self.res_id, self.name = str(res_id), name
         self.unp_idx = unp_idx
         self.codon, self.codon_score = codon, codon_score
         if isinstance(codon_opts, str):
@@ -408,21 +429,12 @@ class ProteinRecord(object):
             dihedral_est_name, dihedral_est_args
         )
 
-        def _backbone_coords(res):
-            try:
-                n = res["N"]
-                ca = res["CA"]
-                c = res["C"]
-            except KeyError:
-                return None
-            return np.stack([n.coord, ca.coord, c.coord])
-
         # Extract the PDB AA sequence, dihedral angles and b-factors
         # from the PDB structure.
         # Even though we're working with one PDB chain, the results is a
         # list of multiple Polypeptide objects because we split them at
         # non-standard residues (HETATM atoms in PDB).
-        pdb_aa_seq, aa_ids, angles, bfactors, sstructs, coords = "", [], [], [], [], []
+        pdb_aa_seq, res_ids, angles, bfactors, sstructs, coords = "", [], [], [], [], []
         for i, pp in enumerate(self.polypeptides):
             curr_start_idx = pp[0].get_id()[1]
             curr_end_idx = pp[-1].get_id()[1]
@@ -435,18 +447,18 @@ class ProteinRecord(object):
 
                 # fill in the gaps
                 pdb_aa_seq += UNKNOWN_AA * gap_len
-                aa_ids.extend(range(prev_end_idx + 1, curr_start_idx))
+                res_ids.extend(range(prev_end_idx + 1, curr_start_idx))
                 angles.extend([Dihedral.empty()] * gap_len)
                 bfactors.extend([math.nan] * gap_len)
                 sstructs.extend(["-"] * gap_len)
                 coords.extend([None] * gap_len)
 
             pdb_aa_seq += str(pp.get_sequence())
-            aa_ids.extend([str.join("", map(str, res.get_id())) for res in pp])
+            res_ids.extend(_residue_to_res_id(res) for res in pp)
             angles.extend(dihedral_est.estimate(pp))
             bfactors.extend(bfactor_est.mean_uncertainty(pp, True))
-            res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
-            sss = (ss_dict.get(res_id, "-") for res_id in res_ids)
+            chain_res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
+            sss = (ss_dict.get(res_id, "-") for res_id in chain_res_ids)
             sstructs.extend(sss)
             coords.extend(_backbone_coords(res) for res in pp)
 
@@ -474,7 +486,7 @@ class ProteinRecord(object):
             codon_opts = codon_counts.keys()
 
             rr = ResidueRecord(
-                res_id=aa_ids[i],
+                res_id=res_ids[i],
                 unp_idx=pdb_to_unp_idx.get(i, None),
                 name=pdb_aa_seq[i],
                 codon=best_codon,
@@ -553,6 +565,26 @@ class ProteinRecord(object):
     @property
     def dihedral_angles(self) -> Dict[str, Dihedral]:
         return {x.res_id: x.angles for x in self}
+
+    def backbone_coordinates(self, with_oxygen: bool = False) -> Dict[str, np.ndarray]:
+        """
+        Returns the backbone atom coordinates for each residue in the chain.
+        :param with_oxygen: Whether to include oxygen in the coordinates of each
+        residue.
+        :return: A dict from a residue id to a 3x3 (when with_oxygen=False) or 4x3 (when
+        with_oxygen=True) ndarray containing atom coordinates on the backbone.
+        Rows represent N, CA, C and O backbone atoms.
+        """
+        backbone_coords = {}
+
+        pp: Polypeptide
+        for pp in self.polypeptides:
+            res: Residue
+            for res in pp:
+                res_id = _residue_to_res_id(res)
+                backbone_coords[res_id] = _backbone_coords(res, with_oxygen=with_oxygen)
+
+        return backbone_coords
 
     @property
     def polypeptides(self) -> List[Polypeptide]:
@@ -890,6 +922,9 @@ class ProteinRecord(object):
         :return: the corresponding residue record.
         """
         return self._residue_recs[str(item)]
+
+    def __contains__(self, item: Union[str, int]) -> bool:
+        return str(item) in self._residue_recs
 
     def items(self) -> ItemsView[str, ResidueRecord]:
         """
