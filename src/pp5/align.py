@@ -852,11 +852,13 @@ class Arpeggio(object):
         arpeggio_out_path = self._run_arpeggio(pdb_id)
 
         LOGGER.info(f"Parsing arpeggio output from {arpeggio_out_path!s}")
-        with zipfile.ZipFile(arpeggio_out_path, "r") as zipf:
-            with zipf.open(arpeggio_out_path.stem) as f:
+        if "zip" in arpeggio_out_path.suffix:
+            with zipfile.ZipFile(arpeggio_out_path, "r") as zipf:
+                with zipf.open(arpeggio_out_path.stem) as f:
+                    out_json = json.load(f)
+        else:  # json
+            with open(arpeggio_out_path, "r") as f:
                 out_json = json.load(f)
-        # with open(arpeggio_out_path, "r") as f:
-        #     out_json = json.load(f)
 
         # Convert nested json to dataframe and sort the columns
         df: pd.DataFrame = pd.json_normalize(out_json).sort_index(axis=1)

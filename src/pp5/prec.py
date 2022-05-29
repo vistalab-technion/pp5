@@ -739,7 +739,9 @@ class ProteinRecord(object):
         dataframe is combined with others.
         :param with_backbone: Whether to include a 'backbone' column which contain the
         backbone atom coordinates of each residue in the order N, CA, C, O.
-        :param with_contacts: Whether to include tertiary contact features per residue.
+        :param with_contacts: Whether to include tertiary contact features per
+        residue. Can be a dict, in which case it will be treated as kwargs to pass to
+        Arpeggio.
         :return: A Pandas dataframe where each row is a ResidueRecord from
         this ProteinRecord.
         """
@@ -773,13 +775,17 @@ class ProteinRecord(object):
 
     def to_csv(self, out_dir=pp5.out_subdir("prec"), tag=None, **to_dataframe_kwargs):
         """
-        Writes the ProteinRecord as a CSV file.
+        Writes the ProteinRecord as a CSV file, by writing the dataframe produced by
+        self.to_dataframe() to CSV.
+
         Filename will be <PDB_ID>_<CHAIN_ID>_<TAG>.csv.
         Note that this is meant as a human-readable output format only,
         so a ProteinRecord cannot be re-created from this CSV.
         To save a ProteinRecord for later loading, use save().
+
         :param out_dir: Output dir.
         :param tag: Optional extra tag to add to filename.
+        :param to_dataframe_kwargs: Keyword args for self.to_dataframe.
         :return: The path to the written file.
         """
         os.makedirs(out_dir, exist_ok=True)
