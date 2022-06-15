@@ -585,7 +585,7 @@ class ProteinRecord(object):
 
         # Invoke arpeggio to get the raw contact features.
         arpeggio = Arpeggio(**arpeggio_kwargs)
-        df_arp = arpeggio.contact_df(self.pdb_id)
+        df_arp = arpeggio.contact_df(self.pdb_id, single_sided=False)
 
         # Create a temp df to work with
         df = df_arp.copy().reset_index()
