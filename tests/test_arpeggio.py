@@ -26,5 +26,7 @@ class TestArpeggio:
             self.arpeggio.contact_df("2WUR")
 
     def test_from_pdb(self):
-        df = self.arpeggio.contact_df("2WUR:A")
-        assert len(df) > 0
+        df_single = self.arpeggio.contact_df("2WUR:A", single_sided=True)
+        df_double = self.arpeggio.contact_df("2WUR:A", single_sided=False)
+        assert len(df_single) > 0
+        assert len(df_single) * 2 == len(df_double)

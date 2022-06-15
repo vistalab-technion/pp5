@@ -19,6 +19,7 @@ from typing import Tuple, Union, Iterable, Optional
 from pathlib import Path
 from datetime import datetime, timedelta
 
+import numpy as np
 import pandas as pd
 from Bio import SeqIO, AlignIO, BiopythonExperimentalWarning
 from tqdm import tqdm
@@ -840,9 +841,12 @@ class Arpeggio(object):
                 f"{self.arpeggio_command}"
             )
 
-    def contact_df(self, pdb_id: str) -> pd.DataFrame:
+    def contact_df(self, pdb_id: str, single_sided: bool = False) -> pd.DataFrame:
         """
         :param pdb_id: The PDB ID to run arpeggio against. Must include chain.
+        :param single_sided: Whether to include only on side of each contact as in
+        the original arpeggio output (True), or to duplicate each contact to both
+        sides it touches (False).
         :return: A dataframe with the arpeggio contacts
         """
         pdb_base_id, pdb_chain_id = pdb.split_id(pdb_id)
@@ -862,6 +866,30 @@ class Arpeggio(object):
 
         # Convert nested json to dataframe and sort the columns
         df: pd.DataFrame = pd.json_normalize(out_json).sort_index(axis=1)
+
+        if not single_sided:
+            df1 = df
+
+            # Obtain matching bgn.* and end.* columns
+            bgn_cols = [c for c in df1.columns if c.startswith("bgn")]
+            end_cols = [c.replace("bgn", "end") for c in bgn_cols]
+            assert all(c in df1.columns for c in end_cols)
+
+            # Obtain begin and end data
+            df_bgn = df1[bgn_cols]
+            df_end = df1[end_cols]
+
+            # Create a copy df where bgn and end are swapped
+            df2 = df1.copy()
+            df2[bgn_cols] = df_end.values
+            df2[end_cols] = df_bgn.values
+
+            # Sanity check
+            assert np.all(df1[bgn_cols].values == df2[end_cols].values)
+            assert np.all(df1[end_cols].values == df2[bgn_cols].values)
+
+            # Create double-sided dataframe
+            df = pd.concat([df1, df2])
 
         # Sort and index by (Chain, Residue)
         index_cols = ["bgn.auth_asym_id", "bgn.auth_seq_id"]
