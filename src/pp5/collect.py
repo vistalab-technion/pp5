@@ -10,6 +10,7 @@ import multiprocessing as mp
 from pprint import pformat
 from typing import Dict, List, Callable, Iterable, Optional, Sequence
 from pathlib import Path
+from datetime import datetime
 from dataclasses import dataclass
 from multiprocessing.pool import AsyncResult
 
@@ -290,6 +291,8 @@ class ProteinRecordCollector(ParallelDataCollector):
         expr_sys: Optional[str] = pp5.get_config("DEFAULT_EXPR_SYS"),
         source_taxid: Optional[int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         seq_similarity_thresh: float = pp5.get_config("DEFAULT_SEQ_SIMILARITY_THRESH"),
+        deposition_min_date: Optional[str] = None,
+        deposition_max_date: Optional[str] = None,
         prec_init_args=None,
         with_backbone: bool = False,
         with_contacts: bool = False,
@@ -306,9 +309,13 @@ class ProteinRecordCollector(ParallelDataCollector):
         :param expr_sys: Expression system name.
         :param source_taxid: Taxonomy ID of source organism.
         :param seq_similarity_thresh: PDB sequence similarity threshold. This is a
-            fraction between 0 and 1.0 which represents the maximal percentage of
-            similarity allowed between two collected structures. Use 1.0 to set no
-            filter.
+        fraction between 0 and 1.0 which represents the maximal percentage of
+        similarity allowed between two collected structures. Use 1.0 to set no
+        filter.
+        :param deposition_min_date: A date in the format "YYYY-MM-DD" representing
+        the minimum deposition date (inclusive).
+        :param deposition_max_date: A date in the format "YYYY-MM-DD" representing
+        the maximum deposition date (inclusive).
         :param out_dir: Output folder for collected metadata.
         :param out_tag: Extra tag to add to the output file names.
         :param prec_out_dir: Output folder for prec CSV files.
@@ -333,6 +340,14 @@ class ProteinRecordCollector(ParallelDataCollector):
         self.source_taxid = (
             int(source_taxid) if (source_taxid not in (None, "")) else None
         )
+        self.deposition_min_date: Optional[datetime] = None
+        self.deposition_max_date: Optional[datetime] = None
+
+        ymd = "%Y-%m-%d"
+        if deposition_min_date:
+            self.deposition_min_date = datetime.strptime(deposition_min_date, ymd)
+        if deposition_max_date:
+            self.deposition_max_date = datetime.strptime(deposition_max_date, ymd)
 
         if not 0.0 < seq_similarity_thresh <= 1.0:
             raise ValueError("seq_similarity_thresh must be in (0, 1.0]")
@@ -347,6 +362,14 @@ class ProteinRecordCollector(ParallelDataCollector):
             queries.append(
                 pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=self.source_taxid)
             )
+        if self.deposition_min_date or self.deposition_max_date:
+            queries.append(
+                pdb_api.PDBDepositionDateQuery(
+                    min_date=self.deposition_min_date,
+                    max_date=self.deposition_max_date,
+                )
+            )
+
         self.query = pdb_api.PDBCompositeQuery(
             *queries,
             logical_operator="and",
