@@ -1,3 +1,4 @@
+from datetime import datetime
 from contextlib import contextmanager
 
 import pytest
@@ -263,3 +264,32 @@ class TestPDBRFreeQuery:
         )
         results = query.execute()
         assert len(results) >= 63
+
+
+class TestPDBDepositionDateQuery:
+    @pytest.mark.parametrize(
+        "min_date", ["2022-01-31", datetime.fromisoformat("2022-01-31")]
+    )
+    def test_min(self, min_date):
+        query = pdb_api.PDBDepositionDateQuery(min_date=min_date)
+        results = query.execute()
+        assert len(results) >= 2533
+
+    @pytest.mark.parametrize(
+        "max_date", ["1990-01-31", datetime.fromisoformat("1990-01-31")]
+    )
+    def test_max(self, max_date):
+        query = pdb_api.PDBDepositionDateQuery(max_date=max_date)
+        results = query.execute()
+        assert len(results) == 668
+
+    @pytest.mark.parametrize("min_date", ["2000-01-01"])
+    @pytest.mark.parametrize("max_date", ["2001-01-01"])
+    def test_min_max(self, min_date, max_date):
+        query = pdb_api.PDBDepositionDateQuery(min_date=min_date, max_date=max_date)
+        results = query.execute()
+        assert len(results) == 3822
+
+    def test_exception(self):
+        with pytest.raises(ValueError, match="at least one of min, max"):
+            _ = pdb_api.PDBDepositionDateQuery()
