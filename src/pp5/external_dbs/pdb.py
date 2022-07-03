@@ -36,7 +36,7 @@ PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
 LOGGER = logging.getLogger(__name__)
 
 
-def split_id(pdb_id):
+def split_id(pdb_id) -> Tuple[str, str]:
     """
     Splits and validates a full PDB id consisting of a base id and
     optionally also a chain, into a tuple with the base id and chain.
@@ -49,7 +49,7 @@ def split_id(pdb_id):
     return split_id_with_entity(pdb_id)[0:2]
 
 
-def split_id_with_entity(pdb_id):
+def split_id_with_entity(pdb_id) -> Tuple[str, str, Optional[str]]:
     """
     Splits and validates a full PDB id consisting of a base id and
     optionally also a chain OR entity id, into a tuple with the base id,

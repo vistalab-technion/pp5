@@ -5,8 +5,52 @@ import pytest
 import pp5
 from tests import get_tmp_path
 from pp5.prec import ProteinRecord
+from pp5.align import Arpeggio
 from pp5.utils import ProteinInitError
 from pp5.external_dbs import unp
+
+
+class TestMethods:
+    @pytest.fixture(autouse=False, scope="class", params=["102L:A", "2WUR:A"])
+    def prec(self, request):
+        pdb_id = request.param
+        prec = ProteinRecord.from_pdb(pdb_id)
+        return prec
+
+    @pytest.mark.parametrize("with_oxygen", [True, False])
+    def test_backbone(self, prec, with_oxygen):
+        backbone = prec.backbone_coordinates(with_oxygen=with_oxygen)
+        for res_id, coords in backbone.items():
+            assert res_id in prec
+            if coords is None:
+                j = 3
+            assert coords.shape == (4, 3) if with_oxygen else (3, 3)
+
+    @pytest.mark.parametrize("with_ids", [True, False])
+    @pytest.mark.parametrize("with_backbone", [True, False])
+    @pytest.mark.parametrize(
+        "with_contacts",
+        [False, dict(interaction_cutoff=4.5, use_conda_env="arpeggio", cache=True)],
+    )
+    def test_to_dataframe(self, prec, with_ids, with_backbone, with_contacts):
+        if isinstance(with_contacts, dict):
+            if not Arpeggio.can_execute(**with_contacts):
+                pytest.skip()
+
+        df = prec.to_dataframe(
+            with_ids=with_ids, with_backbone=with_backbone, with_contacts=with_contacts
+        )
+        assert len(df) == len(prec)
+
+        if with_ids:
+            assert "unp_id" in df.columns
+            assert "pdb_id" in df.columns
+
+        if with_backbone:
+            assert "backbone" in df.columns
+
+        if with_contacts:
+            assert "contact_count" in df.columns
 
 
 class TestFromUnp:
@@ -94,14 +138,14 @@ class TestFromPDB:
 class TestInit:
     def test_init_no_chain(self):
         unp_id = "P00720"
-        pdb_id = "5JDT"
+        pdb_id = "102L"
         prec = ProteinRecord(unp_id, pdb_id)
         assert prec.unp_id == "P00720"
         assert prec.pdb_id == f"{pdb_id}:A"
 
     def test_init_with_chain(self):
         unp_id = "P00720"
-        pdb_id = "5JDT:A"
+        pdb_id = "102L:A"
         prec = ProteinRecord(unp_id, pdb_id)
         assert prec.unp_id == "P00720"
         assert prec.pdb_id == pdb_id

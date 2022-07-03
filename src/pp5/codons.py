@@ -33,7 +33,10 @@ AA_CODONS: Sequence[str] = sorted(codon2aac(c) for c in CODONS)
 
 ACIDS = sorted(set([aac[0] for aac in AA_CODONS]))
 N_ACIDS = len(ACIDS)
-ACIDS_1TO3 = IUPACData.protein_letters_1to3
+ACIDS_1TO3 = {
+    a.upper(): aaa.upper() for a, aaa in IUPACData.protein_letters_1to3.items()
+}
+ACIDS_3TO1 = {aaa: a for a, aaa in ACIDS_1TO3.items()}
 ACIDS_1TO1AND3 = {aa: f"{aa} ({ACIDS_1TO3[aa]})" for aa in ACIDS}
 
 UNKNOWN_NUCLEOTIDE = "Z"

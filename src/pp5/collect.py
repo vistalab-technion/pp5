@@ -21,7 +21,7 @@ from Bio.Align import PairwiseAligner
 import pp5
 import pp5.parallel
 from pp5.prec import ProteinRecord
-from pp5.align import ProteinBLAST
+from pp5.align import Arpeggio, ProteinBLAST
 from pp5.utils import ReprJSONEncoder, ProteinInitError, elapsed_seconds_to_dhms
 from pp5.pgroup import ProteinGroup
 from pp5.external_dbs import pdb, unp, pdb_api
@@ -44,6 +44,8 @@ COL_SPACE_GROUP = "space_group"
 COL_CG_PH = "cg_ph"
 COL_CG_TEMP = "cg_temp"
 COL_REJECTED_BY = "rejected_by"
+
+ARPEGGIO_ARGS = dict(interaction_cutoff=4.5, use_conda_env="arpeggio", cache=True)
 
 
 @dataclass(repr=False)
@@ -288,11 +290,13 @@ class ProteinRecordCollector(ParallelDataCollector):
         source_taxid: Optional[int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         seq_similarity_thresh: float = pp5.get_config("DEFAULT_SEQ_SIMILARITY_THRESH"),
         prec_init_args=None,
+        with_backbone: bool = False,
+        with_contacts: bool = False,
         out_dir: Path = pp5.out_subdir("prec-collected"),
         out_tag: Optional[str] = None,
         prec_out_dir: Path = pp5.out_subdir("prec"),
         write_csv=True,
-        async_timeout=60,
+        async_timeout=600,
     ):
         """
         Collects ProteinRecords based on a PDB query results, and saves them
@@ -308,6 +312,9 @@ class ProteinRecordCollector(ParallelDataCollector):
         :param out_tag: Extra tag to add to the output file names.
         :param prec_out_dir: Output folder for prec CSV files.
         :param prec_init_args: Arguments for initializing each ProteinRecord
+        :param with_backbone: Whether to include a 'backbone' column which contain the
+        backbone atom coordinates of each residue in the order N, CA, C, O.
+        :param with_contacts: Whether to include tertiary contact features per residue.
         :param write_csv: Whether to write the ProteinRecords to
             the prec_out_dir as CSV files.
         :param async_timeout: Timeout in seconds for each worker
@@ -351,6 +358,9 @@ class ProteinRecordCollector(ParallelDataCollector):
         else:
             self.prec_init_args = self.DEFAULT_PREC_INIT_ARGS
 
+        self.with_backbone = with_backbone
+        self.with_contacts = with_contacts
+
         self.prec_out_dir = prec_out_dir
         self.write_csv = write_csv
 
@@ -376,7 +386,11 @@ class ProteinRecordCollector(ParallelDataCollector):
         async_results = []
         for i, pdb_id in enumerate(pdb_ids):
             args = (pdb_id, (i, n_structs))
-            kwds = dict(csv_out_dir=self.prec_out_dir if self.write_csv else None)
+            kwds = dict(
+                csv_out_dir=self.prec_out_dir if self.write_csv else None,
+                with_backbone=self.with_backbone,
+                with_contacts=ARPEGGIO_ARGS if self.with_contacts else None,
+            )
             r = pool.apply_async(_collect_single_structure, args, kwds)
             async_results.append(r)
 
@@ -542,7 +556,14 @@ class ProteinRecordCollector(ParallelDataCollector):
             async_results = []
             for i, pdb_id in enumerate(pdb_ids_chunk):
                 async_results.append(
-                    pool.apply_async(_load_prec_df_from_cache, args=(pdb_id,))
+                    pool.apply_async(
+                        _load_prec_df_from_cache,
+                        args=(pdb_id,),
+                        kwds=dict(
+                            with_backbone=self.with_backbone,
+                            with_contacts=ARPEGGIO_ARGS if self.with_contacts else None,
+                        ),
+                    )
                 )
 
             _, elapsed, pdb_id_dataframes = self._handle_async_results(
@@ -847,6 +868,8 @@ def _collect_single_structure(
     idx: tuple = (0, 0),
     csv_out_dir: Optional[Path] = None,
     csv_tag: str = None,
+    with_backbone: bool = False,
+    with_contacts: Optional[Dict] = None,
 ) -> List[dict]:
     """
     Downloads a single PDB entry, and creates a prec for all its chains.
@@ -855,6 +878,10 @@ def _collect_single_structure(
     :param csv_out_dir: If provided, the prec of each chain will be written to CSV at
         this path.
     :param csv_tag: Tag to add to the output CSVs.
+    :param with_backbone: Whether to write backbone atom locations to csv.
+    :param with_contacts: Whether to run Arpeggio so that it's results are cached
+    locally and also write contact features to csv. The dict contains kwargs for
+    arpeggio.
     :return: A list of dicts, each containing metadata about one of the collected
         chains.
     """
@@ -873,7 +900,7 @@ def _collect_single_structure(
         # If we have a specific chain, use only that
         all_chains = (chain_id,)
     else:
-        # Otherwise we'll take all UNIQUE chains: only one chain from
+        # Otherwise, we'll take all UNIQUE chains: only one chain from
         # each unique entity. This is important, since chains from the same
         # entity are identical, so they're redundant.
         all_chains = [meta.get_chain(e) for e in meta.entity_sequence]
@@ -912,9 +939,18 @@ def _collect_single_structure(
             # Save into cache
             prec.save()
 
+            if with_contacts:
+                arpeggio = Arpeggio(**with_contacts)
+                _ = arpeggio.contact_df(pdb_id_full)
+
             # Write CSV if requested
             if csv_out_dir is not None:
-                prec.to_csv(csv_out_dir, tag=csv_tag)
+                prec.to_csv(
+                    csv_out_dir,
+                    tag=csv_tag,
+                    with_backbone=with_backbone,
+                    with_contacts=with_contacts,
+                )
         except Exception as e:
             LOGGER.warning(
                 f"Failed to create ProteinRecord for "
@@ -1060,10 +1096,14 @@ def _collect_single_pgroup(
     )
 
 
-def _load_prec_df_from_cache(pdb_id: str):
+def _load_prec_df_from_cache(
+    pdb_id: str, with_backbone: bool = False, with_contacts: Optional[Dict] = None,
+):
     try:
         prec = ProteinRecord.from_pdb(pdb_id, cache=True)
-        df = prec.to_dataframe(with_ids=True)
+        df = prec.to_dataframe(
+            with_ids=True, with_backbone=with_backbone, with_contacts=with_contacts
+        )
         return df
     except ProteinInitError as e:
         LOGGER.error(f"Failed to create {pdb_id} from cache: {e}")
