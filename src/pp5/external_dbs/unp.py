@@ -1,23 +1,31 @@
 import shutil
 import logging
-from typing import Set, List, Union, Iterable, NamedTuple
+import os.path
+from typing import List, Union, Iterable, NamedTuple
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import requests
 import Bio.SwissProt
-from requests import HTTPError
 from Bio.SwissProt import Record as UNPRecord
 
 from pp5 import UNP_DIR, get_resource_path
 from pp5.utils import remote_dl
 
-UNP_URL_TEMPLATE = r"https://www.uniprot.org/uniprot/{}.txt"
-UNP_REPLACE_TEMPLATE = (
-    r"https://www.uniprot.org/uniprot/?query=replaces:{}" r"&format=list"
-)
-UNP_ORG_TEMPLATE = r"https://www.uniprot.org/uniprot/?query=gene:{}" r"&format=list"
+UNP_URL_TEMPLATE = r"https://rest.uniprot.org/uniprotkb/{}"
+
 LOGGER = logging.getLogger(__name__)
+
+
+def unp_api_metadata(unp_id: str) -> dict:
+    """
+    Obtains raw metadata about a Uniprot record from Uniprot's API.
+    :param unp_id: A uniprot ID.
+    :return: A dict containing metadata about it.
+    """
+    uniprot_meta_url = UNP_URL_TEMPLATE.format(unp_id)
+    response = requests.get(uniprot_meta_url)
+    response.raise_for_status()
+    return response.json()
 
 
 def replacement_ids(unp_id: str):
@@ -27,50 +35,32 @@ def replacement_ids(unp_id: str):
     :param unp_id: The id to find a replacement for.
     :return: A list of replacement ids.
     """
-    replaces_url = UNP_REPLACE_TEMPLATE.format(unp_id)
-    replaces = requests.get(replaces_url)
-    replaces.raise_for_status()
-    ids = replaces.text.split()
+    metadata = unp_api_metadata(unp_id)
+    inactive_reason = metadata.get("inactiveReason", {})
+    ids = inactive_reason.get("mergeDemergeTo", [])
     if not ids:
         raise ValueError(f"UNP id {unp_id} has no replacements")
-    return ids
 
-
-def unp_ids_from_orf(orf_id: str):
-    """
-    Retrieves uniprot IDs corresponding to a gene ID.
-    :param orf_id: ORF ID of a gene.
-    :param reviewed: Whether to filter only reviewed entries.
-    :return: A list of PDB ids corresponding to the gene.
-    """
-    orf_url = UNP_ORG_TEMPLATE.format(orf_id)
-    orf = requests.get(orf_url)
-    orf.raise_for_status()
-    ids = orf.text.split()
-    if not ids:
-        raise ValueError(f"ORF id {orf_id} has no unp IDs")
     return ids
 
 
 def unp_download(unp_id: str, unp_dir=UNP_DIR) -> Path:
-    url = UNP_URL_TEMPLATE.format(unp_id)
+    url = f"{UNP_URL_TEMPLATE.format(unp_id)}.txt"
     filename = get_resource_path(unp_dir, f"{unp_id}.txt")
 
-    try:
-        return remote_dl(url, filename, skip_existing=True)
-    except HTTPError as e:
-        if e.response.status_code == 300:
-            # We got a kind of redirect to a different Uniprot id.
-            # We need to query Uniprot for replacement a replacement ID and
-            # download that instead.
-            new_unp_id = replacement_ids(unp_id)[0]
-            LOGGER.warning(f"UNP id {unp_id} replaced by {new_unp_id}")
-            new_filename = unp_download(new_unp_id, unp_dir)
-            shutil.copy(new_filename, filename)
-            return new_filename
-        else:
-            # Other download error, we can't handle this here
-            raise e from None
+    filename = remote_dl(url, filename, skip_existing=True)
+    if os.path.getsize(filename) > 0:
+        return filename
+
+    # Zero-length output without HTTP error:
+    # We assume this uniprot ID was replaced by a newer one, and we try to find a
+    # replacement uniprot id.
+    new_unp_id = replacement_ids(unp_id)[0]
+    LOGGER.warning(f"UNP id {unp_id} replaced by {new_unp_id}")
+    new_filename = unp_download(new_unp_id, unp_dir)
+    filename.unlink()
+    shutil.copy(new_filename, filename)
+    return new_filename
 
 
 def unp_record(unp_id: str, unp_dir=UNP_DIR) -> UNPRecord:
