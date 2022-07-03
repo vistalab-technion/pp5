@@ -35,6 +35,7 @@ COL_ENA_ID = "ena_id"
 COL_RESOLUTION = "resolution"
 COL_SEQ_LEN = "seq_len"
 COL_DESCRIPTION = "description"
+COL_DEPOSITION_DATE = "deposition_date"
 COL_SRC_ORG = "src_org"
 COL_HOST_ORG = "host_org"
 COL_LIGANDS = "ligands"
@@ -966,6 +967,7 @@ def _collect_single_structure(
                 COL_RESOLUTION: resolution,
                 COL_SEQ_LEN: seq_len,
                 COL_DESCRIPTION: meta.description,
+                COL_DEPOSITION_DATE: meta.deposition_date,
                 COL_SRC_ORG: meta.src_org,
                 COL_HOST_ORG: meta.host_org,
                 COL_LIGANDS: meta.ligands,
