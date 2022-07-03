@@ -479,6 +479,7 @@ class PDBMetadata(object):
 
         title = _meta("_struct.title")
         description = _meta("_entity.pdbx_description")
+        deposition_date = _meta("_pdbx_database_status.recvd_initial_deposition_date")
 
         src_org = _meta("_entity_src_nat.pdbx_organism_scientific")
         if not src_org:
@@ -527,6 +528,7 @@ class PDBMetadata(object):
         self.pdb_id: str = pdb_id
         self.title: str = title
         self.description: str = description
+        self.deposition_date: str = deposition_date
         self.src_org: str = src_org
         self.src_org_id: int = src_org_id
         self.host_org: str = host_org
