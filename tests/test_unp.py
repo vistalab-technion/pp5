@@ -34,7 +34,7 @@ class TestUNPDownload:
         assert path == self.TEMP_PATH.joinpath(f"{replacement_id}.txt")
 
     def test_unp_download_with_invalid_id(self):
-        with pytest.raises(IOError, match="404"):
+        with pytest.raises(IOError, match="400"):
             path = unp.unp_download("P000000", unp_dir=self.TEMP_PATH)
 
 
