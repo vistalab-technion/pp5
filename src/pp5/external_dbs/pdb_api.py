@@ -6,6 +6,7 @@ import json
 import logging
 from enum import Enum
 from typing import Union, Optional, Sequence
+from datetime import date, datetime
 
 import requests
 
@@ -395,7 +396,7 @@ class PDBAttributeSearchQuery(PDBQuery):
     def __init__(
         self,
         attribute_name: str,
-        attribute_value: Union[str, int, float] = None,
+        attribute_value: Union[str, int, float, date] = None,
         comparison_type: str = "exists",
         attribute_display_name: str = None,
         negated: bool = False,
@@ -429,7 +430,7 @@ class PDBAttributeSearchQuery(PDBQuery):
             if not attribute_value:
                 raise ValueError(f"Invalid attribute value '{attribute_value}'")
 
-        if isinstance(attribute_value, (int, float)):
+        if isinstance(attribute_value, (int, float, date)):
             self._validate_comparison_operator(comparison_type)
         elif isinstance(attribute_value, str):
             self._validate_text_comparison_type(comparison_type)
@@ -437,6 +438,10 @@ class PDBAttributeSearchQuery(PDBQuery):
             raise ValueError(
                 f"Unsupported type for attribute value: {type(attribute_value)}"
             )
+
+        # Handle date (note that datetime is subclass of date).
+        if isinstance(attribute_value, date):
+            attribute_value = attribute_value.isoformat()
 
         self.comparison_type = comparison_type
         self.attribute_name = attribute_name
@@ -543,6 +548,56 @@ class PDBRFreeQuery(PDBAttributeSearchQuery):
             attribute_display_name="R_Free",
             **base_kwargs,
         )
+
+
+class PDBDepositionDateQuery(PDBCompositeQuery):
+    """
+    Queries for structures by their deposition date.
+    """
+
+    def __init__(
+        self,
+        min_date: Optional[Union[str, date, datetime]] = None,
+        max_date: Optional[Union[str, date, datetime]] = None,
+        **base_kwargs,
+    ):
+        """
+        :param min_date: The minimal deposition date, inclusive. If str, must be in
+        the format "YYYY-MM-DD". Must have a value if max_date is unset.
+        :param max_date: The maximal deposition date, inclusive. If str, must be in
+        the format "YYYY-MM-DD".  Must have a value if min_date is unset.
+        """
+
+        def _to_date(d: Union[str, date, datetime]) -> date:
+            dt: datetime = datetime.fromisoformat(d) if isinstance(d, str) else d
+            return date(dt.year, dt.month, dt.day)
+
+        queries = []
+
+        if min_date:
+            queries.append(
+                PDBAttributeSearchQuery(
+                    attribute_name="rcsb_accession_info.deposit_date",
+                    attribute_value=_to_date(min_date),
+                    comparison_type="greater_or_equal",
+                    attribute_display_name="Deposition Date",
+                )
+            )
+
+        if max_date:
+            queries.append(
+                PDBAttributeSearchQuery(
+                    attribute_name="rcsb_accession_info.deposit_date",
+                    attribute_value=_to_date(max_date),
+                    comparison_type="less_or_equal",
+                    attribute_display_name="Deposition Date",
+                )
+            )
+
+        if not queries:
+            raise ValueError("Must provide at least one of min, max date")
+
+        super().__init__(*queries, **base_kwargs)
 
 
 class PDBXRayResolutionQuery(PDBCompositeQuery):
