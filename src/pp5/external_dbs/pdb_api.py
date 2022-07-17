@@ -15,8 +15,11 @@ from pp5.utils import requests_retry
 
 LOGGER = logging.getLogger(__name__)
 
+# https://data.rcsb.org/#data-api
 PDB_DATA_API_URL = "https://data.rcsb.org/rest/v1/core"
-PDB_SEARCH_API_URL = "https://search.rcsb.org/rcsbsearch/v1/query"
+
+# https://search.rcsb.org/#search-api
+PDB_SEARCH_API_URL = "https://search.rcsb.org/rcsbsearch/v2/query"
 
 PDB_ID_SEPARATORS = re.compile(r"[:._-]")
 
