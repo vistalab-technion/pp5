@@ -5,7 +5,7 @@ import enum
 import math
 import logging
 import itertools as it
-from typing import Set, Dict, List, Tuple, Union, Callable, Iterable, Optional
+from typing import Set, Dict, List, Tuple, Union, Callable, Iterable, Optional, Sequence
 from pathlib import Path
 from collections import Counter, OrderedDict
 
@@ -98,6 +98,9 @@ class ProteinGroup(object):
         )
 
         query_results = set(composite_query.execute())
+        if not query_results:
+            raise ProteinInitError(f"Got zero query results for {ref_pdb_id}")
+
         LOGGER.info(
             f"Got {len(query_results)} query initial results, running BLAST "
             f"for sequence alignment to reference {ref_pdb_id}..."
@@ -712,6 +715,10 @@ class ProteinGroup(object):
         r_pymol_to_prec = self._align_pymol_to_prec(self.ref_prec, r_seq_pymol)
         q_pymol_to_prec = self._align_pymol_to_prec(q_prec, q_seq_pymol)
 
+        # Save prec residues as sequences
+        r_prec_residues: Sequence[ResidueRecord] = tuple(self.ref_prec)
+        q_prec_residues: Sequence[ResidueRecord] = tuple(q_prec)
+
         # Context size is the number of stars required on EACH SIDE of a match
         ctx = self.context_size
         stars_ctx = "*" * self.context_size
@@ -748,7 +755,7 @@ class ProteinGroup(object):
 
             # Get the matching residues, and make sure they are usable:
             # We require known AA, codon, and bfactor within maximum value.
-            r_res, q_res = self.ref_prec[r_idx_prec], q_prec[q_idx_prec]
+            r_res, q_res = r_prec_residues[r_idx_prec], q_prec_residues[q_idx_prec]
             if r_res.name == UNKNOWN_AA or q_res.name == UNKNOWN_AA:
                 continue
             if r_res.codon == UNKNOWN_CODON or q_res.codon == UNKNOWN_CODON:
@@ -841,7 +848,9 @@ class ProteinGroup(object):
         aligner = PairwiseAligner(
             substitution_matrix=BLOSUM80, open_gap_score=-10, extend_gap_score=-0.5
         )
-        rr_alignments = aligner.align(prec.protein_seq.seq, sa_r_seq)
+
+        prec_seq = str.join("", (res.name for res in prec))
+        rr_alignments = aligner.align(prec_seq, sa_r_seq)
 
         # Take the alignment with shortest path (fewer gap openings)
         rr_alignments = sorted(rr_alignments, key=lambda a: len(a.path))
@@ -1164,16 +1173,17 @@ class ResidueMatchGroup(object):
             "next_psis": [],
         }
         for pdb_id, match in match_group.items():
-            prec = precs[pdb_id]
-            prec_idx_range = range(0, len(prec))
+            prec: ProteinRecord = precs[pdb_id]
+            prec_residues: Sequence[ResidueRecord] = tuple(prec)
+            prec_idx_range = range(0, len(prec_residues))
 
             for prevnext, offset in [("prev", -1), ("next", 1)]:
                 i = match.idx + offset
 
                 if i in prec_idx_range:
-                    prevnext_codon = prec[i].codon
-                    prevnext_phi = prec[i].angles.phi_deg
-                    prevnext_psi = prec[i].angles.psi_deg
+                    prevnext_codon = prec_residues[i].codon
+                    prevnext_phi = prec_residues[i].angles.phi_deg
+                    prevnext_psi = prec_residues[i].angles.psi_deg
                 else:
                     prevnext_codon = ""
                     prevnext_phi, prevnext_psi = math.nan, math.nan
