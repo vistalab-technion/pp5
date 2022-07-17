@@ -183,6 +183,13 @@ class StructuralAlignment(JSONCacheableMixin, object):
         self.aligned_seq_2 = str(mseq[1].seq)
         self.aligned_stars: str = mseq.column_annotations["clustal_consensus"]
 
+        if not (
+            len(self.aligned_seq_1)
+            == len(self.aligned_seq_2)
+            == len(self.aligned_stars)
+        ):
+            raise ValueError(f"Got inconsistent structural alignment result")
+
     @property
     def ungapped_seq_1(self):
         """
