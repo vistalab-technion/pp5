@@ -5,7 +5,7 @@ import pytest
 import pp5
 from tests import get_tmp_path
 from pp5.prec import ProteinRecord
-from pp5.align import Arpeggio
+from pp5.align import DEFAULT_ARPEGGIO_ARGS, Arpeggio
 from pp5.utils import ProteinInitError
 from pp5.external_dbs import unp
 
@@ -29,12 +29,11 @@ class TestMethods:
     @pytest.mark.parametrize("with_ids", [True, False])
     @pytest.mark.parametrize("with_backbone", [True, False])
     @pytest.mark.parametrize(
-        "with_contacts",
-        [False, dict(interaction_cutoff=4.5, use_conda_env="arpeggio", cache=True)],
+        "with_contacts", [False, True],
     )
     def test_to_dataframe(self, prec, with_ids, with_backbone, with_contacts):
         if isinstance(with_contacts, dict):
-            if not Arpeggio.can_execute(**with_contacts):
+            if not Arpeggio.can_execute(**DEFAULT_ARPEGGIO_ARGS):
                 pytest.skip()
 
         df = prec.to_dataframe(
@@ -51,6 +50,16 @@ class TestMethods:
 
         if with_contacts:
             assert "contact_count" in df.columns
+
+    @pytest.mark.skipif(
+        not Arpeggio.can_execute(**DEFAULT_ARPEGGIO_ARGS), reason="no arpeggio"
+    )
+    def test_contacts(self, prec):
+        assert 0 < len(prec.contacts.items()) <= len(prec)
+
+        for res_id, res_contacts in prec.contacts.items():
+            assert res_id in prec
+            assert len(res_contacts.contact_aas) == res_contacts.contact_count
 
 
 class TestFromUnp:
