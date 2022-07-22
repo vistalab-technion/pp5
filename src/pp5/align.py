@@ -53,6 +53,10 @@ LOGGER = logging.getLogger(__name__)
 PYMOL_ALIGN_SYMBOL = "*"
 PYMOL_SA_GAP_SYMBOLS = {"-", "?"}
 
+DEFAULT_ARPEGGIO_ARGS = dict(
+    interaction_cutoff=4.5, use_conda_env="arpeggio", cache=True
+)
+
 
 def multiseq_align(
     seqs: Iterable[SeqRecord] = None, in_file=None, out_file=None, **clustal_kw

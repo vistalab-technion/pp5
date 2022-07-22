@@ -22,6 +22,7 @@ from Bio.Align import PairwiseAligner
 import pp5
 import pp5.parallel
 from pp5.prec import ProteinRecord
+from pp5.align import DEFAULT_ARPEGGIO_ARGS as ARPEGGIO_ARGS
 from pp5.align import Arpeggio, ProteinBLAST
 from pp5.utils import ReprJSONEncoder, ProteinInitError, elapsed_seconds_to_dhms
 from pp5.pgroup import ProteinGroup
@@ -46,8 +47,6 @@ COL_SPACE_GROUP = "space_group"
 COL_CG_PH = "cg_ph"
 COL_CG_TEMP = "cg_temp"
 COL_REJECTED_BY = "rejected_by"
-
-ARPEGGIO_ARGS = dict(interaction_cutoff=4.5, use_conda_env="arpeggio", cache=True)
 
 
 @dataclass(repr=False)
