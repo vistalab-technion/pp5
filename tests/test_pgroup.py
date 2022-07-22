@@ -8,11 +8,14 @@ class TestFromPDBRef(object):
     def setup(self):
         pass
 
-    @pytest.mark.parametrize("match_len", [1, 2])
+    @pytest.mark.parametrize("match_len", [2, 1])
     def test_default(self, match_len):
-        # Just an initial rudimentary test to check the code is alive
         pgroup = ProteinGroup.from_pdb_ref(
-            "1NKD:A", parallel=False, sa_min_aligned_residues=40, match_len=match_len,
+            "1NKD:A",
+            parallel=False,
+            sa_min_aligned_residues=40,
+            match_len=match_len,
+            compare_contacts=True,
         )
         assert isinstance(pgroup, ProteinGroup)
         assert pgroup.num_query_structs >= 4
