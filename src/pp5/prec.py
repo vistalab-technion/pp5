@@ -33,7 +33,14 @@ from Bio.PDB.Polypeptide import Polypeptide
 import pp5
 from pp5.align import BLOSUM80, BLOSUM90, Arpeggio
 from pp5.utils import ProteinInitError
-from pp5.codons import ACIDS_3TO1, UNKNOWN_AA, CODON_TABLE, STOP_CODONS, UNKNOWN_CODON
+from pp5.codons import (
+    ACIDS_3TO1,
+    UNKNOWN_AA,
+    CODON_TABLE,
+    STOP_CODONS,
+    UNKNOWN_CODON,
+    CODON_OPTS_SEP,
+)
 from pp5.dihedral import (
     Dihedral,
     AtomLocationUncertainty,
@@ -108,7 +115,7 @@ class ResidueRecord(object):
         if isinstance(codon_opts, str):
             self.codon_opts = codon_opts
         else:
-            self.codon_opts = str.join("/", codon_opts)
+            self.codon_opts = str.join(CODON_OPTS_SEP, codon_opts)
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
 
     def as_dict(self, skip_omega=False, convert_none=False):
@@ -133,7 +140,7 @@ class ResidueRecord(object):
 
     def __repr__(self):
         return (
-            f"{self.name}{self.res_id:<4s} [{self.codon}]"
+            f"{self.name} {self.res_id:<4s} [{self.codon}]"
             f"[{self.secondary}] {self.angles} b={self.bfactor:.2f}, "
             f"unp_idx={self.unp_idx}"
         )
