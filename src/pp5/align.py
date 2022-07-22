@@ -50,6 +50,7 @@ signal.signal(signal.SIGINT, _prev_sigint_handler)
 
 LOGGER = logging.getLogger(__name__)
 
+PYMOL_ALIGN_SYMBOL = "*"
 PYMOL_SA_GAP_SYMBOLS = {"-", "?"}
 
 
