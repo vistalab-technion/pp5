@@ -16,7 +16,7 @@ import pp5
 from pp5.prec import ProteinRecord, ResidueRecord
 from pp5.align import BLOSUM80, PYMOL_ALIGN_SYMBOL
 from pp5.align import PYMOL_SA_GAP_SYMBOLS as PSA_GAP
-from pp5.align import ProteinBLAST, StructuralAlignment
+from pp5.align import DEFAULT_ARPEGGIO_ARGS, ProteinBLAST, StructuralAlignment
 from pp5.utils import ProteinInitError
 from pp5.codons import UNKNOWN_AA, UNKNOWN_CODON, CODON_OPTS_SEP
 from pp5.dihedral import Dihedral
@@ -159,15 +159,16 @@ class ProteinGroup(object):
         query_pdb_ids: Iterable[str],
         match_len: int = 1,
         context_len: int = 1,
-        prec_cache=False,
+        prec_cache: bool = False,
         sa_outlier_cutoff: float = 2.0,
         sa_max_all_atom_rmsd: float = 2.0,
         sa_min_aligned_residues: int = 50,
         b_max: float = math.inf,
         angle_aggregation="circ",
-        strict_pdb_xref=True,
-        strict_unp_xref=False,
-        parallel=True,
+        compare_contacts: bool = False,
+        strict_pdb_xref: bool = True,
+        strict_unp_xref: bool = False,
+        parallel: bool = True,
     ):
         """
         Creates a ProteinGroup based on a reference PDB ID, and a sequence of
@@ -211,6 +212,8 @@ class ProteinGroup(object):
         'circ' - Circular mean;
         'frechet' - Frechet centroid;
         'max_res' - No aggregation, take angle of maximal resolution structure
+        :param compare_contacts: Whether to compare tertiary contacts contexts of
+        potential matches.
         :param strict_pdb_xref: Whether to require that the given PDB ID
         maps uniquely to only one Uniprot ID.
         :param strict_unp_xref: Whether to require that there exist a PDB
@@ -245,6 +248,7 @@ class ProteinGroup(object):
         self.sa_min_aligned_residues = sa_min_aligned_residues
         self.b_max = b_max
         self.prec_cache = prec_cache
+        self.compare_contacts = compare_contacts
         self.strict_pdb_xref = strict_pdb_xref
         self.strict_unp_xref = strict_unp_xref
 
@@ -802,11 +806,17 @@ class ProteinGroup(object):
             q_match_residues = [q_prec_residues[j] for j in q_idx_prec]
             assert len(r_match_residues) == len(q_match_residues) == self.match_len
 
-            r_names, r_codons, r_bfactors, r_angles = zip(
-                *((r.name, r.codon, r.bfactor, r.angles) for r in r_match_residues)
+            r_names, r_resids, r_codons, r_bfactors, r_angles = zip(
+                *(
+                    (r.name, r.res_id, r.codon, r.bfactor, r.angles)
+                    for r in r_match_residues
+                )
             )
-            q_names, q_codons, q_bfactors, q_angles = zip(
-                *((q.name, q.codon, q.bfactor, q.angles) for q in q_match_residues)
+            q_names, q_resids, q_codons, q_bfactors, q_angles = zip(
+                *(
+                    (q.name, q.res_id, q.codon, q.bfactor, q.angles)
+                    for q in q_match_residues
+                )
             )
 
             # Make sure we got from idx_match to the correct residues in the precs
@@ -830,12 +840,30 @@ class ProteinGroup(object):
             if match_type is None:
                 continue
 
-            if self.match_len == 1:
-                r_angle = r_angles[0]
-                q_angle = q_angles[0]
-            elif self.match_len == 2:
+            # Compare tertiary contacts context of the match
+            if self.compare_contacts:
+                r_contacts = [self.ref_prec.contacts.get(r) for r in r_resids]
+                q_contacts = [q_prec.contacts.get(r) for r in q_resids]
+
+                # All participating residues must have contact features
+                if None in [*r_contacts, *q_contacts]:
+                    continue
+
+                # Get contacts from all participating residues in ref and query
+                r_contact_aas = set(it.chain(*[rc.contact_aas for rc in r_contacts]))
+                q_contact_aas = set(it.chain(*[rc.contact_aas for rc in q_contacts]))
+
+                # Require that contacts are the same
+                if not r_contact_aas == q_contact_aas:
+                    continue
+
+            # Use cross-bond dihedral for match_len=2.
+            if self.match_len == 2:
                 r_angle = Dihedral.cross_bond(r_angles[0], r_angles[1])
                 q_angle = Dihedral.cross_bond(q_angles[0], q_angles[1])
+            elif self.match_len == 1:
+                r_angle = r_angles[0]
+                q_angle = q_angles[0]
             else:
                 raise ValueError(f"Unexpected {self.match_len=}")
 
