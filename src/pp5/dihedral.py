@@ -148,16 +148,30 @@ class Dihedral(object):
         self.__init__(**init_args)
 
     @classmethod
-    def from_deg(cls, phi, psi, omega=180.0):
+    def from_deg(cls, phi, psi, omega=180.0) -> Dihedral:
         return cls(np.deg2rad(phi), np.deg2rad(psi), np.deg2rad(omega))
 
     @classmethod
-    def from_rad(cls, phi, psi, omega=np.pi):
+    def from_rad(cls, phi, psi, omega=np.pi) -> Dihedral:
         return cls(phi, psi, omega)
 
     @classmethod
-    def empty(cls):
+    def empty(cls) -> Dihedral:
         return cls(nan, nan, nan)
+
+    @classmethod
+    def cross_bond(cls, a0: Dihedral, a1: Dihedral) -> Dihedral:
+        """
+        Calculates the cross-bond dihedral angle between two adjacent residues.
+        Given (phi_0, psi_0, omega_0) and (phi_1, psi_1, omega_1)
+        Returns (phi_1, psi_0, omega_0).
+
+        :param a0: First residue dihedral angles.
+        :param a1: Second residue dihedral angles.
+        :return: The cross-bond dihedral angles.
+        """
+
+        return cls((a1.phi, a1.phi_std), (a0.psi, a0.psi_std), (a0.omega, a0.omega_std))
 
     @staticmethod
     def _deg(rad: Optional[float]):
