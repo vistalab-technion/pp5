@@ -609,3 +609,26 @@ class TestCentroids:
             iterations=50,
             warmup_rounds=1,
         )
+
+
+class TestCrossBond:
+    @staticmethod
+    def _check_cross_bond(d1, d2, d12):
+        assert d12.phi == d2.phi
+        assert d12.phi_std == d2.phi_std
+        assert d12.psi == d1.psi
+        assert d12.psi_std == d1.psi_std
+        assert d12.omega == d1.omega
+        assert d12.omega_std == d1.omega_std
+
+    def test_cross_bond(self):
+        d1 = Dihedral.from_deg(30, 40, 50)
+        d2 = Dihedral.from_deg(31, 42, 53)
+        d12 = Dihedral.cross_bond(d1, d2)
+        self._check_cross_bond(d1, d2, d12)
+
+    def test_cross_bond_with_std(self):
+        d1 = Dihedral.from_deg((30, 3), (40, 4), (50, 5))
+        d2 = Dihedral.from_deg((30, 1), (40, 2), (50, 3))
+        d12 = Dihedral.cross_bond(d1, d2)
+        self._check_cross_bond(d1, d2, d12)
