@@ -7,6 +7,7 @@ import logging
 import warnings
 from typing import (
     Any,
+    Set,
     Dict,
     List,
     Tuple,
@@ -15,6 +16,7 @@ from typing import (
     Iterable,
     Iterator,
     Optional,
+    Sequence,
     ItemsView,
 )
 from pathlib import Path
@@ -160,6 +162,50 @@ class ResidueRecord(object):
             if not equal:
                 return False
         return True
+
+
+class ResidueContacts(object):
+    """
+    Represents a single residue's tertiary contacts in a protein record.
+    """
+
+    def __init__(
+        self,
+        res_id: Union[str, int],
+        contact_count: int,
+        contact_types: Union[Set[str], str],
+        contact_dmin: float,
+        contact_dmax: float,
+        contact_smin: float,
+        contact_smax: float,
+        contact_ooc: Union[Set[str], str],
+        contact_non_aa: Union[Set[str], str],
+        contact_aas: Union[Sequence[str], str],
+    ):
+        def _split(s: str):
+            return s.split(",")
+
+        if isinstance(contact_types, str):
+            contact_types = set(_split(contact_types))
+        if isinstance(contact_ooc, str):
+            contact_ooc = set(_split(contact_ooc))
+        if isinstance(contact_non_aa, str):
+            contact_non_aa = set(_split(contact_non_aa))
+        if isinstance(contact_aas, str):
+            contact_aas = tuple(_split(contact_aas))
+
+        assert contact_count == len(contact_aas)
+
+        self.res_id = res_id
+        self.contact_count = contact_count
+        self.contact_types = contact_types
+        self.contact_dmin = contact_dmin
+        self.contact_dmax = contact_dmax
+        self.contact_smin = contact_smin
+        self.contact_smax = contact_smax
+        self.contact_ooc = contact_ooc
+        self.contact_non_aa = contact_non_aa
+        self.contact_aas = contact_aas
 
 
 class ProteinRecord(object):
@@ -346,11 +392,11 @@ class ProteinRecord(object):
         unp_id: str,
         pdb_id: str,
         pdb_dict: dict = None,
-        dihedral_est_name=None,
+        dihedral_est_name: str = None,
         dihedral_est_args: dict = None,
-        max_ena=None,
-        strict_unp_xref=True,
-        numeric_chain=False,
+        max_ena: int = None,
+        strict_unp_xref: bool = True,
+        numeric_chain: bool = False,
     ):
         """
         Initialize a protein record from both Uniprot and PDB ids.
@@ -404,6 +450,9 @@ class ProteinRecord(object):
         self.pdb_meta = pdb.PDBMetadata(self.pdb_id, struct_d=self.pdb_dict)
         if not self.pdb_meta.resolution:
             raise ProteinInitError(f"Unknown resolution for {pdb_id}")
+
+        self._contacts_df: Optional[pd.DataFrame] = None
+        self._contacts: Optional[Dict[str, ResidueContacts]] = None
 
         LOGGER.info(
             f"{self}: {self.pdb_meta.description}, "
@@ -581,7 +630,32 @@ class ProteinRecord(object):
 
         return backbone_coords
 
-    def contact_features(self, **arpeggio_kwargs) -> pd.DataFrame:
+    @property
+    def contacts_df(self) -> pd.DataFrame:
+        """
+        :return: Dataframe containing tertiary contact features aggregated per residue.
+        """
+        if self._contacts_df is None:
+            self._contacts_df = self._generate_contacts_df()
+
+        return self._contacts_df
+
+    @property
+    def contacts(self) -> Dict[str, ResidueContacts]:
+        """
+        :return: Mapping from residue id to its contact features.
+        """
+        if self._contacts is None:
+            contacts_df_rows = self.contacts_df.reset_index().transpose().to_dict()
+            self._contacts = {
+                row["res_id"]: ResidueContacts(**row)
+                for row in contacts_df_rows.values()
+                if row["res_id"] in self
+            }
+
+        return self._contacts
+
+    def _generate_contacts_df(self, **arpeggio_kwargs) -> pd.DataFrame:
         """
         Generates tertiary contact features per residue by invoking arpeggio.
 
@@ -815,8 +889,7 @@ class ProteinRecord(object):
                 if isinstance(with_contacts, dict)
                 else DEFAULT_ARPEGGIO_ARGS
             )
-            df_contacts = self.contact_features(**contact_kwargs)
-            df_prec = df_prec.join(df_contacts, how="left", on="res_id")
+            df_prec = df_prec.join(self.contacts_df, how="left", on="res_id")
             df_prec["contact_count"].fillna(0, inplace=True)
             df_prec["contact_types"].fillna("", inplace=True)
 
