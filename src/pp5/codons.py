@@ -8,9 +8,11 @@ from Bio.Data import IUPACData, CodonTable
 # Separates between AA and matching codon, e.g. "A-GCA"
 AAC_SEP = "-"
 
-
 # Separates between two (or more) AAs or two (or more) codons, e.g. "A-GCA_C-TGC"
 AAC_TUPLE_SEP = "_"
+
+# Separates between two (or more) codon options
+CODON_OPTS_SEP = "/"
 
 
 def codon2aac(codon: str):
