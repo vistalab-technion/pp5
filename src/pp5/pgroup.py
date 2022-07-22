@@ -14,11 +14,11 @@ from Bio.Align import PairwiseAligner
 
 import pp5
 from pp5.prec import ProteinRecord, ResidueRecord
-from pp5.align import BLOSUM80
+from pp5.align import BLOSUM80, PYMOL_ALIGN_SYMBOL
 from pp5.align import PYMOL_SA_GAP_SYMBOLS as PSA_GAP
 from pp5.align import ProteinBLAST, StructuralAlignment
 from pp5.utils import ProteinInitError
-from pp5.codons import UNKNOWN_AA, UNKNOWN_CODON
+from pp5.codons import UNKNOWN_AA, UNKNOWN_CODON, CODON_OPTS_SEP
 from pp5.dihedral import Dihedral
 from pp5.parallel import global_pool
 from pp5.external_dbs import pdb, pdb_api
@@ -157,6 +157,7 @@ class ProteinGroup(object):
         self,
         ref_pdb_id: str,
         query_pdb_ids: Iterable[str],
+        match_len: int = 1,
         context_len: int = 1,
         prec_cache=False,
         sa_outlier_cutoff: float = 2.0,
@@ -172,32 +173,50 @@ class ProteinGroup(object):
         Creates a ProteinGroup based on a reference PDB ID, and a sequence of
         query PDB IDs. Structural alignment will be performed, and some
         query structures may be rejected.
+
+        Each query structure is aligned against the reference structure, and matches
+        are extracted. Match structure depends on match_len and context_len in the
+        following way:
+
+        match_len=2, context_len=1
+        X | A B | Y
+        Z | A B | W
+
+        match_len=1, context_len=2
+        X X | A | Y Y
+        Z Z | A | W W
+
+        Where A, B are matching residues and X, Y are context residues.
+
         :param ref_pdb_id: Reference structure PDB ID.
         :param query_pdb_ids: List of PDB IDs of query structures.
-        :param context_len: Number of stars required around an aligmed AA
-            pair to consider that pair for a match.
+        :param match_len: Number of residues to include in a match. Can be either 1
+        or 2. If 2, the match dihedral angles will be the cross-bond angles (phi+1,
+        psi+0) between the two residues.
+        :param context_len: Number of stars required around an aligned AA
+        pair to consider that pair for a match.
         :param prec_cache:  Whether to load ProteinRecords from cache if
-            available.
+        available.
         :param sa_outlier_cutoff: RMS cutoff for determining outliers in
-            structural alignment.
+        structural alignment.
         :param sa_max_all_atom_rmsd: Maximal allowed average RMSD
-            after structural alignment to include a structure in a group.
+        after structural alignment to include a structure in a group.
         :param sa_min_aligned_residues: Minimal number of aligned residues (stars)
         required to include a structure in a group.
         :param b_max: Maximal b-factor a residue can have
-            (backbone-atom average) in order for it to be included in a match
-            group.
+        (backbone-atom average) in order for it to be included in a match
+        group.
         :param angle_aggregation: Method for angle-aggregation of matching
-            query residues of each reference residue. Options are
-            'circ' - Circular mean;
-            'frechet' - Frechet centroid;
-            'max_res' - No aggregation, take angle of maximal resolution structure
+        query residues of each reference residue. Options are
+        'circ' - Circular mean;
+        'frechet' - Frechet centroid;
+        'max_res' - No aggregation, take angle of maximal resolution structure
         :param strict_pdb_xref: Whether to require that the given PDB ID
-            maps uniquely to only one Uniprot ID.
+        maps uniquely to only one Uniprot ID.
         :param strict_unp_xref: Whether to require that there exist a PDB
-            cross-ref for the given Uniprot ID.
+        cross-ref for the given Uniprot ID.
         :param parallel: Whether to process query structures in parallel using
-            the global worker process pool.
+        the global worker process pool.
         """
         self.ref_pdb_id = ref_pdb_id.upper()
         self.ref_pdb_base_id, self.ref_pdb_chain = pdb.split_id(ref_pdb_id)
@@ -213,10 +232,14 @@ class ProteinGroup(object):
 
         self.ref_pdb_entity = ref_pdb_meta.chain_entities[self.ref_pdb_chain]
 
-        if context_len < 1:
-            raise ProteinInitError("Context size must be > 1")
+        if match_len not in (1, 2):
+            raise ProteinInitError(f"{match_len=}, must be either 1 or 2")
 
-        self.context_size = context_len
+        if context_len < 1:
+            raise ProteinInitError(f"{context_len=}, must be > 1")
+
+        self.match_len = match_len
+        self.context_len = context_len
         self.sa_outlier_cutoff = sa_outlier_cutoff
         self.sa_max_all_atom_rmsd = sa_max_all_atom_rmsd
         self.sa_min_aligned_residues = sa_min_aligned_residues
@@ -450,8 +473,12 @@ class ProteinGroup(object):
                 curr_data.update(
                     {
                         f"codon{rel_idx}": vgroup.codon,
-                        f"codon_opts{rel_idx}": str.join("/", vgroup.codon_opts),
-                        f"secondary{rel_idx}": str.join("/", vgroup.secondary),
+                        f"codon_opts{rel_idx}": str.join(
+                            CODON_OPTS_SEP, vgroup.codon_opts
+                        ),
+                        f"secondary{rel_idx}": str.join(
+                            CODON_OPTS_SEP, vgroup.secondary
+                        ),
                         f"group_size{rel_idx}": vgroup.group_size,
                         **angles,
                     }
@@ -696,18 +723,18 @@ class ProteinGroup(object):
         r_seq_pymol = alignment.aligned_seq_1
         q_seq_pymol = alignment.aligned_seq_2
         stars = alignment.aligned_stars
-        n = len(stars)
+        aligned_seq_len = len(stars)
 
         # Map from index in the structural alignment to the index within each
         # sequence we got from pymol
         r_idx, q_idx = -1, -1
-        stars_to_pymol_idx = {}
-        for i in range(n):
-            if r_seq_pymol[i] not in PSA_GAP:
+        alignment_to_pymol_idx = {}
+        for j in range(aligned_seq_len):
+            if r_seq_pymol[j] not in PSA_GAP:
                 r_idx += 1
-            if q_seq_pymol[i] not in PSA_GAP:
+            if q_seq_pymol[j] not in PSA_GAP:
                 q_idx += 1
-            stars_to_pymol_idx[i] = (r_idx, q_idx)
+            alignment_to_pymol_idx[j] = (r_idx, q_idx)
 
         # Map from pymol sequence index to the index in the precs
         # Need to do another pairwise alignment for this
@@ -720,80 +747,123 @@ class ProteinGroup(object):
         q_prec_residues: Sequence[ResidueRecord] = tuple(q_prec)
 
         # Context size is the number of stars required on EACH SIDE of a match
-        ctx = self.context_size
-        stars_ctx = "*" * self.context_size
+        stars_ctx = PYMOL_ALIGN_SYMBOL * self.context_len
+        stars_match = PYMOL_ALIGN_SYMBOL * self.match_len
+        window_len = 2 * self.context_len + self.match_len
 
         matches = OrderedDict()
-        for i in range(ctx, n - ctx):
+        for idx_win_start in range(aligned_seq_len - window_len):
+            # Index slices for context and match residues
+            idx_context_pre = slice(idx_win_start, idx_win_start + self.context_len)
+            idx_match = slice(
+                idx_context_pre.stop, idx_context_pre.stop + self.match_len
+            )
+            idx_context_post = slice(idx_match.stop, idx_match.stop + self.context_len)
+            idx_match_range = range(idx_match.start, idx_match.stop)
+
             # Check that context around i has only stars
-            point = stars[i]
-            pre, post = stars[i - ctx : i], stars[i + 1 : i + 1 + ctx]
+            point = stars[idx_match]
+            pre, post = stars[idx_context_pre], stars[idx_context_post]
             if pre != stars_ctx or post != stars_ctx:
                 continue
 
-            # We allow the AA at the match point to differ (mutation and
-            # alteration), but if it's the same AA we require a star there
+            # If the match section contains same AAs we require stars there
             # (structural alignment as well as sequence alignment)
-            if r_seq_pymol[i] == q_seq_pymol[i] and point != "*":
+            # Note that we allow the AAs at the match point to differ (to mark
+            # them as mutation or alteration).
+            if (
+                r_seq_pymol[idx_match] == q_seq_pymol[idx_match]
+                and point != stars_match
+            ):
                 continue
 
-            # We allow them to differ, but both must be an aligned AA,
-            # not a gap symbol
-            if r_seq_pymol[i] in PSA_GAP or q_seq_pymol[i] in PSA_GAP:
+            # We allow them to differ, but both must be aligned AAs, without gap symbols
+            if set.intersection(
+                PSA_GAP, {*r_seq_pymol[idx_match], *q_seq_pymol[idx_match]}
+            ):
                 continue
 
             # Now we need to convert i into the index in the prec of each
             # structure
-            r_idx_pymol, q_idx_pymol = stars_to_pymol_idx[i]
-            r_idx_prec = r_pymol_to_prec.get(r_idx_pymol)
-            q_idx_prec = q_pymol_to_prec.get(q_idx_pymol)
+            r_idx_pymol, q_idx_pymol = zip(
+                *(alignment_to_pymol_idx[j] for j in idx_match_range)
+            )
+            r_idx_prec = tuple(r_pymol_to_prec.get(j) for j in r_idx_pymol)
+            q_idx_prec = tuple(q_pymol_to_prec.get(j) for j in q_idx_pymol)
 
             # The pymol seq index might be inside a gap in the alignment
             # between pymol and prec seq. Skip these gaps.
-            if r_idx_prec is None or q_idx_prec is None:
+            if None in r_idx_prec or None in q_idx_prec:
                 continue
 
             # Get the matching residues, and make sure they are usable:
             # We require known AA, codon, and bfactor within maximum value.
-            r_res, q_res = r_prec_residues[r_idx_prec], q_prec_residues[q_idx_prec]
-            if r_res.name == UNKNOWN_AA or q_res.name == UNKNOWN_AA:
-                continue
-            if r_res.codon == UNKNOWN_CODON or q_res.codon == UNKNOWN_CODON:
-                continue
-            if r_res.bfactor > self.b_max or q_res.bfactor > self.b_max:
-                continue
+            r_match_residues = [r_prec_residues[j] for j in r_idx_prec]
+            q_match_residues = [q_prec_residues[j] for j in q_idx_prec]
+            assert len(r_match_residues) == len(q_match_residues) == self.match_len
 
-            # Make sure we got from i to the correct residues in the precs
-            assert r_res.name == r_seq_pymol[i], i
-            assert q_res.name == q_seq_pymol[i], i
+            r_names, r_codons, r_bfactors, r_angles = zip(
+                *((r.name, r.codon, r.bfactor, r.angles) for r in r_match_residues)
+            )
+            q_names, q_codons, q_bfactors, q_angles = zip(
+                *((q.name, q.codon, q.bfactor, q.angles) for q in q_match_residues)
+            )
+
+            # Make sure we got from idx_match to the correct residues in the precs
+            assert all(a == a_ for a, a_ in zip(r_names, r_seq_pymol[idx_match]))
+            assert all(a == a_ for a, a_ in zip(q_names, q_seq_pymol[idx_match]))
+
+            # Make sure we have all the required information per match residue
+            if UNKNOWN_AA in [*r_names, *q_names]:
+                continue
+            if UNKNOWN_CODON in [*r_codons, *q_codons]:
+                continue
+            if any(b > self.b_max for b in [*r_bfactors, *q_bfactors]):
+                continue
 
             # Compute type of match
             pdb_match = self.ref_prec.pdb_id == q_prec.pdb_id
             unp_match = self.ref_prec.unp_id == q_prec.unp_id
-            aa_match = r_res.name == q_res.name
-            codon_match = r_res.codon == q_res.codon
+            aa_match = r_names == q_names
+            codon_match = r_codons == q_codons
             match_type = self._match_type(pdb_match, unp_match, aa_match, codon_match)
             if match_type is None:
                 continue
 
-            # Calculate angle distance between match and reference
-            ang_dist = Dihedral.flat_torus_distance(
-                r_res.angles, q_res.angles, degrees=True
-            )
+            if self.match_len == 1:
+                r_angle = r_angles[0]
+                q_angle = q_angles[0]
+            elif self.match_len == 2:
+                r_angle = Dihedral.cross_bond(r_angles[0], r_angles[1])
+                q_angle = Dihedral.cross_bond(q_angles[0], q_angles[1])
+            else:
+                raise ValueError(f"Unexpected {self.match_len=}")
 
-            # Calculate full context length
-            context_len = 0
-            for d in range(1, min(i, n - 1 - i)):
-                if stars[i - d] == stars[i + d] == "*":
-                    context_len += 1
+            # Calculate angle distance between match and reference
+            ang_dist = Dihedral.flat_torus_distance(r_angle, q_angle, degrees=True)
+
+            # Calculate full alignment context length (total "stars" on both sides of
+            # the match)
+            full_context_len = 0
+            idx_full_context_pre = reversed(range(0, idx_match.start))
+            idx_full_context_post = range(idx_match.stop, aligned_seq_len)
+            for i_pre, i_post in zip(idx_full_context_pre, idx_full_context_post):
+                if stars[i_pre] == stars[i_post] == PYMOL_ALIGN_SYMBOL:
+                    full_context_len += 1
                 else:
                     break
 
             # Save match object
-            match = ResidueMatch.from_residue(
-                q_res, q_idx_prec, match_type, ang_dist, context_len
+            match = ResidueMatch.from_residues(
+                query_residues=q_match_residues,
+                query_idx=q_idx_prec[0],
+                match_type=match_type,
+                match_len=self.match_len,
+                query_angle=q_angle,
+                query_ref_angle_dist=ang_dist,
+                full_context=full_context_len,
             )
-            res_matches = matches.setdefault(r_idx_prec, OrderedDict())
+            res_matches = matches.setdefault(r_idx_prec[0], OrderedDict())
             res_matches[q_prec.pdb_id] = match
 
         return q_prec, alignment, matches
@@ -926,6 +996,7 @@ class ProteinGroup(object):
             # Group matches of queries to current residue by unp_id, unp_idx and codon
             match_groups: Dict[Tuple[str, int, str], Dict[str, ResidueMatch]] = {}
             ref_group_idx = None
+
             for q_pdb_id, q_match in matches.items():
                 q_prec = self.query_pdb_to_prec[q_pdb_id]
                 unp_id = q_prec.unp_id
@@ -993,6 +1064,7 @@ class ProteinGroup(object):
                         group_precs,
                         group_avg_phipsi,
                         group_ang_dist,
+                        self.match_len,
                     )
                 )
 
@@ -1055,33 +1127,70 @@ class ResidueMatchType(enum.IntEnum):
 
 class ResidueMatch(ResidueRecord):
     """
-    Represents a residue match between a reference structure and a query
+    Represents a match of 1 or 2 residues between a reference structure and a query
     structure.
     """
 
     @classmethod
-    def from_residue(
+    def from_residues(
         cls,
-        query_res: ResidueRecord,
+        query_residues: Sequence[ResidueRecord],
         query_idx: int,
         match_type: ResidueMatchType,
-        ang_dist: float,
-        context: int,
+        match_len: int,
+        query_angle: Dihedral,
+        query_ref_angle_dist: float,
+        full_context: int,
     ):
-        return cls(query_idx, match_type, ang_dist, context, **query_res.__dict__)
+        assert match_len in (1, 2)
+        assert len(query_residues) == match_len
+
+        def _join(x: Iterable) -> str:
+            return str.join("_", x)
+
+        query_res = ResidueRecord(
+            res_id=_join(q.res_id for q in query_residues),
+            unp_idx=query_residues[0].unp_idx,
+            name=_join(q.name for q in query_residues),
+            codon=_join(q.codon for q in query_residues),
+            codon_score=min(q.codon_score for q in query_residues),
+            codon_opts=str.join(
+                CODON_OPTS_SEP,
+                [
+                    _join(opt1_opt2)
+                    for opt1_opt2 in it.product(
+                        *(q.codon_opts.split(CODON_OPTS_SEP) for q in query_residues)
+                    )
+                ],
+            ),
+            angles=query_angle,
+            bfactor=max(q.bfactor for q in query_residues),
+            secondary=_join(q.secondary for q in query_residues),
+        )
+
+        return cls(
+            query_idx,
+            match_type,
+            match_len,
+            query_ref_angle_dist,
+            full_context,
+            **query_res.__dict__,
+        )
 
     def __init__(
         self,
         query_idx: int,
         match_type: ResidueMatchType,
+        match_len: int,
         ang_dist: float,
-        context: int,
+        full_context: int,
         **res_rec_args,
     ):
         self.idx = query_idx
         self.type = match_type
+        self.match_len = match_len
         self.ang_dist = ang_dist
-        self.context = context
+        self.context = full_context
         super().__init__(**res_rec_args)
 
     def __repr__(self):
@@ -1106,6 +1215,7 @@ class ResidueMatchGroup(object):
         precs: Dict[str, ProteinRecord],
         avg_phipsi: Dihedral,
         ang_dist: float,
+        match_len: int,
     ):
         """
         :param unp_id: Uniprot id of all the matches.
@@ -1115,6 +1225,7 @@ class ResidueMatchGroup(object):
         :param precs: Mapping from PDB ID to the corresponding protein record.
         :param avg_phipsi: Averaged dihedral angles of the group.
         :param ang_dist: Angle distance between this group and the reference.
+        :param match_len: Number of residues participating in a match. Can be 1 or 2.
         """
 
         self.unp_id = unp_id
@@ -1128,6 +1239,8 @@ class ResidueMatchGroup(object):
             avg_phipsi.phi_std_deg ** 2 + avg_phipsi.psi_std_deg ** 2
         )
         self.ang_dist = ang_dist
+        self.match_len = match_len
+        assert self.match_len in (1, 2)
 
         # Save information about the structures in this group
         vs = ((m.idx, m.res_id, m.context, m.angles) for m in match_group.values())
@@ -1159,7 +1272,7 @@ class ResidueMatchGroup(object):
         # Get alternative possible codon options. Remove the
         # group codon to prevent redundancy.  Note that
         # UNKNOWN_CODON is a possibility, we leave it in.
-        self.codon_opts = set(it.chain(*[o.split("/") for o in opts]))
+        self.codon_opts = set(it.chain(*[o.split(CODON_OPTS_SEP) for o in opts]))
         self.codon_opts.remove(codon)
 
         # Get information about the residues around the match:
@@ -1177,7 +1290,10 @@ class ResidueMatchGroup(object):
             prec_residues: Sequence[ResidueRecord] = tuple(prec)
             prec_idx_range = range(0, len(prec_residues))
 
-            for prevnext, offset in [("prev", -1), ("next", 1)]:
+            for prevnext, offset in [
+                ("prev", -self.match_len),
+                ("next", self.match_len),
+            ]:
                 i = match.idx + offset
 
                 if i in prec_idx_range:
@@ -1231,11 +1347,11 @@ class ResidueMatchGroup(object):
         }
 
         d = {
-            f"{p}type": self.match_type.name,
             f"{p}unp_id": self.unp_id,
             f"{p}unp_idx": self.unp_idx,
             f"{p}codon": self.codon,
             f"{p}name": self.name,
+            f"{p}type": self.match_type.name,
             f"{p}secondary": self.secondary,
             f"{p}group_size": self.group_size,
             **group_avg_phipsi,
