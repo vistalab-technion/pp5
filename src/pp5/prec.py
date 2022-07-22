@@ -18,6 +18,7 @@ from typing import (
     ItemsView,
 )
 from pathlib import Path
+from functools import partial
 from itertools import chain
 from collections import OrderedDict
 
@@ -31,7 +32,7 @@ from Bio.PDB.Residue import Residue
 from Bio.PDB.Polypeptide import Polypeptide
 
 import pp5
-from pp5.align import BLOSUM80, BLOSUM90, Arpeggio
+from pp5.align import BLOSUM80, BLOSUM90, DEFAULT_ARPEGGIO_ARGS, Arpeggio
 from pp5.utils import ProteinInitError
 from pp5.codons import (
     ACIDS_3TO1,
@@ -580,15 +581,19 @@ class ProteinRecord(object):
 
         return backbone_coords
 
-    def _contact_features(self, **arpeggio_kwargs) -> pd.DataFrame:
+    def contact_features(self, **arpeggio_kwargs) -> pd.DataFrame:
         """
         Generates tertiary contact features per residue by invoking arpeggio.
+
         :param arpeggio_kwargs: Keyword-args for the Arpeggio wrapper's init. See
         relevant documentation of :class:`Arpeggio`.
         :return: A dataframe indexed by residue id (same index used by this protein
         record) and with columns corresponding to a summary of contacts per reisdue.
         """
         LOGGER.info(f"Generating contact features for {self}, {arpeggio_kwargs=}...")
+
+        # Set default kwargs and override with what was passed in.
+        arpeggio_kwargs = {**DEFAULT_ARPEGGIO_ARGS, **arpeggio_kwargs}
 
         # Invoke arpeggio to get the raw contact features.
         arpeggio = Arpeggio(**arpeggio_kwargs)
@@ -666,36 +671,73 @@ class ProteinRecord(object):
         df_filt = df_filt.rename_axis("res_id")
 
         # Aggregate contacts per AA
-        def _agg_contact(items):
+        def _agg_join(items):
+            return str.join(",", [str(it) for it in items])
+
+        def _agg_join_aas(items):
+            return _agg_join(ACIDS_3TO1.get(aa, UNKNOWN_AA) for aa in items)
+
+        def _agg_join_unique(items):
+            return _agg_join(
+                sorted(set(chain(*[str.split(it, ",") for it in items if it])))
+            )
+
+        def _join_aas_resids(row: pd.Series) -> str:
             return str.join(
-                ",", sorted(set(chain(*[str.split(it, ",") for it in items if it])))
+                ",",
+                map(
+                    partial(str.join, ""),
+                    zip(
+                        str.split(row.contact_aas, ","),
+                        str.split(row.contact_resids, ","),
+                    ),
+                ),
             )
 
         df_groups = df_filt.groupby(by=["res_id"]).aggregate(
             {
-                "contact": ["count", _agg_contact],
-                "distance": ["min", "max",],
+                # contacts count and type (unique)
+                "contact": ["count", _agg_join_unique],
+                # distances
                 # note: min and max will ignore nans, and the lambda will count them
+                "distance": ["min", "max",],
                 "contact_sdist": ["min", "max"],
-                "contact_any_ooc": [_agg_contact],
-                "contact_non_aa": [_agg_contact],
+                # OOC and non-AA contacts
+                "contact_any_ooc": [_agg_join_unique],
+                "contact_non_aa": [_agg_join_unique],
+                # contact AAs and locations
+                "end.label_comp_id": [_agg_join_aas],
+                "end.auth_seq_id": [_agg_join],
             }
         )
 
         df_contacts = df_groups.set_axis(
             labels=[
+                # count and type
                 "contact_count",
                 "contact_types",
+                # distances
                 "contact_dmin",
                 "contact_dmax",
                 "contact_smin",
                 "contact_smax",
+                # OOC and non-AA contacts
                 "contact_ooc",
                 "contact_non_aa",
+                # contact AAs and locations
+                "contact_aas",
+                "contact_resids",
             ],
             axis="columns",
         )
+
+        # Fix nans
         df_contacts["contact_count"].fillna(0, inplace=True)
+
+        # Combine the contact AAs and residue ids columns together
+        df_contacts["contact_aas"] = df_contacts.apply(func=_join_aas_resids, axis=1)
+        df_contacts.drop("contact_resids", axis=1, inplace=True)
+
         df_contacts = (
             df_contacts.reset_index()
             .astype(
@@ -768,8 +810,12 @@ class ProteinRecord(object):
         df_prec = pd.DataFrame(df_data)
 
         if with_contacts:
-            contact_kwargs = with_contacts if isinstance(with_contacts, dict) else {}
-            df_contacts = self._contact_features(**contact_kwargs)
+            contact_kwargs = (
+                with_contacts
+                if isinstance(with_contacts, dict)
+                else DEFAULT_ARPEGGIO_ARGS
+            )
+            df_contacts = self.contact_features(**contact_kwargs)
             df_prec = df_prec.join(df_contacts, how="left", on="res_id")
             df_prec["contact_count"].fillna(0, inplace=True)
             df_prec["contact_types"].fillna("", inplace=True)
