@@ -783,6 +783,7 @@ class ProteinGroup(object):
             )
             idx_context_post = slice(idx_match.stop, idx_match.stop + self.context_len)
             idx_match_range = range(idx_match.start, idx_match.stop)
+            idx_win_range = range(idx_context_pre.start, idx_context_post.stop)
 
             # Check that context around i has only stars
             point = stars[idx_match]
@@ -860,8 +861,18 @@ class ProteinGroup(object):
                 continue
 
             if self.compare_contacts:
-                r_contacts = [self.ref_prec.contacts.get(r) for r in r_resids]
-                q_contacts = [q_prec.contacts.get(r) for r in q_resids]
+
+                # Get contacts from the entire window
+                r_contacts, q_contacts = [], []
+                for j in idx_win_range:
+                    r_idx_prec_ = r_pymol_to_prec.get(alignment_to_pymol_idx[j][0])
+                    q_idx_prec_ = q_pymol_to_prec.get(alignment_to_pymol_idx[j][1])
+                    if r_idx_prec_ is None or q_idx_prec_ is None:
+                        continue
+                    r_res_ = r_prec_residues[r_idx_prec_]
+                    r_contacts.append(self.ref_prec.contacts.get(r_res_.res_id))
+                    q_res_ = q_prec_residues[q_idx_prec_]
+                    q_contacts.append(q_prec.contacts.get(q_res_.res_id))
 
                 # All participating residues must have contact features
                 if None in [*r_contacts, *q_contacts]:
