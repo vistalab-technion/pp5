@@ -750,6 +750,25 @@ class ProteinGroup(object):
         r_prec_residues: Sequence[ResidueRecord] = tuple(self.ref_prec)
         q_prec_residues: Sequence[ResidueRecord] = tuple(q_prec)
 
+        # Map between the residue records of ref and query
+        resid_r_to_q, resid_q_to_r = {}, {}
+        for i in range(aligned_seq_len):
+            r_idx_pymol, q_idx_pymol = alignment_to_pymol_idx[i]
+            r_idx_prec, q_idx_prec = (
+                r_pymol_to_prec.get(r_idx_pymol),
+                q_pymol_to_prec.get(q_idx_pymol),
+            )
+            if r_idx_prec is None or q_idx_prec is None:
+                continue
+
+            r_residue = r_prec_residues[r_idx_prec]
+            q_residue = q_prec_residues[q_idx_prec]
+            if r_residue.name != q_residue.name:
+                continue
+
+            resid_r_to_q[r_residue.res_id] = q_residue.res_id
+            resid_q_to_r[q_residue.res_id] = r_residue.res_id
+
         # Context size is the number of stars required on EACH SIDE of a match
         stars_ctx = PYMOL_ALIGN_SYMBOL * self.context_len
         stars_match = PYMOL_ALIGN_SYMBOL * self.match_len
@@ -840,7 +859,6 @@ class ProteinGroup(object):
             if match_type is None:
                 continue
 
-            # Compare tertiary contacts context of the match
             if self.compare_contacts:
                 r_contacts = [self.ref_prec.contacts.get(r) for r in r_resids]
                 q_contacts = [q_prec.contacts.get(r) for r in q_resids]
@@ -853,8 +871,32 @@ class ProteinGroup(object):
                 r_contact_aas = set(it.chain(*[rc.contact_aas for rc in r_contacts]))
                 q_contact_aas = set(it.chain(*[rc.contact_aas for rc in q_contacts]))
 
+                # Compare tertiary contacts context of the match
+                def _compare_potential_contacts(_r_contact_aas, _resid_r_to_q, _q_prec):
+                    # compare potential contacts: ref -> query
+                    for pc_r_aa_resid in _r_contact_aas:
+                        # potential_contact is a string with AA and res_id, e.g. K87
+                        pc_r_aa, pc_r_resid = pc_r_aa_resid[0], pc_r_aa_resid[1:]
+
+                        # Compare to query
+                        pc_q_resid = _resid_r_to_q.get(pc_r_resid)
+                        if pc_q_resid is None or _q_prec[pc_q_resid].name != pc_r_aa:
+                            return False
+
+                    return True
+
+                # Take the union of contacts from ref and query as the locations of
+                # "potential contacts". Need to map between ref and query res ids.
+                # compare potential contacts: ref -> query
+                all_potential_contacts_match = _compare_potential_contacts(
+                    r_contact_aas, resid_r_to_q, q_prec
+                )
+                all_potential_contacts_match &= _compare_potential_contacts(
+                    q_contact_aas, resid_q_to_r, self.ref_prec
+                )
+
                 # Require that contacts are the same
-                if not r_contact_aas == q_contact_aas:
+                if not all_potential_contacts_match:
                     continue
 
             # Use cross-bond dihedral for match_len=2.
@@ -962,7 +1004,7 @@ class ProteinGroup(object):
             prec_start, prec_end = rr_idx_prec[j]
             pymol_start, pymol_end = rr_idx_pymol[j]
             pymol_to_prec.update(
-                zip(range(pymol_start, pymol_end + 1), range(prec_start, prec_end + 1))
+                zip(range(pymol_start, pymol_end), range(prec_start, prec_end))
             )
 
         return pymol_to_prec
