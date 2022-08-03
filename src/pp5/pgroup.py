@@ -693,6 +693,14 @@ class ProteinGroup(object):
         LOGGER.info(f"Starting alignment: ref={self.ref_pdb_id} query={q_pdb_id}")
         try:
             return self._align_query_residues_to_ref_inner(q_pdb_id)
+
+        except AssertionError as e:
+            # The assertions are sanity checks, they must not fail
+            raise RuntimeError(
+                f"Assertion error while aligning query {q_pdb_id} to reference "
+                f"{self.ref_pdb_id}: this probably indicates a bug."
+            ) from e
+
         except Exception as e:
             LOGGER.error(
                 f"Failed to align pgroup reference "
@@ -861,7 +869,6 @@ class ProteinGroup(object):
                 continue
 
             if self.compare_contacts:
-
                 # Get contacts from the entire window
                 r_contacts, q_contacts = [], []
                 for j in idx_win_range:
@@ -877,6 +884,9 @@ class ProteinGroup(object):
                 # All participating residues must have contact features
                 if None in [*r_contacts, *q_contacts]:
                     continue
+
+                # TODO: If one of the contacts is out-of-chain or touching a
+                #  non-AA, might need to skip this window
 
                 # Get contacts from all participating residues in ref and query
                 r_contact_aas = set(it.chain(*[rc.contact_aas for rc in r_contacts]))
