@@ -183,7 +183,13 @@ class ResidueContacts(object):
         contact_aas: Union[Sequence[str], str],
     ):
         def _split(s: str):
-            return s.split(",")
+            s_split = s.split(",")
+
+            # In case of empty string input, output will be an empty set.
+            if "" in s_split:
+                s_split.remove("")
+
+            return s_split
 
         if isinstance(contact_types, str):
             contact_types = set(_split(contact_types))
