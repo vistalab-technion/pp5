@@ -847,10 +847,6 @@ class ProteinGroup(object):
                 )
             )
 
-            # Make sure we got from idx_match to the correct residues in the precs
-            assert all(a == a_ for a, a_ in zip(r_names, r_seq_pymol[idx_match]))
-            assert all(a == a_ for a, a_ in zip(q_names, q_seq_pymol[idx_match]))
-
             # Make sure we have all the required information per match residue
             if UNKNOWN_AA in [*r_names, *q_names]:
                 continue
@@ -858,6 +854,10 @@ class ProteinGroup(object):
                 continue
             if any(b > self.b_max for b in [*r_bfactors, *q_bfactors]):
                 continue
+
+            # Make sure we got from idx_match to the correct residues in the precs
+            assert all(a == a_ for a, a_ in zip(r_names, r_seq_pymol[idx_match]))
+            assert all(a == a_ for a, a_ in zip(q_names, q_seq_pymol[idx_match]))
 
             # Compute type of match
             pdb_match = self.ref_prec.pdb_id == q_prec.pdb_id
