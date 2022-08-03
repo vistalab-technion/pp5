@@ -15,7 +15,7 @@ import pp5.external_dbs.pdb as pdb
 NO_INTERNET = not tests.utils.has_internet()
 
 
-def _random_pdb_id(id_type="plain", min_chain_len=1, max_chain_len=2) -> str:
+def _random_pdb_id(id_type="plain", min_chain_len=1, max_chain_len=3) -> str:
     """
     Creates a random PDB id either as a base id only, with a chain or with an entity.
     :param id_type: 'plain' (only base), 'chain' (with chain id), 'entity' (with

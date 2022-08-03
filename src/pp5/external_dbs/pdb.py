@@ -25,7 +25,7 @@ from pp5.utils import JSONCacheableMixin, remote_dl
 from pp5.external_dbs import pdb_api
 
 PDB_ID_PATTERN = re.compile(
-    r"^(?P<id>[0-9][\w]{3})(?::(?:" r"(?P<chain>[a-z]{1,2})|(?P<entity>[0-9]{1,2})))?$",
+    r"^(?P<id>[0-9][\w]{3})(?::(?:" r"(?P<chain>[a-z]{1,3})|(?P<entity>[0-9]{1,3})))?$",
     re.IGNORECASE | re.ASCII,
 )
 
