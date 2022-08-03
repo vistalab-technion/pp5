@@ -13,7 +13,7 @@ import pandas as pd
 from Bio.Align import PairwiseAligner
 
 import pp5
-from pp5.prec import ProteinRecord, ResidueRecord
+from pp5.prec import ProteinRecord, ResidueRecord, ResidueContacts
 from pp5.align import BLOSUM80, PYMOL_ALIGN_SYMBOL
 from pp5.align import PYMOL_SA_GAP_SYMBOLS as PSA_GAP
 from pp5.align import DEFAULT_ARPEGGIO_ARGS, ProteinBLAST, StructuralAlignment
@@ -870,7 +870,8 @@ class ProteinGroup(object):
 
             if self.compare_contacts:
                 # Get contacts from the entire window
-                r_contacts, q_contacts = [], []
+                r_contacts: List[ResidueContacts] = []
+                q_contacts: List[ResidueContacts] = []
                 for j in idx_win_range:
                     r_idx_prec_ = r_pymol_to_prec.get(alignment_to_pymol_idx[j][0])
                     q_idx_prec_ = q_pymol_to_prec.get(alignment_to_pymol_idx[j][1])
@@ -885,12 +886,24 @@ class ProteinGroup(object):
                 if None in [*r_contacts, *q_contacts]:
                     continue
 
-                # TODO: If one of the contacts is out-of-chain or touching a
-                #  non-AA, might need to skip this window
+                # If one of the contacts is out-of-chain or touching a non-AA,
+                # skip this window
+                def _any_ooc_or_non_aa(_contacts: Sequence[ResidueContacts]):
+                    _contact_non_aas = set(
+                        it.chain(*[rc.contact_non_aa for rc in _contacts])
+                    )
+                    _contact_ooc = set(it.chain(*[rc.contact_ooc for rc in _contacts]))
+                    return len(_contact_ooc) > 0 or len(_contact_ooc) > 0
+
+                if _any_ooc_or_non_aa(r_contacts) or _any_ooc_or_non_aa(q_contacts):
+                    continue
 
                 # Get contacts from all participating residues in ref and query
-                r_contact_aas = set(it.chain(*[rc.contact_aas for rc in r_contacts]))
-                q_contact_aas = set(it.chain(*[rc.contact_aas for rc in q_contacts]))
+                def _all_contact_aas(_contacts: Sequence[ResidueContacts]):
+                    return set(it.chain(*[rc.contact_aas for rc in _contacts]))
+
+                r_contact_aas = _all_contact_aas(r_contacts)
+                q_contact_aas = _all_contact_aas(q_contacts)
 
                 # Compare tertiary contacts context of the match
                 def _compare_potential_contacts(_r_contact_aas, _resid_r_to_q, _q_prec):
