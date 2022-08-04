@@ -39,19 +39,21 @@ class TestUNPDownload:
 
 
 class TestUNPRecord:
-    def test_unp_record(self):
-        test_id = "P00720"
-        unp_rec = unp.unp_record(test_id)
-        assert test_id in unp_rec.accessions
-        assert unp_rec.sequence_length == 164
+    @pytest.fixture(params=["P00720", "Q72J47"])
+    def unp_id(self, request):
+        return request.param
 
-    def test_as_record(self):
-        rec = unp.as_record("P00720")
-        expected_rec = unp.unp_record("P00720")
+    def test_unp_record(self, unp_id):
+        unp_rec = unp.unp_record(unp_id)
+        assert unp_id in unp_rec.accessions
+
+    def test_as_record(self, unp_id):
+        rec = unp.as_record(unp_id)
+        expected_rec = unp.unp_record(unp_id)
         assert rec.accessions == expected_rec.accessions
 
-    def test_as_record2(self):
-        orig_rec = unp.unp_record("P00720")
+    def test_as_record_from_record(self, unp_id):
+        orig_rec = unp.unp_record(unp_id)
         rec = unp.as_record(orig_rec)
         assert rec == orig_rec
 

@@ -1,6 +1,7 @@
 import shutil
 import logging
 import os.path
+from io import StringIO
 from typing import List, Union, Iterable, NamedTuple
 from pathlib import Path
 
@@ -72,14 +73,24 @@ def unp_record(unp_id: str, unp_dir=UNP_DIR) -> UNPRecord:
     :return: A biopython Record object.
     """
     filename = unp_download(unp_id, unp_dir)
+    file_text = Path.read_text(filename)
+
+    # HACK:
+    #  Biopython fails to parse some newer Uniprot files.
+    #  To work-around it, we need to modify the file so that it will be parsed.
+    #  see https://github.com/biopython/biopython/issues/4021
+    file_text = file_text.replace("/ligand=", "/note=")
+    sio_handle = StringIO(initial_value=file_text)
+    sio_handle.seek(0)
 
     try:
-        with open(str(filename), "r") as local_handle:
-            return Bio.SwissProt.read(local_handle)
-    except ValueError as e:
+        # with open(str(filename), "r") as local_handle:
+        #     return Bio.SwissProt.read(local_handle)
+        return Bio.SwissProt.read(sio_handle)
+    except Exception as e:
         raise ValueError(
             f"Failed to read Uniprot record {unp_id} from file " f"{filename}"
-        )
+        ) from e
 
 
 def as_record(unp_id_or_rec: Union[UNPRecord, str]):
