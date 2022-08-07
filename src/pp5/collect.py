@@ -618,6 +618,9 @@ class ProteinGroupCollector(ParallelDataCollector):
         evalue_cutoff: float = 1.0,
         identity_cutoff: float = 30.0,
         b_max: float = 30.0,
+        match_len: int = 2,
+        context_len: int = 1,
+        compare_contacts: bool = True,
         out_dir=pp5.out_subdir("pgroup-collected"),
         pgroup_out_dir=pp5.out_subdir("pgroup"),
         write_pgroup_csvs=True,
@@ -633,13 +636,20 @@ class ProteinGroupCollector(ParallelDataCollector):
         :param expr_sys: Expression system name.
         :param source_taxid: Taxonomy ID of source organism.
         :param evalue_cutoff: Maximal expectation value allowed for BLAST
-            matches when searching for proteins to include in pgroups.
+        matches when searching for proteins to include in pgroups.
         :param identity_cutoff: Minimal percent sequence identity
-            allowed for BLAST matches when searching for proteins to include in
-            pgroups.
+        allowed for BLAST matches when searching for proteins to include in
+        pgroups.
         :param b_max: Maximal b-factor a residue can have
-            (backbone-atom average) in order for it to be included in a match
-            group. None means no limit.
+        (backbone-atom average) in order for it to be included in a match
+        group. None means no limit.
+        :param match_len: Number of residues to include in a match. Can be either 1
+        or 2. If 2, the match dihedral angles will be the cross-bond angles (phi+1,
+        psi+0) between the two residues.
+        :param context_len: Number of stars required around an aligned AA
+        pair to consider that pair for a match.
+        :param compare_contacts: Whether to compare tertiary contacts contexts of
+        potential matches.
         :param out_dir: Output directory for collection CSV files.
         :param pgroup_out_dir: Output directory for pgroup CSV files. Only
             relevant if write_pgroup_csvs is True.
@@ -676,6 +686,9 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
         self.b_max = b_max
+        self.match_len = match_len
+        self.context_len = context_len
+        self.compare_contacts = compare_contacts
 
         self.pgroup_out_dir = pgroup_out_dir
         self.write_pgroup_csvs = write_pgroup_csvs
@@ -819,6 +832,9 @@ class ProteinGroupCollector(ParallelDataCollector):
                 ref_pdb_id,
                 blast,
                 self.b_max,
+                self.match_len,
+                self.context_len,
+                self.compare_contacts,
                 pgroup_out_dir,
                 self.out_tag,
                 idx,
@@ -1016,7 +1032,7 @@ def _collect_single_ref(group_unp_id: str, df_group: pd.DataFrame) -> Optional[d
     except ValueError as e:
         pdb_ids = tuple(df_group["pdb_id"])
         LOGGER.error(
-            f"Failed create Uniprot record for {group_unp_id} " f"{pdb_ids}: {e}"
+            f"Failed create Uniprot record for {group_unp_id=} {pdb_ids=}: {e}"
         )
         return None
 
@@ -1030,6 +1046,7 @@ def _collect_single_ref(group_unp_id: str, df_group: pd.DataFrame) -> Optional[d
     df_group = df_group[df_group["seq_ratio"] > 0.9]
     df_group = df_group[df_group["seq_ratio"] <= 1.0]
     if len(df_group) == 0:
+        LOGGER.error(f"Failed find reference structure for {group_unp_id=}")
         return None
 
     ref_pdb_id = df_group.iloc[0]["pdb_id"]
@@ -1066,6 +1083,9 @@ def _collect_single_pgroup(
     ref_pdb_id: str,
     blast: ProteinBLAST,
     b_max: float,
+    match_len: int,
+    context_len: int,
+    compare_contacts: bool,
     out_dir: Optional[Path],
     out_tag: str,
     idx: tuple,
@@ -1086,6 +1106,9 @@ def _collect_single_pgroup(
             ref_pdb_id,
             query_pdb_ids=df_blast.index,
             b_max=b_max,
+            match_len=match_len,
+            context_len=context_len,
+            compare_contacts=compare_contacts,
             parallel=False,
             prec_cache=True,
         )
