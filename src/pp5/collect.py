@@ -1042,12 +1042,16 @@ def _collect_single_ref(group_unp_id: str, df_group: pd.DataFrame) -> Optional[d
     df_group["seq_ratio"] = df_group["seq_len"] / unp_seq_len
 
     # Keep only structures which have at least 90% of residues as
-    # the Uniprot sequence, but no more than 100% (no extras).
-    df_group = df_group[df_group["seq_ratio"] > 0.9]
-    df_group = df_group[df_group["seq_ratio"] <= 1.0]
-    if len(df_group) == 0:
-        LOGGER.error(f"Failed find reference structure for {group_unp_id=}")
+    # the Uniprot sequence, and not too many extras.
+    filter_idx = (df_group["seq_ratio"] >= 0.9) & (df_group["seq_ratio"] <= 1.1)
+    if filter_idx.sum() == 0:
+        LOGGER.error(
+            f"Failed to find reference structure for {group_unp_id=} {group_size=} "
+            f"({df_group['seq_ratio'].min():.2f}, {df_group['seq_ratio'].max():.2f})"
+        )
         return None
+
+    df_group = df_group[filter_idx]
 
     ref_pdb_id = df_group.iloc[0]["pdb_id"]
     ref_res = df_group.iloc[0]["resolution"]
