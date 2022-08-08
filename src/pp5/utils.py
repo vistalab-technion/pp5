@@ -26,7 +26,7 @@ LOGGER = logging.getLogger(__name__)
 
 def requests_retry(
     retries: int = None,
-    backoff: float = 1.0,
+    backoff: float = 10,
     status_forcelist: tuple = (413, 429, 500, 502, 503, 504),
     session: requests.Session = None,
 ):

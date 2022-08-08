@@ -37,7 +37,7 @@ _CONFIG = {
     # Number of worker processes in global parallel pool
     "MAX_PROCESSES": int(os.getenv(ENV_PP5_PP5_MAX_PROCESSES, os.cpu_count())),
     # Number of retries to use when fetching/querying data
-    "REQUEST_RETRIES": 5,
+    "REQUEST_RETRIES": 10,
     # Default expression system for PDB queries
     "DEFAULT_EXPR_SYS": "Escherichia Coli",
     # Default expression system for PDB queries
