@@ -671,11 +671,16 @@ class ProteinGroupCollector(ParallelDataCollector):
             create_zip=create_zip,
         )
 
-        queries = [pdb_api.PDBXRayResolutionQuery(resolution=resolution)]
-        if expr_sys:
-            queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys=expr_sys))
-        if source_taxid:
-            queries.append(pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=source_taxid))
+        self.resolution = float(resolution)
+        self.expr_sys = expr_sys
+        self.source_taxid = int(source_taxid) if source_taxid is not None else None
+        queries = [pdb_api.PDBXRayResolutionQuery(resolution=self.resolution)]
+        if self.expr_sys:
+            queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys=self.expr_sys))
+        if self.source_taxid:
+            queries.append(
+                pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=self.source_taxid)
+            )
         self.query = pdb_api.PDBCompositeQuery(
             *queries,
             logical_operator="and",
@@ -759,6 +764,14 @@ class ProteinGroupCollector(ParallelDataCollector):
                 self._df_all.sort_values(
                     by=["unp_id", "resolution"], inplace=True, ignore_index=True
                 )
+
+        # Even though we query by resolution, the metadata resolution is different
+        # than what we can query on. Metadata shows resolution after refinement,
+        # while the query is using data collection resolution.
+        idx_filter = (
+            self._df_all[COL_RESOLUTION].astype(float) <= self.resolution + 0.05
+        )
+        self._df_all = self._df_all[idx_filter]
 
         filepath = _write_df_csv(self._df_all, self.out_dir, "meta-structs_all")
         self._out_filepaths.append(filepath)
