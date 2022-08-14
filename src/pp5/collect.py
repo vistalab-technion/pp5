@@ -8,7 +8,7 @@ import logging
 import zipfile
 import multiprocessing as mp
 from pprint import pformat
-from typing import Dict, List, Callable, Iterable, Optional, Sequence
+from typing import Set, Dict, List, Callable, Iterable, Optional, Sequence
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass
@@ -625,7 +625,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         pgroup_out_dir=pp5.out_subdir("pgroup"),
         write_pgroup_csvs=True,
         out_tag: str = None,
-        ref_file: Path = None,
+        ref_file: str = None,
         async_timeout: float = 3600,
         create_zip=True,
     ):
@@ -652,16 +652,16 @@ class ProteinGroupCollector(ParallelDataCollector):
         potential matches.
         :param out_dir: Output directory for collection CSV files.
         :param pgroup_out_dir: Output directory for pgroup CSV files. Only
-            relevant if write_pgroup_csvs is True.
+        relevant if write_pgroup_csvs is True.
         :param write_pgroup_csvs: Whether to write each pgroup's CSV files.
-            Even if false, the collection files will still be writen.
+        Even if false, the collection files will still be writen.
         :param out_tag: Extra tag to add to the output file names.
-        :param  ref_file: Path of collector CSV file with references.
-            Allows to skip the first and second collection steps (finding PDB
-            IDs for the reference structures) and immediately collect
-            ProteinGroups for the references in the file.
+        :param ref_file: Path of collector CSV file with references.
+        Allows to skip the first and second collection steps (finding PDB
+        IDs for the reference structures) and immediately collect
+        ProteinGroups for the references in the file.
         :param async_timeout: Timeout in seconds for each worker
-            process result, or None for no timeout.
+        process result, or None for no timeout.
         :param create_zip: Whether to create a zip file with all output files.
         """
         super().__init__(
@@ -823,26 +823,23 @@ class ProteinGroupCollector(ParallelDataCollector):
     def _collect_all_pgroups(self, pool: mp.Pool):
         meta = {}
 
-        # Create a local BLAST DB containing all collected PDB IDs.
-        all_pdb_ids = self._df_all["pdb_id"]
-        alias_name = f"pgc-{self.out_tag}"
-        blast_db = ProteinBLAST.create_db_subset_alias(
-            all_pdb_ids, alias_name, db_autoupdate_days=7,
-        )
+        # Initialize a local BLAST DB.
         blast = ProteinBLAST(
-            db_name=blast_db,
             evalue_cutoff=self.evalue_cutoff,
             identity_cutoff=self.identity_cutoff,
+            db_autoupdate_days=7,
         )
 
         LOGGER.info(f"Creating ProteinGroup for each reference...")
         ref_pdb_ids = self._df_ref["ref_pdb_id"].values
         async_results = []
+        all_pdb_ids = set(self._df_all["pdb_id"])
         for i, ref_pdb_id in enumerate(ref_pdb_ids):
             idx = (i, len(ref_pdb_ids))
             pgroup_out_dir = self.pgroup_out_dir if self.write_pgroup_csvs else None
             args = (
                 ref_pdb_id,
+                all_pdb_ids,
                 blast,
                 self.b_max,
                 self.match_len,
@@ -1098,6 +1095,7 @@ def _pairwise_align_unp(
 
 def _collect_single_pgroup(
     ref_pdb_id: str,
+    all_pdb_ids: Set[str],
     blast: ProteinBLAST,
     b_max: float,
     match_len: int,
@@ -1115,13 +1113,23 @@ def _collect_single_pgroup(
 
         # Run BLAST to find query structures for the pgroup
         df_blast = blast.pdb(ref_pdb_id)
-        LOGGER.info(f"Got {len(df_blast)} BLAST hits for {ref_pdb_id}")
+
+        # Only use query PDB ids that are part of the collected structure dataset.
+        query_pdb_ids = sorted(set(df_blast.index) & all_pdb_ids)
+        LOGGER.info(
+            f"Got {len(df_blast)} BLAST hits for {ref_pdb_id}, of which "
+            f"{len(query_pdb_ids)} query structures"
+        )
+
+        if not query_pdb_ids:
+            LOGGER.info(f"No query structures for {ref_pdb_id}, skipping...")
+            return None
 
         # Create a pgroup without an additional query, by specifying the
         # exact ids of the query structures.
         pgroup = ProteinGroup.from_query_ids(
             ref_pdb_id,
-            query_pdb_ids=df_blast.index,
+            query_pdb_ids=query_pdb_ids,
             b_max=b_max,
             match_len=match_len,
             context_len=context_len,
