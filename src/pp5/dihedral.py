@@ -19,7 +19,13 @@ from Bio.PDB.Polypeptide import Polypeptide
 from pp5.external_dbs.pdb import PDBUnitCell
 
 CONST_8PI2 = math.pi * math.pi * 8
-BACKBONE_ATOMS = {"N", "CA", "C"}
+
+BACKBONE_ATOM_N = "N"
+BACKBONE_ATOM_CA = "CA"
+BACKBONE_ATOM_C = "C"
+BACKBONE_ATOM_O = "O"
+BACKBONE_ATOMS = (BACKBONE_ATOM_N, BACKBONE_ATOM_CA, BACKBONE_ATOM_C)
+BACKBONE_ATOMS_O = tuple([*BACKBONE_ATOMS, BACKBONE_ATOM_O])
 
 
 class Dihedral(object):
@@ -440,27 +446,27 @@ class DihedralAnglesEstimator(object):
 
             try:
                 # Get the locations (x, y, z) of backbone atoms
-                n = aa_curr["N"]
-                ca = aa_curr["CA"]  # Alpha-carbon
-                c = aa_curr["C"]
+                n = aa_curr[BACKBONE_ATOM_N]
+                ca = aa_curr[BACKBONE_ATOM_CA]  # Alpha-carbon
+                c = aa_curr[BACKBONE_ATOM_C]
             except KeyError:
                 # Phi/Psi cannot be calculated for this AA
                 angles.append(Dihedral.empty())
                 continue
 
             # Phi
-            if "C" in aa_prev:
-                c_prev = aa_prev["C"]
+            if BACKBONE_ATOM_C in aa_prev:
+                c_prev = aa_prev[BACKBONE_ATOM_C]
                 phi = self._calc_fn(c_prev, n, ca, c)
 
             # Psi
-            if "N" in aa_next:
-                n_next = aa_next["N"]
+            if BACKBONE_ATOM_N in aa_next:
+                n_next = aa_next[BACKBONE_ATOM_N]
                 psi = self._calc_fn(n, ca, c, n_next)
 
             # Omega
-            if "C" in aa_prev and "CA" in aa_prev:
-                c_prev, ca_prev = aa_prev["C"], aa_prev["CA"]
+            if BACKBONE_ATOM_C in aa_prev and BACKBONE_ATOM_CA in aa_prev:
+                c_prev, ca_prev = aa_prev[BACKBONE_ATOM_C], aa_prev[BACKBONE_ATOM_CA]
                 omega = self._calc_fn(ca_prev, c_prev, n, ca)
 
             angles.append(Dihedral.from_rad(phi, psi, omega))
@@ -572,7 +578,7 @@ class DihedralAnglesMonteCarloEstimator(DihedralAnglesUncertaintyEstimator):
         assert len(atoms) == 4
 
         # For Omega, don't do mc sampling.
-        if self.skip_omega and atoms[0].get_name() == "CA":
+        if self.skip_omega and atoms[0].get_name() == BACKBONE_ATOM_CA:
             return super()._calc_fn(*atoms)
 
         # Calculate mu and 3x3 covariance matrix of atom positions
