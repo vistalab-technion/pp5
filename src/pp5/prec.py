@@ -20,7 +20,7 @@ from typing import (
     ItemsView,
 )
 from pathlib import Path
-from functools import partial
+from functools import reduce, partial
 from itertools import chain
 from collections import OrderedDict
 
@@ -29,6 +29,7 @@ import pandas as pd
 from Bio.PDB import PPBuilder
 from Bio.Seq import Seq
 from Bio.Align import PairwiseAligner
+from Bio.PDB.Atom import DisorderedAtom
 from Bio.SeqRecord import SeqRecord
 from Bio.PDB.Residue import Residue
 from Bio.PDB.Polypeptide import Polypeptide
@@ -45,6 +46,8 @@ from pp5.codons import (
     CODON_OPTS_SEP,
 )
 from pp5.dihedral import (
+    BACKBONE_ATOMS,
+    BACKBONE_ATOMS_O,
     Dihedral,
     AtomLocationUncertainty,
     DihedralAnglesEstimator,
@@ -69,16 +72,51 @@ def _residue_to_res_id(res: Residue) -> str:
 
 
 def _backbone_coords(res: Residue, with_oxygen: bool = False) -> Optional[np.ndarray]:
+    """
+    Returns the backbone atom locations of a Residue.
+    :param res: A Residue.
+    :param with_oxygen: Whether to include the oxygen atom.
+    :return: The backbone locations as a 3x3 (no oxygen) or 4x3 matrix (with oxigen).
+    """
+    atom_names = BACKBONE_ATOMS_O if with_oxygen else BACKBONE_ATOMS
     coords = []
     try:
-        coords.append(res["N"].coord)
-        coords.append(res["CA"].coord)
-        coords.append(res["C"].coord)
-        if with_oxygen:
-            coords.append(res["O"].coord)
+        for atom_name in atom_names:
+            coords.append(res[atom_name].coord)
     except KeyError:
         return None
     return np.stack(coords).astype(float)
+
+
+def _residue_conformations(res: Residue) -> Sequence[str]:
+    """
+    :param res: A Residue.
+    :return: Sequence with names of this residue's possible backbone conformations.
+    For example, might return ("A", "B") in case this residue's backbone atoms all
+    have two possible locations named "A" and "B" in the PDB file.
+    If there are no alternative conformations returns ("",) which represents a single
+    unnamed conformation.
+    """
+    res_bb_atoms = [res.child_dict.get(atom_name) for atom_name in BACKBONE_ATOMS_O]
+    conformations = ("",)  # By default, we assume a single unnamed conformation.
+
+    is_disordered = all([isinstance(a, DisorderedAtom) for a in res_bb_atoms])
+    if is_disordered:
+        d_atom: DisorderedAtom
+        disordered_ids_all = [
+            d_atom.disordered_get_id_list() for d_atom in res_bb_atoms
+        ]
+        if not all(
+            disordered_ids_all[k] == disordered_ids_all[0]
+            for k in range(len(disordered_ids_all))
+        ):
+            res_id = _residue_to_res_id(res)
+            res_name = res.get_resname()
+            LOGGER.warning(f"Inconsistent disordered ids for {res_id} {res_name}")
+
+        conformations = tuple(disordered_ids_all[0])
+
+    return conformations
 
 
 class ResidueRecord(object):
@@ -97,6 +135,7 @@ class ResidueRecord(object):
         angles: Dihedral,
         bfactor: float,
         secondary: str,
+        num_conformations: int,
     ):
         """
 
@@ -111,6 +150,8 @@ class ResidueRecord(object):
         :param angles: A Dihedral objet containing the dihedral angles.
         :param bfactor: Average b-factor along of the residue's backbone atoms.
         :param secondary: Single-letter secondary structure code.
+        :param num_conformations: Number of possible conformations in the PDB entry of
+        this residue.
         """
         self.res_id, self.name = str(res_id), name
         self.unp_idx = unp_idx
@@ -120,6 +161,7 @@ class ResidueRecord(object):
         else:
             self.codon_opts = str.join(CODON_OPTS_SEP, codon_opts)
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
+        self.num_conformations = num_conformations
 
     def as_dict(self, skip_omega=False, convert_none=False):
         """
@@ -486,6 +528,7 @@ class ProteinRecord(object):
         # list of multiple Polypeptide objects because we split them at
         # non-standard residues (HETATM atoms in PDB).
         pdb_aa_seq, res_ids, angles, bfactors, sstructs = "", [], [], [], []
+        num_conformations = []
         for i, pp in enumerate(self.polypeptides):
             curr_start_idx = pp[0].get_id()[1]
             curr_end_idx = pp[-1].get_id()[1]
@@ -502,6 +545,7 @@ class ProteinRecord(object):
                 angles.extend([Dihedral.empty()] * gap_len)
                 bfactors.extend([math.nan] * gap_len)
                 sstructs.extend(["-"] * gap_len)
+                num_conformations.extend([1] * gap_len)
 
             pdb_aa_seq += str(pp.get_sequence())
             res_ids.extend(_residue_to_res_id(res) for res in pp)
@@ -510,6 +554,7 @@ class ProteinRecord(object):
             chain_res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
             sss = (ss_dict.get(res_id, "-") for res_id in chain_res_ids)
             sstructs.extend(sss)
+            num_conformations.extend(len(_residue_conformations(res)) for res in pp)
 
         # Find the alignment between the PDB AA sequence and the Uniprot AA sequence.
         pdb_to_unp_idx = self._find_unp_alignment(pdb_aa_seq, self.unp_rec.sequence)
@@ -523,7 +568,7 @@ class ProteinRecord(object):
         # Create a ResidueRecord holding all data we need per residue
         residue_recs = []
         for i in range(len(pdb_aa_seq)):
-            # Get best codon and calculate it's 'score' based on how many
+            # Get the best codon and calculate its 'score' based on how many
             # other options there are
             codon_counts = idx_to_codons.get(i, {})
             best_codon, max_count, total_count = UNKNOWN_CODON, 0, 0
@@ -544,6 +589,7 @@ class ProteinRecord(object):
                 angles=angles[i],
                 bfactor=bfactors[i],
                 secondary=sstructs[i],
+                num_conformations=num_conformations[i],
             )
             residue_recs.append(rr)
 
@@ -576,7 +622,7 @@ class ProteinRecord(object):
     def pdb_rec(self) -> PDBRecord:
         """
         :return: PDB record for this protein. Note that this record may
-        contain multiple chains and this protein only represents one of them
+        contain multiple chains and this prec only represents one of them
         (self.pdb_chain_id).
         """
         if not self._pdb_rec:
@@ -855,6 +901,19 @@ class ProteinRecord(object):
             self._pp = pp_chains
 
         return self._pp
+
+    @property
+    def num_conformations(self) -> int:
+        """
+        :return: Number of possible conformations of this chain.
+        The product of the number of conformations in the PDB representation of each
+        residue.
+        """
+        return reduce(
+            lambda prod, res: res.num_conformations * prod,
+            self._residue_recs.values(),
+            1,
+        )
 
     def to_dataframe(
         self,
