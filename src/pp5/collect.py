@@ -47,6 +47,7 @@ COL_SPACE_GROUP = "space_group"
 COL_CG_PH = "cg_ph"
 COL_CG_TEMP = "cg_temp"
 COL_REJECTED_BY = "rejected_by"
+COL_NUM_CONFORMATIONS = "num_conformations"
 
 
 @dataclass(repr=False)
@@ -1018,6 +1019,7 @@ def _collect_single_structure(
                 COL_DEPOSITION_DATE: meta.deposition_date,
                 COL_SRC_ORG: meta.src_org,
                 COL_HOST_ORG: meta.host_org,
+                COL_NUM_CONFORMATIONS: prec.num_conformations,
                 COL_LIGANDS: meta.ligands,
                 COL_R_FREE: meta.r_free,
                 COL_R_WORK: meta.r_work,
