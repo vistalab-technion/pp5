@@ -20,7 +20,7 @@ from typing import (
     ItemsView,
 )
 from pathlib import Path
-from functools import reduce, partial
+from functools import partial
 from itertools import chain
 from collections import OrderedDict
 
@@ -35,7 +35,7 @@ from Bio.PDB.Residue import Residue
 from Bio.PDB.Polypeptide import Polypeptide
 
 import pp5
-from pp5.align import BLOSUM80, BLOSUM90, DEFAULT_ARPEGGIO_ARGS, Arpeggio
+from pp5.align import BLOSUM80, DEFAULT_ARPEGGIO_ARGS, Arpeggio
 from pp5.utils import ProteinInitError
 from pp5.codons import (
     ACIDS_3TO1,
@@ -127,7 +127,7 @@ class ResidueRecord(object):
     def __init__(
         self,
         res_id: Union[str, int],
-        unp_idx: Optional[int],
+        unp_idx: int,
         name: str,
         codon: str,
         codon_score: float,
@@ -909,10 +909,8 @@ class ProteinRecord(object):
         The product of the number of conformations in the PDB representation of each
         residue.
         """
-        return reduce(
-            lambda prod, res: res.num_conformations * prod,
-            self._residue_recs.values(),
-            1,
+        return math.prod(
+            (r.num_conformations or 1) for r in self._residue_recs.values()
         )
 
     def to_dataframe(
