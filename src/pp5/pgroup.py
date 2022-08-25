@@ -1270,6 +1270,9 @@ class ResidueMatch(ResidueRecord):
             angles=query_angle,
             bfactor=max(q.bfactor for q in query_residues),
             secondary=_join(q.secondary for q in query_residues),
+            num_conformations=math.prod(
+                (q.num_conformations or 1) for q in query_residues
+            ),
         )
 
         return cls(
@@ -1345,6 +1348,7 @@ class ResidueMatchGroup(object):
         self.ang_dist = ang_dist
         self.match_len = match_len
         assert self.match_len in (1, 2)
+        self.max_conformations = max(m.num_conformations for m in match_group.values())
 
         # Save information about the structures in this group
         vs = ((m.idx, m.res_id, m.context, m.angles) for m in match_group.values())
@@ -1352,9 +1356,7 @@ class ResidueMatchGroup(object):
         self.curr_phis = tuple(a.phi_deg for a in angles)
         self.curr_psis = tuple(a.psi_deg for a in angles)
 
-        vs = (
-            (m.type, m.name, m.secondary, m.codon_opts,) for m in match_group.values()
-        )
+        vs = ((m.type, m.name, m.secondary, m.codon_opts) for m in match_group.values())
         types, names, secondaries, opts = [set(z) for z in zip(*vs)]
 
         # Make sure all members of group have the same match type,
@@ -1461,6 +1463,7 @@ class ResidueMatchGroup(object):
             **group_avg_phipsi,
             f"{p}ang_dist": self.ang_dist,
             f"{p}norm_factor": self.norm_factor,
+            f"{p}max_conformations": self.max_conformations,
         }
 
         sequence_attributes = [
