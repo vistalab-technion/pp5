@@ -683,7 +683,7 @@ class ProteinGroupCollector(ParallelDataCollector):
 
         self.resolution = float(resolution)
         self.expr_sys = expr_sys
-        self.source_taxid = int(source_taxid) if source_taxid is not None else None
+        self.source_taxid = int(source_taxid) if source_taxid else None
         queries = [pdb_api.PDBXRayResolutionQuery(resolution=self.resolution)]
         if self.expr_sys:
             queries.append(pdb_api.PDBExpressionSystemQuery(expr_sys=self.expr_sys))
