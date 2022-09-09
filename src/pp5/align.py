@@ -34,7 +34,7 @@ from Bio.SeqRecord import SeqRecord
 from Bio.Align.Applications import ClustalOmegaCommandline
 
 import pp5
-from pp5.utils import JSONCacheableMixin, out_redirected
+from pp5.utils import JSONCacheableMixin, stable_hash, out_redirected
 from pp5.external_dbs import pdb
 
 # Suppress messages from pymol upon import
@@ -216,12 +216,21 @@ class StructuralAlignment(JSONCacheableMixin, object):
         :param out_dir: Output directory.
         :return: The path of the written file.
         """
-        filename = self._cache_filename(self.pdb_id_1, self.pdb_id_2)
+        filename = self._cache_filename(
+            self.pdb_id_1,
+            self.pdb_id_2,
+            self.outlier_rejection_cutoff,
+            self.backbone_only,
+        )
         return self.to_cache(out_dir, filename, indent=2)
 
     @staticmethod
-    def _cache_filename(pdb_id_1: str, pdb_id_2: str) -> str:
-        basename = f"{pdb_id_1}-{pdb_id_2}".replace(":", "_").upper()
+    def _cache_filename(
+        pdb_id_1: str, pdb_id_2: str, outlier_rejection_cutoff: float, backbone_only,
+    ) -> str:
+        pdb_ids = f"{pdb_id_1}-{pdb_id_2}".replace(":", "_").upper()
+        config = f"cutoff={int(outlier_rejection_cutoff*10)}_bb={backbone_only}"
+        basename = f"{pdb_ids}_{config}"
         filename = f"{basename}.json"
         return filename
 
@@ -245,20 +254,26 @@ class StructuralAlignment(JSONCacheableMixin, object):
             f"nstars={self.n_stars}/{len(self.ungapped_seq_1)}"
         )
 
+    def __eq__(self, other):
+        if not isinstance(other, StructuralAlignment):
+            return False
+        return self.__dict__ == other.__dict__
+
     @classmethod
     def from_cache(
         cls,
         pdb_id_1: str,
         pdb_id_2: str,
         cache_dir: Union[str, Path] = pp5.ALIGNMENT_DIR,
+        **kw_for_init,
     ) -> Optional[StructuralAlignment]:
-        filename = cls._cache_filename(pdb_id_1, pdb_id_2)
+        filename = cls._cache_filename(pdb_id_1, pdb_id_2, **kw_for_init)
         return super(StructuralAlignment, cls).from_cache(cache_dir, filename)
 
     @classmethod
     def from_pdb(cls, pdb_id1: str, pdb_id2: str, cache=False, **kw_for_init):
         if cache:
-            sa = cls.from_cache(pdb_id1, pdb_id2)
+            sa = cls.from_cache(pdb_id1, pdb_id2, **kw_for_init)
             if sa is not None:
                 return sa
 
@@ -270,8 +285,8 @@ class StructuralAlignment(JSONCacheableMixin, object):
 def structural_align(
     pdb_id1: str,
     pdb_id2: str,
-    outlier_rejection_cutoff: float = 2.0,
-    backbone_only=False,
+    outlier_rejection_cutoff: float,
+    backbone_only,
     **pymol_align_kwargs,
 ) -> Tuple[float, int, MSA]:
     """
