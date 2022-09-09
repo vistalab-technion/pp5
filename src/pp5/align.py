@@ -34,7 +34,7 @@ from Bio.SeqRecord import SeqRecord
 from Bio.Align.Applications import ClustalOmegaCommandline
 
 import pp5
-from pp5.utils import JSONCacheableMixin, stable_hash, out_redirected
+from pp5.utils import JSONCacheableMixin, out_redirected
 from pp5.external_dbs import pdb
 
 # Suppress messages from pymol upon import
