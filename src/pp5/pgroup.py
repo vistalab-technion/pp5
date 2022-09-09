@@ -846,15 +846,15 @@ class ProteinGroup(object):
             q_match_residues = [q_prec_residues[j] for j in q_idx_prec]
             assert len(r_match_residues) == len(q_match_residues) == self.match_len
 
-            r_names, r_resids, r_codons, r_bfactors, r_angles = zip(
+            r_names, r_resids, r_codons, r_bfactors, r_angles, r_cscores = zip(
                 *(
-                    (r.name, r.res_id, r.codon, r.bfactor, r.angles)
+                    (r.name, r.res_id, r.codon, r.bfactor, r.angles, r.codon_score)
                     for r in r_match_residues
                 )
             )
-            q_names, q_resids, q_codons, q_bfactors, q_angles = zip(
+            q_names, q_resids, q_codons, q_bfactors, q_angles, q_cscores = zip(
                 *(
-                    (q.name, q.res_id, q.codon, q.bfactor, q.angles)
+                    (q.name, q.res_id, q.codon, q.bfactor, q.angles, q.codon_score)
                     for q in q_match_residues
                 )
             )
@@ -865,6 +865,8 @@ class ProteinGroup(object):
             if UNKNOWN_CODON in [*r_codons, *q_codons]:
                 continue
             if any(b > self.b_max for b in [*r_bfactors, *q_bfactors]):
+                continue
+            if any(cscore < 1 for cscore in [*r_cscores, *q_cscores]):
                 continue
 
             # Make sure we got from idx_match to the correct residues in the precs
