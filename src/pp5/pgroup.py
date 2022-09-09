@@ -267,7 +267,7 @@ class ProteinGroup(object):
         angle_aggregation_methods = {
             "circ": self._aggregate_fn_circ,
             "frechet": self._aggregate_fn_frechet,
-            "max_res": self._aggregate_fn_best_res,
+            "max_res": self._aggregate_fn_max_res,
         }
         if angle_aggregation not in angle_aggregation_methods:
             raise ProteinInitError(
@@ -1188,19 +1188,31 @@ class ProteinGroup(object):
 
         return grouped_matches
 
-    def _aggregate_fn_best_res(self, match_group: Dict[str, ResidueMatch]) -> Dihedral:
+    def _aggregate_fn_max_res(self, match_group: Dict[str, ResidueMatch]) -> Dihedral:
         """
-        Aggregator which selects the angles from the best resolution
+        Aggregator which selects the angles from the maximal  resolution
         structure in a match group.
+        Maximal in this context means best, which corresponds to *lowest* numerical
+        value.
         :param match_group: Match group dict, keys are query pdb_ids.
-        :return: The dihedral angles frmo the best-resolution structure.
+        :return: The dihedral angles from the best-resolution structure.
         """
 
         def sort_key(q_pdb_id):
             return self.query_pdb_to_prec[q_pdb_id].pdb_meta.resolution
 
         q_pdb_id_best_res = sorted(match_group, key=sort_key)[0]
-        return match_group[q_pdb_id_best_res].angles
+        max_res_angles = match_group[q_pdb_id_best_res].angles
+
+        # Set zero std on Dihedral object since it's expected to by an aggregated
+        # angle which has these fields.
+        max_res_angles_std = Dihedral.from_rad(
+            phi=(max_res_angles.phi, 0.0),
+            psi=(max_res_angles.psi, 0.0),
+            omega=(max_res_angles.omega, 0.0),
+        )
+
+        return max_res_angles_std
 
     @staticmethod
     def _aggregate_fn_frechet(match_group: Dict[str, ResidueMatch]) -> Dihedral:
