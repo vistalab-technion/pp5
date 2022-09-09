@@ -619,6 +619,8 @@ class ProteinGroupCollector(ParallelDataCollector):
         evalue_cutoff: float = 1.0,
         identity_cutoff: float = 30.0,
         b_max: float = 30.0,
+        sa_outlier_cutoff: float = 2.0,
+        angle_aggregation: str = "circ",
         match_len: int = 2,
         context_len: int = 1,
         compare_contacts: bool = True,
@@ -644,6 +646,13 @@ class ProteinGroupCollector(ParallelDataCollector):
         :param b_max: Maximal b-factor a residue can have
         (backbone-atom average) in order for it to be included in a match
         group. None means no limit.
+        :param sa_outlier_cutoff: RMS cutoff for determining outliers in
+        structural alignment.
+        :param angle_aggregation: Method for angle-aggregation of matching
+        query residues of each reference residue. Options are
+        'circ' - Circular mean;
+        'frechet' - Frechet centroid;
+        'max_res' - No aggregation, take angle of maximal resolution structure
         :param match_len: Number of residues to include in a match. Can be either 1
         or 2. If 2, the match dihedral angles will be the cross-bond angles (phi+1,
         psi+0) between the two residues.
@@ -692,6 +701,8 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
         self.b_max = b_max
+        self.sa_outlier_cutoff = sa_outlier_cutoff
+        self.angle_aggregation = angle_aggregation
         self.match_len = match_len
         self.context_len = context_len
         self.compare_contacts = compare_contacts
@@ -843,6 +854,8 @@ class ProteinGroupCollector(ParallelDataCollector):
                 all_pdb_ids,
                 blast,
                 self.b_max,
+                self.sa_outlier_cutoff,
+                self.angle_aggregation,
                 self.match_len,
                 self.context_len,
                 self.compare_contacts,
@@ -1100,6 +1113,8 @@ def _collect_single_pgroup(
     all_pdb_ids: Set[str],
     blast: ProteinBLAST,
     b_max: float,
+    sa_outlier_cutoff: float,
+    angle_aggregation: str,
     match_len: int,
     context_len: int,
     compare_contacts: bool,
@@ -1133,6 +1148,8 @@ def _collect_single_pgroup(
             ref_pdb_id,
             query_pdb_ids=query_pdb_ids,
             b_max=b_max,
+            sa_outlier_cutoff=sa_outlier_cutoff,
+            angle_aggregation=angle_aggregation,
             match_len=match_len,
             context_len=context_len,
             compare_contacts=compare_contacts,
