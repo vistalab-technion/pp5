@@ -56,6 +56,7 @@ class ProteinGroup(object):
         source_taxid: Optional[int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         blast_e_cutoff: float = 1.0,
         blast_identity_cutoff: float = 30.0,
+        query_predicate: Optional[Callable[[str], bool]] = None,
         **kw_for_init,
     ) -> ProteinGroup:
         """
@@ -74,6 +75,8 @@ class ProteinGroup(object):
             the desired taxonomy id.
         :param blast_e_cutoff: Expectation value cutoff parameter for BLAST.
         :param blast_identity_cutoff: Identity cutoff parameter for BLAST.
+        :param query_predicate: A predicate function to apply to all query PDB ids.
+        Only those which satisfy the predicate will be used.
         :param kw_for_init: Keyword args for ProteinGroup.__init__()
         :return: A ProteinGroup for the given reference id.
         """
@@ -131,6 +134,15 @@ class ProteinGroup(object):
         )
         # For the valid ids, get each PDB ID with its chain
         valid_pdb_entities = [blast_ids_no_chain[pdb_id] for pdb_id in valid_pdb_ids]
+
+        # Apply predicate if given
+        if query_predicate:
+            len_pre = len(valid_pdb_entities)
+            valid_pdb_entities = tuple(filter(query_predicate, valid_pdb_entities))
+            LOGGER.info(
+                f"Applied query_predicate to {len_pre} query ids, "
+                f"{len(valid_pdb_entities)} remaining after filter."
+            )
 
         LOGGER.info(
             f"Initializing ProteinGroup for {ref_pdb_id} with "
