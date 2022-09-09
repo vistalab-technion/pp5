@@ -1,6 +1,6 @@
 import pytest
 
-from pp5.align import StructuralAlignment, pymol
+from pp5.align import PYMOL_ALIGN_SYMBOL, StructuralAlignment, pymol
 
 
 class TestStructuralAlign(object):
@@ -21,3 +21,55 @@ class TestStructuralAlign(object):
             pdb_id += ":A"
         sa = StructuralAlignment(pdb_id, pdb_id, backbone_only=backbone_only)
         assert sa.rmse == 0
+
+    def test_outlier_rejection_cutoff_example(self):
+        pdb1, pdb2 = "4NE4:A", "5TEU:A"
+        sa_20 = StructuralAlignment(
+            pdb1, pdb2, backbone_only=True, outlier_rejection_cutoff=2.0
+        )
+        sa_25 = StructuralAlignment(
+            pdb1, pdb2, backbone_only=True, outlier_rejection_cutoff=2.5
+        )
+
+        sub_seq = "KADD"
+        sub_idx = sa_20.aligned_seq_1.index(sub_seq)
+        assert sa_25.aligned_seq_1.index(sub_seq) == sub_idx
+
+        sub_slice = slice(sub_idx, sub_idx + len(sub_seq))
+        assert sa_20.aligned_stars[sub_slice] != PYMOL_ALIGN_SYMBOL * len(sub_seq)
+        assert sa_25.aligned_stars[sub_slice] == PYMOL_ALIGN_SYMBOL * len(sub_seq)
+
+    @pytest.mark.parametrize("backbone_only", [False, True])
+    @pytest.mark.parametrize("outlier_rejection_cutoff", [2.0, 2.5])
+    def test_cache(self, backbone_only, outlier_rejection_cutoff):
+        pdb1, pdb2 = "4NE4:A", "5TEU:A"
+
+        # Should not exist in cache
+        sa_cached = StructuralAlignment.from_cache(
+            pdb1,
+            pdb2,
+            backbone_only=backbone_only,
+            outlier_rejection_cutoff=outlier_rejection_cutoff,
+        )
+        assert sa_cached is None
+
+        # Should be created and saved to cache
+        sa = StructuralAlignment.from_pdb(
+            pdb1,
+            pdb2,
+            cache=True,
+            backbone_only=backbone_only,
+            outlier_rejection_cutoff=outlier_rejection_cutoff,
+        )
+
+        # Should exist in cache
+        sa_cached = StructuralAlignment.from_cache(
+            pdb1,
+            pdb2,
+            backbone_only=backbone_only,
+            outlier_rejection_cutoff=outlier_rejection_cutoff,
+        )
+        assert sa_cached is not None
+
+        # Cached version should be the same
+        assert sa == sa_cached
