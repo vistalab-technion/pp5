@@ -4,9 +4,7 @@ import gzip
 import json
 import random
 import logging
-import importlib
 import contextlib
-from io import UnsupportedOperation
 from json import JSONEncoder
 from typing import Any, Union, Callable
 from pathlib import Path
@@ -15,9 +13,9 @@ from collections.abc import Set, Mapping, Sequence
 
 import requests
 from IPython import get_ipython
+from urllib3 import Retry
 from requests import HTTPError
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
 
 import pp5
 
