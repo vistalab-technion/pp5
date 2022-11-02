@@ -20,7 +20,7 @@ BASE_WORKERS_DL_DIR = Path(tempfile.gettempdir()).joinpath("pp5_data")
 GLOBAL_WORKERS_DL_DIR = BASE_WORKERS_DL_DIR.joinpath(f"_global_{os.getpid()}")
 
 
-def _worker_process_init(base_workers_dl_dir, *args):
+def _worker_process_init(base_workers_dl_dir: Path, pp5_config: dict, *args):
     # ignore SIGINT in workers, it should only be handled in the main process
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
@@ -34,6 +34,10 @@ def _worker_process_init(base_workers_dl_dir, *args):
     # Override the default with the process-specific dir to have a
     # different download directory for each process.
     pp5.BASE_DOWNLOAD_DIR = worker_dl_dir
+
+    # Set global config
+    for key, value in pp5_config.items():
+        pp5.set_config(key, value)
 
 
 def _clean_worker_downloads(base_workers_dl_dir):
@@ -72,7 +76,7 @@ def global_pool() -> ContextManager[mp.pool.Pool]:
         __GLOBAL_POOL = mp_ctx.Pool(
             processes=n_processes,
             initializer=_worker_process_init,
-            initargs=(base_workers_dl_dir,),
+            initargs=(base_workers_dl_dir, pp5.get_all_config()),
         )
     try:
         yield __GLOBAL_POOL
@@ -89,7 +93,9 @@ def pool(name: str, processes=None, context="spawn") -> ContextManager[mp.pool.P
     try:
         LOGGER.info(f"Starting pool {name} with {processes} processes")
         with mp_ctx.Pool(
-            processes, initializer=_worker_process_init, initargs=(base_workers_dl_dir,)
+            processes,
+            initializer=_worker_process_init,
+            initargs=(base_workers_dl_dir, pp5.get_all_config()),
         ) as p:
             yield p
     finally:
