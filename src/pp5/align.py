@@ -34,6 +34,7 @@ from Bio.SeqRecord import SeqRecord
 from Bio.Align.Applications import ClustalOmegaCommandline
 
 import pp5
+from pp5 import CONFIG_PDB_REDO
 from pp5.utils import JSONCacheableMixin, out_redirected
 from pp5.external_dbs import pdb
 
@@ -962,10 +963,12 @@ class Arpeggio(object):
         pdb_base_id, pdb_chain_id = pdb.split_id(pdb_id)
 
         # Use cache if available
+        pdb_redo_postfix = f"-r" if pp5.get_config(CONFIG_PDB_REDO) else ""
         cached_out_filename = (
             f"{pdb_base_id.upper()}_"
             f"{pdb_chain_id.upper()}-"
-            f"i{self.interaction_cutoff:.1f}.json.zip"
+            f"i{self.interaction_cutoff:.1f}"
+            f"{pdb_redo_postfix}.json.zip"
         )
         cached_out_path = self.out_dir.absolute() / cached_out_filename
         if self.cache and cached_out_path.is_file():
