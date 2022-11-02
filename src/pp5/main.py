@@ -164,6 +164,14 @@ def _parse_cli():
         help="Number of time to retry failed queries/downloads.",
     )
     p.add_argument(
+        "--pdb-redo",
+        "-P",
+        action="store_true",
+        default=pp5.get_config(CONFIG_PDB_REDO),
+        dest=f"{_CFG_PREFIX_}{CONFIG_PDB_REDO}",
+        help="Whether to use PDB-REDO as the source of PDB files",
+    )
+    p.add_argument(
         "--debug",
         "-D",
         action="store_true",
