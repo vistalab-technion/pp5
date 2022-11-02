@@ -20,7 +20,7 @@ from Bio.PDB.Polypeptide import standard_aa_names
 from Bio.PDB.PDBExceptions import PDBConstructionWarning, PDBConstructionException
 
 import pp5
-from pp5 import PDB_DIR, get_resource_path
+from pp5 import PDB_DIR, CONFIG_PDB_REDO, get_resource_path
 from pp5.utils import JSONCacheableMixin, remote_dl
 from pp5.external_dbs import pdb_api
 
@@ -32,6 +32,7 @@ PDB_ID_PATTERN = re.compile(
 STANDARD_ACID_NAMES = set(standard_aa_names)
 
 PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
+PDB_REDO_DOWNLOAD_URL_TEMPLATE = "https://pdb-redo.eu/db/{0}/{0}_final.cif"
 
 LOGGER = logging.getLogger(__name__)
 
@@ -79,9 +80,28 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR) -> Path:
     pdb_id, chain_id = split_id(pdb_id)
 
     pdb_id = pdb_id.lower()
-    filename = get_resource_path(pdb_dir, f"{pdb_id}.cif")
+
+    # Try PDB REDO first
+    if pp5.get_config(CONFIG_PDB_REDO):
+        url = PDB_REDO_DOWNLOAD_URL_TEMPLATE.format(pdb_id)
+        filename = get_resource_path(pdb_dir, f"{pdb_id}-r.cif")
+        uncompress = False
+
+        try:
+            return remote_dl(
+                url, filename, uncompress=uncompress, skip_existing=True, retries=1
+            )
+        except Exception as e:
+            LOGGER.warning(
+                f"Failed to obtain {pdb_id=} from PDB REDO {url=}, "
+                f"falling back to PDB"
+            )
+
+    # Fallback to normal PDB
     url = PDB_DOWNLOAD_URL_TEMPLATE.format(pdb_id)
-    return remote_dl(url, filename, uncompress=True, skip_existing=True)
+    filename = get_resource_path(pdb_dir, f"{pdb_id}.cif")
+    uncompress = True
+    return remote_dl(url, filename, uncompress=uncompress, skip_existing=True)
 
 
 def pdb_struct(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> PDBRecord:
