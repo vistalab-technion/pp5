@@ -7,6 +7,12 @@ from typing import Any, Dict, Callable, Sequence
 from pathlib import Path
 
 import pp5
+from pp5 import (
+    CONFIG_PDB_REDO,
+    CONFIG_LOG_DEBUG,
+    CONFIG_MAX_PROCESSES,
+    CONFIG_REQUEST_RETRIES,
+)
 from pp5.prec import ProteinRecord
 from pp5.pgroup import ProteinGroup
 from pp5.collect import ProteinGroupCollector, ProteinRecordCollector
@@ -144,8 +150,8 @@ def _parse_cli():
         "-p",
         type=int,
         required=False,
-        default=pp5.get_config("MAX_PROCESSES"),
-        dest=f"{_CFG_PREFIX_}MAX_PROCESSES",
+        default=pp5.get_config(CONFIG_MAX_PROCESSES),
+        dest=f"{_CFG_PREFIX_}{CONFIG_MAX_PROCESSES}",
         help="Maximal number of parallel processes to use.",
     )
     p.add_argument(
@@ -153,8 +159,8 @@ def _parse_cli():
         "-r",
         type=int,
         required=False,
-        default=pp5.get_config("REQUEST_RETRIES"),
-        dest=f"{_CFG_PREFIX_}REQUEST_RETRIES",
+        default=pp5.get_config(CONFIG_REQUEST_RETRIES),
+        dest=f"{_CFG_PREFIX_}{CONFIG_REQUEST_RETRIES}",
         help="Number of time to retry failed queries/downloads.",
     )
     p.add_argument(
@@ -163,7 +169,7 @@ def _parse_cli():
         action="store_true",
         default=False,
         required=False,
-        dest=f"{_CFG_PREFIX_}LOG_DEBUG",
+        dest=f"{_CFG_PREFIX_}{CONFIG_LOG_DEBUG}",
         help="Whether to log at the DEBUG level.",
     )
 
@@ -351,7 +357,7 @@ def main():
         if not arg.startswith(_CFG_PREFIX_):
             continue
         cfg_name = arg.replace(_CFG_PREFIX_, "")
-        pp5._CONFIG[cfg_name] = parsed_args[arg]
+        pp5.set_config(cfg_name, parsed_args[arg])
 
     # Filter out configuration params
     parsed_args = {
