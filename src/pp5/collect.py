@@ -21,6 +21,7 @@ from Bio.Align import PairwiseAligner
 
 import pp5
 import pp5.parallel
+from pp5 import CONFIG_PDB_REDO
 from pp5.prec import ProteinRecord
 from pp5.align import DEFAULT_ARPEGGIO_ARGS as ARPEGGIO_ARGS
 from pp5.align import Arpeggio, ProteinBLAST
@@ -94,6 +95,7 @@ class ParallelDataCollector(abc.ABC):
         self.out_tag = tag
         self.async_timeout = async_timeout
         self.create_zip = create_zip
+        self.pdb_redo = pp5.get_config(CONFIG_PDB_REDO)
 
         if id:
             self.id = id
