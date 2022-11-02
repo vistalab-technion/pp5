@@ -1,5 +1,6 @@
 import os
 import logging.config
+from typing import Any
 from pathlib import Path
 
 PROJECT_DIR = Path(Path(__file__).resolve().parents[2])
@@ -33,23 +34,34 @@ ENV_PP5_BLASTDB_DIR = "BLASTDB_DIR"
 Dict for storing top-level package configuration options, and their default
 values.
 """
+CONFIG_MAX_PROCESSES = "MAX_PROCESSES"
+CONFIG_REQUEST_RETRIES = "REQUEST_RETRIES"
+CONFIG_DEFAULT_EXPR_SYS = "DEFAULT_EXPR_SYS"
+CONFIG_DEFAULT_SOURCE_TAXID = "DEFAULT_SOURCE_TAXID"
+CONFIG_DEFAULT_RES = "DEFAULT_RES"
+CONFIG_DEFAULT_RFREE = "DEFAULT_RFREE"
+CONFIG_DEFAULT_SEQ_SIMILARITY_THRESH = "DEFAULT_SEQ_SIMILARITY_THRESH"
+CONFIG_LOG_DEBUG = "LOG_DEBUG"
+CONFIG_PDB_REDO = "PDB_REDO"
 _CONFIG = {
     # Number of worker processes in global parallel pool
-    "MAX_PROCESSES": int(os.getenv(ENV_PP5_PP5_MAX_PROCESSES, os.cpu_count())),
+    CONFIG_MAX_PROCESSES: int(os.getenv(ENV_PP5_PP5_MAX_PROCESSES, os.cpu_count())),
     # Number of retries to use when fetching/querying data
-    "REQUEST_RETRIES": 10,
+    CONFIG_REQUEST_RETRIES: 10,
     # Default expression system for PDB queries
-    "DEFAULT_EXPR_SYS": "Escherichia Coli",
+    CONFIG_DEFAULT_EXPR_SYS: "Escherichia Coli",
     # Default expression system for PDB queries
-    "DEFAULT_SOURCE_TAXID": None,  # 9606 is Homo Sapiens
+    CONFIG_DEFAULT_SOURCE_TAXID: None,  # 9606 is Homo Sapiens
     # Default resolution for PDB queries
-    "DEFAULT_RES": 1.8,
+    CONFIG_DEFAULT_RES: 1.8,
     # Default RFree for PDB queries
-    "DEFAULT_RFREE": 0.24,
+    CONFIG_DEFAULT_RFREE: 0.24,
     # Default PDB sequence similarity threshold for data collection
-    "DEFAULT_SEQ_SIMILARITY_THRESH": 1.0,
+    CONFIG_DEFAULT_SEQ_SIMILARITY_THRESH: 1.0,
     # Whether to log at DEBUG level
-    "LOG_DEBUG": False,
+    CONFIG_LOG_DEBUG: False,
+    # Whether to use PDB-REDO as the source for PDB files
+    CONFIG_PDB_REDO: False,
 }
 
 """
@@ -89,12 +101,29 @@ def out_subdir(name):
     return _get_subdir(OUT_DIR, name)
 
 
-def get_config(name: str):
+def get_config(key: str):
     """
-    :param name: A configuration parameter's name
+    :param key: A configuration parameter's name
     :return: The value of that parameter.
     """
-    return _CONFIG[name]
+    return _CONFIG[key]
+
+
+def get_all_config() -> dict:
+    """
+    :return: The configuration dict.
+    """
+    return _CONFIG.copy()
+
+
+def set_config(key: str, value: Any):
+    """
+    :param key: A configuration parameter's name.
+    :param value: The value to set.
+    """
+    if key not in _CONFIG:
+        raise KeyError(key)
+    _CONFIG[key] = value
 
 
 # Directory for PDB files
