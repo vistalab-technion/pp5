@@ -29,7 +29,8 @@ class TestMethods:
     @pytest.mark.parametrize("with_ids", [True, False])
     @pytest.mark.parametrize("with_backbone", [True, False])
     @pytest.mark.parametrize(
-        "with_contacts", [False, True],
+        "with_contacts",
+        [False, True],
     )
     def test_to_dataframe(self, prec, with_ids, with_backbone, with_contacts):
         if isinstance(with_contacts, dict):
@@ -128,11 +129,17 @@ class TestFromPDB:
             ProteinRecord.from_pdb("0AAA")
 
     def test_multiple_unp_ids_for_same_pdb_chain_no_strict_pdb_xref(self):
-        prec = ProteinRecord.from_pdb("3SG4:A", strict_pdb_xref=False,)
+        prec = ProteinRecord.from_pdb(
+            "3SG4:A",
+            strict_pdb_xref=False,
+        )
         assert prec.unp_id == "P42212"
         assert prec.pdb_id == "3SG4:A"
 
-        prec = ProteinRecord.from_pdb("3SG4", strict_pdb_xref=False,)
+        prec = ProteinRecord.from_pdb(
+            "3SG4",
+            strict_pdb_xref=False,
+        )
         assert prec.unp_id == "P42212"
         assert prec.pdb_id == "3SG4:A"
 
@@ -221,7 +228,12 @@ class TestCache:
         loaded_prec = ProteinRecord.from_cache(pdb_id, cache_dir=self.CACHE_DIR)
         assert prec == loaded_prec
 
-    @pytest.mark.parametrize("pdb_id", ["1B0Y:A",])
+    @pytest.mark.parametrize(
+        "pdb_id",
+        [
+            "1B0Y:A",
+        ],
+    )
     def test_from_cache_non_existent_id(self, pdb_id):
         prec = ProteinRecord.from_cache(pdb_id, cache_dir=self.CACHE_DIR)
 

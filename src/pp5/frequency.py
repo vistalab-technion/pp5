@@ -100,7 +100,9 @@ def _remove_sigma(hist: Dict[str, Tuple[float, float]]):
 
 
 def tuple_freq_analysis(
-    data: DataFrame, sequence_length: int = 2, allowed_ss=(),
+    data: DataFrame,
+    sequence_length: int = 2,
+    allowed_ss=(),
 ) -> DataFrame:
     codon, aa = codon_tuples(data, sequence_length=1, allowed_ss=allowed_ss)
     Na = histogram(aa, ACIDS, normalized=False)

@@ -826,7 +826,10 @@ class ProteinRecord(object):
                 "contact": ["count", _agg_join_unique],
                 # distances
                 # note: min and max will ignore nans, and the lambda will count them
-                "distance": ["min", "max",],
+                "distance": [
+                    "min",
+                    "max",
+                ],
                 "contact_sdist": ["min", "max"],
                 # OOC and non-AA contacts
                 "contact_any_ooc": [_agg_join_unique],

@@ -327,7 +327,8 @@ def _parse_cli():
     )
 
     def _handle_pointwise_cdist(
-        pointwise_args=pointwise_args, **parsed_args,
+        pointwise_args=pointwise_args,
+        **parsed_args,
     ):
         analyzer = PointwiseCodonDistanceAnalyzer(
             **{k: parsed_args[k] for k in pointwise_args},

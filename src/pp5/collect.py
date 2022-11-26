@@ -156,7 +156,9 @@ class ParallelDataCollector(abc.ABC):
 
         LOGGER.info(f"Completed collection for {self} in {time_str}")
         collection_meta_formatted = pformat(
-            self._collection_meta, width=120, compact=True,
+            self._collection_meta,
+            width=120,
+            compact=True,
         )
         LOGGER.info(f"Collection metadata:\n" f"{collection_meta_formatted}")
         return self._collection_meta
@@ -593,7 +595,9 @@ class ProteinRecordCollector(ParallelDataCollector):
                 )
 
             _, elapsed, pdb_id_dataframes = self._handle_async_results(
-                async_results, collect=True, flatten=False,
+                async_results,
+                collect=True,
+                flatten=False,
             )
 
             # Writing the dataframes to a single file must be sequential
@@ -769,7 +773,9 @@ class ProteinGroupCollector(ParallelDataCollector):
                 async_results.append(r)
 
             count, elapsed, pdb_id_data = self._handle_async_results(
-                async_results, collect=True, flatten=True,
+                async_results,
+                collect=True,
+                flatten=True,
             )
 
             # Create a dataframe from the collected data
@@ -816,7 +822,8 @@ class ProteinGroupCollector(ParallelDataCollector):
                 async_results.append(r)
 
             count, elapsed, group_datas = self._handle_async_results(
-                async_results, collect=True,
+                async_results,
+                collect=True,
             )
             group_datas = filter(None, group_datas)
 
@@ -869,7 +876,9 @@ class ProteinGroupCollector(ParallelDataCollector):
             async_results.append(r)
 
         count, elapsed, collected_data = self._handle_async_results(
-            async_results, collect=True, flatten=False,
+            async_results,
+            collect=True,
+            flatten=False,
         )
 
         # The pgroup_datas contains both metadata and also pairwise matches.
@@ -1190,7 +1199,9 @@ def _collect_single_pgroup(
 
 
 def _load_prec_df_from_cache(
-    pdb_id: str, with_backbone: bool = False, with_contacts: Optional[Dict] = None,
+    pdb_id: str,
+    with_backbone: bool = False,
+    with_contacts: Optional[Dict] = None,
 ):
     try:
         prec = ProteinRecord.from_pdb(pdb_id, cache=True)

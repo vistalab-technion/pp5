@@ -289,7 +289,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 grid_high=np.pi,
                 dtype=self.kde_args["dtype"],
                 kernel_fn=partial(
-                    torus_gaussian_kernel_2d, sigma=np.deg2rad(self.ddist_kernel_size),
+                    torus_gaussian_kernel_2d,
+                    sigma=np.deg2rad(self.ddist_kernel_size),
                 ),
             )
 
@@ -303,7 +304,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
         elif ddist_statistic == "tw":
             self.ddist_statistic_fn = partial(
-                tw_test, similarity_fn=flat_torus_distance_sq,
+                tw_test,
+                similarity_fn=flat_torus_distance_sq,
             )
         else:
             raise ValueError(f"Unexpected {ddist_statistic=}")
@@ -430,7 +432,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             condition_group_id, _ = group_idx
             async_results.append(
                 pool.apply_async(
-                    self._preprocess_group, args=(condition_group_id, df_group),
+                    self._preprocess_group,
+                    args=(condition_group_id, df_group),
                 )
             )
 
@@ -526,7 +529,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             unp_id = group_idx
             async_results.append(
                 pool.apply_async(
-                    self._create_group_tuples, args=(df_group, self.tuple_len),
+                    self._create_group_tuples,
+                    args=(df_group, self.tuple_len),
                 )
             )
 
@@ -545,7 +549,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         }
 
     def _create_group_tuples(
-        self, df_group: pd.DataFrame, tuple_len: int,
+        self,
+        df_group: pd.DataFrame,
+        tuple_len: int,
     ) -> Optional[pd.DataFrame]:
 
         # Sort rows using the order of residues in each protein
@@ -791,7 +797,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         comp_types_to_subgroup_pairs = {
             COMP_TYPE_AA: (AA_COL, AA_COL, _aa_tuples_filter_fn, None),
-            COMP_TYPE_AAC: (AA_COL, CODON_COL, None, _syn_codon_pair_nmax_fn,),
+            COMP_TYPE_AAC: (
+                AA_COL,
+                CODON_COL,
+                None,
+                _syn_codon_pair_nmax_fn,
+            ),
             COMP_TYPE_CC: (
                 CODON_COL,
                 CODON_COL,
@@ -1251,7 +1262,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 pool.apply_async(
                     _plot_likelihoods,
                     args=(codon_likelihoods, "codon"),
-                    kwds=dict(out_dir=self.out_dir,),
+                    kwds=dict(
+                        out_dir=self.out_dir,
+                    ),
                 )
             )
             del codon_likelihoods
@@ -1263,7 +1276,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 pool.apply_async(
                     _plot_likelihoods,
                     args=(aa_likelihoods, "aa"),
-                    kwds=dict(out_dir=self.out_dir,),
+                    kwds=dict(
+                        out_dir=self.out_dir,
+                    ),
                 )
             )
             del aa_likelihoods
@@ -1478,7 +1493,7 @@ def _subgroup_permutation_test(
     # We want a different random state in each subgroup, but reproducible
     seed = None
     if randstate is not None:
-        seed = (hash(group_idx + subgroup1_idx + subgroup2_idx) + randstate) % (2 ** 31)
+        seed = (hash(group_idx + subgroup1_idx + subgroup2_idx) + randstate) % (2**31)
         np.random.seed(seed)
     random = np.random.default_rng(seed)
 
@@ -1579,7 +1594,9 @@ def _dihedral_kde_single_group(
 
 
 def _plot_likelihoods(
-    likelihoods: dict, codon_or_aa: str, out_dir: Path,
+    likelihoods: dict,
+    codon_or_aa: str,
+    out_dir: Path,
 ):
     if codon_or_aa == "codon":
         fig_filename = out_dir.joinpath(f"codon-likelihoods.pdf")
@@ -1918,14 +1935,20 @@ def _plot_pvals_hist(
 
             # Histogram fig and axes
             fig_hist, ax_hist = plt.subplots(
-                fig_rows, fig_cols, figsize=(5 * fig_cols, 5 * fig_rows), squeeze=False,
+                fig_rows,
+                fig_cols,
+                figsize=(5 * fig_cols, 5 * fig_rows),
+                squeeze=False,
             )
             fig_hist: Figure
             axes_hist: Sequence[Axes] = ax_hist.reshape(-1)
 
             # pvals fig and axes
             fig_pvals, ax_pvals = plt.subplots(
-                fig_rows, fig_cols, figsize=(5 * fig_cols, 5 * fig_rows), squeeze=False,
+                fig_rows,
+                fig_cols,
+                figsize=(5 * fig_cols, 5 * fig_rows),
+                squeeze=False,
             )
             fig_pvals: Figure
             axes_pvals: Sequence[Axes] = ax_pvals.reshape(-1)
@@ -1963,7 +1986,9 @@ def _plot_pvals_hist(
                 idx_rejections = pvals_sorted <= pval_thresh
 
                 ax_pvals.plot(
-                    x_axis, bhq_thresh_line, label=f"BH(q={fdr})",
+                    x_axis,
+                    bhq_thresh_line,
+                    label=f"BH(q={fdr})",
                 )
                 ax_pvals.plot(
                     x_axis[~idx_rejections],

@@ -21,7 +21,13 @@ class TestBvMMixtureDiscreteDistribution:
             two_pi=request.param,
         )
 
-    @pytest.mark.parametrize(["gridsize", "two_pi"], [(128, True), (512, False),])
+    @pytest.mark.parametrize(
+        ["gridsize", "two_pi"],
+        [
+            (128, True),
+            (512, False),
+        ],
+    )
     @pytest.mark.parametrize(
         ["k1", "k2", "A", "mu", "alpha"],
         [
@@ -38,7 +44,13 @@ class TestBvMMixtureDiscreteDistribution:
                 [[1, 2], [3, 4]],
                 [0.3, 0.7],
             ),
-            ([1, 2], [2, 3], [np.eye(2), np.eye(2)], [[1, 2], [3, 4]], [0.3, 0.7],),
+            (
+                [1, 2],
+                [2, 3],
+                [np.eye(2), np.eye(2)],
+                [[1, 2], [3, 4]],
+                [0.3, 0.7],
+            ),
             (
                 np.array([1, 2]),
                 np.array([2, 3]),
@@ -67,12 +79,48 @@ class TestBvMMixtureDiscreteDistribution:
         [
             (1, 2, 3, None, 2.0),
             (1, 2, 3, 4, 1.0),
-            ([1, 2], [2, 3], [3, 4], [[1, 2], [3, 4]], [0.3, 0.3, 0.4],),
-            ([1, 2], [2, 3], [3, 4], [[1, 2], [3, 4]], [0.3, 0.8],),
-            ([1, 2], [2, 3], [3, 4], [[1, 2, 3], [3, 4, 5]], [0.3, 0.7],),
-            ([1, 2], [2, 3], [3, 4], [np.eye(3), np.eye(3)], [0.3, 0.7],),
-            ([1, 2], [2, 3], [3, 4], np.zeros((3, 4, 5, 6)), [0.3, 0.7],),
-            ([1, 2, 4], [2, 3], [3, 4], [[1, 2], [4, 5]], [0.3, 0.7],),
+            (
+                [1, 2],
+                [2, 3],
+                [3, 4],
+                [[1, 2], [3, 4]],
+                [0.3, 0.3, 0.4],
+            ),
+            (
+                [1, 2],
+                [2, 3],
+                [3, 4],
+                [[1, 2], [3, 4]],
+                [0.3, 0.8],
+            ),
+            (
+                [1, 2],
+                [2, 3],
+                [3, 4],
+                [[1, 2, 3], [3, 4, 5]],
+                [0.3, 0.7],
+            ),
+            (
+                [1, 2],
+                [2, 3],
+                [3, 4],
+                [np.eye(3), np.eye(3)],
+                [0.3, 0.7],
+            ),
+            (
+                [1, 2],
+                [2, 3],
+                [3, 4],
+                np.zeros((3, 4, 5, 6)),
+                [0.3, 0.7],
+            ),
+            (
+                [1, 2, 4],
+                [2, 3],
+                [3, 4],
+                [[1, 2], [4, 5]],
+                [0.3, 0.7],
+            ),
         ],
     )
     def test_init_fail(self, k1, k2, A, mu, alpha):
@@ -131,7 +179,12 @@ class TestBvMKernelDensityEstimator(object):
             gridsize=grid_size,
         )
         samples = bvm.sample(n_samples)
-        kde = BvMKernelDensityEstimator(n_bins=grid_size, k1=30, k2=30, k3=2,)
+        kde = BvMKernelDensityEstimator(
+            n_bins=grid_size,
+            k1=30,
+            k2=30,
+            k3=2,
+        )
         kde_pdf = kde(samples[:, 0], samples[:, 1])
 
         dist_norm = np.linalg.norm(bvm.pdf - kde_pdf)

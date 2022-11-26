@@ -227,7 +227,10 @@ class StructuralAlignment(JSONCacheableMixin, object):
 
     @staticmethod
     def _cache_filename(
-        pdb_id_1: str, pdb_id_2: str, outlier_rejection_cutoff: float, backbone_only,
+        pdb_id_1: str,
+        pdb_id_2: str,
+        outlier_rejection_cutoff: float,
+        backbone_only,
     ) -> str:
         pdb_ids = f"{pdb_id_1}-{pdb_id_2}".replace(":", "_").upper()
         config = f"cutoff={int(outlier_rejection_cutoff*10)}_bb={backbone_only}"

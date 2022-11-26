@@ -84,7 +84,7 @@ class TestRemoteDL:
 class TestRequestsRetry:
     @staticmethod
     def max_retry_time(retries: int, backoff: float):
-        return sum(backoff * 2 ** i for i in range(retries - 1))
+        return sum(backoff * 2**i for i in range(retries - 1))
 
     @pytest.mark.parametrize("status", [429, 500, 503])
     def test_1(self, status):

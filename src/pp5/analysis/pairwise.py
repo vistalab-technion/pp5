@@ -103,7 +103,17 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # their types
         all_cols = list(pd.read_csv(self.input_file, nrows=1).columns)
         float_list_cols = [c for c in all_cols if any_in(("phis", "psis"), c)]
-        int_list_cols = [c for c in all_cols if any_in(("contexts", "idxs",), c)]
+        int_list_cols = [
+            c
+            for c in all_cols
+            if any_in(
+                (
+                    "contexts",
+                    "idxs",
+                ),
+                c,
+            )
+        ]
         str_list_cols = [c for c in all_cols if any_in(("res_ids", "codons"), c)]
         list_cols = float_list_cols + int_list_cols + str_list_cols
         float_cols = [
@@ -126,7 +136,9 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Load the data lazily and in chunks
         df_pointwise_reader = pd.read_csv(
-            str(self.input_file), dtype=col_dtypes, chunksize=10_000,
+            str(self.input_file),
+            dtype=col_dtypes,
+            chunksize=10_000,
         )
 
         # Parallelize loading and preprocessing
@@ -413,7 +425,7 @@ class PairwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         # We want a different random state in each subgroup, but still
         # should be reproducible
         if bs_randstate is not None:
-            seed = (hash(group_idx + subgroup_idx) + bs_randstate) % (2 ** 31)
+            seed = (hash(group_idx + subgroup_idx) + bs_randstate) % (2**31)
             np.random.seed(seed)
 
         # Create a K*B matrix for bootstrapped squared-distances

@@ -30,14 +30,16 @@ class TestRawDataAPI:
         assert result["rcsb_id"] == pdb_base_id.upper()
 
     @pytest.mark.parametrize(
-        ["pdb_base_id", "entity_id"], [["4HHB", "1"], ["4hhb", 2]],
+        ["pdb_base_id", "entity_id"],
+        [["4HHB", "1"], ["4hhb", 2]],
     )
     def test_entity(self, pdb_base_id, entity_id):
         result = pdb_api.execute_raw_data_query(pdb_base_id, entity_id=entity_id)
         assert result["rcsb_id"] == f"{pdb_base_id.upper()}_{str(entity_id).upper()}"
 
     @pytest.mark.parametrize(
-        ["pdb_base_id", "chain_id"], [["4HHB", "A"], ["4hhb", "b"]],
+        ["pdb_base_id", "chain_id"],
+        [["4HHB", "A"], ["4hhb", "b"]],
     )
     def test_chain(self, pdb_base_id, chain_id):
         result = pdb_api.execute_raw_data_query(pdb_base_id, chain_id=chain_id)

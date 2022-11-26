@@ -361,7 +361,7 @@ def flat_torus_distance_sq(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
     absdiff = np.fabs(phi_psi0.reshape(-1, 2) - phi_psi1.reshape(-1, 2))
     absdiff_2pi = 2 * np.pi - absdiff
     absdiff_min = np.minimum(absdiff, absdiff_2pi)
-    dist = np.sum(absdiff_min ** 2, axis=1)
+    dist = np.sum(absdiff_min**2, axis=1)
     return dist
 
 
@@ -539,7 +539,7 @@ class DihedralAnglesUncertaintyEstimator(DihedralAnglesEstimator):
         b0 = v1 - v2
         b1 = v3 - v2
         b2 = v4 - v3
-        b1 /= umath.sqrt(np.sum(b1 ** 2))
+        b1 /= umath.sqrt(np.sum(b1**2))
         v = b0 - np.dot(b0, b1) * b1
         w = b2 - np.dot(b2, b1) * b1
         x = np.dot(v, w)

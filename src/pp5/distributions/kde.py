@@ -95,7 +95,7 @@ def gaussian_kernel(x: ndarray, sigma: float = 1):
     """
     Gaussian kernel function.
     """
-    return np.exp(-0.5 * (x ** 2) / sigma ** 2)
+    return np.exp(-0.5 * (x**2) / sigma**2)
 
 
 def bvm_kernel(phi: np.ndarray, psi: np.ndarray, k1: float, k2: float, k3: float):
@@ -141,7 +141,7 @@ def torus_gaussian_kernel_2d(phi: np.ndarray, psi: np.ndarray, sigma: float):
     :return: Value of the kernel evaluated at each (phi, psi).
     """
     d2 = np.arccos(np.cos(phi)) ** 2 + np.arccos(np.cos(psi)) ** 2
-    return np.exp(-0.5 * d2 / sigma ** 2)
+    return np.exp(-0.5 * d2 / sigma**2)
 
 
 def w2_dist_sinkhorn(

@@ -492,7 +492,7 @@ def verify_interval_of_p(params, lower_p, upper_p, sig_digits=-5, verbose=1):
     ret = 0
     if sig_digits < MIN_SIG_DIGITS:
         sig_digits = MIN_SIG_DIGITS
-    acceptable_range = 10 ** sig_digits
+    acceptable_range = 10**sig_digits
     # Test that cumulative error = r
     if (k == 0) or (k == n):
         if k == 0:
@@ -567,7 +567,7 @@ def verify_interval_of_p(params, lower_p, upper_p, sig_digits=-5, verbose=1):
 
 # Approximated intervals
 def rule_of_ln_alpha(params):
-    """ Generalized rule of three.
+    """Generalized rule of three.
 
     Interval of rule of -ln(alpha), i.e generalized version of
     'rule of three'.
@@ -755,9 +755,9 @@ def wilson_score(params):
     k = params.k
     z = params.zah
     p = k / n
-    mu = 2 * k + z ** 2
-    half_width = z * np.sqrt(z ** 2 + 4 * k * (1 - p))
-    denomi = 2 * (n + z ** 2)
+    mu = 2 * k + z**2
+    half_width = z * np.sqrt(z**2 + 4 * k * (1 - p))
+    denomi = 2 * (n + z**2)
     lower_p = max(0, (mu - half_width) / denomi)
     upper_p = min(1, (mu + half_width) / denomi)
     return lower_p, upper_p
@@ -788,9 +788,9 @@ def wilson_score_cc(params):
     k = params.k
     z = params.zah
     p = k / n
-    mu = 2 * k + z ** 2
-    half_width = 1 + z * np.sqrt(z ** 2 - 1 / n + 4 * k * (1 - p) + (4 * p - 2))
-    denomi = 2 * (n + z ** 2)
+    mu = 2 * k + z**2
+    half_width = 1 + z * np.sqrt(z**2 - 1 / n + 4 * k * (1 - p) + (4 * p - 2))
+    denomi = 2 * (n + z**2)
     lower_p = max(0, (mu - half_width) / denomi)
     upper_p = min(1, (mu + half_width) / denomi)
     return lower_p, upper_p
@@ -925,10 +925,10 @@ class GraProps:
             sys.exit(1)
         # n <= 3 * k_end * 10^log_n_end <= 10^7 where 3 is floor(sqrt(10)).
         RELIABLE_LOG_N_MAX = 7
-        if 10 ** RELIABLE_LOG_N_MAX < 3 * self.k_end * 10 ** log_n_end:
+        if 10**RELIABLE_LOG_N_MAX < 3 * self.k_end * 10**log_n_end:
             log_n_end_org = log_n_end
             log_n_end = math.floor(
-                np.log10((10 ** RELIABLE_LOG_N_MAX) / (3 * self.k_end))
+                np.log10((10**RELIABLE_LOG_N_MAX) / (3 * self.k_end))
             )
             logger.warning(
                 f"log_n_end={log_n_end_org} was so large and changed to"
@@ -1047,8 +1047,8 @@ def interval_graph(gra_props):
     colorlist = [scalarMap.to_rgba(i) for i in range(col_max)]
 
     n_list_base = sorted(
-        [10 ** i for i in range(0, log_n_end + 1, 1)]
-        + [3 * 10 ** i for i in range(0, log_n_end + 1, 1)]
+        [10**i for i in range(0, log_n_end + 1, 1)]
+        + [3 * 10**i for i in range(0, log_n_end + 1, 1)]
     )
     # print(n_list_base)
 

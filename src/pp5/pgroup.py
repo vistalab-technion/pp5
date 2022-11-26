@@ -1369,7 +1369,7 @@ class ResidueMatchGroup(object):
 
         self.avg_phipsi = avg_phipsi
         self.norm_factor = math.sqrt(
-            avg_phipsi.phi_std_deg ** 2 + avg_phipsi.psi_std_deg ** 2
+            avg_phipsi.phi_std_deg**2 + avg_phipsi.psi_std_deg**2
         )
         self.ang_dist = ang_dist
         self.match_len = match_len

@@ -41,7 +41,13 @@ def categorical_histogram(
                 )
             )
     else:
-        hists.append(histogram(samples=samples, bins=bins, normalized=normalized,))
+        hists.append(
+            histogram(
+                samples=samples,
+                bins=bins,
+                normalized=normalized,
+            )
+        )
 
     def _mean_std(a: np.array) -> Tuple[float, float]:
         sigma = np.std(a)

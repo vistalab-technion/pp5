@@ -628,9 +628,9 @@ class PDBUnitCell(object):
         # Volume
         factor = math.sqrt(
             1
-            - cos_alpha ** 2
-            - cos_beta ** 2
-            - cos_gamma ** 2
+            - cos_alpha**2
+            - cos_beta**2
+            - cos_gamma**2
             + 2 * cos_alpha * cos_beta * cos_gamma
         )
         self.vol = self.a * self.b * self.c * factor

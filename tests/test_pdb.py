@@ -281,7 +281,8 @@ class TestPDB2UNP:
         self._check(test_id, "P02213")
 
     @pytest.mark.parametrize(
-        ("test_id", "unp_id"), [("3SG4:A", "P42212"), ("4IK8:A", "P42212")],
+        ("test_id", "unp_id"),
+        [("3SG4:A", "P42212"), ("4IK8:A", "P42212")],
     )
     def test_multi_unp_for_single_chain_no_strict(self, test_id, unp_id):
         actual_unp_id = pdb.PDB2UNP.pdb_id_to_unp_id(test_id, strict=False)

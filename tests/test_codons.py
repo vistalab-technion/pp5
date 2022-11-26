@@ -85,8 +85,8 @@ class TestAACTuplePairs:
         index_pairs = aac_index_pairs(k, synonymous=synonymous, unique=unique)
 
         # expected number of all k-tuple pairs
-        n_k_tuples = N_CODONS ** k
-        num_all_k_tuple_pairs = n_k_tuples ** 2
+        n_k_tuples = N_CODONS**k
+        num_all_k_tuple_pairs = n_k_tuples**2
         num_unique_k_tuple_pairs = num_all_k_tuple_pairs / 2 + n_k_tuples / 2
 
         num_tuple_pairs = 0

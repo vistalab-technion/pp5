@@ -267,7 +267,8 @@ class PDBQuery(abc.ABC):
         LOGGER.info(f"Executing PDB query: {self!s}")
 
         raw_result = execute_raw_pdb_search_query(
-            self.to_json(), raise_on_error=self._raise_on_error,
+            self.to_json(),
+            raise_on_error=self._raise_on_error,
         )
 
         if raw_result:
@@ -290,7 +291,8 @@ class PDBQuery(abc.ABC):
         # Set request options so that no data is returned, only the count.
         request_options = {"return_all_hits": False, "pager": {"start": 0, "rows": 0}}
         raw_result = execute_raw_pdb_search_query(
-            self.to_json(), raise_on_error=self._raise_on_error,
+            self.to_json(),
+            raise_on_error=self._raise_on_error,
         )
         if not raw_result:
             return 0
@@ -377,7 +379,9 @@ class PDBUnstructuredSearchQuery(PDBQuery):
         return {
             "type": "terminal",
             "service": "full_text",
-            "parameters": {"value": self.query_value,},
+            "parameters": {
+                "value": self.query_value,
+            },
         }
 
     def description(self) -> str:
@@ -538,7 +542,9 @@ class PDBRFreeQuery(PDBAttributeSearchQuery):
     """
 
     def __init__(
-        self, rfree: float = pp5.get_config("DEFAULT_RFREE"), **base_kwargs,
+        self,
+        rfree: float = pp5.get_config("DEFAULT_RFREE"),
+        **base_kwargs,
     ):
         """
         :param taxonomy_id: The taxonomy ID of the source organism.
