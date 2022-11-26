@@ -15,6 +15,6 @@ repos:
     hooks:
     -   id: isort
 -   repo: https://github.com/psf/black
-    rev: 19.10b0
+    rev: 22.10.0
     hooks:
     -   id: black
