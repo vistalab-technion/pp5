@@ -178,6 +178,7 @@ class ProteinGroup(object):
         b_max: float = math.inf,
         angle_aggregation="circ",
         compare_contacts: bool = False,
+        strict_codons: bool = True,
         strict_pdb_xref: bool = True,
         strict_unp_xref: bool = False,
         parallel: bool = True,
@@ -226,6 +227,8 @@ class ProteinGroup(object):
         'max_res' - No aggregation, take angle of maximal resolution structure
         :param compare_contacts: Whether to compare tertiary contacts contexts of
         potential matches.
+        :param strict_codons: Whether to require that a codon assignment for each
+        AA exists and is un-ambiguous.
         :param strict_pdb_xref: Whether to require that the given PDB ID
         maps uniquely to only one Uniprot ID.
         :param strict_unp_xref: Whether to require that there exist a PDB
@@ -261,6 +264,7 @@ class ProteinGroup(object):
         self.b_max = b_max
         self.prec_cache = prec_cache
         self.compare_contacts = compare_contacts
+        self.strict_codons = strict_codons
         self.strict_pdb_xref = strict_pdb_xref
         self.strict_unp_xref = strict_unp_xref
 
@@ -862,11 +866,13 @@ class ProteinGroup(object):
             # Make sure we have all the required information per match residue
             if UNKNOWN_AA in [*r_names, *q_names]:
                 continue
-            if UNKNOWN_CODON in [*r_codons, *q_codons]:
-                continue
             if any(b > self.b_max for b in [*r_bfactors, *q_bfactors]):
                 continue
-            if any(cscore < 1 for cscore in [*r_cscores, *q_cscores]):
+            if self.strict_codons and UNKNOWN_CODON in [*r_codons, *q_codons]:
+                continue
+            if self.strict_codons and any(
+                cscore < 1 for cscore in [*r_cscores, *q_cscores]
+            ):
                 continue
 
             # Make sure we got from idx_match to the correct residues in the precs
