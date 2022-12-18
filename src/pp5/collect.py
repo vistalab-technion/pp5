@@ -630,6 +630,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         match_len: int = 2,
         context_len: int = 1,
         compare_contacts: bool = True,
+        strict_codons: bool = True,
         out_dir=pp5.out_subdir("pgroup-collected"),
         pgroup_out_dir=pp5.out_subdir("pgroup"),
         write_pgroup_csvs=True,
@@ -666,6 +667,8 @@ class ProteinGroupCollector(ParallelDataCollector):
         pair to consider that pair for a match.
         :param compare_contacts: Whether to compare tertiary contacts contexts of
         potential matches.
+        :param strict_codons: Whether to require that a codon assignment for each
+        AA exists and is un-ambiguous.
         :param out_dir: Output directory for collection CSV files.
         :param pgroup_out_dir: Output directory for pgroup CSV files. Only
         relevant if write_pgroup_csvs is True.
@@ -711,6 +714,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.angle_aggregation = angle_aggregation
         self.match_len = match_len
         self.context_len = context_len
+        self.strict_codons = strict_codons
         self.compare_contacts = compare_contacts
 
         self.pgroup_out_dir = pgroup_out_dir
@@ -868,6 +872,7 @@ class ProteinGroupCollector(ParallelDataCollector):
                 self.match_len,
                 self.context_len,
                 self.compare_contacts,
+                self.strict_codons,
                 pgroup_out_dir,
                 self.out_tag,
                 idx,
@@ -1129,6 +1134,7 @@ def _collect_single_pgroup(
     match_len: int,
     context_len: int,
     compare_contacts: bool,
+    strict_codons: bool,
     out_dir: Optional[Path],
     out_tag: str,
     idx: tuple,
@@ -1164,6 +1170,7 @@ def _collect_single_pgroup(
             match_len=match_len,
             context_len=context_len,
             compare_contacts=compare_contacts,
+            strict_codons=strict_codons,
             parallel=False,
             prec_cache=True,
         )
