@@ -1,7 +1,10 @@
 import numpy as np
 import pytest
+import matplotlib.pyplot as plt
 
 from pp5.stats import mht_bh
+from pp5.stats.two_sample import torus_w2_gof_test
+from pp5.distributions.vonmises import BvMMixtureDiscreteDistribution
 
 
 class TestMHTBH(object):
@@ -64,3 +67,63 @@ class TestMHTBH(object):
     def test_invalid_m(self, m):
         with pytest.raises(ValueError, match="Need at least two"):
             mht_bh(0.1, np.arange(m).astype(float))
+
+
+class TestTorusW2Test:
+    @pytest.fixture
+    def bvm_dist1(self, request):
+        dist = BvMMixtureDiscreteDistribution(
+            k1=0,
+            k2=0,
+            A=1,
+            mu=[[0.5, 0.5]],
+            # alpha=[1],
+            gridsize=1024 * 1,
+            two_pi=False,
+        )
+        return dist
+
+    @pytest.fixture
+    def bvm_dist2(self, request):
+        dist = BvMMixtureDiscreteDistribution(
+            k1=1,
+            k2=1,
+            A=1,
+            mu=[[0.5, 0.5]],
+            # alpha=[0.3, 0.7],
+            gridsize=1024,
+            two_pi=False,
+        )
+        return dist
+
+    def test_1(self, bvm_dist1, bvm_dist2):
+        X = bvm_dist1.sample(200)
+        Y = bvm_dist1.sample(250)
+        Z = bvm_dist2.sample(350)
+
+        pval_xy = torus_w2_gof_test(X, Y)
+        pval_xz = torus_w2_gof_test(X, Z)
+
+        print(f"{pval_xy=},{pval_xz=}")
+        j = 3
+
+    def test_uniformity(self, bvm_dist1):
+
+        Ns = [10, 100, 200]
+        M = 100
+        pvals = np.empty((M,), dtype=np.float)
+        for N in Ns:
+            for i in range(M):
+                X = bvm_dist1.sample(N)
+                Y = bvm_dist1.sample(N)
+                pvals[i] = torus_w2_gof_test(X, Y)
+
+            plt.hist(pvals, bins=25, density=False, label=f"N={N}")
+
+        plt.xlim([0, 1])
+        plt.xlabel("p-value (UB)")
+        plt.suptitle(rf"twosample.ubound.torus.test under $H_0$")
+        plt.legend()
+        plt.savefig("tests/out/pvals-ubound-synth_control.png", dpi=150)
+        plt.show()
+
