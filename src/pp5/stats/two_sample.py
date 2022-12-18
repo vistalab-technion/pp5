@@ -1,4 +1,5 @@
 from typing import Tuple, Union, Callable, Optional
+from pathlib import Path
 
 import numba
 import numpy as np
@@ -353,3 +354,52 @@ def _two_sample_kernel_permutation_test_inner(
     # Calculate pval, and make sure it's not zero (it's possible that no iteration
     # produced stat_val <= stat_val_perm, but that doesn't mean the true pval is zero).
     return stat_val, pval, curr_permutation
+
+
+import rpy2.robjects as robjects
+from rpy2.robjects import numpy2ri, default_converter
+from rpy2.robjects.conversion import localconverter
+
+
+def torus_w2_gof_test(
+    X: ndarray,
+    Y: ndarray,
+) -> float:
+    # _install_r_deps()
+
+    # Scale X, Y from [-pi,pi) x [-pi,pi) to [0,1) x [0,1]
+    X = (X + np.pi) / (2 * np.pi)
+    Y = (Y + np.pi) / (2 * np.pi)
+
+    r = robjects.r
+    source_file_path = Path(__file__).parent.joinpath("twosample.ubound.torus.test.R")
+    r["source"](str(source_file_path))
+    test_fn_r = robjects.globalenv["twosample.ubound.torus.test"]
+
+    # Create a converter that starts with rpy2's default converter
+    # to which the numpy conversion rules are added.
+    np_cv_rules = default_converter + numpy2ri.converter
+    with localconverter(np_cv_rules) as cv:
+        pval = test_fn_r(X, Y)
+        return pval.item()
+
+
+def _install_r_deps():
+
+    import rpy2.robjects.packages as rpackages
+    from rpy2.robjects.vectors import StrVector
+    from rpy2.robjects.packages import importr
+
+    # import R's utility package
+    utils = importr("utils")
+
+    # select a mirror for R packages
+    utils.chooseCRANmirror(ind=1)  # select the first mirror in the list
+
+    packnames = ("som.nn", "proxy", "transport")
+
+    names_to_install = [x for x in packnames if not rpackages.isinstalled(x)]
+    if len(names_to_install) > 0:
+        utils.install_packages(StrVector(names_to_install))
+
+        j = 3
