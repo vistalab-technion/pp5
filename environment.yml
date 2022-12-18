@@ -41,6 +41,11 @@ dependencies:
   - toml
   - tqdm
   - uncertainties
+  - rpy2
+  - r-transport
+  - r-proxy
+  - r-som
+  - cxx-compiler # needed to install r packages
   # pip dependencies
   - pip:
     - nbmerge
