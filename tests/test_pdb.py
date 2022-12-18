@@ -126,7 +126,7 @@ class TestSplitIDWithEntity:
     def test_chain_too_long(self):
         for _ in range(self.n):
             invalid_id = _random_pdb_id(
-                id_type="chain", min_chain_len=3, max_chain_len=9
+                id_type="chain", min_chain_len=4, max_chain_len=9
             )
             with pytest.raises(ValueError) as exc_info:
                 pdb.split_id(invalid_id)
@@ -134,7 +134,7 @@ class TestSplitIDWithEntity:
     def test_entity_too_long(self):
         for _ in range(self.n):
             invalid_id = _random_pdb_id(
-                id_type="entity", min_chain_len=3, max_chain_len=9
+                id_type="entity", min_chain_len=4, max_chain_len=9
             )
             with pytest.raises(ValueError) as exc_info:
                 pdb.split_id(invalid_id)
