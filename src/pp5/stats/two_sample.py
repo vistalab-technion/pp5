@@ -25,7 +25,7 @@ def _tw2_statistic(D: ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None) -> fl
     sum_Y = np.sum(D[nx:, nx:])
     sum_Z = np.sum(D)
     enumerator = sum_Z / (nx + ny) - sum_X / nx - sum_Y / ny
-    denumerator = (sum_X / (nx ** 2) / (nx - 1)) + (sum_Y / (ny ** 2) / (ny - 1))
+    denumerator = (sum_X / (nx**2) / (nx - 1)) + (sum_Y / (ny**2) / (ny - 1))
     if denumerator < 1e-12:  # prevent division by zero
         return 0.0
     return float(factor * enumerator / denumerator)
