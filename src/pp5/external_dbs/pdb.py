@@ -816,19 +816,20 @@ class CustomMMCIFParser(PDB.MMCIFParser):
 
 
 def pdb_tagged_filepath(
-    pdb_id: str, out_dir: Path, suffix: str, tag: str = None
+    pdb_id: str, pdb_source: str, out_dir: Path, suffix: str, tag: str = None
 ) -> Path:
     """
     Creates a file path for a PDB record, with an optional tag.
-    Eg. pdb_id=1ABC:A, tag='foo' -> /path/to/out_dir/1ABC_A-foo.ext
+    Eg. pdb_id=1ABC:A, source=src, tag='foo' -> /path/to/out_dir/1ABC_A-src-foo.ext
     :param pdb_id: The PDB id, can include chain. Colon will be replaced with
     underscore.
+    :param pdb_source: Source from which to obtain the pdb file.
     :param out_dir: Output directory.
     :param suffix: File suffix (extension).
     :param tag: Optional tag to add.
     :return: The path to the output file.
     """
     tag = f"-{tag}" if tag else ""
-    filename = f'{pdb_id.replace(":", "_").upper()}{tag}'
+    filename = f'{pdb_id.replace(":", "_").upper()}-{pdb_source}{tag}'
     filepath = out_dir.joinpath(f"{filename}.{suffix}")
     return filepath
