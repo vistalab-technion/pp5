@@ -31,8 +31,20 @@ PDB_ID_PATTERN = re.compile(
 
 STANDARD_ACID_NAMES = set(standard_aa_names)
 
-PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
-PDB_REDO_DOWNLOAD_URL_TEMPLATE = "https://pdb-redo.eu/db/{0}/{0}_final.cif"
+PDB_RCSB = "rcsb"
+PDB_RCSB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{pdb_id}.cif.gz"
+PDB_REDO = "redo"
+PDB_REDO_DOWNLOAD_URL_TEMPLATE = "https://pdb-redo.eu/db/{pdb_id}/{pdb_id}_final.cif"
+PDB_AFLD = "afld"
+PDB_AFLD_DOWNLOAD_URL_TEMPLATE = (
+    "https://alphafold.ebi.ac.uk/files/AF-{unp_id}-F1-model_v4.cif"
+)
+
+PDB_DOWNLOAD_SOURCES: Dict[str, str] = {
+    PDB_RCSB: PDB_RCSB_DOWNLOAD_URL_TEMPLATE,
+    PDB_REDO: PDB_REDO_DOWNLOAD_URL_TEMPLATE,
+    PDB_AFLD: PDB_AFLD_DOWNLOAD_URL_TEMPLATE,
+}
 
 LOGGER = logging.getLogger(__name__)
 
@@ -70,74 +82,91 @@ def split_id_with_entity(pdb_id) -> Tuple[str, str, Optional[str]]:
     return match.group("id"), match.group("chain"), match.group("entity")
 
 
-def pdb_download(pdb_id: str, pdb_dir=PDB_DIR) -> Path:
+def pdb_download(pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB) -> Path:
     """
     Downloads a protein structure file from PDB.
     :param pdb_id: The id of the structure to download.
     :param pdb_dir: Directory to download PDB file to.
+    :param pdb_source: Source from which to obtain the pdb file.
     """
     # Separate id and chain if chain was specified
     pdb_id, chain_id = split_id(pdb_id)
 
-    pdb_id = pdb_id.lower()
+    if pdb_source not in PDB_DOWNLOAD_SOURCES:
+        raise ValueError(
+            f"Unknown {pdb_source=}, must be one of {tuple(PDB_DOWNLOAD_SOURCES)}"
+        )
 
-    # Try PDB REDO first
-    if pp5.get_config(CONFIG_PDB_REDO):
-        url = PDB_REDO_DOWNLOAD_URL_TEMPLATE.format(pdb_id)
-        filename = get_resource_path(pdb_dir, f"{pdb_id}-r.cif")
-        uncompress = False
+    download_url_template = PDB_DOWNLOAD_SOURCES[pdb_source]
+    if "unp_id" in download_url_template:
+        if not chain_id:
+            raise ValueError(f"Chain must be specified for {pdb_source=}")
 
-        try:
-            return remote_dl(
-                url, filename, uncompress=uncompress, skip_existing=True, retries=1
+        filename = get_resource_path(
+            pdb_dir, f"{pdb_id}_{chain_id}-{pdb_source}.cif".lower()
+        )
+        if filename.is_file():  # to prevent unnecessary API call if the file exists
+            return filename
+
+        # Get uniprot id for this chain
+        unp_ids = PDB2UNP.query_all_uniprot_ids(pdb_id).get(chain_id, [])
+        if len(unp_ids) != 1:
+            raise ValueError(
+                f"Can't determine unique uniprot id for {pdb_id}:{chain_id}, "
+                f"got {unp_ids=}"
             )
-        except Exception as e:
-            LOGGER.warning(
-                f"Failed to obtain {pdb_id=} from PDB REDO {url=}, "
-                f"falling back to PDB"
-            )
-
-    # Fallback to normal PDB
-    url = PDB_DOWNLOAD_URL_TEMPLATE.format(pdb_id)
-    filename = get_resource_path(pdb_dir, f"{pdb_id}.cif")
-    uncompress = True
-    return remote_dl(url, filename, uncompress=uncompress, skip_existing=True)
+        unp_id = unp_ids[0]
+        download_url = download_url_template.format(unp_id=unp_id)
+    else:
+        filename = get_resource_path(pdb_dir, f"{pdb_id}-{pdb_source}.cif".lower())
+        download_url = download_url_template.format(pdb_id=pdb_id).lower()
+    uncompress = download_url.endswith(("gz", "gzip", "zip"))
+    return remote_dl(
+        download_url, filename, uncompress=uncompress, skip_existing=True, retries=1
+    )
 
 
-def pdb_struct(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> PDBRecord:
+def pdb_struct(
+    pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB, struct_d=None
+) -> PDBRecord:
     """
     Given a PDB structure id, returns an object representing the protein
     structure.
     :param pdb_id: The PDB id of the structure.
     :param pdb_dir: Directory to download PDB file to.
+    :param pdb_source: Source from which to obtain the pdb file.
     :param struct_d: Optional dict containing the parsed structure as a
     dict. If provided, the file wont have to be re-parsed.
     :return: An biopython PDB Structure object.
     """
-    pdb_id, chain_id = split_id(pdb_id)
-    filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
+    pdb_base_id, chain_id = split_id(pdb_id)
+    filename = pdb_download(pdb_id, pdb_dir=pdb_dir, pdb_source=pdb_source)
 
     # Parse the PDB file into a Structure object
     LOGGER.info(f"Loading PDB file {filename}...")
     parser = CustomMMCIFParser()
-    return parser.get_structure(pdb_id, filename, mmcif_dict=struct_d)
+    return parser.get_structure(pdb_base_id, filename, mmcif_dict=struct_d)
 
 
-def pdb_dict(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> dict:
+def pdb_dict(
+    pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB, struct_d=None
+) -> dict:
     """
     Returns a dictionary containing all the contents of a PDB mmCIF file.
     :param pdb_id: The PDB id of the structure.
     :param pdb_dir: Directory to download PDB file to.
+    :param pdb_source: Source from which to obtain the pdb file.
     :param struct_d: Optional dict of the structure if it was already loaded.
     This parameter exists to streamline other functions that use this one in
     case the file was already parsed.
     """
-    pdb_id, chain_id = split_id(pdb_id)
+    pdb_base_id, chain_id = split_id(pdb_id)
+
     # No need to re-parse the file if we have a matching struct dict
-    if struct_d and struct_d["_entry.id"][0].upper() == pdb_id:
+    if struct_d and struct_d["_entry.id"][0].upper() == pdb_base_id:
         return struct_d
 
-    filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
+    filename = pdb_download(pdb_id, pdb_dir=pdb_dir, pdb_source=pdb_source)
     return MMCIF2Dict.MMCIF2Dict(filename)
 
 
