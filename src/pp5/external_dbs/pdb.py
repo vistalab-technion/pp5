@@ -244,15 +244,16 @@ class PDB2UNP(JSONCacheableMixin, object):
     to that chain, and their locations in the PDB sequence.
     """
 
-    def __init__(self, pdb_id: str, struct_d: dict = None):
+    def __init__(self, pdb_id: str, pdb_source: str = PDB_RCSB, struct_d: dict = None):
         """
         Initialize a PDB to Uniprot mapping.
         :param pdb_id: PDB ID, without chain. Chain will be ignored if
         specified.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param struct_d: Optional parsed PDB file dict.
         """
-        pdb_id, _ = split_id(pdb_id)
-        struct_d = pdb_dict(pdb_id, struct_d=struct_d)
+        pdb_base_id, _ = split_id(pdb_id)
+        struct_d = pdb_dict(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
 
         # Get all chain Uniprot IDs by querying PDB. This gives us the most
         # up to date IDs, but it doesn't provide alignment info between the
@@ -262,7 +263,7 @@ class PDB2UNP(JSONCacheableMixin, object):
 
         # Get Uniprot cross-refs from the PDB file. Map is
         # chain -> unp -> [ (s1,e1), (s2, e2), ... ]
-        chain_to_unp_xrefs = self.parse_all_uniprot_xrefs(pdb_id, struct_d)
+        chain_to_unp_xrefs = self.parse_all_uniprot_xrefs(pdb_id, pdb_source, struct_d)
 
         # Make sure all Uniprot IDs we got from the PDB API exist in our
         # final dict and appear in the order we got them from the PDB API.
@@ -277,7 +278,7 @@ class PDB2UNP(JSONCacheableMixin, object):
                 curr_chain_xrefs.setdefault(unp_id, [])
                 curr_chain_xrefs.move_to_end(unp_id, last=False)
 
-        self.pdb_id = pdb_id
+        self.pdb_id = pdb_base_id
         self.chain_to_unp_xrefs = chain_to_unp_xrefs
 
     def get_unp_id(self, chain_id: str, strict=True) -> str:
@@ -400,19 +401,20 @@ class PDB2UNP(JSONCacheableMixin, object):
 
     @staticmethod
     def parse_all_uniprot_xrefs(
-        pdb_id: str, struct_d: dict = None
+        pdb_id: str, pdb_source: str = PDB_RCSB, struct_d: dict = None
     ) -> Dict[str, Dict[str, List[tuple]]]:
         """
         Parses the Uniprot cross references and sequence ranges from a PDB
         file of a given PDB ID.
         :param pdb_id: The PDB ID.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param struct_d: Optional parsed PDB file.
         :return: Uniprot cross-refs from the PDB file. Mapping is
         chain -> unp -> [ (s1,e1), (s2, e2), ... ]
         """
 
-        pdb_id, _ = split_id(pdb_id)
-        struct_d = pdb_dict(pdb_id, struct_d=struct_d)
+        pdb_base_id, _ = split_id(pdb_id)
+        struct_d = pdb_dict(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
 
         # Go over referenced DBs and take all uniprot IDs
         unp_ids = set()
@@ -458,12 +460,18 @@ class PDB2UNP(JSONCacheableMixin, object):
 
     @classmethod
     def pdb_id_to_unp_id(
-        cls, pdb_id: str, strict=True, cache=False, struct_d: dict = None
+        cls,
+        pdb_id: str,
+        pdb_source: str = PDB_RCSB,
+        strict=True,
+        cache=False,
+        struct_d: dict = None,
     ) -> str:
         """
         Given a PDB ID, returns a single Uniprot id for it.
         :param pdb_id: PDB ID, with optional chain. If provided chain will
         be used.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param cache: Whether to use cached mapping.
         :param strict: Whether to raise an error (True) or just warn (False)
         if the PDB ID cannot be uniquely mapped to a single Uniprot ID.
@@ -474,17 +482,17 @@ class PDB2UNP(JSONCacheableMixin, object):
         :param struct_d: Optional parsed PDB file.
         :return: A Uniprot ID.
         """
-        pdb_id, chain_id = split_id(pdb_id)
-        pdb2unp = cls.from_pdb(pdb_id, cache=cache, struct_d=struct_d)
+        pdb_base_id, chain_id = split_id(pdb_id)
+        pdb2unp = cls.from_pdb(pdb_id, pdb_source, cache=cache, struct_d=struct_d)
 
         all_unp_ids = pdb2unp.get_all_unp_ids()
         if not all_unp_ids:
-            raise ValueError(f"No Uniprot entries exist for {pdb_id}")
+            raise ValueError(f"No Uniprot entries exist for {pdb_base_id}")
 
         if not chain_id:
             if len(all_unp_ids) > 1:
                 msg = (
-                    f"Multiple Uniprot IDs exists for {pdb_id}, and no "
+                    f"Multiple Uniprot IDs exists for {pdb_base_id}, and no "
                     f"chain specified."
                 )
                 if strict:
@@ -499,22 +507,25 @@ class PDB2UNP(JSONCacheableMixin, object):
         return pdb2unp.get_unp_id(chain_id, strict=strict)
 
     @classmethod
-    def from_pdb(cls, pdb_id: str, cache=False, struct_d: dict = None) -> PDB2UNP:
+    def from_pdb(
+        cls, pdb_id: str, pdb_source: str = PDB_RCSB, cache=False, struct_d: dict = None
+    ) -> PDB2UNP:
         """
         Create a PDB2UNP mapping from a given PDB ID.
         :param pdb_id: The PDB ID to map for. Chain will be ignored if present.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param cache: Whether to load a cached mapping if available.
         :param struct_d: Optional parsed PDB file.
         :return: A PDB2UNP mapping object.
         """
-        pdb_id, _ = split_id(pdb_id)
+        pdb_base_id, _ = split_id(pdb_id)
 
         if cache:
-            pdb2unp = cls.from_cache(pdb_id)
+            pdb2unp = cls.from_cache(pdb_base_id)
             if pdb2unp is not None:
                 return pdb2unp
 
-        pdb2unp = cls(pdb_id, struct_d=struct_d)
+        pdb2unp = cls(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
         pdb2unp.save()
         return pdb2unp
 
