@@ -90,7 +90,7 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB) -> Pa
     :param pdb_source: Source from which to obtain the pdb file.
     """
     # Separate id and chain if chain was specified
-    pdb_id, chain_id = split_id(pdb_id)
+    pdb_id, chain_id, entity_id = split_id_with_entity(pdb_id)
 
     if pdb_source not in PDB_DOWNLOAD_SOURCES:
         raise ValueError(
@@ -99,8 +99,20 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB) -> Pa
 
     download_url_template = PDB_DOWNLOAD_SOURCES[pdb_source]
     if "unp_id" in download_url_template:
+        # The alphafold source requires downloading the data based on the uniprot id
+        unp_ids = None
         if not chain_id:
-            raise ValueError(f"Chain must be specified for {pdb_source=}")
+            if not entity_id:
+                raise ValueError(f"Chain or entity must be specified for {pdb_source=}")
+
+            # Obtain uniprot ids from entity
+            entity_chains: dict = PDB2UNP.query_all_uniprot_ids(
+                pdb_id, map_from_entities=True
+            ).get(entity_id, {})
+            if not entity_chains:
+                raise ValueError(f"Failed to obtain chain for {pdb_id}:{entity_id}")
+            chain_id = [*entity_chains.keys()][0]  # arbitrary chain from the entity
+            unp_ids = entity_chains[chain_id]
 
         filename = get_resource_path(
             pdb_dir, f"{pdb_id}_{chain_id}-{pdb_source}.cif".lower()
@@ -108,8 +120,8 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB) -> Pa
         if filename.is_file():  # to prevent unnecessary API call if the file exists
             return filename
 
-        # Get uniprot id for this chain
-        unp_ids = PDB2UNP.query_all_uniprot_ids(pdb_id).get(chain_id, [])
+        # Get uniprot id for this chain (only if we didn't get them from entity)
+        unp_ids = unp_ids or PDB2UNP.query_all_uniprot_ids(pdb_id).get(chain_id, [])
         if len(unp_ids) != 1:
             raise ValueError(
                 f"Can't determine unique uniprot id for {pdb_id}:{chain_id}, "
@@ -117,9 +129,11 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB) -> Pa
             )
         unp_id = unp_ids[0]
         download_url = download_url_template.format(unp_id=unp_id)
+
     else:
         filename = get_resource_path(pdb_dir, f"{pdb_id}-{pdb_source}.cif".lower())
         download_url = download_url_template.format(pdb_id=pdb_id).lower()
+
     uncompress = download_url.endswith(("gz", "gzip", "zip"))
     return remote_dl(
         download_url, filename, uncompress=uncompress, skip_existing=True, retries=1
