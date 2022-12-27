@@ -46,6 +46,9 @@ PDB_DOWNLOAD_SOURCES: Dict[str, str] = {
     PDB_AFLD: PDB_AFLD_DOWNLOAD_URL_TEMPLATE,
 }
 
+PDB_MMCIF_ENTRY_ID = "_entry.id"
+ALPHAFOLD_ID_PREFIX = "AF"
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -157,7 +160,7 @@ def pdb_struct(
     filename = pdb_download(pdb_id, pdb_dir=pdb_dir, pdb_source=pdb_source)
 
     # Parse the PDB file into a Structure object
-    LOGGER.info(f"Loading PDB file {filename}...")
+    LOGGER.info(f"Parsing struct from PDB file {filename}...")
     parser = CustomMMCIFParser()
     return parser.get_structure(pdb_base_id, filename, mmcif_dict=struct_d)
 
@@ -177,11 +180,21 @@ def pdb_dict(
     pdb_base_id, chain_id = split_id(pdb_id)
 
     # No need to re-parse the file if we have a matching struct dict
-    if struct_d and struct_d["_entry.id"][0].upper() == pdb_base_id:
+    id_from_struct_d = struct_d[PDB_MMCIF_ENTRY_ID][0].upper() if struct_d else None
+    if id_from_struct_d and id_from_struct_d == pdb_base_id:
         return struct_d
 
     filename = pdb_download(pdb_id, pdb_dir=pdb_dir, pdb_source=pdb_source)
-    return MMCIF2Dict.MMCIF2Dict(filename)
+
+    LOGGER.info(f"Parsing dict from PDB file {filename}...")
+    struct_d = MMCIF2Dict.MMCIF2Dict(filename)
+
+    # For alphafold structures, the id will be a uniprot id; add the pdb id.
+    id_from_struct_d = struct_d[PDB_MMCIF_ENTRY_ID][0].upper()
+    if id_from_struct_d.startswith(ALPHAFOLD_ID_PREFIX):
+        struct_d[PDB_MMCIF_ENTRY_ID].insert(0, pdb_base_id)
+
+    return struct_d
 
 
 def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
