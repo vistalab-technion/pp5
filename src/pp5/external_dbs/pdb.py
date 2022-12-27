@@ -31,11 +31,11 @@ PDB_ID_PATTERN = re.compile(
 
 STANDARD_ACID_NAMES = set(standard_aa_names)
 
-PDB_RCSB = "rcsb"
+PDB_RCSB = "rc"
 PDB_RCSB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{pdb_id}.cif.gz"
-PDB_REDO = "redo"
+PDB_REDO = "re"
 PDB_REDO_DOWNLOAD_URL_TEMPLATE = "https://pdb-redo.eu/db/{pdb_id}/{pdb_id}_final.cif"
-PDB_AFLD = "afld"
+PDB_AFLD = "af"
 PDB_AFLD_DOWNLOAD_URL_TEMPLATE = (
     "https://alphafold.ebi.ac.uk/files/AF-{unp_id}-F1-model_v4.cif"
 )
