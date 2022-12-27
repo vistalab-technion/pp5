@@ -364,16 +364,23 @@ class PDB2UNP(JSONCacheableMixin, object):
         return f"PDB2UNP({self.pdb_id})={self.get_chain_to_unp_ids()}"
 
     @staticmethod
-    def query_all_uniprot_ids(pdb_id: str) -> Dict[str, List[str]]:
+    def query_all_uniprot_ids(
+        pdb_id: str, map_from_entities: bool = False
+    ) -> Union[Dict[str, List[str]], Dict[str, Dict[str, List[str]]]]:
         """
         Retrieves all Uniprot IDs associated with a PDB structure by querying
-        the PDB database.
+        the PDB database. Returns a map from either chain id or entity id to the
+        associated unp ids.
+
         :param pdb_id: The PDB ID to search for. Chain or entity will be ignored.
-        :return: A dict, mapping from each chain in the given structure to a list of
-            associated Uniprot IDs.
+        :param map_from_entities: Whether to return a map from chain ids (False) or
+        from entity ids (True).
+        :return: if map_from_entities=False, mapping from each chain id in
+        the given structure to a list of associated Uniprot IDs; otherwise a mapping
+        from entity id to a mapping from chain to a list of uniprot ids.
         :raises pdb_api.PDBAPIException: If there's a problem obtaining the data.
         """
-        chain_to_unp_ids = {}
+        map_to_unp_ids = {}
 
         # Make sure we have a base id
         pdb_id, _, _ = split_id_with_entity(pdb_id)
@@ -385,6 +392,7 @@ class PDB2UNP(JSONCacheableMixin, object):
         # Find all polymer entities
         entity_ids = entry_containers.get("polymer_entity_ids", [])
         for entity_id in entity_ids:
+            entity_id = str(entity_id)
             # Get all data about this entity
             entity_data = pdb_api.execute_raw_data_query(pdb_id, entity_id=entity_id)
 
@@ -393,11 +401,16 @@ class PDB2UNP(JSONCacheableMixin, object):
             entity_chains = entity_containers.get("asym_ids", [])
             entity_unp_ids = entity_containers.get("uniprot_ids", [])
 
-            # Save the mapping from each chain to these uniprot IDs.
-            for chain in entity_chains:
-                chain_to_unp_ids[chain] = entity_unp_ids
+            if map_from_entities:
+                map_to_unp_ids[entity_id] = {
+                    chain_id: entity_unp_ids for chain_id in entity_chains
+                }
+            else:
+                # Save the mapping from each chain to these uniprot IDs.
+                for chain_id in entity_chains:
+                    map_to_unp_ids[chain_id] = entity_unp_ids
 
-        return chain_to_unp_ids
+        return map_to_unp_ids
 
     @staticmethod
     def parse_all_uniprot_xrefs(
