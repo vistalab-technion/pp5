@@ -558,14 +558,15 @@ class PDBMetadata(object):
     https://www.rcsb.org/pdb/results/reportField.do
     """
 
-    def __init__(self, pdb_id: str, struct_d=None):
+    def __init__(self, pdb_id: str, pdb_source: str = PDB_RCSB, struct_d=None):
         """
         :param pdb_id: The PDB ID of the structure.
         :param struct_d: Optional dict which will be used if given, instead of
         parsing the PDB file.
+        :param pdb_source: Source from which to obtain the pdb file.
         """
-        pdb_id, chain_id = split_id(pdb_id)
-        struct_d = pdb_dict(pdb_id, struct_d=struct_d)
+        pdb_base_id, chain_id = split_id(pdb_id)
+        struct_d = pdb_dict(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
 
         def _meta(key: str, convert_to: Type = str, default=None):
             val = struct_d.get(key, None)
@@ -628,7 +629,8 @@ class PDBMetadata(object):
             seq_str = seq_str.replace("\n", "")
             entity_seq[entity_id] = seq_str
 
-        self.pdb_id: str = pdb_id
+        self.pdb_id: str = pdb_base_id
+        self.pdb_source: str = pdb_source
         self.title: str = title
         self.description: str = description
         self.deposition_date: str = deposition_date
@@ -800,7 +802,7 @@ class CustomMMCIFParser(PDB.MMCIFParser):
                 self._mmcif_dict = MMCIF2Dict.MMCIF2Dict(filename)
             else:
                 self._mmcif_dict = mmcif_dict
-                id_from_struct_d = self._mmcif_dict["_entry.id"][0]
+                id_from_struct_d = self._mmcif_dict[PDB_MMCIF_ENTRY_ID][0]
                 if not id_from_struct_d.lower() == structure_id.lower():
                     raise PDBConstructionException(
                         "PDB ID mismatch between provided struct dict and "
