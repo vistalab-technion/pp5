@@ -142,93 +142,41 @@ class TestSplitIDWithEntity:
 
 @pytest.mark.skipif(NO_INTERNET, reason="Needs internet")
 class TestPDBDownload:
-    @classmethod
-    def setup_class(cls):
-        cls.test_id = "102L"
-        # Use temp path to force download (file won't exists there)
-        cls.TEMP_PATH = tests.get_tmp_path("data/pdb")
+    @pytest.fixture(scope="class")
+    def temp_path(self):
+        return tests.get_tmp_path("data/pdb", clear=True)
 
-    @classmethod
-    def teardown_class(cls):
-        pass
+    @pytest.fixture(params=["1MWC:A", "2WUR:A"])
+    def pdb_id(self, request):
+        return request.param
 
-    def setup(self):
-        pass
+    @pytest.fixture(params=pdb.PDB_DOWNLOAD_SOURCES.keys())
+    def pdb_source(self, request):
+        return request.param
 
-    def test_pdb_download(self):
-        path = pdb.pdb_download(self.test_id, pdb_dir=self.TEMP_PATH)
-        expected_path = self.TEMP_PATH.joinpath(f"{self.test_id.lower()}.cif")
-        assert path == expected_path
-        assert os.path.isfile(expected_path)
+    def test_pdb_download(self, pdb_id, pdb_source, temp_path):
+        path = pdb.pdb_download(pdb_id, pdb_dir=temp_path, pdb_source=pdb_source)
 
-    def test_pdb_struct(self):
-        struct = pdb.pdb_struct(self.test_id, pdb_dir=self.TEMP_PATH)
-        chains = list(struct.get_chains())
-        assert len(chains) == 1
+        pdb_base_id, pdb_chain = pdb.split_id(pdb_id)
+        assert os.path.isfile(path)
+        assert str(path).startswith(str(temp_path))
+        assert pdb_base_id.lower() in path.stem
+        assert pdb_source in path.stem
+        assert ".cif" in path.suffix
 
+    def test_pdb_struct(self, pdb_id, pdb_source, temp_path):
+        struct = pdb.pdb_struct(pdb_id, pdb_dir=temp_path, pdb_source=pdb_source)
 
-@pytest.mark.skipif(NO_INTERNET, reason="Needs internet")
-@pytest.mark.skip(reason="Legacy PDB API is down, should remove")
-class TestPDBMetadata:
-    def test_pdb_metadata(self):
-        pdb_ids = ["1MWC", "1b0y"]
+        pdb_base_id, pdb_chain = pdb.split_id(pdb_id)
+        assert pdb_base_id == struct.get_id()
 
-        # See all fields at: https://www.rcsb.org/pdb/results/reportField.do
-        url = (
-            f"http://www.rcsb.org/pdb/rest/customReport?"
-            f'pdbids={",".join(pdb_ids)}'
-            f"&customReportColumns=taxonomyId,expressionHost,source,"
-            f"resolution,structureTitle,entityId,rFree,rWork,spaceGroup,"
-            f"ligandId,sequence,crystallizationTempK,phValue"
-            f"&service=wsfile&format=csv"
-        )
+    def test_pdb_dict(self, pdb_id, pdb_source, temp_path):
+        pdb_dict = pdb.pdb_dict(pdb_id, pdb_dir=temp_path, pdb_source=pdb_source)
 
-        with urlopen(url) as f:
-            df = pd.read_csv(f)
-            df_groups = df.groupby("structureId")
+        meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
 
-        for pdb_id in pdb_ids:
-            meta = pdb.PDBMetadata(pdb_id)
-            pdb_id_group: pd.DataFrame = df_groups.get_group(pdb_id.upper())
-            expected = pdb_id_group.iloc[0]
-            chain = expected["chainId"]
-
-            assert meta.pdb_id == pdb_id.upper()
-            assert meta.title == expected["structureTitle"]
-            assert meta.src_org == expected["source"]
-            assert meta.src_org_id == expected["taxonomyId"]
-            assert meta.host_org == expected["expressionHost"]
-            assert meta.resolution == expected["resolution"]
-            assert meta.chain_entities[chain] == expected["entityId"]
-            if not meta.r_free:
-                assert math.isnan(expected["rFree"])
-            else:
-                assert meta.r_free == approx(expected["rFree"], abs=1e-3)
-            if not meta.r_work:
-                assert math.isnan(expected["rWork"])
-            else:
-                assert meta.r_work == approx(expected["rWork"], abs=1e-3)
-            if not meta.cg_ph:
-                assert math.isnan(expected["phValue"])
-            else:
-                assert meta.cg_ph == approx(expected["phValue"], abs=1e-3)
-            if not meta.cg_temp:
-                assert math.isnan(expected["crystallizationTempK"])
-            else:
-                assert meta.cg_temp == approx(
-                    expected["crystallizationTempK"], abs=1e-3
-                )
-
-            assert meta.space_group == expected["spaceGroup"]
-
-            expected_ligands = pdb_id_group["ligandId"]
-            assert meta.ligands.split(",") == list(set(expected_ligands))
-
-            chain_groups = pdb_id_group.groupby("chainId")
-            for chain, group in chain_groups:
-                seq = meta.entity_sequence[meta.chain_entities[chain]]
-                expected_seq = group.iloc[0]["sequence"]
-                assert seq == expected_seq
+        pdb_base_id, pdb_chain = pdb.split_id(pdb_id)
+        assert meta.pdb_id == pdb_base_id
 
 
 @pytest.mark.skipif(NO_INTERNET, reason="Needs internet")
