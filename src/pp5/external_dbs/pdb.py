@@ -197,7 +197,9 @@ def pdb_dict(
     return struct_d
 
 
-def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
+def pdb_to_secondary_structure(
+    pdb_id: str, pdb_source: str = PDB_RCSB, pdb_dir=PDB_DIR
+):
     """
     Uses DSSP to determine secondary structure for a PDB record.
     The DSSP codes for secondary structure used here are:
@@ -210,13 +212,14 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
      S        Bend
      -        None
     :param pdb_id: The PDB id of the structure.
+    :param pdb_source: Source from which to obtain the pdb file.
     :param pdb_dir: Directory to download PDB file to.
     :return: A tuple of
         ss_dict: maps from a residue id to the 1-char string denoting the
         type of secondary structure at that residue.
         keys: The residue ids.
     """
-    path = pdb_download(pdb_id, pdb_dir)
+    path = pdb_download(pdb_id, pdb_dir, pdb_source)
 
     try:
         with warnings.catch_warnings(record=True) as ws:
