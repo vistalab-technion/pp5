@@ -117,7 +117,7 @@ def remote_dl(
                 in_handle.close()
 
         size_bytes = os.path.getsize(save_path)
-        LOGGER.info(f"Downloaded {save_path} ({size_bytes / 1024:.1f}kB)")
+        LOGGER.info(f"Downloaded {save_path} ({size_bytes / 1024:.1f}kB) from {url}")
         return Path(save_path)
 
 
