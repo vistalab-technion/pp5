@@ -8,6 +8,7 @@ from pp5.prec import ProteinRecord
 from pp5.align import DEFAULT_ARPEGGIO_ARGS, Arpeggio
 from pp5.utils import ProteinInitError
 from pp5.external_dbs import unp
+from pp5.external_dbs.pdb import PDB_DOWNLOAD_SOURCES
 
 
 class TestMethods:
@@ -82,6 +83,13 @@ class TestFromUnp:
 
 
 class TestFromPDB:
+    @pytest.mark.parametrize("pdb_id", ["2WUR:A"])
+    @pytest.mark.parametrize("pdb_source", tuple(PDB_DOWNLOAD_SOURCES))
+    def test_pdb_source(self, pdb_id, pdb_source):
+        prec = ProteinRecord.from_pdb(pdb_id, pdb_source=pdb_source)
+        assert prec.pdb_id == pdb_id
+        assert prec.pdb_source == pdb_source
+
     def test_with_chain(self):
         pdb_id = "102L:A"
         prec = ProteinRecord.from_pdb(pdb_id)
@@ -209,35 +217,45 @@ class TestSave:
 
 
 class TestCache:
-    @classmethod
-    def setup_class(cls):
-        cls.CACHE_DIR = get_tmp_path("data/prec_cache")
+    @pytest.fixture(scope="class")
+    def cache_dir(self):
+        return get_tmp_path("data/prec_cache")
 
-    @pytest.mark.parametrize("pdb_id", ["1MWC:A", "4N6V:7"])
-    def test_from_pdb_with_cache(self, pdb_id):
-        prec = ProteinRecord.from_pdb(pdb_id, cache=True, cache_dir=self.CACHE_DIR)
+    @pytest.mark.parametrize("pdb_id", ["1MWC:A", "4N6V:1"])
+    @pytest.mark.parametrize("pdb_source", tuple(PDB_DOWNLOAD_SOURCES))
+    def test_from_pdb_with_cache(self, pdb_id, pdb_source, cache_dir):
+        prec = ProteinRecord.from_pdb(
+            pdb_id,
+            pdb_source=pdb_source,
+            cache=True,
+            cache_dir=cache_dir,
+            strict_unp_xref=False,
+        )
 
-        filename = f"{pdb_id.replace(':', '_')}.prec"
-        expected_filepath = self.CACHE_DIR.joinpath(filename)
+        filename = f"{prec.pdb_id.replace(':', '_')}-{pdb_source}.prec"
+        expected_filepath = cache_dir.joinpath(filename)
         assert expected_filepath.is_file()
 
         with open(str(expected_filepath), "rb") as f:
             loaded_prec = pickle.load(f)
         assert prec == loaded_prec
 
-        loaded_prec = ProteinRecord.from_cache(pdb_id, cache_dir=self.CACHE_DIR)
+        loaded_prec = ProteinRecord.from_cache(
+            prec.pdb_id, pdb_source=pdb_source, cache_dir=cache_dir
+        )
         assert prec == loaded_prec
 
     @pytest.mark.parametrize(
         "pdb_id",
-        [
-            "1B0Y:A",
-        ],
+        ["1B0Y:A", "1GRL:A"],
     )
-    def test_from_cache_non_existent_id(self, pdb_id):
-        prec = ProteinRecord.from_cache(pdb_id, cache_dir=self.CACHE_DIR)
+    @pytest.mark.parametrize("pdb_source", tuple(PDB_DOWNLOAD_SOURCES))
+    def test_from_cache_non_existent_id(self, pdb_id, pdb_source, cache_dir):
+        prec = ProteinRecord.from_cache(
+            pdb_id, pdb_source=pdb_source, cache_dir=cache_dir
+        )
 
-        filename = f"{pdb_id.replace(':', '_')}.prec"
-        expected_filepath = self.CACHE_DIR.joinpath(filename)
+        filename = f"{pdb_id.replace(':', '_')}-{pdb_source}.prec"
+        expected_filepath = cache_dir.joinpath(filename)
         assert not expected_filepath.is_file()
         assert prec is None
