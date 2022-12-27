@@ -140,19 +140,21 @@ class TestSplitIDWithEntity:
                 pdb.split_id(invalid_id)
 
 
+@pytest.fixture(params=["1MWC:A", "2WUR:A", "4N6V:1"])
+def pdb_id(request):
+    return request.param
+
+
+@pytest.fixture(params=pdb.PDB_DOWNLOAD_SOURCES.keys())
+def pdb_source(request):
+    return request.param
+
+
 @pytest.mark.skipif(NO_INTERNET, reason="Needs internet")
 class TestPDBDownload:
     @pytest.fixture(scope="class")
     def temp_path(self):
         return tests.get_tmp_path("data/pdb", clear=True)
-
-    @pytest.fixture(params=["1MWC:A", "2WUR:A"])
-    def pdb_id(self, request):
-        return request.param
-
-    @pytest.fixture(params=pdb.PDB_DOWNLOAD_SOURCES.keys())
-    def pdb_source(self, request):
-        return request.param
 
     def test_pdb_download(self, pdb_id, pdb_source, temp_path):
         path = pdb.pdb_download(pdb_id, pdb_dir=temp_path, pdb_source=pdb_source)
@@ -170,10 +172,14 @@ class TestPDBDownload:
         pdb_base_id, pdb_chain = pdb.split_id(pdb_id)
         assert pdb_base_id == struct.get_id()
 
-    def test_pdb_dict(self, pdb_id, pdb_source, temp_path):
-        pdb_dict = pdb.pdb_dict(pdb_id, pdb_dir=temp_path, pdb_source=pdb_source)
+    def test_exception_chimeric_chain(self):
+        with pytest.raises(ValueError, match="Can't determine unique uniprot id"):
+            pdb.pdb_download("3SG4:A", pdb_source=pdb.PDB_AFLD)
 
-        meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
+
+class TestPDBMetadata:
+    def test_metadata(self, pdb_id, pdb_source):
+        meta = pdb.PDBMetadata(pdb_id, pdb_source=pdb_source)
 
         pdb_base_id, pdb_chain = pdb.split_id(pdb_id)
         assert meta.pdb_id == pdb_base_id
@@ -240,3 +246,15 @@ class TestPDB2UNP:
     def test_multi_unp_for_single_chain_strict(self, test_id):
         with pytest.raises(ValueError, match="chimeric"):
             pdb.PDB2UNP.pdb_id_to_unp_id(test_id)
+
+    @pytest.mark.parametrize(
+        ("pdb_id", "unp_id"),
+        [("5LTR:A", "B1PNC0"), ("3G53:A", "P02213")],
+    )
+    def test_pdb_source(self, pdb_id, unp_id, pdb_source):
+        p2u = pdb.PDB2UNP.from_pdb(pdb_id, pdb_source=pdb_source)
+        pdb_base_id, chain_id = pdb.split_id(pdb_id)
+        actual_unp_id = p2u.get_unp_id(chain_id, strict=False)
+        # assert len(unps) == 1
+        assert actual_unp_id == unp_id
+        assert p2u.pdb_id == pdb_base_id
