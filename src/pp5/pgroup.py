@@ -22,7 +22,7 @@ from pp5.codons import UNKNOWN_AA, UNKNOWN_CODON, CODON_OPTS_SEP
 from pp5.dihedral import Dihedral
 from pp5.parallel import global_pool
 from pp5.external_dbs import pdb, pdb_api
-from pp5.external_dbs.pdb import pdb_tagged_filepath
+from pp5.external_dbs.pdb import PDB_RCSB, pdb_tagged_filepath
 
 LOGGER = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ class ProteinGroup(object):
     def from_pdb_ref(
         cls,
         ref_pdb_id: str,
+        pdb_source: str = PDB_RCSB,
         resolution_cutoff: float = pp5.get_config("DEFAULT_RES"),
         expr_sys: Optional[str] = pp5.get_config("DEFAULT_EXPR_SYS"),
         source_taxid: Optional[int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
@@ -67,6 +68,7 @@ class ProteinGroup(object):
         query.
 
         :param ref_pdb_id: PDB ID of reference structure. Should include chain.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param resolution_cutoff: Resolution query or a number specifying the
             maximal resolution value.
         :param expr_sys: Expression system query object or a a string
@@ -149,7 +151,9 @@ class ProteinGroup(object):
             f"{len(valid_pdb_entities)} query structures: "
             f"{valid_pdb_entities}"
         )
-        pgroup = cls.from_query_ids(ref_pdb_id, valid_pdb_entities, **kw_for_init)
+        pgroup = cls.from_query_ids(
+            ref_pdb_id, valid_pdb_entities, pdb_source, **kw_for_init
+        )
         LOGGER.info(
             f"{pgroup}: "
             f"#unp_ids={pgroup.num_unique_proteins} "
@@ -161,14 +165,19 @@ class ProteinGroup(object):
 
     @classmethod
     def from_query_ids(
-        cls, ref_pdb_id: str, query_pdb_ids: Iterable[str], **kw_for_init
+        cls,
+        ref_pdb_id: str,
+        query_pdb_ids: Iterable[str],
+        pdb_source: str = PDB_RCSB,
+        **kw_for_init,
     ) -> ProteinGroup:
-        return cls(ref_pdb_id, query_pdb_ids, **kw_for_init)
+        return cls(ref_pdb_id, query_pdb_ids, pdb_source, **kw_for_init)
 
     def __init__(
         self,
         ref_pdb_id: str,
         query_pdb_ids: Iterable[str],
+        pdb_source: str = PDB_RCSB,
         match_len: int = 1,
         context_len: int = 1,
         prec_cache: bool = False,
@@ -204,6 +213,7 @@ class ProteinGroup(object):
 
         :param ref_pdb_id: Reference structure PDB ID.
         :param query_pdb_ids: List of PDB IDs of query structures.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param match_len: Number of residues to include in a match. Can be either 1
         or 2. If 2, the match dihedral angles will be the cross-bond angles (phi+1,
         psi+0) between the two residues.
@@ -237,14 +247,17 @@ class ProteinGroup(object):
         the global worker process pool.
         """
         self.ref_pdb_id = ref_pdb_id.upper()
+        self.pdb_source = pdb_source
         self.ref_pdb_base_id, self.ref_pdb_chain = pdb.split_id(ref_pdb_id)
         if not self.ref_pdb_chain:
             raise ProteinInitError(
                 "ProteinGroup reference structure must specify the chain id."
             )
 
-        ref_pdb_dict = pdb.pdb_dict(self.ref_pdb_base_id)
-        ref_pdb_meta = pdb.PDBMetadata(self.ref_pdb_base_id, struct_d=ref_pdb_dict)
+        ref_pdb_dict = pdb.pdb_dict(self.ref_pdb_id, pdb_source=pdb_source)
+        ref_pdb_meta = pdb.PDBMetadata(
+            self.ref_pdb_base_id, pdb_source=pdb_source, struct_d=ref_pdb_dict
+        )
         if self.ref_pdb_chain not in ref_pdb_meta.chain_entities:
             raise ProteinInitError(f"Unknown PDB entity for {self.ref_pdb_id}")
 
@@ -328,6 +341,7 @@ class ProteinGroup(object):
 
         self.ref_prec = ProteinRecord.from_pdb(
             self.ref_pdb_id,
+            pdb_source=self.pdb_source,
             cache=self.prec_cache,
             strict_pdb_xref=self.strict_pdb_xref,
             strict_unp_xref=self.strict_unp_xref,
@@ -689,7 +703,9 @@ class ProteinGroup(object):
 
             df = df_func()
             tt = f"{csv_type}-{tag}" if tag else csv_type
-            filepath = pdb_tagged_filepath(self.ref_pdb_id, out_dir, "csv", tt)
+            filepath = pdb_tagged_filepath(
+                self.ref_pdb_id, self.pdb_source, out_dir, "csv", tt
+            )
 
             df.to_csv(
                 filepath,
@@ -736,6 +752,7 @@ class ProteinGroup(object):
         try:
             q_prec = ProteinRecord.from_pdb(
                 q_pdb_id,
+                pdb_source=self.pdb_source,
                 cache=self.prec_cache,
                 strict_pdb_xref=self.strict_pdb_xref,
                 strict_unp_xref=self.strict_unp_xref,
@@ -1007,6 +1024,7 @@ class ProteinGroup(object):
             sa = StructuralAlignment.from_pdb(
                 self.ref_pdb_id,
                 q_pdb_id,
+                pdb_source=self.pdb_source,
                 cache=True,
                 outlier_rejection_cutoff=self.sa_outlier_cutoff,
                 backbone_only=True,
