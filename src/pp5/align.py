@@ -867,6 +867,7 @@ class Arpeggio(object):
         arpeggio_command: Optional[str] = None,
         use_conda_env: Optional[str] = None,
         cache: bool = False,
+        pdb_source: str = PDB_RCSB,
     ):
         """
         :param out_dir: Output directory. JSON files will be written there with the
@@ -878,6 +879,7 @@ class Arpeggio(object):
         If this arg is provided, the arpeggio command will be run via `conda run`.
         The conda executable will be detected by from the `CONDA_EXE` env variable.
         :param cache: Whether to load arpeggio results from cache if available.
+        :param pdb_source: Source from which to obtain the pdb file.
         """
 
         self.out_dir = Path(out_dir)
@@ -973,7 +975,7 @@ class Arpeggio(object):
                 stderr=subprocess.DEVNULL,
                 text=True,
                 shell=False,
-            ).wait(timeout=1)
+            ).wait(timeout=10)
         except Exception:
             return False
 
@@ -988,12 +990,11 @@ class Arpeggio(object):
         pdb_base_id, pdb_chain_id = pdb.split_id(pdb_id)
 
         # Use cache if available
-        pdb_redo_postfix = f"-r" if pp5.get_config(CONFIG_PDB_REDO) else ""
         cached_out_filename = (
             f"{pdb_base_id.upper()}_"
             f"{pdb_chain_id.upper()}-"
-            f"i{self.interaction_cutoff:.1f}"
-            f"{pdb_redo_postfix}.json.zip"
+            f"i{self.interaction_cutoff:.1f}-"
+            f"{self.pdb_source}.json.zip"
         )
         cached_out_path = self.out_dir.absolute() / cached_out_filename
         if self.cache and cached_out_path.is_file():
@@ -1001,7 +1002,7 @@ class Arpeggio(object):
             return cached_out_path
 
         # Download structure cif file
-        pdb_cif_path = pdb.pdb_download(pdb_id)
+        pdb_cif_path = pdb.pdb_download(pdb_id, pdb_source=self.pdb_source)
 
         # Construct the command-line for the arpeggio executable
         cline = [
