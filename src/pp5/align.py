@@ -25,6 +25,8 @@ from Bio import SeqIO, AlignIO, BiopythonExperimentalWarning
 from tqdm import tqdm
 from Bio.Seq import Seq
 
+from pp5.external_dbs.pdb import PDB_RCSB
+
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", BiopythonExperimentalWarning)
     from Bio.Align import substitution_matrices
@@ -163,6 +165,7 @@ class StructuralAlignment(JSONCacheableMixin, object):
         self,
         pdb_id_1: str,
         pdb_id_2: str,
+        pdb_source: str = PDB_RCSB,
         outlier_rejection_cutoff: float = 2.0,
         backbone_only=False,
     ):
@@ -178,11 +181,16 @@ class StructuralAlignment(JSONCacheableMixin, object):
         """
         self.pdb_id_1 = pdb_id_1.upper()
         self.pdb_id_2 = pdb_id_2.upper()
+        self.pdb_source = pdb_source
         self.outlier_rejection_cutoff = outlier_rejection_cutoff
         self.backbone_only = backbone_only
 
         self.rmse, self.n_stars, mseq = structural_align(
-            pdb_id_1, pdb_id_2, outlier_rejection_cutoff, backbone_only
+            pdb_id_1,
+            pdb_id_2,
+            outlier_rejection_cutoff,
+            backbone_only,
+            pdb_source=pdb_source,
         )
 
         self.aligned_seq_1 = str(mseq[0].seq)
@@ -220,6 +228,7 @@ class StructuralAlignment(JSONCacheableMixin, object):
         filename = self._cache_filename(
             self.pdb_id_1,
             self.pdb_id_2,
+            self.pdb_source,
             self.outlier_rejection_cutoff,
             self.backbone_only,
         )
@@ -229,13 +238,14 @@ class StructuralAlignment(JSONCacheableMixin, object):
     def _cache_filename(
         pdb_id_1: str,
         pdb_id_2: str,
+        pdb_source: str,
         outlier_rejection_cutoff: float,
         backbone_only,
     ) -> str:
         pdb_ids = f"{pdb_id_1}-{pdb_id_2}".replace(":", "_").upper()
         config = f"cutoff={int(outlier_rejection_cutoff*10)}_bb={backbone_only}"
         basename = f"{pdb_ids}_{config}"
-        filename = f"{basename}.json"
+        filename = f"{basename}-{pdb_source}.json"
         return filename
 
     @staticmethod
@@ -268,20 +278,28 @@ class StructuralAlignment(JSONCacheableMixin, object):
         cls,
         pdb_id_1: str,
         pdb_id_2: str,
+        pdb_source: str = PDB_RCSB,
         cache_dir: Union[str, Path] = pp5.ALIGNMENT_DIR,
         **kw_for_init,
     ) -> Optional[StructuralAlignment]:
-        filename = cls._cache_filename(pdb_id_1, pdb_id_2, **kw_for_init)
+        filename = cls._cache_filename(pdb_id_1, pdb_id_2, pdb_source, **kw_for_init)
         return super(StructuralAlignment, cls).from_cache(cache_dir, filename)
 
     @classmethod
-    def from_pdb(cls, pdb_id1: str, pdb_id2: str, cache=False, **kw_for_init):
+    def from_pdb(
+        cls,
+        pdb_id1: str,
+        pdb_id2: str,
+        pdb_source: str = PDB_RCSB,
+        cache=False,
+        **kw_for_init,
+    ):
         if cache:
-            sa = cls.from_cache(pdb_id1, pdb_id2, **kw_for_init)
+            sa = cls.from_cache(pdb_id1, pdb_id2, pdb_source, **kw_for_init)
             if sa is not None:
                 return sa
 
-        sa = cls(pdb_id1, pdb_id2, **kw_for_init)
+        sa = cls(pdb_id1, pdb_id2, pdb_source, **kw_for_init)
         sa.save()
         return sa
 
@@ -291,17 +309,20 @@ def structural_align(
     pdb_id2: str,
     outlier_rejection_cutoff: float,
     backbone_only,
+    pdb_source: str = PDB_RCSB,
     **pymol_align_kwargs,
 ) -> Tuple[float, int, MSA]:
     """
     Aligns two structures using PyMOL, both in terms of pairwise sequence
     alignment and in terms of structural superposition.
+
     :param pdb_id1: First structure id, which can include the chain id (e.g. '1ABC:A').
     :param pdb_id2: Second structure id, can include the chain id.
     :param outlier_rejection_cutoff: Outlier rejection cutoff in RMS,
         determines which residues are considered a structural match (star).
     :param backbone_only: Whether to only align using backbone atoms from the two
         structures.
+    :param pdb_source: Source from which to obtain the pdb file.
     :return: Tuple of (rmse, n_stars, mseq), where rmse is in Angstroms and
         represents the average structural alignment error; n_stars is the number of
         residues aligned within the cutoff (non outliers, marked with a star in
@@ -316,7 +337,7 @@ def structural_align(
     try:
         for i, pdb_id in enumerate([pdb_id1, pdb_id2]):
             base_id, chain_id = pdb.split_id(pdb_id)
-            path = pdb.pdb_download(base_id)
+            path = pdb.pdb_download(pdb_id, pdb_source=pdb_source)
 
             object_id = f"{base_id}-{i}"  # in case both ids are equal
             with out_redirected("stdout"):  # suppress pymol printouts
@@ -863,6 +884,7 @@ class Arpeggio(object):
         self.interaction_cutoff = interaction_cutoff
         self.arpeggio_command = arpeggio_command or "arpeggio"
         self.cache = cache
+        self.pdb_source = pdb_source
 
         if use_conda_env:
             # Use conda run to execute the arpeggio command in the specified conda env.
