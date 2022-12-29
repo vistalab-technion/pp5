@@ -36,7 +36,6 @@ from Bio.SeqRecord import SeqRecord
 from Bio.Align.Applications import ClustalOmegaCommandline
 
 import pp5
-from pp5 import CONFIG_PDB_REDO
 from pp5.utils import JSONCacheableMixin, out_redirected
 from pp5.external_dbs import pdb
 
@@ -534,6 +533,7 @@ class ProteinBLAST(object):
                 f"Must specify a chain for BLAST alignment, " f"got {query_pdb_id}"
             )
 
+        # Note: no need for pdb_source, we just care about what chains exist
         meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
 
         if chain_id not in meta.chain_entities:
