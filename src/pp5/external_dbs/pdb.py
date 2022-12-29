@@ -20,7 +20,7 @@ from Bio.PDB.Polypeptide import standard_aa_names
 from Bio.PDB.PDBExceptions import PDBConstructionWarning, PDBConstructionException
 
 import pp5
-from pp5 import PDB_DIR, CONFIG_PDB_REDO, get_resource_path
+from pp5 import PDB_DIR, get_resource_path
 from pp5.utils import JSONCacheableMixin, remote_dl
 from pp5.external_dbs import pdb_api
 
@@ -47,6 +47,7 @@ PDB_DOWNLOAD_SOURCES: Dict[str, str] = {
 }
 
 PDB_MMCIF_ENTRY_ID = "_entry.id"
+PDB_MMCIF_PDB_SOURCE = "_pdb_source"
 ALPHAFOLD_ID_PREFIX = "AF"
 
 LOGGER = logging.getLogger(__name__)
@@ -181,7 +182,12 @@ def pdb_dict(
 
     # No need to re-parse the file if we have a matching struct dict
     id_from_struct_d = struct_d[PDB_MMCIF_ENTRY_ID][0].upper() if struct_d else None
-    if id_from_struct_d and id_from_struct_d == pdb_base_id:
+    source_from_struct_d = struct_d[PDB_MMCIF_PDB_SOURCE] if struct_d else None
+    if (
+        id_from_struct_d
+        and id_from_struct_d == pdb_base_id
+        and source_from_struct_d == pdb_source
+    ):
         return struct_d
 
     filename = pdb_download(pdb_id, pdb_dir=pdb_dir, pdb_source=pdb_source)
@@ -193,6 +199,9 @@ def pdb_dict(
     id_from_struct_d = struct_d[PDB_MMCIF_ENTRY_ID][0].upper()
     if id_from_struct_d.startswith(ALPHAFOLD_ID_PREFIX):
         struct_d[PDB_MMCIF_ENTRY_ID].insert(0, pdb_base_id)
+
+    # Save the source from which this data was obtained
+    struct_d[PDB_MMCIF_PDB_SOURCE] = pdb_source
 
     return struct_d
 
