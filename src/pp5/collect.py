@@ -21,13 +21,13 @@ from Bio.Align import PairwiseAligner
 
 import pp5
 import pp5.parallel
-from pp5 import CONFIG_PDB_REDO
 from pp5.prec import ProteinRecord
 from pp5.align import DEFAULT_ARPEGGIO_ARGS as ARPEGGIO_ARGS
 from pp5.align import Arpeggio, ProteinBLAST
 from pp5.utils import ReprJSONEncoder, ProteinInitError, elapsed_seconds_to_dhms
 from pp5.pgroup import ProteinGroup
 from pp5.external_dbs import pdb, unp, pdb_api
+from pp5.external_dbs.pdb import PDB_RCSB
 from pp5.external_dbs.unp import unp_record
 
 LOGGER = logging.getLogger(__name__)
@@ -47,6 +47,7 @@ COL_R_WORK = "r_work"
 COL_SPACE_GROUP = "space_group"
 COL_CG_PH = "cg_ph"
 COL_CG_TEMP = "cg_temp"
+COL_PDB_SOURCE = "pdb_source"
 COL_REJECTED_BY = "rejected_by"
 COL_NUM_CONFORMATIONS = "num_conformations"
 
@@ -74,6 +75,7 @@ class ParallelDataCollector(abc.ABC):
         tag: str = None,
         async_timeout: float = None,
         create_zip=True,
+        pdb_source: str = PDB_RCSB,
     ):
         """
         :param id: Unique id of this collection. If None, will be generated
@@ -84,6 +86,7 @@ class ParallelDataCollector(abc.ABC):
         :param async_timeout: Timeout for async results.
         :param create_zip: Whether to create a zip file with all the result
         files.
+        :param pdb_source: Source from which to obtain the pdb file.
         """
         hostname = socket.gethostname()
         if hostname:
@@ -95,7 +98,7 @@ class ParallelDataCollector(abc.ABC):
         self.out_tag = tag
         self.async_timeout = async_timeout
         self.create_zip = create_zip
-        self.pdb_redo = pp5.get_config(CONFIG_PDB_REDO)
+        self.pdb_source = pdb_source
 
         if id:
             self.id = id
@@ -290,6 +293,7 @@ class ProteinRecordCollector(ParallelDataCollector):
 
     def __init__(
         self,
+        pdb_source: str = PDB_RCSB,
         resolution: float = pp5.get_config("DEFAULT_RES"),
         r_free: Optional[float] = pp5.get_config("DEFAULT_RFREE"),
         expr_sys: Optional[str] = pp5.get_config("DEFAULT_EXPR_SYS"),
@@ -309,6 +313,8 @@ class ProteinRecordCollector(ParallelDataCollector):
         """
         Collects ProteinRecords based on a PDB query results, and saves them
         in the local cache folder. Optionally also writes them to CSV.
+
+        :param pdb_source: Source from which to obtain the pdb file.
         :param resolution: Resolution cutoff value in Angstroms.
         :param expr_sys: Expression system name.
         :param source_taxid: Taxonomy ID of source organism.
@@ -333,7 +339,11 @@ class ProteinRecordCollector(ParallelDataCollector):
             process result.
         """
         super().__init__(
-            async_timeout=async_timeout, out_dir=out_dir, tag=out_tag, create_zip=False
+            async_timeout=async_timeout,
+            out_dir=out_dir,
+            tag=out_tag,
+            create_zip=False,
+            pdb_source=pdb_source,
         )
         if resolution is None:
             raise ValueError("Must specify resolution cutoff for collection")
@@ -413,7 +423,7 @@ class ProteinRecordCollector(ParallelDataCollector):
 
         async_results = []
         for i, pdb_id in enumerate(pdb_ids):
-            args = (pdb_id, (i, n_structs))
+            args = (pdb_id, self.pdb_source, (i, n_structs))
             kwds = dict(
                 csv_out_dir=self.prec_out_dir if self.write_csv else None,
                 with_backbone=self.with_backbone,
@@ -586,7 +596,7 @@ class ProteinRecordCollector(ParallelDataCollector):
                 async_results.append(
                     pool.apply_async(
                         _load_prec_df_from_cache,
-                        args=(pdb_id,),
+                        args=(pdb_id, self.pdb_source),
                         kwds=dict(
                             with_backbone=self.with_backbone,
                             with_contacts=ARPEGGIO_ARGS if self.with_contacts else None,
@@ -620,6 +630,7 @@ class ProteinGroupCollector(ParallelDataCollector):
     def __init__(
         self,
         resolution: float,
+        pdb_source: str = PDB_RCSB,
         expr_sys: str = pp5.get_config("DEFAULT_EXPR_SYS"),
         source_taxid: int = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         evalue_cutoff: float = 1.0,
@@ -642,7 +653,9 @@ class ProteinGroupCollector(ParallelDataCollector):
         """
         Collects ProteinGroup reference structures based on a PDB query
         results.
+
         :param resolution: Resolution cutoff value in Angstroms.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param expr_sys: Expression system name.
         :param source_taxid: Taxonomy ID of source organism.
         :param evalue_cutoff: Maximal expectation value allowed for BLAST
@@ -688,6 +701,7 @@ class ProteinGroupCollector(ParallelDataCollector):
             tag=out_tag,
             async_timeout=async_timeout,
             create_zip=create_zip,
+            pdb_source=pdb_source,
         )
 
         self.resolution = float(resolution)
@@ -772,7 +786,7 @@ class ProteinGroupCollector(ParallelDataCollector):
 
             async_results = []
             for i, pdb_id in enumerate(pdb_ids):
-                args = (pdb_id, (i, n_structs))
+                args = (pdb_id, self.pdb_source, (i, n_structs))
                 r = pool.apply_async(_collect_single_structure, args=args)
                 async_results.append(r)
 
@@ -865,6 +879,7 @@ class ProteinGroupCollector(ParallelDataCollector):
             args = (
                 ref_pdb_id,
                 all_pdb_ids,
+                self.pdb_source,
                 blast,
                 self.b_max,
                 self.sa_outlier_cutoff,
@@ -944,7 +959,8 @@ class ProteinGroupCollector(ParallelDataCollector):
 
 def _collect_single_structure(
     pdb_id: str,
-    idx: tuple = (0, 0),
+    pdb_source: str,
+    idx: tuple,
     csv_out_dir: Optional[Path] = None,
     csv_tag: str = None,
     with_backbone: bool = False,
@@ -952,7 +968,9 @@ def _collect_single_structure(
 ) -> List[dict]:
     """
     Downloads a single PDB entry, and creates a prec for all its chains.
+
     :param pdb_id: The PDB id to download.
+    :param pdb_source: Source from which to obtain the pdb file.
     :param idx: Index for logging; should be a tuple of (current, total).
     :param csv_out_dir: If provided, the prec of each chain will be written to CSV at
         this path.
@@ -964,11 +982,13 @@ def _collect_single_structure(
     :return: A list of dicts, each containing metadata about one of the collected
         chains.
     """
-    pdb_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
+    pdb_base_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
 
-    pdb_dict = pdb.pdb_dict(pdb_id)
-    meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
-    pdb2unp = pdb.PDB2UNP.from_pdb(pdb_id, cache=True, struct_d=pdb_dict)
+    pdb_dict = pdb.pdb_dict(pdb_id, pdb_source=pdb_source)
+    pdb2unp = pdb.PDB2UNP.from_pdb(
+        pdb_id, cache=True, pdb_source=pdb_source, struct_d=pdb_dict
+    )
+    meta = pdb.PDBMetadata(pdb_id, pdb_source=pdb_source, struct_d=pdb_dict)
 
     # If we got an entity id instead of chain, discover the chain.
     if entity_id:
@@ -986,7 +1006,7 @@ def _collect_single_structure(
 
     chain_data = []
     for chain_id in all_chains:
-        pdb_id_full = f"{pdb_id}:{chain_id}"
+        pdb_id_full = f"{pdb_base_id}:{chain_id}"
 
         # Skip chains with no Uniprot ID
         if chain_id not in pdb2unp:
@@ -999,7 +1019,6 @@ def _collect_single_structure(
             continue
 
         unp_id = pdb2unp.get_unp_id(chain_id)
-        resolution = meta.resolution
         seq_len = len(meta.entity_sequence[meta.chain_entities[chain_id]])
 
         # Create a ProteinRecord and save it so it's cached for when we
@@ -1010,6 +1029,7 @@ def _collect_single_structure(
             prec = ProteinRecord(
                 unp_id,
                 pdb_id_full,
+                pdb_source=pdb_source,
                 pdb_dict=pdb_dict,
                 strict_unp_xref=False,
                 numeric_chain=nc,
@@ -1019,7 +1039,7 @@ def _collect_single_structure(
             prec.save()
 
             if with_contacts:
-                arpeggio = Arpeggio(**with_contacts)
+                arpeggio = Arpeggio(**with_contacts, pdb_source=pdb_source)
                 _ = arpeggio.contact_df(pdb_id_full)
 
             # Write CSV if requested
@@ -1042,7 +1062,7 @@ def _collect_single_structure(
                 COL_UNP_ID: prec.unp_id,
                 COL_PDB_ID: prec.pdb_id,
                 COL_ENA_ID: prec.ena_id,
-                COL_RESOLUTION: resolution,
+                COL_RESOLUTION: meta.resolution,
                 COL_SEQ_LEN: seq_len,
                 COL_DESCRIPTION: meta.description,
                 COL_DEPOSITION_DATE: meta.deposition_date,
@@ -1055,6 +1075,7 @@ def _collect_single_structure(
                 COL_SPACE_GROUP: meta.space_group,
                 COL_CG_PH: meta.cg_ph,
                 COL_CG_TEMP: meta.cg_temp,
+                COL_PDB_SOURCE: pdb_source,
             }
         )
 
@@ -1127,6 +1148,7 @@ def _pairwise_align_unp(
 def _collect_single_pgroup(
     ref_pdb_id: str,
     all_pdb_ids: Set[str],
+    pdb_source: str,
     blast: ProteinBLAST,
     b_max: float,
     sa_outlier_cutoff: float,
@@ -1163,6 +1185,7 @@ def _collect_single_pgroup(
         # exact ids of the query structures.
         pgroup = ProteinGroup.from_query_ids(
             ref_pdb_id,
+            pdb_source=pdb_source,
             query_pdb_ids=query_pdb_ids,
             b_max=b_max,
             sa_outlier_cutoff=sa_outlier_cutoff,
@@ -1207,11 +1230,12 @@ def _collect_single_pgroup(
 
 def _load_prec_df_from_cache(
     pdb_id: str,
+    pdb_source: str,
     with_backbone: bool = False,
     with_contacts: Optional[Dict] = None,
 ):
     try:
-        prec = ProteinRecord.from_pdb(pdb_id, cache=True)
+        prec = ProteinRecord.from_pdb(pdb_id, pdb_source=pdb_source, cache=True)
         df = prec.to_dataframe(
             with_ids=True, with_backbone=with_backbone, with_contacts=with_contacts
         )
