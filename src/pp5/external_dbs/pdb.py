@@ -577,6 +577,9 @@ class PDBMetadata(object):
         pdb_base_id, chain_id = split_id(pdb_id)
         struct_d = pdb_dict(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
 
+        # For alphafold structures, default to zero resolution instead of NaN.
+        default_res = 0.0 if pdb_source == PDB_AFLD else None
+
         def _meta(key: str, convert_to: Type = str, default=None):
             val = struct_d.get(key, None)
             if not val:
@@ -604,8 +607,8 @@ class PDBMetadata(object):
 
         host_org = _meta("_entity_src_gen.pdbx_host_org_scientific_name")
         host_org_id = _meta("_entity_src_gen.pdbx_host_org_ncbi_taxonomy_id", int)
-        resolution = _meta("_refine.ls_d_res_high", float)
-        resolution_low = _meta("_refine.ls_d_res_low", float)
+        resolution = _meta("_refine.ls_d_res_high", float, default=default_res)
+        resolution_low = _meta("_refine.ls_d_res_low", float, default=default_res)
         r_free = _meta("_refine.ls_R_factor_R_free", float)
         r_work = _meta("_refine.ls_R_factor_R_work", float)
         space_group = _meta("_symmetry.space_group_name_H-M")
