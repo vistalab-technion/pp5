@@ -520,7 +520,7 @@ class ProteinRecord(object):
             f"{self}: {self.pdb_meta.description}, "
             f"org={self.pdb_meta.src_org} ({self.pdb_meta.src_org_id}), "
             f"expr={self.pdb_meta.host_org} ({self.pdb_meta.host_org_id}), "
-            f"res={self.pdb_meta.resolution or 0:.2f}Å, "
+            f"res={self.pdb_meta.resolution:.2f}Å, "
             f"entity_id={self.pdb_meta.chain_entities[self.pdb_chain_id]}"
         )
 
