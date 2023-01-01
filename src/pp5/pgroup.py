@@ -22,7 +22,7 @@ from pp5.codons import UNKNOWN_AA, UNKNOWN_CODON, CODON_OPTS_SEP
 from pp5.dihedral import Dihedral
 from pp5.parallel import global_pool
 from pp5.external_dbs import pdb, pdb_api
-from pp5.external_dbs.pdb import PDB_RCSB, pdb_tagged_filepath
+from pp5.external_dbs.pdb import PDB_AFLD, PDB_RCSB, pdb_tagged_filepath
 
 LOGGER = logging.getLogger(__name__)
 
@@ -184,7 +184,8 @@ class ProteinGroup(object):
         sa_outlier_cutoff: float = 2.0,
         sa_max_all_atom_rmsd: float = 2.0,
         sa_min_aligned_residues: int = 50,
-        b_max: float = math.inf,
+        b_max: float = 50.0,
+        plddt_min: float = 70.0,
         angle_aggregation="circ",
         compare_contacts: bool = False,
         strict_codons: bool = True,
@@ -229,7 +230,9 @@ class ProteinGroup(object):
         required to include a structure in a group.
         :param b_max: Maximal b-factor a residue can have
         (backbone-atom average) in order for it to be included in a match
-        group.
+        group. Only relevant if pdb_source is not af (alphafold).
+        :param plddt_min: Minimal pLDDT value a residue can have in order for it to
+        be included in a match. Only relevant if pdb_source is af (alphafold).
         :param angle_aggregation: Method for angle-aggregation of matching
         query residues of each reference residue. Options are
         'circ' - Circular mean;
@@ -275,11 +278,18 @@ class ProteinGroup(object):
         self.sa_max_all_atom_rmsd = sa_max_all_atom_rmsd
         self.sa_min_aligned_residues = sa_min_aligned_residues
         self.b_max = b_max
+        self.plddt_min = plddt_min
         self.prec_cache = prec_cache
         self.compare_contacts = compare_contacts
         self.strict_codons = strict_codons
         self.strict_pdb_xref = strict_pdb_xref
         self.strict_unp_xref = strict_unp_xref
+
+        # Only one of these is relevant
+        if pdb_source == PDB_AFLD:
+            self.b_max = None
+        else:
+            self.plddt_min = None
 
         angle_aggregation_methods = {
             "circ": self._aggregate_fn_circ,
@@ -883,10 +893,21 @@ class ProteinGroup(object):
             # Make sure we have all the required information per match residue
             if UNKNOWN_AA in [*r_names, *q_names]:
                 continue
-            if any(b > self.b_max for b in [*r_bfactors, *q_bfactors]):
+
+            if self.b_max is not None and any(
+                b > self.b_max for b in [*r_bfactors, *q_bfactors]
+            ):
                 continue
+
+            # for AF structures, the bfactor field actually contains pLDDT scores
+            if self.plddt_min is not None and any(
+                plddt < self.plddt_min for plddt in [*r_bfactors, *q_bfactors]
+            ):
+                continue
+
             if self.strict_codons and UNKNOWN_CODON in [*r_codons, *q_codons]:
                 continue
+
             if self.strict_codons and any(
                 cscore < 1 for cscore in [*r_cscores, *q_cscores]
             ):
