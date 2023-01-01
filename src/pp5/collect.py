@@ -635,7 +635,8 @@ class ProteinGroupCollector(ParallelDataCollector):
         source_taxid: int = pp5.get_config("DEFAULT_SOURCE_TAXID"),
         evalue_cutoff: float = 1.0,
         identity_cutoff: float = 30.0,
-        b_max: float = 30.0,
+        b_max: float = 50.0,
+        plddt_min: float = 70.0,
         sa_outlier_cutoff: float = 2.0,
         angle_aggregation: str = "circ",
         match_len: int = 2,
@@ -665,7 +666,9 @@ class ProteinGroupCollector(ParallelDataCollector):
         pgroups.
         :param b_max: Maximal b-factor a residue can have
         (backbone-atom average) in order for it to be included in a match
-        group. None means no limit.
+        group. Only relevant if pdb_source is not af (alphafold).
+        :param plddt_min: Minimal pLDDT value a residue can have in order for it to
+        be included in a match. Only relevant if pdb_source is af (alphafold).
         :param sa_outlier_cutoff: RMS cutoff for determining outliers in
         structural alignment.
         :param angle_aggregation: Method for angle-aggregation of matching
@@ -724,6 +727,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         self.evalue_cutoff = evalue_cutoff
         self.identity_cutoff = identity_cutoff
         self.b_max = b_max
+        self.plddt_min = plddt_min
         self.sa_outlier_cutoff = sa_outlier_cutoff
         self.angle_aggregation = angle_aggregation
         self.match_len = match_len
@@ -882,6 +886,7 @@ class ProteinGroupCollector(ParallelDataCollector):
                 self.pdb_source,
                 blast,
                 self.b_max,
+                self.plddt_min,
                 self.sa_outlier_cutoff,
                 self.angle_aggregation,
                 self.match_len,
@@ -1151,6 +1156,7 @@ def _collect_single_pgroup(
     pdb_source: str,
     blast: ProteinBLAST,
     b_max: float,
+    plddt_min: float,
     sa_outlier_cutoff: float,
     angle_aggregation: str,
     match_len: int,
@@ -1163,7 +1169,7 @@ def _collect_single_pgroup(
 ) -> Optional[dict]:
     try:
         LOGGER.info(
-            f"Creating ProteinGroup for {ref_pdb_id}, {b_max=} "
+            f"Creating ProteinGroup for {ref_pdb_id}, {b_max=}/{plddt_min=} "
             f"({idx[0] + 1}/{idx[1]})"
         )
 
@@ -1188,6 +1194,7 @@ def _collect_single_pgroup(
             pdb_source=pdb_source,
             query_pdb_ids=query_pdb_ids,
             b_max=b_max,
+            plddt_min=plddt_min,
             sa_outlier_cutoff=sa_outlier_cutoff,
             angle_aggregation=angle_aggregation,
             match_len=match_len,
