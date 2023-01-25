@@ -4,11 +4,10 @@ channels:
   - schrodinger # pymol
   - bioconda    # clustal, muscle, blast
   - salilab     # dssp
-  - defaults
 dependencies:
   # Basic
   - pip
-  - python=3.8.*
+  - python=3.9.*
   # Development
   - black
   - ipython

@@ -4,6 +4,7 @@ import pytest
 
 from tests import get_tmp_path
 from pp5.align import Arpeggio
+from pp5.external_dbs.pdb import PDB_DOWNLOAD_SOURCES
 
 CONDA_ENV_NAME = "arpeggio"
 
@@ -12,13 +13,16 @@ CONDA_ENV_NAME = "arpeggio"
     not Arpeggio.can_execute(use_conda_env=CONDA_ENV_NAME), reason="no arpeggio"
 )
 class TestArpeggio:
-    @pytest.fixture(autouse=True)
-    def setup(self):
+    @pytest.fixture(autouse=True, params=[*PDB_DOWNLOAD_SOURCES.keys()])
+    def setup(self, request):
+        pdb_source = request.param
+
         self.arpeggio = Arpeggio(
             out_dir=get_tmp_path("arpeggio", clear=True),
             interaction_cutoff=0.1,
             use_conda_env=CONDA_ENV_NAME,
             cache=True,
+            pdb_source=pdb_source,
         )
 
     def test_no_chain(self):

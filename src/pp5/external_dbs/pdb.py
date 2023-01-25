@@ -20,7 +20,7 @@ from Bio.PDB.Polypeptide import standard_aa_names
 from Bio.PDB.PDBExceptions import PDBConstructionWarning, PDBConstructionException
 
 import pp5
-from pp5 import PDB_DIR, CONFIG_PDB_REDO, get_resource_path
+from pp5 import PDB_DIR, get_resource_path
 from pp5.utils import JSONCacheableMixin, remote_dl
 from pp5.external_dbs import pdb_api
 
@@ -31,8 +31,24 @@ PDB_ID_PATTERN = re.compile(
 
 STANDARD_ACID_NAMES = set(standard_aa_names)
 
-PDB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{}.cif.gz"
-PDB_REDO_DOWNLOAD_URL_TEMPLATE = "https://pdb-redo.eu/db/{0}/{0}_final.cif"
+PDB_RCSB = "rc"
+PDB_RCSB_DOWNLOAD_URL_TEMPLATE = r"https://files.rcsb.org/download/{pdb_id}.cif.gz"
+PDB_REDO = "re"
+PDB_REDO_DOWNLOAD_URL_TEMPLATE = "https://pdb-redo.eu/db/{pdb_id}/{pdb_id}_final.cif"
+PDB_AFLD = "af"
+PDB_AFLD_DOWNLOAD_URL_TEMPLATE = (
+    "https://alphafold.ebi.ac.uk/files/AF-{unp_id}-F1-model_v4.cif"
+)
+
+PDB_DOWNLOAD_SOURCES: Dict[str, str] = {
+    PDB_RCSB: PDB_RCSB_DOWNLOAD_URL_TEMPLATE,
+    PDB_REDO: PDB_REDO_DOWNLOAD_URL_TEMPLATE,
+    PDB_AFLD: PDB_AFLD_DOWNLOAD_URL_TEMPLATE,
+}
+
+PDB_MMCIF_ENTRY_ID = "_entry.id"
+PDB_MMCIF_PDB_SOURCE = "_pdb_source"
+ALPHAFOLD_ID_PREFIX = "AF"
 
 LOGGER = logging.getLogger(__name__)
 
@@ -70,78 +86,129 @@ def split_id_with_entity(pdb_id) -> Tuple[str, str, Optional[str]]:
     return match.group("id"), match.group("chain"), match.group("entity")
 
 
-def pdb_download(pdb_id: str, pdb_dir=PDB_DIR) -> Path:
+def pdb_download(pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB) -> Path:
     """
     Downloads a protein structure file from PDB.
     :param pdb_id: The id of the structure to download.
     :param pdb_dir: Directory to download PDB file to.
+    :param pdb_source: Source from which to obtain the pdb file.
     """
     # Separate id and chain if chain was specified
-    pdb_id, chain_id = split_id(pdb_id)
+    pdb_id, chain_id, entity_id = split_id_with_entity(pdb_id)
 
-    pdb_id = pdb_id.lower()
+    if pdb_source not in PDB_DOWNLOAD_SOURCES:
+        raise ValueError(
+            f"Unknown {pdb_source=}, must be one of {tuple(PDB_DOWNLOAD_SOURCES)}"
+        )
 
-    # Try PDB REDO first
-    if pp5.get_config(CONFIG_PDB_REDO):
-        url = PDB_REDO_DOWNLOAD_URL_TEMPLATE.format(pdb_id)
-        filename = get_resource_path(pdb_dir, f"{pdb_id}-r.cif")
-        uncompress = False
+    download_url_template = PDB_DOWNLOAD_SOURCES[pdb_source]
+    if "unp_id" in download_url_template:
+        # The alphafold source requires downloading the data based on the uniprot id
+        unp_ids = None
+        if not chain_id:
+            if not entity_id:
+                raise ValueError(f"Chain or entity must be specified for {pdb_source=}")
 
-        try:
-            return remote_dl(
-                url, filename, uncompress=uncompress, skip_existing=True, retries=1
+            # Obtain uniprot ids from entity
+            entity_chains: dict = PDB2UNP.query_all_uniprot_ids(
+                pdb_id, map_from_entities=True
+            ).get(entity_id, {})
+            if not entity_chains:
+                raise ValueError(f"Failed to obtain chain for {pdb_id}:{entity_id}")
+            chain_id = [*entity_chains.keys()][0]  # arbitrary chain from the entity
+            unp_ids = entity_chains[chain_id]
+
+        filename = get_resource_path(
+            pdb_dir, f"{pdb_id}_{chain_id}-{pdb_source}.cif".lower()
+        )
+        if filename.is_file():  # to prevent unnecessary API call if the file exists
+            return filename
+
+        # Get uniprot id for this chain (only if we didn't get them from entity)
+        unp_ids = unp_ids or PDB2UNP.query_all_uniprot_ids(pdb_id).get(chain_id, [])
+        if len(unp_ids) != 1:
+            raise ValueError(
+                f"Can't determine unique uniprot id for {pdb_id}:{chain_id}, "
+                f"got {unp_ids=}"
             )
-        except Exception as e:
-            LOGGER.warning(
-                f"Failed to obtain {pdb_id=} from PDB REDO {url=}, "
-                f"falling back to PDB"
-            )
+        unp_id = unp_ids[0]
+        download_url = download_url_template.format(unp_id=unp_id)
 
-    # Fallback to normal PDB
-    url = PDB_DOWNLOAD_URL_TEMPLATE.format(pdb_id)
-    filename = get_resource_path(pdb_dir, f"{pdb_id}.cif")
-    uncompress = True
-    return remote_dl(url, filename, uncompress=uncompress, skip_existing=True)
+    else:
+        filename = get_resource_path(pdb_dir, f"{pdb_id}-{pdb_source}.cif".lower())
+        download_url = download_url_template.format(pdb_id=pdb_id).lower()
+
+    uncompress = download_url.endswith(("gz", "gzip", "zip"))
+    return remote_dl(
+        download_url, filename, uncompress=uncompress, skip_existing=True, retries=1
+    )
 
 
-def pdb_struct(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> PDBRecord:
+def pdb_struct(
+    pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB, struct_d=None
+) -> PDBRecord:
     """
     Given a PDB structure id, returns an object representing the protein
     structure.
     :param pdb_id: The PDB id of the structure.
     :param pdb_dir: Directory to download PDB file to.
+    :param pdb_source: Source from which to obtain the pdb file.
     :param struct_d: Optional dict containing the parsed structure as a
     dict. If provided, the file wont have to be re-parsed.
     :return: An biopython PDB Structure object.
     """
-    pdb_id, chain_id = split_id(pdb_id)
-    filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
+    pdb_base_id, chain_id = split_id(pdb_id)
+    filename = pdb_download(pdb_id, pdb_dir=pdb_dir, pdb_source=pdb_source)
 
     # Parse the PDB file into a Structure object
-    LOGGER.info(f"Loading PDB file {filename}...")
+    LOGGER.info(f"Parsing struct from PDB file {filename}...")
     parser = CustomMMCIFParser()
-    return parser.get_structure(pdb_id, filename, mmcif_dict=struct_d)
+    return parser.get_structure(pdb_base_id, filename, mmcif_dict=struct_d)
 
 
-def pdb_dict(pdb_id: str, pdb_dir=PDB_DIR, struct_d=None) -> dict:
+def pdb_dict(
+    pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB, struct_d=None
+) -> dict:
     """
     Returns a dictionary containing all the contents of a PDB mmCIF file.
     :param pdb_id: The PDB id of the structure.
     :param pdb_dir: Directory to download PDB file to.
+    :param pdb_source: Source from which to obtain the pdb file.
     :param struct_d: Optional dict of the structure if it was already loaded.
     This parameter exists to streamline other functions that use this one in
     case the file was already parsed.
     """
-    pdb_id, chain_id = split_id(pdb_id)
+    pdb_base_id, chain_id = split_id(pdb_id)
+
     # No need to re-parse the file if we have a matching struct dict
-    if struct_d and struct_d["_entry.id"][0].upper() == pdb_id:
+    id_from_struct_d = struct_d[PDB_MMCIF_ENTRY_ID][0].upper() if struct_d else None
+    source_from_struct_d = struct_d[PDB_MMCIF_PDB_SOURCE] if struct_d else None
+    if (
+        id_from_struct_d
+        and id_from_struct_d == pdb_base_id
+        and source_from_struct_d == pdb_source
+    ):
         return struct_d
 
-    filename = pdb_download(pdb_id, pdb_dir=pdb_dir)
-    return MMCIF2Dict.MMCIF2Dict(filename)
+    filename = pdb_download(pdb_id, pdb_dir=pdb_dir, pdb_source=pdb_source)
+
+    LOGGER.info(f"Parsing dict from PDB file {filename}...")
+    struct_d = MMCIF2Dict.MMCIF2Dict(filename)
+
+    # For alphafold structures, the id will be a uniprot id; add the pdb id.
+    id_from_struct_d = struct_d[PDB_MMCIF_ENTRY_ID][0].upper()
+    if id_from_struct_d.startswith(ALPHAFOLD_ID_PREFIX):
+        struct_d[PDB_MMCIF_ENTRY_ID].insert(0, pdb_base_id)
+
+    # Save the source from which this data was obtained
+    struct_d[PDB_MMCIF_PDB_SOURCE] = pdb_source
+
+    return struct_d
 
 
-def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
+def pdb_to_secondary_structure(
+    pdb_id: str, pdb_source: str = PDB_RCSB, pdb_dir=PDB_DIR
+):
     """
     Uses DSSP to determine secondary structure for a PDB record.
     The DSSP codes for secondary structure used here are:
@@ -154,13 +221,14 @@ def pdb_to_secondary_structure(pdb_id: str, pdb_dir=PDB_DIR):
      S        Bend
      -        None
     :param pdb_id: The PDB id of the structure.
+    :param pdb_source: Source from which to obtain the pdb file.
     :param pdb_dir: Directory to download PDB file to.
     :return: A tuple of
         ss_dict: maps from a residue id to the 1-char string denoting the
         type of secondary structure at that residue.
         keys: The residue ids.
     """
-    path = pdb_download(pdb_id, pdb_dir)
+    path = pdb_download(pdb_id, pdb_dir, pdb_source)
 
     try:
         with warnings.catch_warnings(record=True) as ws:
@@ -185,15 +253,16 @@ class PDB2UNP(JSONCacheableMixin, object):
     to that chain, and their locations in the PDB sequence.
     """
 
-    def __init__(self, pdb_id: str, struct_d: dict = None):
+    def __init__(self, pdb_id: str, pdb_source: str = PDB_RCSB, struct_d: dict = None):
         """
         Initialize a PDB to Uniprot mapping.
         :param pdb_id: PDB ID, without chain. Chain will be ignored if
         specified.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param struct_d: Optional parsed PDB file dict.
         """
-        pdb_id, _ = split_id(pdb_id)
-        struct_d = pdb_dict(pdb_id, struct_d=struct_d)
+        pdb_base_id, _ = split_id(pdb_id)
+        struct_d = pdb_dict(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
 
         # Get all chain Uniprot IDs by querying PDB. This gives us the most
         # up to date IDs, but it doesn't provide alignment info between the
@@ -203,7 +272,7 @@ class PDB2UNP(JSONCacheableMixin, object):
 
         # Get Uniprot cross-refs from the PDB file. Map is
         # chain -> unp -> [ (s1,e1), (s2, e2), ... ]
-        chain_to_unp_xrefs = self.parse_all_uniprot_xrefs(pdb_id, struct_d)
+        chain_to_unp_xrefs = self.parse_all_uniprot_xrefs(pdb_id, pdb_source, struct_d)
 
         # Make sure all Uniprot IDs we got from the PDB API exist in our
         # final dict and appear in the order we got them from the PDB API.
@@ -218,7 +287,7 @@ class PDB2UNP(JSONCacheableMixin, object):
                 curr_chain_xrefs.setdefault(unp_id, [])
                 curr_chain_xrefs.move_to_end(unp_id, last=False)
 
-        self.pdb_id = pdb_id
+        self.pdb_id = pdb_base_id
         self.chain_to_unp_xrefs = chain_to_unp_xrefs
 
     def get_unp_id(self, chain_id: str, strict=True) -> str:
@@ -304,16 +373,23 @@ class PDB2UNP(JSONCacheableMixin, object):
         return f"PDB2UNP({self.pdb_id})={self.get_chain_to_unp_ids()}"
 
     @staticmethod
-    def query_all_uniprot_ids(pdb_id: str) -> Dict[str, List[str]]:
+    def query_all_uniprot_ids(
+        pdb_id: str, map_from_entities: bool = False
+    ) -> Union[Dict[str, List[str]], Dict[str, Dict[str, List[str]]]]:
         """
         Retrieves all Uniprot IDs associated with a PDB structure by querying
-        the PDB database.
+        the PDB database. Returns a map from either chain id or entity id to the
+        associated unp ids.
+
         :param pdb_id: The PDB ID to search for. Chain or entity will be ignored.
-        :return: A dict, mapping from each chain in the given structure to a list of
-            associated Uniprot IDs.
+        :param map_from_entities: Whether to return a map from chain ids (False) or
+        from entity ids (True).
+        :return: if map_from_entities=False, mapping from each chain id in
+        the given structure to a list of associated Uniprot IDs; otherwise a mapping
+        from entity id to a mapping from chain to a list of uniprot ids.
         :raises pdb_api.PDBAPIException: If there's a problem obtaining the data.
         """
-        chain_to_unp_ids = {}
+        map_to_unp_ids = {}
 
         # Make sure we have a base id
         pdb_id, _, _ = split_id_with_entity(pdb_id)
@@ -325,6 +401,7 @@ class PDB2UNP(JSONCacheableMixin, object):
         # Find all polymer entities
         entity_ids = entry_containers.get("polymer_entity_ids", [])
         for entity_id in entity_ids:
+            entity_id = str(entity_id)
             # Get all data about this entity
             entity_data = pdb_api.execute_raw_data_query(pdb_id, entity_id=entity_id)
 
@@ -333,27 +410,33 @@ class PDB2UNP(JSONCacheableMixin, object):
             entity_chains = entity_containers.get("asym_ids", [])
             entity_unp_ids = entity_containers.get("uniprot_ids", [])
 
-            # Save the mapping from each chain to these uniprot IDs.
-            for chain in entity_chains:
-                chain_to_unp_ids[chain] = entity_unp_ids
+            if map_from_entities:
+                map_to_unp_ids[entity_id] = {
+                    chain_id: entity_unp_ids for chain_id in entity_chains
+                }
+            else:
+                # Save the mapping from each chain to these uniprot IDs.
+                for chain_id in entity_chains:
+                    map_to_unp_ids[chain_id] = entity_unp_ids
 
-        return chain_to_unp_ids
+        return map_to_unp_ids
 
     @staticmethod
     def parse_all_uniprot_xrefs(
-        pdb_id: str, struct_d: dict = None
+        pdb_id: str, pdb_source: str = PDB_RCSB, struct_d: dict = None
     ) -> Dict[str, Dict[str, List[tuple]]]:
         """
         Parses the Uniprot cross references and sequence ranges from a PDB
         file of a given PDB ID.
         :param pdb_id: The PDB ID.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param struct_d: Optional parsed PDB file.
         :return: Uniprot cross-refs from the PDB file. Mapping is
         chain -> unp -> [ (s1,e1), (s2, e2), ... ]
         """
 
-        pdb_id, _ = split_id(pdb_id)
-        struct_d = pdb_dict(pdb_id, struct_d=struct_d)
+        pdb_base_id, _ = split_id(pdb_id)
+        struct_d = pdb_dict(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
 
         # Go over referenced DBs and take all uniprot IDs
         unp_ids = set()
@@ -399,12 +482,18 @@ class PDB2UNP(JSONCacheableMixin, object):
 
     @classmethod
     def pdb_id_to_unp_id(
-        cls, pdb_id: str, strict=True, cache=False, struct_d: dict = None
+        cls,
+        pdb_id: str,
+        pdb_source: str = PDB_RCSB,
+        strict=True,
+        cache=False,
+        struct_d: dict = None,
     ) -> str:
         """
         Given a PDB ID, returns a single Uniprot id for it.
         :param pdb_id: PDB ID, with optional chain. If provided chain will
         be used.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param cache: Whether to use cached mapping.
         :param strict: Whether to raise an error (True) or just warn (False)
         if the PDB ID cannot be uniquely mapped to a single Uniprot ID.
@@ -415,17 +504,17 @@ class PDB2UNP(JSONCacheableMixin, object):
         :param struct_d: Optional parsed PDB file.
         :return: A Uniprot ID.
         """
-        pdb_id, chain_id = split_id(pdb_id)
-        pdb2unp = cls.from_pdb(pdb_id, cache=cache, struct_d=struct_d)
+        pdb_base_id, chain_id = split_id(pdb_id)
+        pdb2unp = cls.from_pdb(pdb_id, pdb_source, cache=cache, struct_d=struct_d)
 
         all_unp_ids = pdb2unp.get_all_unp_ids()
         if not all_unp_ids:
-            raise ValueError(f"No Uniprot entries exist for {pdb_id}")
+            raise ValueError(f"No Uniprot entries exist for {pdb_base_id}")
 
         if not chain_id:
             if len(all_unp_ids) > 1:
                 msg = (
-                    f"Multiple Uniprot IDs exists for {pdb_id}, and no "
+                    f"Multiple Uniprot IDs exists for {pdb_base_id}, and no "
                     f"chain specified."
                 )
                 if strict:
@@ -440,22 +529,25 @@ class PDB2UNP(JSONCacheableMixin, object):
         return pdb2unp.get_unp_id(chain_id, strict=strict)
 
     @classmethod
-    def from_pdb(cls, pdb_id: str, cache=False, struct_d: dict = None) -> PDB2UNP:
+    def from_pdb(
+        cls, pdb_id: str, pdb_source: str = PDB_RCSB, cache=False, struct_d: dict = None
+    ) -> PDB2UNP:
         """
         Create a PDB2UNP mapping from a given PDB ID.
         :param pdb_id: The PDB ID to map for. Chain will be ignored if present.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param cache: Whether to load a cached mapping if available.
         :param struct_d: Optional parsed PDB file.
         :return: A PDB2UNP mapping object.
         """
-        pdb_id, _ = split_id(pdb_id)
+        pdb_base_id, _ = split_id(pdb_id)
 
         if cache:
-            pdb2unp = cls.from_cache(pdb_id)
+            pdb2unp = cls.from_cache(pdb_base_id)
             if pdb2unp is not None:
                 return pdb2unp
 
-        pdb2unp = cls(pdb_id, struct_d=struct_d)
+        pdb2unp = cls(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
         pdb2unp.save()
         return pdb2unp
 
@@ -475,14 +567,18 @@ class PDBMetadata(object):
     https://www.rcsb.org/pdb/results/reportField.do
     """
 
-    def __init__(self, pdb_id: str, struct_d=None):
+    def __init__(self, pdb_id: str, pdb_source: str = PDB_RCSB, struct_d=None):
         """
         :param pdb_id: The PDB ID of the structure.
         :param struct_d: Optional dict which will be used if given, instead of
         parsing the PDB file.
+        :param pdb_source: Source from which to obtain the pdb file.
         """
-        pdb_id, chain_id = split_id(pdb_id)
-        struct_d = pdb_dict(pdb_id, struct_d=struct_d)
+        pdb_base_id, chain_id = split_id(pdb_id)
+        struct_d = pdb_dict(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
+
+        # For alphafold structures, default to zero resolution instead of NaN.
+        default_res = 0.0 if pdb_source == PDB_AFLD else None
 
         def _meta(key: str, convert_to: Type = str, default=None):
             val = struct_d.get(key, None)
@@ -511,8 +607,8 @@ class PDBMetadata(object):
 
         host_org = _meta("_entity_src_gen.pdbx_host_org_scientific_name")
         host_org_id = _meta("_entity_src_gen.pdbx_host_org_ncbi_taxonomy_id", int)
-        resolution = _meta("_refine.ls_d_res_high", float)
-        resolution_low = _meta("_refine.ls_d_res_low", float)
+        resolution = _meta("_refine.ls_d_res_high", float, default=default_res)
+        resolution_low = _meta("_refine.ls_d_res_low", float, default=default_res)
         r_free = _meta("_refine.ls_R_factor_R_free", float)
         r_work = _meta("_refine.ls_R_factor_R_work", float)
         space_group = _meta("_symmetry.space_group_name_H-M")
@@ -545,7 +641,8 @@ class PDBMetadata(object):
             seq_str = seq_str.replace("\n", "")
             entity_seq[entity_id] = seq_str
 
-        self.pdb_id: str = pdb_id
+        self.pdb_id: str = pdb_base_id
+        self.pdb_source: str = pdb_source
         self.title: str = title
         self.description: str = description
         self.deposition_date: str = deposition_date
@@ -717,7 +814,7 @@ class CustomMMCIFParser(PDB.MMCIFParser):
                 self._mmcif_dict = MMCIF2Dict.MMCIF2Dict(filename)
             else:
                 self._mmcif_dict = mmcif_dict
-                id_from_struct_d = self._mmcif_dict["_entry.id"][0]
+                id_from_struct_d = self._mmcif_dict[PDB_MMCIF_ENTRY_ID][0]
                 if not id_from_struct_d.lower() == structure_id.lower():
                     raise PDBConstructionException(
                         "PDB ID mismatch between provided struct dict and "
@@ -731,19 +828,20 @@ class CustomMMCIFParser(PDB.MMCIFParser):
 
 
 def pdb_tagged_filepath(
-    pdb_id: str, out_dir: Path, suffix: str, tag: str = None
+    pdb_id: str, pdb_source: str, out_dir: Path, suffix: str, tag: str = None
 ) -> Path:
     """
     Creates a file path for a PDB record, with an optional tag.
-    Eg. pdb_id=1ABC:A, tag='foo' -> /path/to/out_dir/1ABC_A-foo.ext
+    Eg. pdb_id=1ABC:A, source=src, tag='foo' -> /path/to/out_dir/1ABC_A-src-foo.ext
     :param pdb_id: The PDB id, can include chain. Colon will be replaced with
     underscore.
+    :param pdb_source: Source from which to obtain the pdb file.
     :param out_dir: Output directory.
     :param suffix: File suffix (extension).
     :param tag: Optional tag to add.
     :return: The path to the output file.
     """
     tag = f"-{tag}" if tag else ""
-    filename = f'{pdb_id.replace(":", "_").upper()}{tag}'
+    filename = f'{pdb_id.replace(":", "_").upper()}-{pdb_source}{tag}'
     filepath = out_dir.joinpath(f"{filename}.{suffix}")
     return filepath

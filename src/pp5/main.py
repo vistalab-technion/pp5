@@ -7,12 +7,7 @@ from typing import Any, Dict, Callable, Sequence
 from pathlib import Path
 
 import pp5
-from pp5 import (
-    CONFIG_PDB_REDO,
-    CONFIG_LOG_DEBUG,
-    CONFIG_MAX_PROCESSES,
-    CONFIG_REQUEST_RETRIES,
-)
+from pp5 import CONFIG_LOG_DEBUG, CONFIG_MAX_PROCESSES, CONFIG_REQUEST_RETRIES
 from pp5.prec import ProteinRecord
 from pp5.pgroup import ProteinGroup
 from pp5.collect import ProteinGroupCollector, ProteinRecordCollector
@@ -162,14 +157,6 @@ def _parse_cli():
         default=pp5.get_config(CONFIG_REQUEST_RETRIES),
         dest=f"{_CFG_PREFIX_}{CONFIG_REQUEST_RETRIES}",
         help="Number of time to retry failed queries/downloads.",
-    )
-    p.add_argument(
-        "--pdb-redo",
-        "-P",
-        action="store_true",
-        default=pp5.get_config(CONFIG_PDB_REDO),
-        dest=f"{_CFG_PREFIX_}{CONFIG_PDB_REDO}",
-        help="Whether to use PDB-REDO as the source of PDB files",
     )
     p.add_argument(
         "--debug",

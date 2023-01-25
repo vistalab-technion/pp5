@@ -42,7 +42,6 @@ CONFIG_DEFAULT_RES = "DEFAULT_RES"
 CONFIG_DEFAULT_RFREE = "DEFAULT_RFREE"
 CONFIG_DEFAULT_SEQ_SIMILARITY_THRESH = "DEFAULT_SEQ_SIMILARITY_THRESH"
 CONFIG_LOG_DEBUG = "LOG_DEBUG"
-CONFIG_PDB_REDO = "PDB_REDO"
 _CONFIG = {
     # Number of worker processes in global parallel pool
     CONFIG_MAX_PROCESSES: int(os.getenv(ENV_PP5_PP5_MAX_PROCESSES, os.cpu_count())),
@@ -60,8 +59,6 @@ _CONFIG = {
     CONFIG_DEFAULT_SEQ_SIMILARITY_THRESH: 1.0,
     # Whether to log at DEBUG level
     CONFIG_LOG_DEBUG: False,
-    # Whether to use PDB-REDO as the source for PDB files
-    CONFIG_PDB_REDO: False,
 }
 
 """

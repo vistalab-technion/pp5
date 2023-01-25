@@ -1,6 +1,7 @@
 import pytest
 
 from pp5.align import PYMOL_ALIGN_SYMBOL, StructuralAlignment, pymol
+from pp5.external_dbs.pdb import PDB_AFLD, PDB_DOWNLOAD_SOURCES
 
 
 class TestStructuralAlign(object):
@@ -15,9 +16,10 @@ class TestStructuralAlign(object):
 
     @pytest.mark.parametrize("with_chain", [False, True])
     @pytest.mark.parametrize("backbone_only", [False, True])
-    def test_align_to_self(self, backbone_only, with_chain):
+    @pytest.mark.parametrize("pdb_source", PDB_DOWNLOAD_SOURCES.keys())
+    def test_align_to_self(self, backbone_only, with_chain, pdb_source):
         pdb_id = "2WUR"
-        if with_chain:
+        if with_chain or pdb_source == PDB_AFLD:
             pdb_id += ":A"
         sa = StructuralAlignment(pdb_id, pdb_id, backbone_only=backbone_only)
         assert sa.rmse == 0
@@ -41,13 +43,15 @@ class TestStructuralAlign(object):
 
     @pytest.mark.parametrize("backbone_only", [False, True])
     @pytest.mark.parametrize("outlier_rejection_cutoff", [2.0, 2.5])
-    def test_cache(self, backbone_only, outlier_rejection_cutoff):
+    @pytest.mark.parametrize("pdb_source", PDB_DOWNLOAD_SOURCES.keys())
+    def test_cache(self, backbone_only, outlier_rejection_cutoff, pdb_source):
         pdb1, pdb2 = "4NE4:A", "5TEU:A"
 
         # Should not exist in cache
         sa_cached = StructuralAlignment.from_cache(
             pdb1,
             pdb2,
+            pdb_source=pdb_source,
             backbone_only=backbone_only,
             outlier_rejection_cutoff=outlier_rejection_cutoff,
         )
@@ -58,6 +62,7 @@ class TestStructuralAlign(object):
             pdb1,
             pdb2,
             cache=True,
+            pdb_source=pdb_source,
             backbone_only=backbone_only,
             outlier_rejection_cutoff=outlier_rejection_cutoff,
         )
@@ -66,6 +71,7 @@ class TestStructuralAlign(object):
         sa_cached = StructuralAlignment.from_cache(
             pdb1,
             pdb2,
+            pdb_source=pdb_source,
             backbone_only=backbone_only,
             outlier_rejection_cutoff=outlier_rejection_cutoff,
         )
