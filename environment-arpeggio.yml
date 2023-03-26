@@ -12,7 +12,7 @@ dependencies:
   - numpy
   - openbabel<3
   - pip:
-    - "git+https://github.com/PDBeurope/arpeggio.git@master#egg=arpeggio"
+    - "git+https://github.com/PDBeurope/arpeggio.git@master#egg=pdbe-arpeggio"
 platforms:
   - linux-64
   - osx-64
