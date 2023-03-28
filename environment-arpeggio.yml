@@ -10,7 +10,7 @@ dependencies:
   # https://github.com/PDBeurope/arpeggio
   - biopython
   - numpy
-  - openbabel<3
+  - openbabel>=3.0
   - pip:
     - "git+https://github.com/PDBeurope/arpeggio.git@master#egg=pdbe-arpeggio"
 platforms:
