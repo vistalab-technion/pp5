@@ -884,7 +884,7 @@ class Arpeggio(object):
 
         self.out_dir = Path(out_dir)
         self.interaction_cutoff = interaction_cutoff
-        self.arpeggio_command = arpeggio_command or "arpeggio"
+        self.arpeggio_command = arpeggio_command or "pdbe-arpeggio"
         self.cache = cache
         self.pdb_source = pdb_source
 
