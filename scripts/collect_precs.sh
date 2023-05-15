@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PROCESSES=64
+PROCESSES=90
 
 EXPR_HUMAN="Homo sapiens"
 EXPR_ECOLI="Escherichia Coli"
@@ -64,31 +64,41 @@ set -eux
 #     --no-write-csv
 
 # Human in EC (Deposited between 2019 and 2022)
-pp5 \
-    -p="$PROCESSES" collect-prec \
-    --expr-sys="$EXPR_ECOLI" \
-    --source-taxid="$SRC_HUMAN" \
-    --resolution="$RESOLUTION" \
-    --seq-similarity-thresh="$SIMILARITY" \
-    --out-tag="ex_EC-src_HS-f2019t2022-$TAG" \
-    --async-timeout="$TIMEOUT" \
-    --with-contacts \
-    --with-backbone \
-    --deposition-min-date="2019-01-01" \
-    --deposition-max-date="2022-01-01" \
-    --no-write-csv
+#pp5 \
+#    -p="$PROCESSES" collect-prec \
+#    --expr-sys="$EXPR_ECOLI" \
+#    --source-taxid="$SRC_HUMAN" \
+#    --resolution="$RESOLUTION" \
+#    --seq-similarity-thresh="$SIMILARITY" \
+#    --out-tag="ex_EC-src_HS-f2019t2022-$TAG" \
+#    --async-timeout="$TIMEOUT" \
+#    --with-contacts \
+#    --with-backbone \
+#    --deposition-min-date="2019-01-01" \
+#    --deposition-max-date="2022-01-01" \
+#    --no-write-csv
 
 
 # # All in EC
 # pp5 \
 #   -p="$PROCESSES" collect-prec \
 #   --expr-sys="$EXPR_ECOLI" \
+#   --pdb-source="re" \
 #   --source-taxid="$SRC_ALL" \
-#   --resolution="$RESOLUTION" \
-#   --seq-similarity-thresh="$SIMILARITY" \
-#   --out-tag="ex_EC-src_ALL-$TAG" \
+#   --out-tag="ex_EC-src_ALL-$TAG-re-no-res-filter" \
 #   --async-timeout="$TIMEOUT" \
-#   --with-backbone \
+#   --with-backbone
+##   --no-write-csv
+
+ pp5 \
+   -p="$PROCESSES" collect-prec \
+   --expr-sys="$EXPR_ECOLI" \
+   --pdb-source="af" \
+   --resolution="100.0" \
+   --source-taxid="$SRC_ALL" \
+   --out-tag="ex_EC-src_ALL-$TAG-af-no-res-filter" \
+   --async-timeout="$TIMEOUT" \
+   --with-backbone
 #   --no-write-csv
 
 # # Human in EC

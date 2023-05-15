@@ -1,6 +1,7 @@
 name: proteins
 channels:
   - conda-forge
+  - anaconda
   - schrodinger # pymol
   - bioconda    # clustal, muscle, blast
   - salilab     # dssp
@@ -21,6 +22,8 @@ dependencies:
   - pytest-repeat
   - pytest-xdist
   # Project Dependencies
+  - boost
+  - boost-cpp
   - biopython
   - blast
   - clustalo
