@@ -11,115 +11,41 @@ SRC_ECOLI="562"
 SRC_BACTERIA="2"
 SRC_ALL=""
 
-RESOLUTION="1.8"
+RESOLUTION="1.5"
 SIMILARITY="0.7"
+PDB_SOURCE="re" # rc, re, af
 
 TIMEOUT="1200"
 
-TAG="r${RESOLUTION}_s${SIMILARITY}"
+TAG="r${RESOLUTION}_s${SIMILARITY}-${PDB_SOURCE}"
 
 set -eux
 
-# EC in EC
+# For amino-domino paper
+# All in EC, pdb-redo, 1.5A, with contacts and backbone
+pp5 \
+  -p="$PROCESSES" collect-prec \
+  --expr-sys="$EXPR_ECOLI" \
+  --source-taxid="$SRC_ALL" \
+  --resolution="$RESOLUTION" \
+  --seq-similarity-thresh="$SIMILARITY" \
+  --pdb-source=$PDB_SOURCE \
+  --out-tag="ex_EC-src_ALL-$TAG" \
+  --async-timeout="$TIMEOUT" \
+  --with-backbone \
+  --with-contacts \
+  --no-write-csv
+
+# For natcom paper
+# EC in EC, 1.8A, similarity 0.7, regular pdb
 # pp5 \
 #     -p="$PROCESSES" collect-prec \
 #     --expr-sys="$EXPR_ECOLI" \
 #     --source-taxid="$SRC_ECOLI" \
-#     --resolution="$RESOLUTION" \
-#     --seq-similarity-thresh="$SIMILARITY" \
-#     --out-tag="ex_EC-src_EC-$TAG" \
-#     --async-timeout="$TIMEOUT" \
-#     --with-contacts \
-#     --with-backbone \
-#     --no-write-csv
-
-# Bacteria in EC (Deposited before 2007)
-# pp5 \
-#     -p="$PROCESSES" collect-prec \
-#     --expr-sys="$EXPR_ECOLI" \
-#     --source-taxid="$SRC_BACTERIA" \
-#     --resolution="$RESOLUTION" \
-#     --seq-similarity-thresh="$SIMILARITY" \
-#     --out-tag="ex_EC-src_BAC-t2007-$TAG" \
-#     --async-timeout="$TIMEOUT" \
-#     --with-contacts \
-#     --with-backbone \
-#     --deposition-min-date="" \
-#     --deposition-max-date="2007-01-01" \
-#     --no-write-csv
-
-# Bacteria in EC (Deposited between 2019 and 2022)
-# pp5 \
-#     -p="$PROCESSES" collect-prec \
-#     --expr-sys="$EXPR_ECOLI" \
-#     --source-taxid="$SRC_BACTERIA" \
-#     --resolution="$RESOLUTION" \
-#     --seq-similarity-thresh="$SIMILARITY" \
-#     --out-tag="ex_EC-src_BAC-f2019t2022-$TAG" \
-#     --async-timeout="$TIMEOUT" \
-#     --with-contacts \
-#     --with-backbone \
-#     --deposition-min-date="2019-01-01" \
-#     --deposition-max-date="2022-01-01" \
-#     --no-write-csv
-
-# Human in EC (Deposited between 2019 and 2022)
-pp5 \
-    -p="$PROCESSES" collect-prec \
-    --expr-sys="$EXPR_ECOLI" \
-    --source-taxid="$SRC_HUMAN" \
-    --resolution="$RESOLUTION" \
-    --seq-similarity-thresh="$SIMILARITY" \
-    --out-tag="ex_EC-src_HS-f2019t2022-$TAG" \
-    --async-timeout="$TIMEOUT" \
-    --with-contacts \
-    --with-backbone \
-    --deposition-min-date="2019-01-01" \
-    --deposition-max-date="2022-01-01" \
-    --no-write-csv
-
-
-# # All in EC
-# pp5 \
-#   -p="$PROCESSES" collect-prec \
-#   --expr-sys="$EXPR_ECOLI" \
-#   --source-taxid="$SRC_ALL" \
-#   --resolution="$RESOLUTION" \
-#   --seq-similarity-thresh="$SIMILARITY" \
-#   --out-tag="ex_EC-src_ALL-$TAG" \
-#   --async-timeout="$TIMEOUT" \
-#   --with-backbone \
-#   --no-write-csv
-
-# # Human in EC
-# pp5 \
-#     -p="$PROCESSES" collect-prec \
-#     --expr-sys="$EXPR_ECOLI" \
-#     --source-taxid="$SRC_HUMAN" \
-#     --resolution="$RESOLUTION" \
-#     --seq-similarity-thresh="$SIMILARITY" \
-#     --out-tag="ex_EC-src_HS-$TAG" \
+#     --resolution=1.8 \
+#     --seq-similarity-thresh=0.7 \
+#     --pdb-source=rc \
+#     --out-tag="ex_EC-src_EC-natcom" \
 #     --async-timeout="$TIMEOUT" \
 #     --no-write-csv
 
-# # Human in Insect
-# pp5 \
-#     -p="$PROCESSES" collect-prec \
-#     --expr-sys="$EXPR_INSECT" \
-#     --source-taxid="$SRC_HUMAN" \
-#     --resolution="$RESOLUTION" \
-#     --seq-similarity-thresh="$SIMILARITY" \
-#     --out-tag="ex_SP-src_HS-$TAG" \
-#     --async-timeout="$TIMEOUT" \
-#     --no-write-csv
-
-# # All in Insect
-# pp5 \
-#     -p="$PROCESSES" collect-prec \
-#     --expr-sys="$EXPR_INSECT" \
-#     --source-taxid="$SRC_ALL" \
-#     --resolution="$RESOLUTION" \
-#     --seq-similarity-thresh="$SIMILARITY" \
-#     --out-tag="ex_SP-src_ALL-$TAG" \
-#     --async-timeout="$TIMEOUT" \
-#     --no-write-csv
