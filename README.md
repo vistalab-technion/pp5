@@ -73,11 +73,14 @@ To collect a single protein record with default options:
 ```shell script
 pp5 prec --pdb-id 2WUR:A
 ```
+This will generate output CSV files in the `out/prec` directory.
+
 To collect a single protein group, where a reference protein is matched by sequence
 and structure to query structures and the potential-contact environments are compared:
 ```shell script
 pp5 pgroup --ref-pdb-id 2WUR:A --match-len 2 --context-len 1 --compare-contacts
 ```
+This will generate output CSV files in the `out/prgroup` directory.
 
 ## Reproducing "One Sequence, One Structure?"
 
@@ -114,9 +117,11 @@ pp5 \
 ```
 
 Note that the `PROCESSES` variable controls the number of concurrent processes used
-for the collection and analysis. It can generally be set to the number of cores
+for the collection and analysis. It can generally be set close to the number of cores
 available on the machine. Running this analysis on the entire PDB can take several days,
 depending on the number of available cores.
+To run on smaller subsets of the PDB, you can restrict the search using the supplied
+options, or even collect just a single protein group as shown in the previous section.
 
 ## Reproducing "Codon Specific Ramachandran Plots"
 
