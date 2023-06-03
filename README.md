@@ -1,84 +1,207 @@
-# pp5: Primary-and-a-half Structure for Proteins
+# pp5
 
-This repo contains an initial implementation of a toolkit for analysis
-of proteins structure.
+This repo contains an implementation of a toolkit for analysis of protein backbone
+structure, specifically for: (i) estimating the distribution of dihedral angles and
+quantifying the differences between such distributions; (ii) finding matched pairs
+of proteins with regions of identical sequence and contacts but different backbone
+structure.
 
-## Project structure
+It contains the code required to collect the data and reproduce the results of
+these papers:
 
-```
-+
-|- environment.yml  # Conda environment file specifying project dependencies
-|- logging.ini      # Configuration file for the logger
-|- pp5.py           # A command line interface for the project
-|- pp5/             # Main code package
-|---- __init__.py   # Environment and folders set up
-|---- align.py      # Multisequence and structural alignment
-|---- collect.py    # Scraping and data collection
-|---- dihedral.py   # Dihedral angle calculation and error estimation
-|---- protein.py    # ProteinRecord and ProteinGroup, model what we need to know about a protein or group of similar proteins
-|---- parallel.py   # Support for worker sub-processes
-|---- utils.py      # You guessed it... utilities
-|---- external_dbs/ # Package for interacting with external databases
-|------- ena.py     # European Nucleutide Archive
-|------- pdb.py     # Protein Databank (includes search API)
-|------- unp.py     # Uniprot
-|- tests/           # Unit tests and benchmarks
-|- notebooks/       # Jupyter notebooks
-|- data/            # Folder for storing downloaded or generated dataset files for machine consumption
-|- out/             # Folder for generated output files for human consumption
-```
+    Aviv A. Rosenberg, Alex M. Bronstein, Ailie Marx.
+    "Does one sequence always translate to one structure?"
+    Unpublished (2023).
+
+    Aviv A. Rosenberg, Ailie Marx and Alex M. Bronstein.
+    "Codon-specific Ramachandran plots show amino acid backbone conformation depends on
+    identity of the translated codon".
+    Nature Communications (2022).
+
+When using this code, please cite the relevant work.
 
 ## Initial set-up
 
-1. Install the python3 version of [miniconda](https://conda.io/miniconda.html).
-   Follow the [installation instructions](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)
-   for your platform.
-2. Use conda to create a virtual environment for the project.
-   From the project root directory, run
+This package was developed and tested on both Linux and macOS.
+It might work on Windows, however this was not tested and is not supported.
+
+1. Install the python3 version of mamba (or conda).
+   If installing from scratch, follow the installation instructions
+   [here](https://github.com/conda-forge/miniforge).
+   Note that it's strongly recommended to use `mamba` instead of
+   `conda` for this project, since it's much faster to solve the environment.
+   In case you have a pre-existing installation of `conda`, you can  install
+   `mamba` in addition by running `conda install mamba -n base -c conda-forge`.
+2. If on Apple slicon hardware (M1/M2 mac) run `export CONDA_SUBDIR=osx-64`.
+   before installing the environments.
+2. Install the `arpeggio` environment by running
    ```shell
-   conda env create -f environment.yml
+   mamba env create -n arpeggio -f environment-arpeggio.yml
    ```
-   This will install all the necessary packages into a new conda virtual
-   environment named `proteins`.
-3. Activate the new environment by running
+   This is only for tertiary contact analysis. Note that arpeggio is
+   installed into a separate environment because it requires packages which are
+   incompatible with the main pp5 environment.
+3. Install the `pp5` environment by running
    ```shell
-   conda activate proteins
+   mamba env create -n pp5 -f environment.yml
    ```
-   *Activating* an environment simply means that the path to its python binaries
-   (and packages) is placed at the beginning of your `$PATH` shell variable.
-   Therefore, running programs installed into the conda env (e.g. `python`) will
-   run the version from the env since it appears in the `$PATH` before any other
-   installed version.
-
-   To check what conda environments you have and which is active, run
+4. Test the arpeggio installation by running
    ```shell
-   conda env list
+   mamba run -n arpeggio arpeggio --help
    ```
-4. To make sure everything is working, simply run all the tests by typing
-    ```shell
-    pytest
-    ```
+   You should see an arpeggio help message and usage info.
+4. Activate the main environment by running
+   ```shell
+   mamba activate pp5
+   ```
+5. Install the `pp5` package itself: `pip install -e .` (make sure to note the `.`).
+6. To make sure everything is working, run all the tests by running `pytest`.
 
-## Examples
+## Using the CLI
 
-### Using the CLI
-
-To see available commands:
+Some examples of using the CLI are provided below. Use the `--help` flag to see all
+options. For example, to see available commands:
 ```shell script
-python pp5.py --help
+pp5 --help
 ```
-
 To see available options for one command (e.g. pgroup):
 ```shell script
-python pp5.py pgroup --help
+pp5 pgroup --help
 ```
 
-To create a protein record with default options:
+To collect a single protein record with default options:
 ```shell script
-python pp5.py prec --pdb-id 2WUR:A
+pp5 prec --pdb-id 2WUR:A
+```
+To collect a single protein group, where a reference protein is matched by sequence
+and structure to query structures and the potential-contact environments are compared:
+```shell script
+pp5 pgroup --ref-pdb-id 2WUR:A --match-len 2 --context-len 1 --compare-contacts
 ```
 
-To run a protein group collection with some custom options:
-```shell script
-python pp5.py pgroup --ref-pdb-id 1nkd:a --resolution 2.5 --out-dir out/testcli --tag test1 --context-len 1
+## Reproducing "One Sequence, One Structure?"
+
+The data collection and structure pair matching can be performed by running `pp5
+collect-pgroup`, with appropriate options provided as explained below.
+
+### Running contact analysis and structure pair matching
+
+To re-collect the data used for the analysis and generate the raw list of protein
+structure pairs with matching sequence and contacts but different structure, use the
+following bash script.
+
+```shell
+#!/bin/bash
+
+PROCESSES=90
+EXPR_ECOLI="Escherichia Coli"
+SRC_ALL=""
+RESOLUTION="1.8"
+REJECTION_ARGS="--b-max=50 --plddt-min=70 --sa-outlier-cutoff=2.5 --angle-aggregation=max_res"
+MATCH_ARGS="--match-len=2 --context-len=1"
+PDB_SOURCE="re" # rc, re, af
+
+pp5 \
+    -p="$PROCESSES" collect-pgroup \
+    --expr-sys="$EXPR_ECOLI" \
+    --source-taxid="$SRC_ALL" \
+    --resolution="$RESOLUTION" \
+    $REJECTION_ARGS \
+    $MATCH_ARGS \
+    --no-strict-codons \
+    --pdb-source=$PDB_SOURCE \
+    --out-tag "ex_EC-src_ALL-${RESOLUTION/./}-$PDB_SOURCE"
+```
+
+Note that the `PROCESSES` variable controls the number of concurrent processes used
+for the collection and analysis. It can generally be set to the number of cores
+available on the machine. Running this analysis on the entire PDB can take several days,
+depending on the number of available cores.
+
+## Reproducing "Codon Specific Ramachandran Plots"
+
+The data collection can be performed by running`pp5 collect-prec` (with appropriate
+options), and the analysis can be performed by running `pp5 analyze-pointwise` (with
+appropriate options).
+
+### Running the analysis
+
+To run the analysis with the same configuration as in the paper, use the following
+bash script. You may point the `DATASET_DIR` to the folder containing the dataset
+published along with the paper.
+
+```shell
+#!/bin/bash
+
+# Edit these to suit your needs
+PROCESSES=90
+DATASET_DIR="out/prec-collected/20211001_124553-aida-ex_EC-src_EC/"
+TAG="natcom"
+
+# Values used in the paper results
+MIN_GROUP=1
+KDE_NBINS=128
+KDE_WIDTH=200
+DDIST_BS_NITER=25
+DDIST_K=200
+DDIST_K_MIN=100
+DDIST_K_TH=50
+DDIST_NMAX=200
+DDIST_STATISTIC="kde_g"
+DDIST_KERNEL_SIZE=2.0
+FDR=0.05
+
+set -eux
+pp5 -p="$PROCESSES" \
+ analyze-pointwise \
+ --dataset-dir="$DATASET_DIR" \
+ --min-group-size="$MIN_GROUP" \
+ --kde-width="$KDE_WIDTH" \
+ --kde-nbins="$KDE_NBINS" \
+ --ddist-statistic="$DDIST_STATISTIC" \
+ --ddist-k="$DDIST_K" \
+ --ddist-k-min="$DDIST_K_MIN" \
+ --ddist-k-th="$DDIST_K_TH" \
+ --ddist-bs-niter="$DDIST_BS_NITER" \
+ --ddist-n-max="$DDIST_NMAX" \
+ --ddist-kernel-size="$DDIST_KERNEL_SIZE" \
+ --fdr="$FDR" \
+ --comparison-types aa cc \
+ --ignore-omega \
+ --out-tag="$TAG"
+
+```
+
+Alternatively, a comparable python script is available in `scripts/analyze_pointwise.py`
+which can be used as a wrapper to reproduce the results.
+
+### Re-collecting the data
+
+To re-collect the data used for the analysis, use the following bash script.
+Note that due to updates on the PDB servers over time, re-collecting the data will not
+produce exactly the same dataset as was analyzed in the paper.
+
+```shell
+#!/bin/bash
+
+PROCESSES=64
+TAG="r${RESOLUTION}_s${SIMILARITY}"
+
+# Data collection parameters used in the paper.
+EXPR_ECOLI="Escherichia Coli"
+SRC_ECOLI="562"
+RESOLUTION="1.8"
+SIMILARITY="0.7"
+TIMEOUT="240"
+
+set -eux
+pp5 -p="$PROCESSES" \
+ collect-prec \
+ --expr-sys="$EXPR_ECOLI" \
+ --source-taxid="$SRC_ECOLI" \
+ --resolution="$RESOLUTION" \
+ --seq-similarity-thresh="$SIMILARITY" \
+ --out-tag="ex_EC-src_EC-$TAG" \
+ --async-timeout="$TIMEOUT" \
+ --no-write-csv
 ```

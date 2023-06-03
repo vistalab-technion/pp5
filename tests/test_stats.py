@@ -63,4 +63,4 @@ class TestMHTBH(object):
     @pytest.mark.parametrize("m", [0, 1])
     def test_invalid_m(self, m):
         with pytest.raises(ValueError, match="Need at least two"):
-            mht_bh(0.1, np.arange(m).astype(np.float))
+            mht_bh(0.1, np.arange(m).astype(float))

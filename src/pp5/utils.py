@@ -60,8 +60,6 @@ def requests_retry(
         read=retries,
         connect=retries,
         redirect=retries,
-        # Retry on any HTTP verb, including POST
-        method_whitelist=False,
         # List of status codes to retry for
         status_forcelist=status_forcelist,
         # See formula above

@@ -1,7 +1,6 @@
 name: arpeggio
 channels:
   - conda-forge
-  - defaults
 dependencies:
   # Base
   - pip
@@ -12,7 +11,7 @@ dependencies:
   - numpy
   - openbabel<3
   - pip:
-    - "git+https://github.com/PDBeurope/arpeggio.git@master#egg=arpeggio"
+    - "git+https://github.com/PDBeurope/arpeggio.git@0d1d14a5#egg=arpeggio"
 platforms:
   - linux-64
   - osx-64
