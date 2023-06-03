@@ -1,4 +1,4 @@
-name: proteins
+name: pp5
 channels:
   - conda-forge
   - defaults
