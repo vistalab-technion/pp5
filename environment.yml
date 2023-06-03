@@ -1,6 +1,7 @@
 name: proteins
 channels:
   - conda-forge
+  - defaults
   - schrodinger # pymol
   - bioconda    # clustal, muscle, blast
   - salilab     # dssp
