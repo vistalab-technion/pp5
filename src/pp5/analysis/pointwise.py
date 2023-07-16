@@ -1325,8 +1325,22 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         }
         group_sizes: dict = self._load_intermediate("group-sizes", True)
 
-        def _glob_mapper(aact: str):
-            return str.join(AAC_TUPLE_SEP, aact_str2tuple(aact)[:-1])
+        def _glob_mapper(aacts: Iterable[str], include_reverse=False):
+            """Maps AAC tuple strings containing groups to glob strings"""
+            aac_groups = [
+                str.join(
+                    AAC_TUPLE_SEP, aact_str2tuple(aact)[self.codon_grouping_position]
+                )
+                for aact in aacts
+            ]
+
+            aac_globs = [g if g.endswith("*") else f"{g}*" for g in aac_groups]
+            if include_reverse:
+                aac_globs.extend(
+                    [g if g.startswith("*") else f"*{g}" for g in aac_groups]
+                )
+
+            return sorted(set(aac_globs))
 
         for aa_codon in [COMP_TYPE_AA, COMP_TYPE_CC]:
 
@@ -1339,17 +1353,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
                 # Create glob patterns to define which ramachandran plots will go
                 # into the same figure
-                split_subgroups_glob = None
+                subgroup_globs = None
                 if self.tuple_len > 1:
                     if aa_codon == COMP_TYPE_CC:
-                        glob_source = self._codon_tuple_to_idx.keys()
+                        subgroup_globs = _glob_mapper(self._codon_tuple_to_idx.keys())
                     else:  # "aa"
-                        glob_source = self._aa_tuple_to_idx.keys()
-                    glob_elements = sorted(set(map(_glob_mapper, glob_source)))
-                    split_subgroups_glob = [f"{s}*" for s in glob_elements]
-                    # For AAs, also include the reverse glob
-                    if aa_codon == COMP_TYPE_AA:
-                        split_subgroups_glob.extend([f"*{s}" for s in glob_elements])
+                        # For AAs, also include the reverse glob
+                        subgroup_globs = _glob_mapper(
+                            self._aa_tuple_to_idx.keys(), include_reverse=True
+                        )
 
                 # Get the samples (angles) of all subgroups in this group
                 subgroup_col = AA_COL if aa_codon == COMP_TYPE_AA else CODON_COL
@@ -1365,7 +1377,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         kwds=dict(
                             group_idx=group_idx,
                             subgroup_sizes=subgroup_sizes,
-                            split_subgroups_glob=split_subgroups_glob,
+                            split_subgroups_glob=subgroup_globs,
                             dkdes=dkdes,
                             df_group_samples=df_group_samples,
                             out_dir=self.out_dir.joinpath(f"{aa_codon}-dkdes"),
@@ -1768,7 +1780,7 @@ def _plot_dkdes(
 
             if subgroup_glob != "*":
                 fig_filename = out_dir.joinpath(f"{group_idx}").joinpath(
-                    f"{subgroup_glob.replace('*', '_')}.png"
+                    f"{subgroup_glob}.png"
                 )
             else:
                 fig_filename = out_dir.joinpath(f"{group_idx}.png")
