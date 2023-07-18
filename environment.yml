@@ -35,6 +35,7 @@ dependencies:
   - pandas
   - pymol-bundle
   - requests
+  - scipy
   - scikit-learn
   - toml
   - tqdm
