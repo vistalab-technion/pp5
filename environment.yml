@@ -10,32 +10,34 @@ dependencies:
   - pip
   - python=3.9.*
   # Development
+  # Project Dependencies
+  - biopython
   - black
+  - blast
+  - clustalo
+  - dssp
   - ipython
   - jupyter
   - jupyterlab
+  - matplotlib
+  - more-itertools
+  - muscle
+  - nglview
   - nodejs
+  - numba
+  - numpy
+  - pandas
   - pre-commit
+  - pymol-bundle
   - pytest
   - pytest-benchmark
   - pytest-cov
   - pytest-repeat
   - pytest-xdist
-  # Project Dependencies
-  - biopython
-  - blast
-  - clustalo
-  - dssp
-  - matplotlib
-  - more-itertools
-  - muscle
-  - nglview
-  - numba
-  - numpy
-  - pandas
-  - pymol-bundle
   - requests
   - scikit-learn
+  - scipy
+  - seaborn
   - toml
   - tqdm
   - uncertainties
