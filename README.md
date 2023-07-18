@@ -1,17 +1,10 @@
 # pp5
 
 This repo contains an implementation of a toolkit for analysis of protein backbone
-structure, specifically for: (i) estimating the distribution of dihedral angles and
-quantifying the differences between such distributions; (ii) finding matched pairs
-of proteins with regions of identical sequence and contacts but different backbone
 structure.
 
 It contains the code required to collect the data and reproduce the results of
 these papers:
-
-    Aviv A. Rosenberg, Alex M. Bronstein, Ailie Marx.
-    "Does one sequence always translate to one structure?"
-    Unpublished (2023).
 
     Aviv A. Rosenberg, Nitsan Yehishalom, Ailie Marx, Alex Bronstein.
     "An amino domino model described by a cross peptide bond Ramachandran plot
@@ -39,23 +32,11 @@ It might work on Windows, however this was not tested and is not supported.
    `mamba` in addition by running `conda install mamba -n base -c conda-forge`.
 2. If on Apple slicon hardware (M1/M2 mac) run `export CONDA_SUBDIR=osx-64`.
    before installing the environments.
-2. Install the `arpeggio` environment by running
-   ```shell
-   mamba env create -n arpeggio -f environment-arpeggio.yml
-   ```
-   This is only required for tertiary contact analysis. Note that arpeggio is
-   installed into a separate environment because it requires packages which are
-   incompatible with the main pp5 environment.
 3. Install the `pp5` environment by running
    ```shell
    mamba env create -n pp5 -f environment.yml
    ```
-4. Test the arpeggio installation by running
-   ```shell
-   mamba run -n arpeggio arpeggio --help
-   ```
-   You should see an arpeggio help message and usage info.
-4. Activate the main environment by running
+4. Activate the environment by running
    ```shell
    mamba activate pp5
    ```
@@ -69,9 +50,9 @@ options. For example, to see available commands:
 ```shell script
 pp5 --help
 ```
-To see available options for one command (e.g. pgroup):
+To see available options for one command (e.g. `prec`):
 ```shell script
-pp5 pgroup --help
+pp5 prec --help
 ```
 
 To collect a single protein record with default options:
@@ -79,55 +60,6 @@ To collect a single protein record with default options:
 pp5 prec --pdb-id 2WUR:A
 ```
 This will generate output CSV files in the `out/prec` directory.
-
-To collect a single protein group, where a reference protein is matched by sequence
-and structure to query structures and the potential-contact environments are compared:
-```shell script
-pp5 pgroup --ref-pdb-id 2WUR:A --match-len 2 --context-len 1 --compare-contacts
-```
-This will generate output CSV files in the `out/prgroup` directory.
-
-## Reproducing "Does one sequence always translate to one structure?"
-
-The data collection and structure pair matching can be performed by running `pp5
-collect-pgroup`, with appropriate options provided as explained below.
-
-### Running contact analysis and structure pair matching
-
-To re-collect the data used for the analysis and generate the raw list of protein
-structure pairs with matching sequence and contacts but different structure, use the
-following bash script.
-
-```shell
-#!/bin/bash
-
-PROCESSES=90
-EXPR_ECOLI="Escherichia Coli"
-SRC_ALL=""
-RESOLUTION="1.8"
-REJECTION_ARGS="--b-max=50 --plddt-min=70 --sa-outlier-cutoff=2.5 --angle-aggregation=max_res"
-MATCH_ARGS="--match-len=2 --context-len=1"
-PDB_SOURCE="re" # rc, re, af
-
-pp5 \
-    -p="$PROCESSES" collect-pgroup \
-    --expr-sys="$EXPR_ECOLI" \
-    --source-taxid="$SRC_ALL" \
-    --resolution="$RESOLUTION" \
-    $REJECTION_ARGS \
-    $MATCH_ARGS \
-    --no-strict-codons \
-    --pdb-source=$PDB_SOURCE \
-    --out-tag "ex_EC-src_ALL-${RESOLUTION/./}-$PDB_SOURCE"
-```
-
-Note that the `PROCESSES` variable controls the number of concurrent processes
-used for the collection and analysis. It can generally be set close to the
-number of cores available on the machine. Running this analysis on the entire
-PDB can take several days, depending on the number of available cores.  To run
-on smaller subsets of the PDB, you can restrict the search using the supplied
-options, or even collect just a single protein group as shown in the previous
-section.
 
 ## Reproducing "An Amino Domino Model"
 
