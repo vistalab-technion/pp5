@@ -13,6 +13,11 @@ these papers:
     "Does one sequence always translate to one structure?"
     Unpublished (2023).
 
+    Aviv A. Rosenberg, Nitsan Yehishalom, Ailie Marx, Alex Bronstein.
+    "An amino domino model described by a cross peptide bond Ramachandran plot
+    defines amino acid pairs as local structural units"
+    Unpublished (2023).
+
     Aviv A. Rosenberg, Ailie Marx and Alex M. Bronstein.
     "Codon-specific Ramachandran plots show amino acid backbone conformation depends on
     identity of the translated codon".
@@ -38,7 +43,7 @@ It might work on Windows, however this was not tested and is not supported.
    ```shell
    mamba env create -n arpeggio -f environment-arpeggio.yml
    ```
-   This is only for tertiary contact analysis. Note that arpeggio is
+   This is only required for tertiary contact analysis. Note that arpeggio is
    installed into a separate environment because it requires packages which are
    incompatible with the main pp5 environment.
 3. Install the `pp5` environment by running
@@ -82,7 +87,7 @@ pp5 pgroup --ref-pdb-id 2WUR:A --match-len 2 --context-len 1 --compare-contacts
 ```
 This will generate output CSV files in the `out/prgroup` directory.
 
-## Reproducing "One Sequence, One Structure?"
+## Reproducing "Does one sequence always translate to one structure?"
 
 The data collection and structure pair matching can be performed by running `pp5
 collect-pgroup`, with appropriate options provided as explained below.
@@ -116,12 +121,54 @@ pp5 \
     --out-tag "ex_EC-src_ALL-${RESOLUTION/./}-$PDB_SOURCE"
 ```
 
-Note that the `PROCESSES` variable controls the number of concurrent processes used
-for the collection and analysis. It can generally be set close to the number of cores
-available on the machine. Running this analysis on the entire PDB can take several days,
-depending on the number of available cores.
-To run on smaller subsets of the PDB, you can restrict the search using the supplied
-options, or even collect just a single protein group as shown in the previous section.
+Note that the `PROCESSES` variable controls the number of concurrent processes
+used for the collection and analysis. It can generally be set close to the
+number of cores available on the machine. Running this analysis on the entire
+PDB can take several days, depending on the number of available cores.  To run
+on smaller subsets of the PDB, you can restrict the search using the supplied
+options, or even collect just a single protein group as shown in the previous
+section.
+
+## Reproducing "An Amino Domino Model"
+
+To generate the clusters and sub-clusters shown in the paper, use the `notebooks/generate_clusters.ipynb`. Point the `DATASET_FILE` in the notebook to the dataset file from the supplementary data (`precs-non-redundant.csv`). Alternatively, you may re-collect the dataset as described below.
+
+### Re-collecting the data
+
+To re-collect the data used for the analysis, use the following bash script,
+which will collect the relevant non-redundant protein structures from the PDB,
+and extract their backbone atom positions.  Note that due to updates on the PDB
+servers over time, re-collecting the data will not produce exactly the same
+dataset as was analyzed in the paper.
+
+```shell
+#!/bin/bash
+
+PROCESSES=64
+TAG="r${RESOLUTION}_s${SIMILARITY}"
+EXPR_ECOLI="Escherichia Coli"
+SRC_ALL=""
+TIMEOUT="240"
+RESOLUTION="1.5"
+SIMILARITY="0.7"
+PDB_SOURCE="re"
+
+set -eux
+pp5 -p="$PROCESSES" collect-prec \
+  --expr-sys="$EXPR_ECOLI" \
+  --source-taxid="$SRC_ALL" \
+  --resolution="$RESOLUTION" \
+  --seq-similarity-thresh="$SIMILARITY" \
+  --pdb-source=$PDB_SOURCE \
+  --out-tag="ex_EC-src_ALL-$TAG" \
+  --async-timeout="$TIMEOUT" \
+  --with-backbone \
+  --no-write-csv
+```
+
+The data will be collected to a subfolder with a name containing the `out-tag`,
+within the `out/` folder (which will be created in the `pwd`). Within the
+collected data folder, the relevant dataset file is `data-precs.csv`.
 
 ## Reproducing "Codon Specific Ramachandran Plots"
 
@@ -191,8 +238,6 @@ produce exactly the same dataset as was analyzed in the paper.
 
 PROCESSES=64
 TAG="r${RESOLUTION}_s${SIMILARITY}"
-
-# Data collection parameters used in the paper.
 EXPR_ECOLI="Escherichia Coli"
 SRC_ECOLI="562"
 RESOLUTION="1.8"
@@ -210,3 +255,5 @@ pp5 -p="$PROCESSES" \
  --async-timeout="$TIMEOUT" \
  --no-write-csv
 ```
+
+The data will be collected to a subfolder with a name containing the `out-tag`, within the `out/` folder (which will be created in the `pwd`). The analysis command should then be pointed to the collected data folder.
