@@ -361,11 +361,17 @@ def _two_sample_kernel_permutation_test_inner(
     return stat_val, pval, curr_permutation
 
 
-def torus_w2_ub_test(X: ndarray, Y: ndarray) -> float:
+def torus_w2_ub_test(
+    X: ndarray,
+    Y: ndarray,
+    grid_low: float = -np.pi,
+    grid_high: float = np.pi,
+) -> Tuple[float, float]:
     """
 
-    Two-sample test for the torus using the Wasserstein-2 distance. Returns an upper
-    bound for the pvalue.
+    Two-sample test for the torus using the Wasserstein-2 distance. The computed
+    p-value is an upper bound of the pvalue for the null hypothesis that X and Y are
+    samples from the same distribution.
 
     Uses code from: https://github.com/gonzalez-delgado/torustest
 
@@ -375,13 +381,18 @@ def torus_w2_ub_test(X: ndarray, Y: ndarray) -> float:
 
     :param X: First sample observations, of shape (n, 2).
     :param Y: Second sample observations, of shape (n, 2).
-    :return: Upper bound of p-value for the null hypothesis that X and Y are samples
-        from the same distribution.
+    :param grid_low: Smallest value on the evaluation grid, inclusive.
+    :param grid_high: Largest value on the evaluation grid, exclusive.
+    :return: Tuple containing:
+    - w2 distance
+    - pvalue (upper bound)
     """
 
-    # Scale X, Y from [-pi,pi) x [-pi,pi) to [0,1) x [0,1]
-    X = (X + np.pi) / (2 * np.pi)
-    Y = (Y + np.pi) / (2 * np.pi)
+    # Scale X, Y from e.g. [-pi,pi) x [-pi,pi) to [0,1) x [0,1]
+    def _scale(Z: ndarray) -> ndarray:
+        return (Z - grid_low) / (grid_high - grid_low)
+
+    X, Y = _scale(X), _scale(Y)
 
     # Get R-function to invoke for performing the test
     test_fn_r = robjects.globalenv[R_TORUSTEST_UBOUND]
@@ -389,5 +400,5 @@ def torus_w2_ub_test(X: ndarray, Y: ndarray) -> float:
     # Create a converter that converts np.ndarray to R array
     np_conversion = robjects.default_converter + robjects.numpy2ri.converter
     with robjects.conversion.localconverter(np_conversion) as cv:
-        pval = test_fn_r(X, Y)
-        return pval.item()
+        result = test_fn_r(X, Y, return_dist=True)
+        return result["dist"].item(), result["pval"].item()
