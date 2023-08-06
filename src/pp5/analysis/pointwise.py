@@ -9,8 +9,8 @@ from typing import (
     List,
     Tuple,
     Union,
-    Literal,
     Callable,
+    Iterable,
     Iterator,
     Optional,
     Sequence,
@@ -93,6 +93,8 @@ CODON_TUPLE_GROUPINGS = {
     CODON_TUPLE_GROUP_ANY,
     CODON_TUPLE_GROUP_LAST_NUCL,
 }
+
+ANY_AAC = "*"
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
@@ -211,7 +213,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if codon_grouping_type and tuple_len == 1:
             raise ValueError(f"codon_grouping_type, can't be used with {tuple_len=}")
 
-        if codon_grouping_position >= tuple_len:
+        if codon_grouping_position >= tuple_len or codon_grouping_position < 0:
             raise ValueError(
                 f"invalid {codon_grouping_position=}, must be < {tuple_len=}"
             )
@@ -312,15 +314,23 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.ddist_statistic_fn_name = ddist_statistic
 
         # Initialize codon tuple names and corresponding indices
-        tuples = aac_tuples(k=self.tuple_len)
-        tuples = sorted(set(map(self._map_codon_tuple, tuples)))
+        grouped_aac_tuples_non_unique = map(
+            self._group_codon_tuple,
+            aac_tuples(k=self.tuple_len),
+        )
+
+        grouped_aac_tuples = sorted(set(grouped_aac_tuples_non_unique))
+
         self._codon_tuple_to_idx = {
-            aact_tuple2str(aac_tuple): idx for idx, aac_tuple in enumerate(tuples)
+            aact_tuple2str(aac_tuple): idx
+            for idx, aac_tuple in enumerate(grouped_aac_tuples)
         }
         self._idx_to_codon_tuple = {i: t for t, i in self._codon_tuple_to_idx.items()}
         self._aa_tuple_to_idx = {
             aact_tuple2str(aat): idx
-            for idx, aat in enumerate(sorted(set(aact2aat(aact) for aact in tuples)))
+            for idx, aat in enumerate(
+                sorted(set(aact2aat(aact) for aact in grouped_aac_tuples))
+            )
         }
         self._idx_to_aa_tuple = {i: t for t, i in self._aa_tuple_to_idx.items()}
         self._n_codon_tuples = len(self._codon_tuple_to_idx)
@@ -340,13 +350,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             "plot_results": self._plot_results,
         }
 
-    def _map_codon_tuple(self, aacs: Sequence[str]) -> Sequence[str]:
+    def _group_codon_tuple(self, aacs: Sequence[str]) -> Sequence[str]:
         """
-        Maps codons in a tuple so that they can be grouped by the grouping
+        Updates codons in a tuple so that they can be grouped by the grouping
         options of this analysis.
 
-        :param aacs: A tuple (aac1, aac2).
-        :return: A tuple (aac1, aac2) after conversion.
+        :param aacs: A tuple (aac1, aac2), e.g. ('A-CCC', 'A-CCG').
+        :return: A tuple (aac1, aac2) after conversion, e.g. ('*', 'A-CCG').
         """
         if not self.codon_grouping_type:
             return aacs
@@ -356,14 +366,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         aa, c = aac_split(aac)
 
         if self.codon_grouping_type == CODON_TUPLE_GROUP_ANY:
-            c = UNKNOWN_CODON
-            aa = UNKNOWN_AA
+            c = ANY_AAC
+            aa = ANY_AAC
 
         if self.codon_grouping_type == CODON_TUPLE_GROUP_LAST_NUCL:
-            c = f"{UNKNOWN_NUCLEOTIDE*2}{c[-1]}"
-            aa = UNKNOWN_AA
+            c = f"{ANY_AAC}{c[-1]}"
+            aa = ANY_AAC
 
         aac = aac_join(aa, c, validate=False)
+        aac = aac.replace(f"{ANY_AAC}{AAC_SEP}{ANY_AAC}", ANY_AAC)
         aacs[self.codon_grouping_position] = aac
         return tuple(aacs)
 
@@ -601,7 +612,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 group_sizes.append(row[f"{p}{GROUP_SIZE_COL}"])
                 group_stds.append(row[f"{p}{GROUP_STD_COL}"])
 
-            aa_codons = self._map_codon_tuple(aa_codons)
+            aa_codons = self._group_codon_tuple(aa_codons)
             aas = tuple(aac2aa(aac) for aac in aa_codons)
 
             codon_tuple = aact_tuple2str(aa_codons)
@@ -1314,8 +1325,22 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         }
         group_sizes: dict = self._load_intermediate("group-sizes", True)
 
-        def _glob_mapper(aact: str):
-            return str.join(AAC_TUPLE_SEP, aact_str2tuple(aact)[:-1])
+        def _glob_mapper(aacts: Iterable[str], include_reverse=False):
+            """Maps AAC tuple strings containing groups to glob strings"""
+            aac_groups = [
+                str.join(
+                    AAC_TUPLE_SEP, aact_str2tuple(aact)[self.codon_grouping_position]
+                )
+                for aact in aacts
+            ]
+
+            aac_globs = [g if g.endswith("*") else f"{g}*" for g in aac_groups]
+            if include_reverse:
+                aac_globs.extend(
+                    [g if g.startswith("*") else f"*{g}" for g in aac_groups]
+                )
+
+            return sorted(set(aac_globs))
 
         for aa_codon in [COMP_TYPE_AA, COMP_TYPE_CC]:
 
@@ -1328,17 +1353,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
                 # Create glob patterns to define which ramachandran plots will go
                 # into the same figure
-                split_subgroups_glob = None
+                subgroup_globs = None
                 if self.tuple_len > 1:
                     if aa_codon == COMP_TYPE_CC:
-                        glob_source = self._codon_tuple_to_idx.keys()
+                        subgroup_globs = _glob_mapper(self._codon_tuple_to_idx.keys())
                     else:  # "aa"
-                        glob_source = self._aa_tuple_to_idx.keys()
-                    glob_elements = sorted(set(map(_glob_mapper, glob_source)))
-                    split_subgroups_glob = [f"{s}*" for s in glob_elements]
-                    # For AAs, also include the reverse glob
-                    if aa_codon == COMP_TYPE_AA:
-                        split_subgroups_glob.extend([f"*{s}" for s in glob_elements])
+                        # For AAs, also include the reverse glob
+                        subgroup_globs = _glob_mapper(
+                            self._aa_tuple_to_idx.keys(), include_reverse=True
+                        )
 
                 # Get the samples (angles) of all subgroups in this group
                 subgroup_col = AA_COL if aa_codon == COMP_TYPE_AA else CODON_COL
@@ -1354,7 +1377,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         kwds=dict(
                             group_idx=group_idx,
                             subgroup_sizes=subgroup_sizes,
-                            split_subgroups_glob=split_subgroups_glob,
+                            split_subgroups_glob=subgroup_globs,
                             dkdes=dkdes,
                             df_group_samples=df_group_samples,
                             out_dir=self.out_dir.joinpath(f"{aa_codon}-dkdes"),
@@ -1757,7 +1780,7 @@ def _plot_dkdes(
 
             if subgroup_glob != "*":
                 fig_filename = out_dir.joinpath(f"{group_idx}").joinpath(
-                    f"{subgroup_glob.replace('*', '_')}.png"
+                    f"{subgroup_glob}.png"
                 )
             else:
                 fig_filename = out_dir.joinpath(f"{group_idx}.png")

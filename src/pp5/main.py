@@ -120,8 +120,8 @@ def _generate_cli_from_func(func: Callable, skip=()):
 
         # For sequences (but not strings), add 'nargs'
         if args.get("type") not in (str, None) and issubclass(args["type"], Sequence):
-            args["nargs"] = "+"
-            args["type"] = str  # type of each element
+            # expect a comma-delimited list of strings
+            args["type"] = lambda s: tuple(s.split(","))
 
         args["names"] = [f"--{arg_name_long}"]
 
