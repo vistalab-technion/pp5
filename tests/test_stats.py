@@ -101,9 +101,13 @@ class TestTorusW2Test:
         Y = bvm_dist1.sample(250)
         Z = bvm_dist2.sample(500)
 
-        pval_xy = torus_w2_ub_test(X, Y)
-        pval_xz = torus_w2_ub_test(X, Z)
+        dist_xy, pval_xy = torus_w2_ub_test(X, Y)
+        dist_xz, pval_xz = torus_w2_ub_test(X, Z)
+        print(f"{dist_xy=},{dist_xz=}")
         print(f"{pval_xy=},{pval_xz=}")
+
+        # w2(X,Y) is smaller than w2(X,Z)
+        assert dist_xy < dist_xz
 
         # X, Y come from the same distribution
         assert pval_xy > 0.5
@@ -120,7 +124,7 @@ class TestTorusW2Test:
             for i in range(M):
                 X = bvm_dist1.sample(N)
                 Y = bvm_dist1.sample(N)
-                pvals[i] = torus_w2_ub_test(X, Y)
+                _, pvals[i] = torus_w2_ub_test(X, Y)
 
             plt.hist(pvals, bins=25, density=False, label=f"N={N}")
 
