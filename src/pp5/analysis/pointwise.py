@@ -29,7 +29,7 @@ from matplotlib.figure import Figure
 
 import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
-from pp5.stats import mht_bh, tw_test, mmd_test, kde2d_test
+from pp5.stats import mht_bh, tw_test, mmd_test, kde2d_test, torus_w2_ub_test
 from pp5.utils import sort_dict
 from pp5.codons import (
     ACIDS,
@@ -78,7 +78,7 @@ GROUP_STD_COL = "group_std"
 PVAL_COL = "pval"
 DDIST_COL = "ddist"
 SIGNIFICANT_COL = "significant"
-TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g"}
+TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g", "w2ub"}
 
 COMP_TYPE_AA = "aa"
 COMP_TYPE_CC = "cc"
@@ -95,6 +95,14 @@ CODON_TUPLE_GROUPINGS = {
 }
 
 ANY_AAC = "*"
+
+
+def _w2ub(X, Y, *a, **k):
+    # Helper to wrap torus_w2_ub_test for the pointwise analysis.
+    # Accept kwargs for params regarding number of permutations, which are
+    # unused by this statistic. Append a zero to the output tuple, representing
+    # the number of permutations performed
+    return *torus_w2_ub_test(X=X, Y=Y, grid_low=-np.pi, grid_high=np.pi), 0
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
@@ -162,8 +170,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param bs_randstate: Random state for bootstrap.
         :param ddist_statistic: Statistical test to use for quantifying significance
             of  distances between distributions (ddists).
-            Can be either 'kde_v' (KDE with von Mises kernel), 'kde_g' (KDE with
-            Gaussian kernel), 'mmd' (MMD with Gaussian kernel) or 'tw' (Welch t-test).
+            Can be one of:
+            'kde_v' (KDE with von Mises kernel);
+            'kde_g' (KDE with Gaussian kernel);
+            'mmd' (MMD with Gaussian kernel);
+            'tw' (Welch t-test);
+            'w2ub' (Upper bound of pval using torus Wasserstein distance).
         :param ddist_bs_niter: Number of bootstrap iterations when resampling data
             for permutation tests.
         :param ddist_n_max: Maximal sample-size to use when calculating
@@ -309,8 +321,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 tw_test,
                 similarity_fn=flat_torus_distance_sq,
             )
+        elif ddist_statistic == "w2ub":
+            self.ddist_statistic_fn = _w2ub
         else:
             raise ValueError(f"Unexpected {ddist_statistic=}")
+
         self.ddist_statistic_fn_name = ddist_statistic
 
         # Initialize codon tuple names and corresponding indices
