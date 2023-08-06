@@ -121,7 +121,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         kde_nbins: int = 128,
         kde_width: float = 30.0,
         bs_randstate: Optional[int] = None,
-        ddist_statistic: str = "mmd",
+        ddist_statistic: str = "kde_g",
         ddist_bs_niter: int = 1,
         ddist_n_max: Optional[int] = None,
         ddist_k: int = 1000,
@@ -183,7 +183,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             bootstrap sampling with the given maximal sample size will be performed.
             If None or zero, sample size wont be limited.
         :param ddist_k: Number of permutations to use when calculating
-            p-value of distances with a statistical test.
+            p-value of distances with a statistical test. Set to zero to disable
+            permutation testing. In this case ddist_bs_niter must be 1 and the
+            statistical test chosen must not be a permutation test. A single
+            iteration will be performed without bootstrap resampling.
         :param ddist_k_min: Minimal number of permutations to run. Setting this to a
             truthy value enables early termination: when the number of permutations k
             exceeds this number and pvalue >= ddist_k_th * 1/(k+1), no more
@@ -232,6 +235,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         if ddist_bs_niter < 1:
             raise ValueError(f"invalid {ddist_bs_niter=}, must be >= 1")
+
+        if ddist_k < 0:
+            raise ValueError(f"invalid {ddist_k=}, must be >= 0")
+        elif ddist_k == 0 and ddist_bs_niter > 1:
+            raise ValueError(f"If {ddist_k=}, then {ddist_bs_niter=} must be > 1")
 
         if ddist_statistic not in TEST_STATISTICS:
             raise ValueError(
@@ -1521,7 +1529,8 @@ def _subgroup_permutation_test(
     :param randstate: Random state for bootstrapping.
     :param ddist_bs_niter: Number of iterations for bootstrap sampling.
     :param ddist_n_max: Max sample size. If None or zero then no limit.
-    :param ddist_k: Number of permutations for computing significance.
+    :param ddist_k: Number of permutations for computing significance. If zero,
+        permutation tests are disabled.
     :param ddist_statistic_fn: Permutation test function to use for comparing the
         samples.
     :return: A Tuple (ddist, pval) containing the value of the ddist statistic and the p-value.
@@ -1537,13 +1546,34 @@ def _subgroup_permutation_test(
 
     # We use bootstrapping if requested more than one iteration or if we need to
     # limit the sample sizes
-    bootstrap_enabled = (ddist_bs_niter > 1) or bool(ddist_n_max)
     n1, n2 = len(subgroup1_data), len(subgroup2_data)
-    if not ddist_n_max:
-        ddist_n_max = max(n1, n2)
+
+    bootstrap_enabled = (ddist_bs_niter > 1) or bool(ddist_n_max)
+    bs_nsample = min(min(n1, n2), ddist_n_max) if bootstrap_enabled else None
+
+    # If k=0 then permutations are disabled. In this case we allow only a single
+    # iteration of over the data, and no resampling.
+    permutations_enabled = ddist_k > 0
+    if not permutations_enabled:
+        assert ddist_bs_niter == 1
+        bootstrap_enabled = False
+        permutation_kwargs = dict()
+    else:
+        bootstrap_enabled = (ddist_bs_niter > 1) or bool(ddist_n_max)
+        if not ddist_n_max:
+            ddist_n_max = max(n1, n2)
+        permutation_kwargs = dict(
+            k=ddist_k,
+            # Disable early termination inside?
+            k_min=ddist_k_min,  # if not bootstrap_enabled else 0,
+            k_th=ddist_k_th,
+        )
 
     # Bootstrapping sample size is based on the minimum size of each group
-    bs_nsample = min(min(n1, n2), ddist_n_max)
+    bs_nsample = min(min(n1, n2), ddist_n_max) if bootstrap_enabled else None
+
+    # maximal number of permutations in all resamples
+    k_max = ddist_bs_niter * ddist_k
 
     # For a sample larger than ddist_n_max, we create a new sample from it by sampling
     # with replacement.
@@ -1558,28 +1588,27 @@ def _subgroup_permutation_test(
     # Run bootstrapped tests
     ddists, pvals, ks = [], [], []
     k_total, count_total, pval = 0, 0, 0.0
-    k_max = ddist_bs_niter * ddist_k  # maximal number of permutations in all resamples
     bs_idx = 0
     for bs_idx in range(ddist_bs_niter):
         curr_ddist, curr_pval, curr_k = ddist_statistic_fn(
             X=_bootstrap_resample(subgroup1_data),
             Y=_bootstrap_resample(subgroup2_data),
-            k=ddist_k,
-            # Disable early termination inside?
-            k_min=ddist_k_min,  # if not bootstrap_enabled else 0,
-            k_th=ddist_k_th,
+            **permutation_kwargs,
         )
         ddists.append(curr_ddist)
         pvals.append(curr_pval)
         ks.append(curr_k)
 
-        # Aggregate total number of permutations and counts to compute pval based
-        # on all permutations across resampling. This is equivalent to the pval we'd
-        # get if we'd run all the samples together in the same test for k_total
-        # permutations.
-        k_total += curr_k
-        count_total += max(int(curr_pval * (curr_k + 1)) - 1, 0)
-        pval = (count_total + 1) / (k_total + 1)
+        if permutations_enabled:
+            # Aggregate total number of permutations and counts to compute pval based
+            # on all permutations across resampling. This is equivalent to the pval we'd
+            # get if we'd run all the samples together in the same test for k_total
+            # permutations.
+            k_total += curr_k
+            count_total += max(int(curr_pval * (curr_k + 1)) - 1, 0)
+            pval = (count_total + 1) / (k_total + 1)
+        else:
+            pval = curr_pval
 
         # Early termination criterion: minimal number of permutations reached,
         # and pval is larger than some factor (k_th) times the smallest possible pvalue.
