@@ -1,17 +1,19 @@
-from typing import Tuple, Union, Callable, Optional
-from pathlib import Path
+from typing import Tuple, Callable, Optional
 
 import numba
 import numpy as np
 import rpy2.robjects as robjects
+import rpy2.robjects.numpy2ri
 from numpy import ndarray
-from rpy2.robjects import numpy2ri, default_converter
 from scipy.spatial.distance import pdist, squareform, sqeuclidean
-from rpy2.robjects.conversion import localconverter
 
-from pp5.distributions.kde import kde_2d, gaussian_kernel, w2_dist_sinkhorn
+from pp5.distributions.kde import kde_2d, gaussian_kernel
 
 _NUMBA_PARALLEL = False
+
+# Names of R functions we use from the torustest R package.
+R_TORUSTEST_GEODESIC = "twosample.geodesic.torus.test"
+R_TORUSTEST_UBOUND = "twosample.ubound.torus.test"
 
 
 # @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
@@ -380,14 +382,11 @@ def torus_w2_gof_test(X: ndarray, Y: ndarray) -> float:
     X = (X + np.pi) / (2 * np.pi)
     Y = (Y + np.pi) / (2 * np.pi)
 
-    r = robjects.r
-    source_file_path = Path(__file__).parent.joinpath("twosample.ubound.torus.test.R")
-    r["source"](str(source_file_path))
-    test_fn_r = robjects.globalenv["twosample.ubound.torus.test"]
+    # Get R-function to invoke for performing the test
+    test_fn_r = robjects.globalenv[R_TORUSTEST_UBOUND]
 
-    # Create a converter that starts with rpy2's default converter
-    # to which the numpy conversion rules are added.
-    np_cv_rules = default_converter + numpy2ri.converter
-    with localconverter(np_cv_rules) as cv:
+    # Create a converter that converts np.ndarray to R array
+    np_conversion = robjects.default_converter + robjects.numpy2ri.converter
+    with robjects.conversion.localconverter(np_conversion) as cv:
         pval = test_fn_r(X, Y)
         return pval.item()
