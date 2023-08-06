@@ -3,8 +3,11 @@ from pathlib import Path
 
 import numba
 import numpy as np
+import rpy2.robjects as robjects
 from numpy import ndarray
+from rpy2.robjects import numpy2ri, default_converter
 from scipy.spatial.distance import pdist, squareform, sqeuclidean
+from rpy2.robjects.conversion import localconverter
 
 from pp5.distributions.kde import kde_2d, gaussian_kernel, w2_dist_sinkhorn
 
@@ -356,16 +359,22 @@ def _two_sample_kernel_permutation_test_inner(
     return stat_val, pval, curr_permutation
 
 
-import rpy2.robjects as robjects
-from rpy2.robjects import numpy2ri, default_converter
-from rpy2.robjects.conversion import localconverter
+def torus_w2_gof_test(X: ndarray, Y: ndarray) -> float:
+    """
 
+    Two-sample goodness-of-fit test for the torus using the Wasserstein-2 distance.
 
-def torus_w2_gof_test(
-    X: ndarray,
-    Y: ndarray,
-) -> float:
-    # _install_r_deps()
+    Uses code from: https://github.com/gonzalez-delgado/torustest
+
+    González-Delgado J, González-Sanz A, Cortés J, Neuvial P: Two-sample
+    goodness-of-fit tests on the flat torus based on Wasserstein distance and their
+    relevance to structural biology. Electron. J. Statist., 17(1): 1547–1586, 2023.
+
+    :param X: First sample observations, of shape (n, 2).
+    :param Y: Second sample observations, of shape (n, 2).
+    :return: Upper bound of p-value for the null hypothesis that X and Y are samples
+        from the same distribution.
+    """
 
     # Scale X, Y from [-pi,pi) x [-pi,pi) to [0,1) x [0,1]
     X = (X + np.pi) / (2 * np.pi)
@@ -382,24 +391,3 @@ def torus_w2_gof_test(
     with localconverter(np_cv_rules) as cv:
         pval = test_fn_r(X, Y)
         return pval.item()
-
-
-def _install_r_deps():
-
-    import rpy2.robjects.packages as rpackages
-    from rpy2.robjects.vectors import StrVector
-    from rpy2.robjects.packages import importr
-
-    # import R's utility package
-    utils = importr("utils")
-
-    # select a mirror for R packages
-    utils.chooseCRANmirror(ind=1)  # select the first mirror in the list
-
-    packnames = ("som.nn", "proxy", "transport")
-
-    names_to_install = [x for x in packnames if not rpackages.isinstalled(x)]
-    if len(names_to_install) > 0:
-        utils.install_packages(StrVector(names_to_install))
-
-        j = 3
