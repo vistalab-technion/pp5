@@ -1,0 +1,14 @@
+Package: torustest
+Type: Package
+Title: Two-sample goodness-of-fit tests on the two-dimensional flat torus based on Wasserstein distance.
+Version: 0.1.0
+Author: Javier González-Delgado
+Maintainer: Javier González-Delgado <javier.gonzalez-delgado@math.univ-toulouse.fr>
+Description: The goal of torustest is to provide some practical approaches to perform two-sample goodness-of-fit tests for measures supported on the two-dimensional flat torus based on Wasserstein distance. These techniques have been introduced in González-Delgado, J., González-Sanz, A., Cortés, J., & Neuvial, P. (2021). Two-sample goodness-of-fit tests on the flat torus based on Wasserstein distance and their relevance to structural biology. arXiv:2108.00165.
+Encoding: UTF-8
+Imports: BAMBI, circular, doParallel, FRACTION, ggplot2, pracma, proxy,
+        transport, uniformly
+RoxygenNote: 7.1.2
+NeedsCompilation: no
+Packaged: 2023-01-24 12:34:47 UTC; jgonzale
+License: MIT + file LICENSE
