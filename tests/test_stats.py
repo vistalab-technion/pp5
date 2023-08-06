@@ -88,8 +88,8 @@ class TestTorusW2Test:
         dist = BvMMixtureDiscreteDistribution(
             k1=1,
             k2=1,
-            A=1,
-            mu=[[0.5, 0.5]],
+            A=2,
+            mu=[[0.1, 0.1]],
             # alpha=[0.3, 0.7],
             gridsize=1024,
             two_pi=False,
@@ -97,21 +97,25 @@ class TestTorusW2Test:
         return dist
 
     def test_1(self, bvm_dist1, bvm_dist2):
-        X = bvm_dist1.sample(200)
+        X = bvm_dist1.sample(500)
         Y = bvm_dist1.sample(250)
-        Z = bvm_dist2.sample(350)
+        Z = bvm_dist2.sample(500)
 
         pval_xy = torus_w2_gof_test(X, Y)
         pval_xz = torus_w2_gof_test(X, Z)
-
         print(f"{pval_xy=},{pval_xz=}")
-        j = 3
+
+        # X, Y come from the same distribution
+        assert pval_xy > 0.5
+
+        # X, Z come from different distributions
+        assert pval_xz < 0.1
 
     def test_uniformity(self, bvm_dist1):
 
         Ns = [10, 100, 200]
         M = 100
-        pvals = np.empty((M,), dtype=np.float)
+        pvals = np.empty((M,), dtype=float)
         for N in Ns:
             for i in range(M):
                 X = bvm_dist1.sample(N)
@@ -125,5 +129,4 @@ class TestTorusW2Test:
         plt.suptitle(rf"twosample.ubound.torus.test under $H_0$")
         plt.legend()
         plt.savefig("tests/out/pvals-ubound-synth_control.png", dpi=150)
-        plt.show()
-
+        # plt.show()
