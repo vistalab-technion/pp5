@@ -3,7 +3,7 @@ import pytest
 import matplotlib.pyplot as plt
 
 from pp5.stats import mht_bh
-from pp5.stats.two_sample import torus_w2_gof_test
+from pp5.stats.two_sample import torus_w2_ub_test
 from pp5.distributions.vonmises import BvMMixtureDiscreteDistribution
 
 
@@ -101,8 +101,8 @@ class TestTorusW2Test:
         Y = bvm_dist1.sample(250)
         Z = bvm_dist2.sample(500)
 
-        pval_xy = torus_w2_gof_test(X, Y)
-        pval_xz = torus_w2_gof_test(X, Z)
+        pval_xy = torus_w2_ub_test(X, Y)
+        pval_xz = torus_w2_ub_test(X, Z)
         print(f"{pval_xy=},{pval_xz=}")
 
         # X, Y come from the same distribution
@@ -120,7 +120,7 @@ class TestTorusW2Test:
             for i in range(M):
                 X = bvm_dist1.sample(N)
                 Y = bvm_dist1.sample(N)
-                pvals[i] = torus_w2_gof_test(X, Y)
+                pvals[i] = torus_w2_ub_test(X, Y)
 
             plt.hist(pvals, bins=25, density=False, label=f"N={N}")
 

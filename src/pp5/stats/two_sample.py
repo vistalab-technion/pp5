@@ -361,10 +361,11 @@ def _two_sample_kernel_permutation_test_inner(
     return stat_val, pval, curr_permutation
 
 
-def torus_w2_gof_test(X: ndarray, Y: ndarray) -> float:
+def torus_w2_ub_test(X: ndarray, Y: ndarray) -> float:
     """
 
-    Two-sample goodness-of-fit test for the torus using the Wasserstein-2 distance.
+    Two-sample test for the torus using the Wasserstein-2 distance. Returns an upper
+    bound for the pvalue.
 
     Uses code from: https://github.com/gonzalez-delgado/torustest
 
