@@ -3,7 +3,7 @@ import pytest
 import matplotlib.pyplot as plt
 
 from pp5.stats import mht_bh
-from pp5.stats.two_sample import torus_w2_ub_test
+from pp5.stats.two_sample import torus_w2_ub_test, torus_w2_projection_test
 from pp5.distributions.vonmises import BvMMixtureDiscreteDistribution
 
 
@@ -69,7 +69,21 @@ class TestMHTBH(object):
             mht_bh(0.1, np.arange(m).astype(float))
 
 
-class TestTorusW2Test:
+class TestTorusW2:
+
+    STAT_TEST_FNS = {
+        "projection": torus_w2_projection_test,
+        # "ubound": torus_w2_ub_test,
+    }
+
+    @pytest.fixture(params=STAT_TEST_FNS.keys())
+    def stat_test_name(self, request):
+        return request.param
+
+    @pytest.fixture
+    def stat_test_fn(self, stat_test_name):
+        return self.STAT_TEST_FNS[stat_test_name]
+
     @pytest.fixture
     def bvm_dist1(self, request):
         dist = BvMMixtureDiscreteDistribution(
@@ -96,13 +110,13 @@ class TestTorusW2Test:
         )
         return dist
 
-    def test_1(self, bvm_dist1, bvm_dist2):
+    def test_pvals(self, bvm_dist1, bvm_dist2, stat_test_fn):
         X = bvm_dist1.sample(500)
         Y = bvm_dist1.sample(250)
         Z = bvm_dist2.sample(500)
 
-        dist_xy, pval_xy = torus_w2_ub_test(X, Y)
-        dist_xz, pval_xz = torus_w2_ub_test(X, Z)
+        dist_xy, pval_xy = stat_test_fn(X, Y)
+        dist_xz, pval_xz = stat_test_fn(X, Z)
         print(f"{dist_xy=},{dist_xz=}")
         print(f"{pval_xy=},{pval_xz=}")
 
@@ -115,7 +129,7 @@ class TestTorusW2Test:
         # X, Z come from different distributions
         assert pval_xz < 0.1
 
-    def test_uniformity(self, bvm_dist1):
+    def test_uniformity(self, bvm_dist1, stat_test_fn, stat_test_name):
 
         Ns = [10, 100, 200]
         M = 100
@@ -124,13 +138,13 @@ class TestTorusW2Test:
             for i in range(M):
                 X = bvm_dist1.sample(N)
                 Y = bvm_dist1.sample(N)
-                _, pvals[i] = torus_w2_ub_test(X, Y)
+                _, pvals[i] = stat_test_fn(X, Y)
 
             plt.hist(pvals, bins=25, density=False, label=f"N={N}")
 
         plt.xlim([0, 1])
-        plt.xlabel("p-value (UB)")
-        plt.suptitle(rf"twosample.ubound.torus.test under $H_0$")
+        plt.xlabel(f"p-value ({stat_test_name})")
+        plt.suptitle(rf"{stat_test_name} test under $H_0$")
         plt.legend()
-        plt.savefig("tests/out/pvals-ubound-synth_control.png", dpi=150)
+        plt.savefig(f"tests/out/pvals-{stat_test_name}-synth_control.png", dpi=150)
         # plt.show()
