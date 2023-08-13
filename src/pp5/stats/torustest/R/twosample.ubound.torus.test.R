@@ -5,6 +5,7 @@
 #'
 #' @param sample_1 n x 2 matrix containing n observations in the two-dimensional flat torus, parametrized as the periodic [0,1) x [0,1).
 #' @param sample_2 n x 2 matrix containing n observations in the two-dimensional flat torus, parametrized as the periodic [0,1) x [0,1).
+#' @param return_stat If TRUE, both the the test statistic and pvalue are returned, otherwise only the pvalue is returned.
 #'
 #' @return The p-value for the two-sample test on the torus.
 #'
@@ -24,7 +25,7 @@
 #'
 #' @export
 
-twosample.ubound.torus.test <- function(sample_1, sample_2, return_dist=FALSE){
+twosample.ubound.torus.test <- function(sample_1, sample_2, return_stat=FALSE){
 
   n <- nrow(sample_1); m <- nrow(sample_2)
   costmatrix <- proxy::dist(x = sample_1, y = sample_2, method = dist.torus, diag = TRUE)  # Cost matrix
@@ -36,9 +37,8 @@ twosample.ubound.torus.test <- function(sample_1, sample_2, return_dist=FALSE){
 
   pval <- u_bound(wdis^2, n, m) #p-value
 
-  # If return_dist is true, return both pval and distance, otherwise only return pvalue
-  if(return_dist){
-      return(list(pval=pval, dist=wdis))
+  if(return_stat){
+      return(list(pval=pval, stat=wdis))
   }
   else{
       return(pval)
