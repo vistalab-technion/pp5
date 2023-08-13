@@ -5,6 +5,7 @@ channels:
   - schrodinger # pymol
   - bioconda    # clustal, muscle, blast
   - salilab     # dssp
+  - r           # some R packages
 dependencies:
   # Basic
   - pip
@@ -35,16 +36,20 @@ dependencies:
   - pytest-repeat
   - pytest-xdist
   - requests
+  - rpy2
   - scikit-learn
   - scipy
   - seaborn
   - toml
   - tqdm
   - uncertainties
-  - rpy2
-  - r-transport
+  # r-dependencies (for torustest)
+  - r-doparallel
+  - r-fraction
+  - r-ggplot2
+  - r-pracma
   - r-proxy
-  - r-som
+  - r-transport
   # pip dependencies
   - pip:
     - nbmerge
