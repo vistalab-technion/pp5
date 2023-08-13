@@ -7,6 +7,7 @@ import rpy2.robjects.numpy2ri
 from numpy import ndarray
 from scipy.spatial.distance import pdist, squareform, sqeuclidean
 
+import pp5
 from pp5.distributions.kde import kde_2d, gaussian_kernel
 
 _NUMBA_PARALLEL = False
@@ -14,6 +15,7 @@ _NUMBA_PARALLEL = False
 # Names of R functions we use from the torustest R package.
 R_TORUSTEST_GEODESIC = "twosample.geodesic.torus.test"
 R_TORUSTEST_UBOUND = "twosample.ubound.torus.test"
+R_TORUSTEST_SIM_NULL_STAT = "sim.null.stat"
 
 
 # @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
@@ -400,5 +402,61 @@ def torus_w2_ub_test(
     # Create a converter that converts np.ndarray to R array
     np_conversion = robjects.default_converter + robjects.numpy2ri.converter
     with robjects.conversion.localconverter(np_conversion) as cv:
-        result = test_fn_r(X, Y, return_dist=True)
-        return result["dist"].item(), result["pval"].item()
+        result = test_fn_r(X, Y, return_stat=True)
+        return result["stat"].item(), result["pval"].item()
+
+
+def torus_w2_projection_test(
+    X: ndarray,
+    Y: ndarray,
+    grid_low: float = -np.pi,
+    grid_high: float = np.pi,
+    n_geodesics: int = 2,
+    n_sim=20,
+) -> Tuple[float, float]:
+    """
+
+    Two-sample test for the torus using the projections onto closed geodesics.
+    The computed p-value is global pvalue obtained by n_gedesics(min(pvals))
+    where pvals are the per-projection p-values.
+
+    Uses code from: https://github.com/gonzalez-delgado/torustest
+
+    González-Delgado J, González-Sanz A, Cortés J, Neuvial P: Two-sample
+    goodness-of-fit tests on the flat torus based on Wasserstein distance and their
+    relevance to structural biology. Electron. J. Statist., 17(1): 1547–1586, 2023.
+
+    :param X: First sample observations, of shape (n, 2).
+    :param Y: Second sample observations, of shape (n, 2).
+    :param grid_low: Smallest value on the evaluation grid, inclusive.
+    :param grid_high: Largest value on the evaluation grid, exclusive.
+    :return: Tuple containing:
+    - w2 distance
+    - pvalue (upper bound)
+    """
+
+    # Scale X, Y from e.g. [-pi,pi) x [-pi,pi) to [0,1) x [0,1]
+    def _scale(Z: ndarray) -> ndarray:
+        return (Z - grid_low) / (grid_high - grid_low)
+
+    X, Y = _scale(X), _scale(Y)
+
+    # Get R-functions to invoke for performing the test
+    sim_null_fn_r = robjects.globalenv[R_TORUSTEST_SIM_NULL_STAT]
+    test_fn_r = robjects.globalenv[R_TORUSTEST_GEODESIC]
+
+    n_cores = 1  # pp5.get_config(pp5.CONFIG_MAX_PROCESSES)
+
+    # Create a converter that converts np.ndarray to R array
+    np_conversion = robjects.default_converter + robjects.numpy2ri.converter
+    with robjects.conversion.localconverter(np_conversion) as cv:
+        sim_null_dist = sim_null_fn_r(NR=n_sim, NC=n_cores, n=30)
+        result = test_fn_r(
+            sample_1=X,
+            sample_2=Y,
+            n_geodesics=n_geodesics,
+            NC_geodesic=n_cores,
+            sim_null=sim_null_dist,
+            return_stat=True,
+        )
+        return result["stat"].item(), result["pval"].item()
