@@ -1,3 +1,5 @@
+import pickle
+import logging
 from typing import Tuple, Callable, Optional
 
 import numba
@@ -5,10 +7,14 @@ import numpy as np
 import rpy2.robjects as robjects
 import rpy2.robjects.numpy2ri
 from numpy import ndarray
+from filelock import FileLock
 from scipy.spatial.distance import pdist, squareform, sqeuclidean
 
 import pp5
 from pp5.distributions.kde import kde_2d, gaussian_kernel
+
+_LOG = logging.getLogger(__name__)
+
 
 _NUMBA_PARALLEL = False
 
@@ -406,13 +412,15 @@ def torus_w2_ub_test(
         return result["stat"].item(), result["pval"].item()
 
 
-def torus_w2_projection_test(
+def torus_projection_test(
     X: ndarray,
     Y: ndarray,
     grid_low: float = -np.pi,
     grid_high: float = np.pi,
+    n_cores: int = 2,
     n_geodesics: int = 2,
-    n_sim=20,
+    n_null_simulations: int = 2000,
+    n_null_sample_size: int = 30,
 ) -> Tuple[float, float]:
     """
 
@@ -430,6 +438,10 @@ def torus_w2_projection_test(
     :param Y: Second sample observations, of shape (n, 2).
     :param grid_low: Smallest value on the evaluation grid, inclusive.
     :param grid_high: Largest value on the evaluation grid, exclusive.
+    :param n_cores: Number of cores to use for running on multiple processes.
+    :param n_geodesics: Number of geodesics lines to sample.
+    :param n_null_simulations: Number of simulations to run for the null distribution.
+    :param n_null_sample_size: Number of samples to use for each null simulation.
     :return: Tuple containing:
     - w2 distance
     - pvalue (upper bound)
@@ -441,16 +453,16 @@ def torus_w2_projection_test(
 
     X, Y = _scale(X), _scale(Y)
 
-    # Get R-functions to invoke for performing the test
-    sim_null_fn_r = robjects.globalenv[R_TORUSTEST_SIM_NULL_STAT]
+    # Get R-function to invoke for performing the test
     test_fn_r = robjects.globalenv[R_TORUSTEST_GEODESIC]
 
-    n_cores = 1  # pp5.get_config(pp5.CONFIG_MAX_PROCESSES)
+    sim_null_dist = torus_projection_test_null_samples(
+        n_simulations=n_null_simulations, n_sample=n_null_sample_size, n_cores=n_cores
+    )
 
     # Create a converter that converts np.ndarray to R array
     np_conversion = robjects.default_converter + robjects.numpy2ri.converter
     with robjects.conversion.localconverter(np_conversion) as cv:
-        sim_null_dist = sim_null_fn_r(NR=n_sim, NC=n_cores, n=30)
         result = test_fn_r(
             sample_1=X,
             sample_2=Y,
@@ -460,3 +472,41 @@ def torus_w2_projection_test(
             return_stat=True,
         )
         return result["stat"].item(), result["pval"].item()
+
+
+def torus_projection_test_null_samples(
+    n_simulations: int, n_sample: int, n_cores: int = 2
+) -> np.ndarray:
+    """
+    Sample from the null distribution of the wasserstein statistic on S^1.
+
+    :param n_simulations: Number of simulations to perform.
+    :param n_sample: Sample size in each simulation.
+    :param n_cores: Number of cores to use for running on multiple processes.
+    :return: An array of simulated wasserstein statistics, of shape (n_simulations,).
+    """
+
+    filename = f"torustest_null_{n_simulations:05d}_{n_sample:05d}.pkl"
+    filepath = pp5.TORUSTEST_NULL_DIR / filename
+    lock_filepath = str(filepath).replace(".pkl", ".lock")
+    sim_null_fn_r = robjects.globalenv[R_TORUSTEST_SIM_NULL_STAT]
+
+    with FileLock(lock_filepath):
+        if filepath.exists():
+            with open(filepath, "rb") as f:
+                sim_null_dist = pickle.load(f)
+            _LOG.info(f"Loaded torustest null distribution from {filepath}")
+
+        else:
+            np_conversion = robjects.default_converter + robjects.numpy2ri.converter
+            with robjects.conversion.localconverter(np_conversion) as cv:
+                _LOG.info(
+                    f"Calculating torustest null distribution {n_simulations=}, "
+                    f"{n_sample=}..."
+                )
+                sim_null_dist = sim_null_fn_r(NR=n_simulations, NC=n_cores, n=n_sample)
+                with open(filepath, "wb") as f:
+                    pickle.dump(sim_null_dist, f)
+                _LOG.info(f"Saved torustest null distribution to {filepath}")
+
+        return sim_null_dist
