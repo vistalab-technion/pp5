@@ -54,6 +54,7 @@ from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral, wraparound_mean, flat_torus_distance_sq
 from pp5.parallel import yield_async_results
 from pp5.analysis.base import ParallelAnalyzer
+from pp5.stats.two_sample import torus_projection_test
 from pp5.distributions.kde import bvm_kernel, gaussian_kernel, torus_gaussian_kernel_2d
 from pp5.distributions.vonmises import BvMKernelDensityEstimator
 
@@ -78,7 +79,7 @@ GROUP_STD_COL = "group_std"
 PVAL_COL = "pval"
 DDIST_COL = "ddist"
 SIGNIFICANT_COL = "significant"
-TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g", "w2ub"}
+TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g", "torus_ub", "torus_p"}
 
 COMP_TYPE_AA = "aa"
 COMP_TYPE_CC = "cc"
@@ -97,12 +98,16 @@ CODON_TUPLE_GROUPINGS = {
 ANY_AAC = "*"
 
 
-def _w2ub(X, Y, *a, **k):
+def _torus_ub(X, Y, *a, **k):
     # Helper to wrap torus_w2_ub_test for the pointwise analysis.
     # Accept kwargs for params regarding number of permutations, which are
     # unused by this statistic. Append a zero to the output tuple, representing
     # the number of permutations performed
     return *torus_w2_ub_test(X=X, Y=Y, grid_low=-np.pi, grid_high=np.pi), 0
+
+
+def _torus_p(X, Y, *a, **k):
+    return *torus_projection_test(X=X, Y=Y, grid_low=-np.pi, grid_high=np.pi), 0
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
@@ -175,7 +180,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             'kde_g' (KDE with Gaussian kernel);
             'mmd' (MMD with Gaussian kernel);
             'tw' (Welch t-test);
-            'w2ub' (Upper bound of pval using torus Wasserstein distance).
+            'torus_ub' (Upper bound of based on torus Wasserstein distance).
+            'torus_p' (Based on 1d Wasserstein distance on S1, after projecting torus data).
         :param ddist_bs_niter: Number of bootstrap iterations when resampling data
             for permutation tests.
         :param ddist_n_max: Maximal sample-size to use when calculating
@@ -329,8 +335,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 tw_test,
                 similarity_fn=flat_torus_distance_sq,
             )
-        elif ddist_statistic == "w2ub":
-            self.ddist_statistic_fn = _w2ub
+        elif ddist_statistic == "torus_ub":
+            self.ddist_statistic_fn = _torus_ub
+        elif ddist_statistic == "torus_p":
+            self.ddist_statistic_fn = _torus_p
         else:
             raise ValueError(f"Unexpected {ddist_statistic=}")
 
