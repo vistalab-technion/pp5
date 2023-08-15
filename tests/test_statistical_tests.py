@@ -3,7 +3,7 @@ import pytest
 import matplotlib.pyplot as plt
 
 from pp5.stats import mht_bh
-from pp5.stats.two_sample import torus_w2_ub_test, torus_w2_projection_test
+from pp5.stats.two_sample import torus_w2_ub_test, torus_projection_test
 from pp5.distributions.vonmises import BvMMixtureDiscreteDistribution
 
 
@@ -72,8 +72,8 @@ class TestMHTBH(object):
 class TestTorusW2:
 
     STAT_TEST_FNS = {
-        "projection": torus_w2_projection_test,
-        # "ubound": torus_w2_ub_test,
+        "projection": torus_projection_test,
+        "ubound": torus_w2_ub_test,
     }
 
     @pytest.fixture(params=STAT_TEST_FNS.keys())
@@ -132,7 +132,7 @@ class TestTorusW2:
     def test_uniformity(self, bvm_dist1, stat_test_fn, stat_test_name):
 
         Ns = [10, 100, 200]
-        M = 100
+        M = 10
         pvals = np.empty((M,), dtype=float)
         for N in Ns:
             for i in range(M):
@@ -146,5 +146,5 @@ class TestTorusW2:
         plt.xlabel(f"p-value ({stat_test_name})")
         plt.suptitle(rf"{stat_test_name} test under $H_0$")
         plt.legend()
-        plt.savefig(f"tests/out/pvals-{stat_test_name}-synth_control.png", dpi=150)
+        plt.savefig(f"tests/out/pvals-{stat_test_name}-synth_control-{M=}.png", dpi=150)
         # plt.show()
