@@ -81,6 +81,10 @@ DDIST_COL = "ddist"
 SIGNIFICANT_COL = "significant"
 TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g", "torus_ub", "torus_p"}
 
+RANDOMIZE_TYPES_AA = "aa"
+RANDOMIZE_TYPES_AA_SS = "aa_ss"
+RANDOMIZE_TYPES = {RANDOMIZE_TYPES_AA, RANDOMIZE_TYPES_AA_SS}
+
 COMP_TYPE_AA = "aa"
 COMP_TYPE_CC = "cc"
 COMP_TYPE_AAC = "aac"
@@ -137,7 +141,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         comparison_types: Sequence[str] = COMP_TYPES,
         ss_group_any: bool = False,
         ignore_omega: bool = False,
-        out_tag: str = None,
+        randomize_codons: Optional[str] = None,
+        out_tag: Optional[str] = None,
     ):
         """
         Analyzes a dataset of protein records to produce a matrix of distances between
@@ -212,6 +217,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param ss_group_any: Whether to add an ANY group to the analysis which contains
             all SS types, even when conditioning by SS type.
         :param ignore_omega: Whether to ignore the omega angle or process it.
+        :param randomize_codons: Whether to randomize the codon labels. Means that a
+            random codon will be assigned to each angle in the dataset, according to
+            this arguments' value. Value can be either 'aa' or 'aa_ss' which controls
+            whether to randomize the codon labels after conditioning on AA only or on
+            both AA and SS.
         :param out_tag: Tag for output.
         """
         super().__init__(
@@ -261,6 +271,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 f"One or more invalid {comparison_types}, must be one of {COMP_TYPES}"
             )
 
+        if randomize_codons and randomize_codons not in RANDOMIZE_TYPES:
+            raise ValueError(
+                f"invalid {randomize_codons=}, must be one of {RANDOMIZE_TYPES}"
+            )
+
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
         self.tuple_len = tuple_len
@@ -285,6 +300,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.comparison_types = comparison_types
         self.ss_group_any = ss_group_any
         self.ignore_omega = ignore_omega
+        self.randomize_codons = randomize_codons
 
         if condition_on_ss:
             consolidated_ss_types = [ss for ss in consolidate_ss.values() if ss]
@@ -465,11 +481,32 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_pointwise = df_pointwise[~idx_no_codon]
         df_pointwise[CODON_COL] = df_pointwise[[CODON_COL]].applymap(codon2aac)
 
-        async_results = []
+        # Randomize codons if needed
+        if self.randomize_codons:
+            # Shuffle codons withing each AA or AA+SS group
+            aas = df_pointwise[CODON_COL].map(lambda c: c[0])
+            df_pointwise[AA_COL] = aas
+            randomization_group = (
+                [AA_COL]
+                if (self.randomize_codons == RANDOMIZE_TYPES_AA)
+                else [AA_COL, SECONDARY_COL]
+            )
+            randomized_codons = df_pointwise.groupby(by=randomization_group)[
+                CODON_COL
+            ].transform(lambda x: x.sample(frac=1, replace=False).values)
+
+            # Sanity check: randomized codons should have same AAs as original codons
+            assert randomized_codons.map(lambda c: c[0]).equals(aas)
+            assert not randomized_codons.equals(df_pointwise[CODON_COL])
+
+            # Update codon with randomized versions
+            df_pointwise[CODON_COL] = randomized_codons
+            df_pointwise.drop(columns=[AA_COL], inplace=True)
 
         # Process groups in parallel.
         # Add additional conditioning on codon just to break it into many more groups
         # so that it parallelizes better.
+        async_results = []
         for group_idx, df_group in df_pointwise.groupby(by=[CONDITION_COL, CODON_COL]):
             condition_group_id, _ = group_idx
             async_results.append(
