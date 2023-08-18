@@ -502,6 +502,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Update codon with randomized versions
             df_pointwise[CODON_COL] = randomized_codons
             df_pointwise.drop(columns=[AA_COL], inplace=True)
+            LOGGER.info(f"Randomized codons conditioned on {randomization_group}")
 
         # Process groups in parallel.
         # Add additional conditioning on codon just to break it into many more groups
