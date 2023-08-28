@@ -264,8 +264,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         if ddist_k < 0:
             raise ValueError(f"invalid {ddist_k=}, must be >= 0")
+
         elif ddist_k == 0 and ddist_bs_niter > 1:
-            raise ValueError(f"If {ddist_k=}, then {ddist_bs_niter=} must be > 1")
+            raise ValueError(f"If {ddist_k=}, then {ddist_bs_niter=} must be 1")
 
         if ddist_statistic not in TEST_STATISTICS:
             raise ValueError(
@@ -367,8 +368,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 similarity_fn=flat_torus_distance_sq,
             )
         elif ddist_statistic == "torus_ub":
+            assert self.ddist_k == 0, "torus test doesn't support permutations"
             self.ddist_statistic_fn = _torus_ub
         elif ddist_statistic == "torus_p":
+            assert self.ddist_k == 0, "torus test doesn't support permutations"
             self.ddist_statistic_fn = _torus_p
         else:
             raise ValueError(f"Unexpected {ddist_statistic=}")
@@ -895,17 +898,19 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     )
                 # Set n_max for this comparison based on the smallest codon in the
                 # entire AA
-                n_max = max(min_codon_size_aa, 2)
+                n_max_aa = max(min_codon_size_aa, 2)
             else:
                 # Set n_max for this comparison based on the smallest codon of the two
-                n_max = min(codon_counts_aa[aact1], codon_counts_aa[aact2])
+                n_max_aa = min(codon_counts_aa[aact1], codon_counts_aa[aact2])
 
-            if self.ddist_n_max:
+            if self.ddist_n_max:  # Will be zero if unset
                 # Never use more than the maximum if it was set
-                n_max = min(n_max, self.ddist_n_max)
+                n_max = min(n_max_aa, self.ddist_n_max)
             else:
-                # If maximum wasn't set, keep unset for this comparison
-                n_max = self.ddist_n_max
+                # If maximum wasn't set:
+                # - If we need to limit by smallest codon in AA, use that limit
+                # - Otherwise, keep unset for this comparison (no limit)
+                n_max = n_max_aa if self.ddist_n_max_aa else self.ddist_n_max
 
             return n_max
 
@@ -1631,9 +1636,6 @@ def _subgroup_permutation_test(
     # limit the sample sizes
     n1, n2 = len(subgroup1_data), len(subgroup2_data)
 
-    bootstrap_enabled = (ddist_bs_niter > 1) or bool(ddist_n_max)
-    bs_nsample = min(min(n1, n2), ddist_n_max) if bootstrap_enabled else None
-
     # If k=0 then permutations are disabled. In this case we allow only a single
     # iteration of over the data, and no resampling.
     permutations_enabled = ddist_k > 0
@@ -1644,7 +1646,7 @@ def _subgroup_permutation_test(
     else:
         bootstrap_enabled = (ddist_bs_niter > 1) or bool(ddist_n_max)
         if not ddist_n_max:
-            ddist_n_max = max(n1, n2)
+            ddist_n_max = min(n1, n2)
         permutation_kwargs = dict(
             k=ddist_k,
             # Disable early termination inside?
