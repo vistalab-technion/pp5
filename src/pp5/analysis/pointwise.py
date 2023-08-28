@@ -133,6 +133,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         ddist_statistic: str = "kde_g",
         ddist_bs_niter: int = 1,
         ddist_n_max: Optional[int] = None,
+        ddist_n_max_aa: bool = True,
         ddist_k: int = 1000,
         ddist_k_min: Optional[int] = None,
         ddist_k_th: float = 50.0,
@@ -193,6 +194,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             p-value of distances with a statistical test. If there are larger samples,
             bootstrap sampling with the given maximal sample size will be performed.
             If None or zero, sample size wont be limited.
+        :param ddist_n_max_aa: When comparing two codons, whether to further limit
+            the sample size (in addition to ddist_n_max) to the sample size of the
+            rarest codon of all codons from the same AA.
         :param ddist_k: Number of permutations to use when calculating
             p-value of distances with a statistical test. Set to zero to disable
             permutation testing. In this case ddist_bs_niter must be 1 and the
@@ -292,6 +296,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.bs_randstate = bs_randstate
         self.ddist_bs_niter = ddist_bs_niter
         self.ddist_n_max = int(ddist_n_max) if ddist_n_max else 0
+        self.ddist_n_max_aa = ddist_n_max_aa
         self.ddist_k = ddist_k
         self.ddist_k_min = int(ddist_k_min) if ddist_k_min else 0
         self.ddist_k_th = ddist_k_th
@@ -850,33 +855,57 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Only analyze tuples where the first AA matches, e.g. A_X and A_Y.
             return aa11 == aa21
 
+        def _default_nmax_fn(group: str, aact1: str, aact2: str) -> int:
+            return self.ddist_n_max
+
         def _syn_codon_pair_nmax_fn(group: str, aact1: str, aact2: str) -> int:
             # Returns the maximal sample size to use when comparing two synonymous
             # codons. We're selecting the smallest sample size of all codons from the
             # same AA.
             aat = _aact_to_aat(aact1)
             assert aat == _aact_to_aat(aact2)  # sanity check
-            codon_counts = {
+            codon_counts_aa = {
                 aact: count
                 for aact, count in group_sizes[group][SUBGROUP_COL].items()
                 if _aact_to_aat(aact) == aat
             }
             # Codon counts also include the entire group, remove it
-            codon_counts.pop(aat)
+            codon_counts_aa.pop(aat)
             # Use minimal group size for all codons of this AA
-            min_group_size = np.min([*codon_counts.values()]).item()
-            # Make sure we have at least two samples (statistical analysis requires it)
-            if min_group_size < 2:
-                LOGGER.warning(
-                    f"Only one sample of smallest codon group for {group=},"
-                    f" {aact1=}, {aact2=}."
-                )
-            return max(min_group_size, 2)
+            min_codon_size_aa = np.min([*codon_counts_aa.values()]).item()
+
+            if self.ddist_n_max_aa:
+                # Make sure we have at least two samples (statistical tests requires it)
+                if min_codon_size_aa < 2:
+                    LOGGER.warning(
+                        f"Only one sample of smallest codon group for {group=},"
+                        f" {aact1=}, {aact2=}."
+                    )
+                # Set n_max for this comparison based on the smallest codon in the
+                # entire AA
+                n_max = max(min_codon_size_aa, 2)
+            else:
+                # Set n_max for this comparison based on the smallest codon of the two
+                n_max = min(codon_counts_aa[aact1], codon_counts_aa[aact2])
+
+            if self.ddist_n_max:
+                # Never use more than the maximum if it was set
+                n_max = min(n_max, self.ddist_n_max)
+            else:
+                # If maximum wasn't set, keep unset for this comparison
+                n_max = self.ddist_n_max
+
+            return n_max
 
         totals = {}
 
         comp_types_to_subgroup_pairs = {
-            COMP_TYPE_AA: (AA_COL, AA_COL, _aa_tuples_filter_fn, None),
+            COMP_TYPE_AA: (
+                AA_COL,
+                AA_COL,
+                _aa_tuples_filter_fn,
+                _default_nmax_fn,
+            ),
             COMP_TYPE_AAC: (
                 AA_COL,
                 CODON_COL,
@@ -965,7 +994,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         subgroup1_col: str,
         subgroup2_col: str,
         pair_filter_fn: Optional[Callable[[str, str, str], bool]],
-        pair_nmax_fn: Optional[Callable[[str, str, str], int]],
+        pair_nmax_fn: Callable[[str, str, str], int],
     ):
         """
         Helper function that submits pairs of subgroups for pointwise angle-based
@@ -1022,13 +1051,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         continue
 
                     # Calculate ddist_nmax for pair based on custom logic
-                    if pair_nmax_fn is not None:
-                        ddist_n_max = pair_nmax_fn(group, sub1, sub2)
-                        # Never use more than the maximum if it was set
-                        if self.ddist_n_max:
-                            ddist_n_max = min(ddist_n_max, self.ddist_n_max)
-                    else:
-                        ddist_n_max = self.ddist_n_max
+                    ddist_n_max = pair_nmax_fn(group, sub1, sub2)
 
                     # Analyze the angles of subgroup1 and subgroup2
                     angles1 = np.deg2rad(df_sub1[[*PHI_PSI_COLS]].values)
