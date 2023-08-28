@@ -143,7 +143,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         ss_group_any: bool = False,
         ignore_omega: bool = False,
         randomize_codons: Optional[str] = None,
-        skip_self_test: bool = False,
+        self_test: bool = True,
         out_tag: Optional[str] = None,
     ):
         """
@@ -227,7 +227,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             this arguments' value. Value can be either 'aa' or 'aa_ss' which controls
             whether to randomize the codon labels after conditioning on AA only or on
             both AA and SS.
-        :param skip_self_test: Whether to skip statistical tests between a codon/aa
+        :param self_test: Whether to perform statistical tests between a codon/aa
             and itself. In these cases we know the null hypothesis is true.
             Including these self-tests can be useful as a control when sub-sampling
             is used for doing the tests. However, it should be disabled when
@@ -287,7 +287,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 f"invalid {randomize_codons=}, must be one of {RANDOMIZE_TYPES}"
             )
 
-        if randomize_codons and not skip_self_test:
+        if randomize_codons and self_test:
             raise ValueError(f"When {randomize_codons=}, must skip self test")
 
         self.condition_on_ss = condition_on_ss
@@ -316,7 +316,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.ss_group_any = ss_group_any
         self.ignore_omega = ignore_omega
         self.randomize_codons = randomize_codons
-        self.skip_self_test = skip_self_test
+        self.self_test = self_test
 
         if condition_on_ss:
             consolidated_ss_types = [ss for ss in consolidate_ss.values() if ss]
@@ -853,7 +853,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         def _non_syn_codons_pair_filter_fn(group: str, aact1: str, aact2: str) -> bool:
             # Returns True if aact1 and aact2 are synonymous (therefore should be
             # analyzed). Optionally skips self-tests.
-            if self.skip_self_test and aact1 == aact2:
+            if not self.self_test and aact1 == aact2:
                 return False
             return is_synonymous_tuple(aact_str2tuple(aact1), aact_str2tuple(aact2))
 
