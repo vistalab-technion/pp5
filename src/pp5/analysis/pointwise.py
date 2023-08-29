@@ -170,9 +170,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param codon_grouping_position: The (zero-indexed) position in the tuple in
             which to group. Default is zero, which means first tuple element.
             No effect if codon_grouping_type==None.
-        :param min_group_size: Minimal number of angle-pairs from different
-            structures belonging to the same Uniprot ID, location and codon in order to
-            consider the group of angles for analysis.
+        :param min_group_size: Controls grouping by (unp:unx_idx:codon) before
+            analysis. Zero to disable grouping. Otherwise, means the minimal number
+            of angle-pairs from different structures belonging to the same Uniprot ID,
+            location and codon in order to consider the group of angles for analysis.
         :param strict_codons: Enforce only one known codon per residue
             (reject residues where DNA matching was ambiguous).
         :param kde_nbins: Number of angle binds for KDE estimation.
@@ -557,11 +558,22 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         """
         processed_subgroups = []
 
+        if self.min_group_size:
+            # Create subgroups by grouping rows with the same unp_id, unp_idx and codon
+            subgroups = df_group.groupby([UNP_ID_COL, UNP_IDX_COL, CODON_COL])
+        else:
+            # Each single row will become a subgroup
+            subgroups = map(
+                lambda r: (  # r is (idx, series)
+                    (r[1][UNP_ID_COL], r[1][UNP_IDX_COL], r[1][CODON_COL]),  # idx
+                    pd.DataFrame([r[1]]),  # subgroup df
+                ),
+                df_group.iterrows(),
+            )
+
         # Group by each unique codon at a unique location in a unique protein
-        for subgroup_idx, df_subgroup in df_group.groupby(
-            [UNP_ID_COL, UNP_IDX_COL, CODON_COL]
-        ):
-            if len(df_subgroup) < self.min_group_size:
+        for subgroup_idx, df_subgroup in subgroups:
+            if self.min_group_size and len(df_subgroup) < self.min_group_size:
                 continue
 
             # There shouldn't be more than one SS type since all members of this
@@ -613,6 +625,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     GROUP_STD_COL: angle_std_deg,
                 }
             )
+
         return processed_subgroups
 
     def _create_tuples_dataset(self, pool: mp.pool.Pool) -> dict:
