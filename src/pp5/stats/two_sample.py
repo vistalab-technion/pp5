@@ -23,6 +23,9 @@ R_TORUSTEST_GEODESIC = "twosample.geodesic.torus.test"
 R_TORUSTEST_UBOUND = "twosample.ubound.torus.test"
 R_TORUSTEST_SIM_NULL_STAT = "sim.null.stat"
 
+# Setup conversion between python and R objects
+PY2R_CONVERTER = robjects.default_converter + robjects.numpy2ri.converter
+PY2R_CONVERTER.py2rpy.register(type(None), lambda _: robjects.NULL)
 
 # @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
 def _tw2_statistic(D: ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None) -> float:
@@ -406,8 +409,7 @@ def torus_w2_ub_test(
     test_fn_r = robjects.globalenv[R_TORUSTEST_UBOUND]
 
     # Create a converter that converts np.ndarray to R array
-    np_conversion = robjects.default_converter + robjects.numpy2ri.converter
-    with robjects.conversion.localconverter(np_conversion) as cv:
+    with robjects.conversion.localconverter(PY2R_CONVERTER) as cv:
         result = test_fn_r(X, Y, return_stat=True)
         return result["stat"].item(), result["pval"].item()
 
@@ -472,9 +474,7 @@ def torus_projection_test(
         assert _2 == 2
 
     # Create a converter that converts np.ndarray to R array
-    np_conversion = robjects.default_converter + robjects.numpy2ri.converter
-    np_conversion.py2rpy.register(type(None), lambda _: robjects.NULL)
-    with robjects.conversion.localconverter(np_conversion) as cv:
+    with robjects.conversion.localconverter(PY2R_CONVERTER) as cv:
         result = test_fn_r(
             sample_1=X,
             sample_2=Y,
@@ -510,8 +510,7 @@ def torus_projection_test_null_samples(
                 sim_null_dist = pickle.load(f)
 
         else:
-            np_conversion = robjects.default_converter + robjects.numpy2ri.converter
-            with robjects.conversion.localconverter(np_conversion) as cv:
+            with robjects.conversion.localconverter(PY2R_CONVERTER) as cv:
                 _LOG.info(
                     f"Calculating torustest null distribution {n_simulations=}, "
                     f"{n_sample=}..."
