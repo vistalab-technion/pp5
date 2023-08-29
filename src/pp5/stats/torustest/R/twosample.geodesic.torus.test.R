@@ -44,15 +44,18 @@
 twosample.geodesic.torus.test<-function(sample_1, sample_2, n_geodesics = 1, NC_geodesic = 1, geodesic_list = NULL, sim_null = NULL, NR = 500, NC = 1, n = 30, return_stat=FALSE){
 
   one_geodesic_test <- function(u, data_1, data_2, sim_null_free){
-
     p <- geodesic.projection(u, data_1, data_2, do_plots = FALSE)
     test_u <- twosample.test.s1(p$circle_one, p$circle_two, sim_null_free,  NR, NC, n)
     return(test_u)
   }
 
   if(is.null(geodesic_list)){
-    samp <- rgeodesic(n_geodesics)}else{
-      samp <- matrix(unlist(geodesic_list), ncol=2, byrow = TRUE)}
+    samp <- rgeodesic(n_geodesics)
+  }
+  else {
+    samp <- matrix(unlist(geodesic_list), ncol=2, byrow = TRUE)
+    n_geodesics <- nrow(samp)
+  }
 
   cl <- parallel::makeCluster(NC_geodesic, type = "PSOCK")
   parallel::clusterExport(cl = cl, varlist = c('geodesic.projection', 'twosample.test.s1',
@@ -73,7 +76,7 @@ twosample.geodesic.torus.test<-function(sample_1, sample_2, n_geodesics = 1, NC_
   if(return_stat){
       return(list(pval=pval, stat=stat))
   }
-  else{
+  else {
       return(pval)
   }
 }
