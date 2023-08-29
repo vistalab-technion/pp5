@@ -419,6 +419,8 @@ def torus_projection_test(
     grid_high: float = np.pi,
     n_cores: int = 2,
     n_geodesics: int = 2,
+    geodesics: Optional[np.array] = None,
+    n_cores_null_simulations: int = 8,
     n_null_simulations: int = 2000,
     n_null_sample_size: int = 30,
 ) -> Tuple[float, float]:
@@ -440,6 +442,9 @@ def torus_projection_test(
     :param grid_high: Largest value on the evaluation grid, exclusive.
     :param n_cores: Number of cores to use for running on multiple processes.
     :param n_geodesics: Number of geodesics lines to sample.
+    :param geodesics: An (n, 2) array. Each row is a vector defining a geodesic line on
+        the torus.
+    :param n_cores_null_simulations: Number of cores to use for null simulations.
     :param n_null_simulations: Number of simulations to run for the null distribution.
     :param n_null_sample_size: Number of samples to use for each null simulation.
     :return: Tuple containing:
@@ -457,17 +462,25 @@ def torus_projection_test(
     test_fn_r = robjects.globalenv[R_TORUSTEST_GEODESIC]
 
     sim_null_dist = torus_projection_test_null_samples(
-        n_simulations=n_null_simulations, n_sample=n_null_sample_size, n_cores=n_cores
+        n_simulations=n_null_simulations,
+        n_sample=n_null_sample_size,
+        n_cores=n_cores_null_simulations,
     )
+
+    if geodesics is not None:
+        n_geodesics, _2 = geodesics.shape
+        assert _2 == 2
 
     # Create a converter that converts np.ndarray to R array
     np_conversion = robjects.default_converter + robjects.numpy2ri.converter
+    np_conversion.py2rpy.register(type(None), lambda _: robjects.NULL)
     with robjects.conversion.localconverter(np_conversion) as cv:
         result = test_fn_r(
             sample_1=X,
             sample_2=Y,
             n_geodesics=n_geodesics,
             NC_geodesic=n_cores,
+            geodesic_list=geodesics,
             sim_null=sim_null_dist,
             return_stat=True,
         )
@@ -475,7 +488,7 @@ def torus_projection_test(
 
 
 def torus_projection_test_null_samples(
-    n_simulations: int, n_sample: int, n_cores: int = 2
+    n_simulations: int, n_sample: int, n_cores: int = 8
 ) -> np.ndarray:
     """
     Sample from the null distribution of the wasserstein statistic on S^1.
@@ -495,7 +508,6 @@ def torus_projection_test_null_samples(
         if filepath.exists():
             with open(filepath, "rb") as f:
                 sim_null_dist = pickle.load(f)
-            _LOG.info(f"Loaded torustest null distribution from {filepath}")
 
         else:
             np_conversion = robjects.default_converter + robjects.numpy2ri.converter
