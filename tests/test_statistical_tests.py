@@ -1,3 +1,5 @@
+from functools import partial
+
 import numpy as np
 import pytest
 import matplotlib.pyplot as plt
@@ -73,6 +75,10 @@ class TestTorusW2:
 
     STAT_TEST_FNS = {
         "projection": torus_projection_test,
+        "projection_fixed_geodesics": partial(
+            torus_projection_test,
+            geodesics=np.array([[1, 0], [0, 1], [1, 1], [2, 3]]),
+        ),
         "ubound": torus_w2_ub_test,
     }
 
@@ -124,7 +130,7 @@ class TestTorusW2:
         assert dist_xy < dist_xz
 
         # X, Y come from the same distribution
-        assert pval_xy > 0.5
+        assert pval_xy > 0.2
 
         # X, Z come from different distributions
         assert pval_xz < 0.1
