@@ -60,6 +60,9 @@ from pp5.distributions.vonmises import BvMKernelDensityEstimator
 
 LOGGER = logging.getLogger(__name__)
 
+PREC_DATA_FILENAME = "data-precs.csv"
+PREC_META_FILENAME = "meta-structs_all.csv"
+
 PDB_ID_COL = "pdb_id"
 UNP_ID_COL = "unp_id"
 UNP_IDX_COL = "unp_idx"
@@ -79,7 +82,18 @@ GROUP_STD_COL = "group_std"
 PVAL_COL = "pval"
 DDIST_COL = "ddist"
 SIGNIFICANT_COL = "significant"
+RESOLUTION_COL = "resolution"
+
 TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g", "torus_ub", "torus_p"}
+
+AGGREGATION_TYPE_CENTROID = "cent"
+AGGREGATION_TYPE_RESOLUTION = "res"
+AGGREGATION_TYPE_NONE = "none"
+AGGREGATION_TYPES = {
+    AGGREGATION_TYPE_CENTROID,
+    AGGREGATION_TYPE_RESOLUTION,
+    AGGREGATION_TYPE_NONE,
+}
 
 RANDOMIZE_TYPES_AA = "aa"
 RANDOMIZE_TYPES_AA_SS = "aa_ss"
@@ -133,13 +147,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self,
         dataset_dir: Union[str, Path],
         out_dir: Union[str, Path] = None,
-        pointwise_filename: str = "data-precs.csv",
         condition_on_ss: bool = True,
         consolidate_ss: dict = DSSP_TO_SS_TYPE.copy(),
         tuple_len: int = 1,
         codon_grouping_type: str = None,
         codon_grouping_position: int = 0,
-        min_group_size: int = 1,
+        aggregation_type: str = AGGREGATION_TYPE_CENTROID,
+        aggregation_min_group_size: int = 1,
         strict_codons: bool = True,
         kde_nbins: int = 128,
         kde_width: float = 30.0,
@@ -171,7 +185,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param dataset_dir: Path to directory with the pointwise collector
             output.
         :param out_dir: Path to output directory. Defaults to <dataset_dir>/results.
-        :param pointwise_filename: Filename of the pointwise dataset.
         :param consolidate_ss: Dict mapping from DSSP secondary structure to
             the consolidated SS types used in this analysis.
         :param condition_on_ss: Whether to condition on secondary structure
@@ -185,10 +198,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param codon_grouping_position: The (zero-indexed) position in the tuple in
             which to group. Default is zero, which means first tuple element.
             No effect if codon_grouping_type==None.
-        :param min_group_size: Controls grouping by (unp:unx_idx:codon) before
-            analysis. Zero to disable grouping. Otherwise, means the minimal number
-            of angle-pairs from different structures belonging to the same Uniprot ID,
-            location and codon in order to consider the group of angles for analysis.
+        :param aggregation_type: Controls grouping by (unp, unx_idx) before
+            analysis. This accounts for structure redundancy in the data (multiple
+            structures representing the same protein). Can be one of:
+            'none': No aggregation. Each point in the dataset is considered separately.
+            'cent': Aggregate by calculating the centroid angle on the torus from all
+            angles in the group. The group will be replaced by a single point with
+            the centroid angle assigned.
+            'res': Aggregate by taking the point from the structure with the best
+            resolution.
+        :param aggregation_min_group_size: The minimal number of structures in a
+            (unp, unx_idx) group in order to aggregated the angles in the group
+            for analysis. Smaller groups are discarded.
         :param strict_codons: Enforce only one known codon per residue
             (reject residues where DNA matching was ambiguous).
         :param kde_nbins: Number of angle binds for KDE estimation.
@@ -255,7 +276,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         super().__init__(
             "pointwise_cdist",
             dataset_dir,
-            pointwise_filename,
+            PREC_DATA_FILENAME,
             out_dir,
             out_tag,
             clear_intermediate=False,
@@ -276,6 +297,14 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             raise ValueError(
                 f"invalid {codon_grouping_position=}, must be < {tuple_len=}"
             )
+
+        if aggregation_type not in AGGREGATION_TYPES:
+            raise ValueError(
+                f"invalid {aggregation_type=}, must be in {AGGREGATION_TYPES}"
+            )
+
+        if aggregation_min_group_size < 1:
+            raise ValueError(f"invalid {aggregation_min_group_size=}, must be >= 1")
 
         if ddist_bs_niter < 1:
             raise ValueError(f"invalid {ddist_bs_niter=}, must be >= 1")
@@ -313,7 +342,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.tuple_len = tuple_len
         self.codon_grouping_type = codon_grouping_type
         self.codon_grouping_position = codon_grouping_position
-        self.min_group_size = min_group_size
+        self.aggregation_type = aggregation_type
+        self.aggregation_min_group_size = aggregation_min_group_size
         self.strict_codons = strict_codons
         self.condition_on_prev = None
 
@@ -498,6 +528,19 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             converters=converters,
         )
 
+        # Load the metadata and extract structure resolutions
+        pdb_resolutions = None
+        if self.aggregation_type == AGGREGATION_TYPE_RESOLUTION:
+            df_meta = pd.read_csv(
+                str(self.dataset_dir / PREC_META_FILENAME),
+                usecols=(PDB_ID_COL, RESOLUTION_COL),
+                dtype={PDB_ID_COL: "str", RESOLUTION_COL: "float32"},
+                header=0,
+            )
+            pdb_resolutions = dict(
+                zip(df_meta[PDB_ID_COL], df_meta[RESOLUTION_COL].round(2))
+            )
+
         # Filter out rows with missing SS, unp_idx or with ambiguous codons
         idx_filter = ~df_pointwise.secondary.isnull()
         idx_filter &= ~df_pointwise.unp_idx.isnull()
@@ -550,7 +593,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             async_results.append(
                 pool.apply_async(
                     self._preprocess_group,
-                    args=(condition_group_id, df_group),
+                    args=(condition_group_id, df_group, pdb_resolutions),
                 )
             )
 
@@ -570,13 +613,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             "n_TOTAL": len(df_processed),
         }
 
-    def _preprocess_group(self, group_id: str, df_group: pd.DataFrame):
+    def _preprocess_group(
+        self, group_id: str, df_group: pd.DataFrame, pdb_resolutions: Optional[dict]
+    ):
         """
         Applies pre-processing to a single group (e.g. SS) in the dataset.
         """
         processed_subgroups = []
 
-        if self.min_group_size:
+        if self.aggregation_type != AGGREGATION_TYPE_NONE:
             # Create subgroups by grouping rows with the same unp_id, unp_idx and codon
             subgroups = df_group.groupby([UNP_ID_COL, UNP_IDX_COL, CODON_COL])
         else:
@@ -590,8 +635,10 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
 
         # Group by each unique codon at a unique location in a unique protein
+        subgroup_idx: Tuple
+        df_subgroup: pd.DataFrame
         for subgroup_idx, df_subgroup in subgroups:
-            if self.min_group_size and len(df_subgroup) < self.min_group_size:
+            if len(df_subgroup) < self.aggregation_min_group_size:
                 continue
 
             # There shouldn't be more than one SS type since all members of this
@@ -610,19 +657,43 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             if np.any(df_subgroup[[*PHI_PSI_COLS]].isnull()):
                 continue
 
-            # Calculate average angle from the different structures in this sub group
-            angles_centroid = _subgroup_centroid(df_subgroup, input_degrees=True)
+            if self.aggregation_type == AGGREGATION_TYPE_CENTROID:
+                # Calculate centroid angle from the structures in the subgroup
+                agg_angle = _subgroup_centroid(df_subgroup, input_degrees=True)
 
-            # Calculate variance of the angles around the centroid: average of
-            # squared distances to the centroid
-            angles_variance_rad = np.mean(
-                flat_torus_distance_sq(
-                    np.array([[angles_centroid.phi, angles_centroid.psi]]),
-                    np.deg2rad(df_subgroup[[*PHI_PSI_COLS]].values),
+                # Calculate variance of the angles around the centroid: average of
+                # squared distances to the centroid
+                angles_variance_rad = np.mean(
+                    flat_torus_distance_sq(
+                        np.array([[agg_angle.phi, agg_angle.psi]]),
+                        np.deg2rad(df_subgroup[[*PHI_PSI_COLS]].values),
+                    )
                 )
-            )
-            # Convert to standard deviation in degrees
-            angle_std_deg = np.rad2deg(np.sqrt(angles_variance_rad)).item()
+                # Convert to standard deviation in degrees
+                agg_angle_std_deg = np.rad2deg(np.sqrt(angles_variance_rad)).item()
+
+            elif self.aggregation_type == AGGREGATION_TYPE_RESOLUTION:
+                assert pdb_resolutions is not None
+                df_subgroup[RESOLUTION_COL] = df_subgroup[PDB_ID_COL].map(
+                    pdb_resolutions
+                )
+                df_subgroup = df_subgroup.sort_values(by=[RESOLUTION_COL])
+                agg_angle = Dihedral.from_deg(
+                    phi=df_subgroup.iloc[0][PHI_COL],
+                    psi=df_subgroup.iloc[0][PSI_COL],
+                )
+                agg_angle_std_deg = 0.0
+
+            elif self.aggregation_type == AGGREGATION_TYPE_NONE:
+                assert len(df_subgroup) == 1
+                agg_angle = Dihedral.from_deg(
+                    phi=df_subgroup.iloc[0][PHI_COL],
+                    psi=df_subgroup.iloc[0][PSI_COL],
+                )
+                agg_angle_std_deg = 0.0
+
+            else:
+                raise ValueError(f"Unexpected {self.aggregation_type=}")
 
             processed_subgroups.append(
                 {
@@ -632,15 +703,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     CODON_COL: aa_codon,
                     CONDITION_COL: group_id,
                     SECONDARY_COL: subgroup_ss,
-                    PHI_COL: angles_centroid.phi_deg,
-                    PSI_COL: angles_centroid.psi_deg,
+                    PHI_COL: agg_angle.phi_deg,
+                    PSI_COL: agg_angle.psi_deg,
                     OMEGA_COL: wraparound_mean(
                         np.array(df_subgroup[OMEGA_COL]), deg=True
                     )
                     if not self.ignore_omega
                     else np.nan,
                     GROUP_SIZE_COL: len(df_subgroup),
-                    GROUP_STD_COL: angle_std_deg,
+                    GROUP_STD_COL: agg_angle_std_deg,
                 }
             )
 
