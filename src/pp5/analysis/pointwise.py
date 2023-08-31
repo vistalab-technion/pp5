@@ -83,7 +83,8 @@ TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g", "torus_ub", "torus_p"}
 
 RANDOMIZE_TYPES_AA = "aa"
 RANDOMIZE_TYPES_AA_SS = "aa_ss"
-RANDOMIZE_TYPES = {RANDOMIZE_TYPES_AA, RANDOMIZE_TYPES_AA_SS}
+RANDOMIZE_TYPES_NONE = "none"
+RANDOMIZE_TYPES = {RANDOMIZE_TYPES_AA, RANDOMIZE_TYPES_AA_SS, RANDOMIZE_TYPES_NONE}
 
 COMP_TYPE_AA = "aa"
 COMP_TYPE_CC = "cc"
@@ -156,7 +157,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         comparison_types: Sequence[str] = COMP_TYPES,
         ss_group_any: bool = False,
         ignore_omega: bool = False,
-        randomize_codons: Optional[str] = None,
+        randomize_codons: str = RANDOMIZE_TYPES_NONE,
         self_test: bool = True,
         out_tag: Optional[str] = None,
     ):
@@ -241,9 +242,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param ignore_omega: Whether to ignore the omega angle or process it.
         :param randomize_codons: Whether to randomize the codon labels. Means that a
             random codon will be assigned to each angle in the dataset, according to
-            this arguments' value. Value can be either 'aa' or 'aa_ss' which controls
-            whether to randomize the codon labels after conditioning on AA only or on
-            both AA and SS.
+            this arguments' value. Value can be either 'aa', 'aa_ss' or 'none' which
+            controls whether to randomize the codon labels after conditioning on AA only
+            or on both AA and SS, or to disable randomization.
         :param self_test: Whether to perform statistical tests between a codon/aa
             and itself. In these cases we know the null hypothesis is true.
             Including these self-tests can be useful as a control when sub-sampling
@@ -299,12 +300,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 f"One or more invalid {comparison_types}, must be one of {COMP_TYPES}"
             )
 
-        if randomize_codons and randomize_codons not in RANDOMIZE_TYPES:
+        if randomize_codons not in RANDOMIZE_TYPES:
             raise ValueError(
                 f"invalid {randomize_codons=}, must be one of {RANDOMIZE_TYPES}"
             )
 
-        if randomize_codons and self_test:
+        if randomize_codons != RANDOMIZE_TYPES_NONE and self_test:
             raise ValueError(f"When {randomize_codons=}, must skip self test")
 
         self.condition_on_ss = condition_on_ss
@@ -518,7 +519,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_pointwise[CODON_COL] = df_pointwise[[CODON_COL]].applymap(codon2aac)
 
         # Randomize codons if needed
-        if self.randomize_codons:
+        if self.randomize_codons != RANDOMIZE_TYPES_NONE:
             # Shuffle codons withing each AA or AA+SS group
             aas = df_pointwise[CODON_COL].map(lambda c: c[0])
             df_pointwise[AA_COL] = aas
