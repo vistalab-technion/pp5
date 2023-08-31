@@ -111,7 +111,20 @@ def _torus_ub(X, Y, *a, **k):
 
 
 def _torus_p(X, Y, *a, **k):
-    return *torus_projection_test(X=X, Y=Y, grid_low=-np.pi, grid_high=np.pi), 0
+    return (
+        *torus_projection_test(
+            X=X,
+            Y=Y,
+            grid_low=-np.pi,
+            grid_high=np.pi,
+            # n_geodesics=2,
+            geodesics=np.array([[1, 0], [0, 1], [1, 1], [2, 3]]),
+            n_cores=1,
+            n_null_simulations=2000,
+            n_null_sample_size=30,
+        ),
+        0,
+    )
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
