@@ -145,6 +145,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         bs_randstate: Optional[int] = None,
         ddist_statistic: str = "kde_g",
         ddist_bs_niter: int = 1,
+        ddist_n_min: Optional[int] = 2,
         ddist_n_max: Optional[int] = None,
         ddist_n_max_aa: bool = True,
         ddist_k: int = 1000,
@@ -205,10 +206,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             'torus_p' (Based on 1d Wasserstein distance on S1, after projecting torus data).
         :param ddist_bs_niter: Number of bootstrap iterations when resampling data
             for permutation tests.
+        :param ddist_n_min: Minimal sample-size to allow when performing statistical
+            tests. Groups (e.g. a codon) with fewer samples will be skipped.
         :param ddist_n_max: Maximal sample-size to use when calculating
             p-value of distances with a statistical test. If there are larger samples,
             bootstrap sampling with the given maximal sample size will be performed.
-            If None or zero, sample size wont be limited.
+            If None or zero, sample size won't be limited.
         :param ddist_n_max_aa: When comparing two codons, whether to further limit
             the sample size (in addition to ddist_n_max) to the sample size of the
             rarest codon of all codons from the same AA.
@@ -319,6 +322,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         self.bs_randstate = bs_randstate
         self.ddist_bs_niter = ddist_bs_niter
+        self.ddist_n_min = int(ddist_n_min) if ddist_n_min else 0
         self.ddist_n_max = int(ddist_n_max) if ddist_n_max else 0
         self.ddist_n_max_aa = ddist_n_max_aa
         self.ddist_k = ddist_k
@@ -1063,8 +1067,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Group by subgroup1 (e.g. AA  or codon)
             df_sub1_groups = df_group.groupby(subgroup1_col)
             for i, (sub1, df_sub1) in enumerate(df_sub1_groups):
-                # Need at least 2 observations in each statistical sample
-                if len(df_sub1) < 2:
+                if self.ddist_n_min and len(df_sub1) < self.ddist_n_min:
                     continue
 
                 # Group by subgroup2 (e.g. codon)
@@ -1078,8 +1081,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     df_sub2_groups = df_sub1.groupby(subgroup2_col)
 
                 for j, (sub2, df_sub2) in enumerate(df_sub2_groups):
-                    # Need at least 2 observations in each statistical sample
-                    if len(df_sub2) < 2:
+                    if self.ddist_n_min and len(df_sub2) < self.ddist_n_min:
                         continue
 
                     # Skip redundant calculations: identical pairs with a different
