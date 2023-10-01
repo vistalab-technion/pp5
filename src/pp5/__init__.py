@@ -144,6 +144,9 @@ ALIGNMENT_DIR = Path(os.getenv(ENV_PP5_ALIGNMENT_DIR, data_subdir("align")))
 # Directory for local BLAST DB
 BLASTDB_DIR = Path(os.getenv(ENV_PP5_BLASTDB_DIR, data_subdir("blast")))
 
+# Directory for torustest samples from the null
+TORUSTEST_NULL_DIR = Path(data_subdir("torustest_null"))
+
 
 def get_resource_path(data_dir: Path, basename: str):
     """

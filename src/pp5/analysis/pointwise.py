@@ -29,7 +29,7 @@ from matplotlib.figure import Figure
 
 import pp5.plot
 from pp5.plot import PP5_MPL_STYLE
-from pp5.stats import mht_bh, tw_test, mmd_test, kde2d_test
+from pp5.stats import mht_bh, tw_test, mmd_test, kde2d_test, torus_w2_ub_test
 from pp5.utils import sort_dict
 from pp5.codons import (
     ACIDS,
@@ -54,10 +54,14 @@ from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral, wraparound_mean, flat_torus_distance_sq
 from pp5.parallel import yield_async_results
 from pp5.analysis.base import ParallelAnalyzer
+from pp5.stats.two_sample import torus_projection_test
 from pp5.distributions.kde import bvm_kernel, gaussian_kernel, torus_gaussian_kernel_2d
 from pp5.distributions.vonmises import BvMKernelDensityEstimator
 
 LOGGER = logging.getLogger(__name__)
+
+PREC_DATA_FILENAME = "data-precs.csv"
+PREC_META_FILENAME = "meta-structs_all.csv"
 
 PDB_ID_COL = "pdb_id"
 UNP_ID_COL = "unp_id"
@@ -78,7 +82,23 @@ GROUP_STD_COL = "group_std"
 PVAL_COL = "pval"
 DDIST_COL = "ddist"
 SIGNIFICANT_COL = "significant"
-TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g"}
+RESOLUTION_COL = "resolution"
+
+TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g", "torus_ub", "torus_p"}
+
+AGGREGATION_TYPE_CENTROID = "cent"
+AGGREGATION_TYPE_RESOLUTION = "res"
+AGGREGATION_TYPE_NONE = "none"
+AGGREGATION_TYPES = {
+    AGGREGATION_TYPE_CENTROID,
+    AGGREGATION_TYPE_RESOLUTION,
+    AGGREGATION_TYPE_NONE,
+}
+
+RANDOMIZE_TYPES_AA = "aa"
+RANDOMIZE_TYPES_AA_SS = "aa_ss"
+RANDOMIZE_TYPES_NONE = "none"
+RANDOMIZE_TYPES = {RANDOMIZE_TYPES_AA, RANDOMIZE_TYPES_AA_SS, RANDOMIZE_TYPES_NONE}
 
 COMP_TYPE_AA = "aa"
 COMP_TYPE_CC = "cc"
@@ -97,25 +117,52 @@ CODON_TUPLE_GROUPINGS = {
 ANY_AAC = "*"
 
 
+def _torus_ub(X, Y, *a, **k):
+    # Helper to wrap torus_w2_ub_test for the pointwise analysis.
+    # Accept kwargs for params regarding number of permutations, which are
+    # unused by this statistic. Append a zero to the output tuple, representing
+    # the number of permutations performed
+    return *torus_w2_ub_test(X=X, Y=Y, grid_low=-np.pi, grid_high=np.pi), 0
+
+
+def _torus_p(X, Y, *a, **k):
+    return (
+        *torus_projection_test(
+            X=X,
+            Y=Y,
+            grid_low=-np.pi,
+            grid_high=np.pi,
+            # n_geodesics=2,
+            geodesics=np.array([[1, 0], [0, 1], [1, 1], [2, 3]]),
+            n_cores=1,
+            n_null_simulations=2000,
+            n_null_sample_size=30,
+        ),
+        0,
+    )
+
+
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
     def __init__(
         self,
         dataset_dir: Union[str, Path],
         out_dir: Union[str, Path] = None,
-        pointwise_filename: str = "data-precs.csv",
         condition_on_ss: bool = True,
         consolidate_ss: dict = DSSP_TO_SS_TYPE.copy(),
         tuple_len: int = 1,
         codon_grouping_type: str = None,
         codon_grouping_position: int = 0,
-        min_group_size: int = 1,
+        aggregation_type: str = AGGREGATION_TYPE_CENTROID,
+        aggregation_min_group_size: int = 1,
         strict_codons: bool = True,
         kde_nbins: int = 128,
         kde_width: float = 30.0,
         bs_randstate: Optional[int] = None,
-        ddist_statistic: str = "mmd",
+        ddist_statistic: str = "kde_g",
         ddist_bs_niter: int = 1,
+        ddist_n_min: Optional[int] = 2,
         ddist_n_max: Optional[int] = None,
+        ddist_n_max_aa: bool = True,
         ddist_k: int = 1000,
         ddist_k_min: Optional[int] = None,
         ddist_k_th: float = 50.0,
@@ -124,7 +171,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         comparison_types: Sequence[str] = COMP_TYPES,
         ss_group_any: bool = False,
         ignore_omega: bool = False,
-        out_tag: str = None,
+        randomize_codons: str = RANDOMIZE_TYPES_NONE,
+        self_test: bool = True,
+        out_tag: Optional[str] = None,
     ):
         """
         Analyzes a dataset of protein records to produce a matrix of distances between
@@ -136,7 +185,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param dataset_dir: Path to directory with the pointwise collector
             output.
         :param out_dir: Path to output directory. Defaults to <dataset_dir>/results.
-        :param pointwise_filename: Filename of the pointwise dataset.
         :param consolidate_ss: Dict mapping from DSSP secondary structure to
             the consolidated SS types used in this analysis.
         :param condition_on_ss: Whether to condition on secondary structure
@@ -150,9 +198,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param codon_grouping_position: The (zero-indexed) position in the tuple in
             which to group. Default is zero, which means first tuple element.
             No effect if codon_grouping_type==None.
-        :param min_group_size: Minimal number of angle-pairs from different
-            structures belonging to the same Uniprot ID, location and codon in order to
-            consider the group of angles for analysis.
+        :param aggregation_type: Controls grouping by (unp, unx_idx) before
+            analysis. This accounts for structure redundancy in the data (multiple
+            structures representing the same protein). Can be one of:
+            'none': No aggregation. Each point in the dataset is considered separately.
+            'cent': Aggregate by calculating the centroid angle on the torus from all
+            angles in the group. The group will be replaced by a single point with
+            the centroid angle assigned.
+            'res': Aggregate by taking the point from the structure with the best
+            resolution.
+        :param aggregation_min_group_size: The minimal number of structures in a
+            (unp, unx_idx) group in order to aggregated the angles in the group
+            for analysis. Smaller groups are discarded.
         :param strict_codons: Enforce only one known codon per residue
             (reject residues where DNA matching was ambiguous).
         :param kde_nbins: Number of angle binds for KDE estimation.
@@ -162,16 +219,29 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param bs_randstate: Random state for bootstrap.
         :param ddist_statistic: Statistical test to use for quantifying significance
             of  distances between distributions (ddists).
-            Can be either 'kde_v' (KDE with von Mises kernel), 'kde_g' (KDE with
-            Gaussian kernel), 'mmd' (MMD with Gaussian kernel) or 'tw' (Welch t-test).
+            Can be one of:
+            'kde_v' (KDE with von Mises kernel);
+            'kde_g' (KDE with Gaussian kernel);
+            'mmd' (MMD with Gaussian kernel);
+            'tw' (Welch t-test);
+            'torus_ub' (Upper bound of based on torus Wasserstein distance).
+            'torus_p' (Based on 1d Wasserstein distance on S1, after projecting torus data).
         :param ddist_bs_niter: Number of bootstrap iterations when resampling data
             for permutation tests.
+        :param ddist_n_min: Minimal sample-size to allow when performing statistical
+            tests. Groups (e.g. a codon) with fewer samples will be skipped.
         :param ddist_n_max: Maximal sample-size to use when calculating
             p-value of distances with a statistical test. If there are larger samples,
             bootstrap sampling with the given maximal sample size will be performed.
-            If None or zero, sample size wont be limited.
+            If None or zero, sample size won't be limited.
+        :param ddist_n_max_aa: When comparing two codons, whether to further limit
+            the sample size (in addition to ddist_n_max) to the sample size of the
+            rarest codon of all codons from the same AA.
         :param ddist_k: Number of permutations to use when calculating
-            p-value of distances with a statistical test.
+            p-value of distances with a statistical test. Set to zero to disable
+            permutation testing. In this case ddist_bs_niter must be 1 and the
+            statistical test chosen must not be a permutation test. A single
+            iteration will be performed without bootstrap resampling.
         :param ddist_k_min: Minimal number of permutations to run. Setting this to a
             truthy value enables early termination: when the number of permutations k
             exceeds this number and pvalue >= ddist_k_th * 1/(k+1), no more
@@ -191,12 +261,22 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param ss_group_any: Whether to add an ANY group to the analysis which contains
             all SS types, even when conditioning by SS type.
         :param ignore_omega: Whether to ignore the omega angle or process it.
+        :param randomize_codons: Whether to randomize the codon labels. Means that a
+            random codon will be assigned to each angle in the dataset, according to
+            this arguments' value. Value can be either 'aa', 'aa_ss' or 'none' which
+            controls whether to randomize the codon labels after conditioning on AA only
+            or on both AA and SS, or to disable randomization.
+        :param self_test: Whether to perform statistical tests between a codon/aa
+            and itself. In these cases we know the null hypothesis is true.
+            Including these self-tests can be useful as a control when sub-sampling
+            is used for doing the tests. However, it should be disabled when
+            randomizing codons and when comparing to randomized codon results.
         :param out_tag: Tag for output.
         """
         super().__init__(
             "pointwise_cdist",
             dataset_dir,
-            pointwise_filename,
+            PREC_DATA_FILENAME,
             out_dir,
             out_tag,
             clear_intermediate=False,
@@ -218,8 +298,22 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 f"invalid {codon_grouping_position=}, must be < {tuple_len=}"
             )
 
+        if aggregation_type not in AGGREGATION_TYPES:
+            raise ValueError(
+                f"invalid {aggregation_type=}, must be in {AGGREGATION_TYPES}"
+            )
+
+        if aggregation_min_group_size < 1:
+            raise ValueError(f"invalid {aggregation_min_group_size=}, must be >= 1")
+
         if ddist_bs_niter < 1:
             raise ValueError(f"invalid {ddist_bs_niter=}, must be >= 1")
+
+        if ddist_k < 0:
+            raise ValueError(f"invalid {ddist_k=}, must be >= 0")
+
+        elif ddist_k == 0 and ddist_bs_niter > 1:
+            raise ValueError(f"If {ddist_k=}, then {ddist_bs_niter=} must be 1")
 
         if ddist_statistic not in TEST_STATISTICS:
             raise ValueError(
@@ -235,12 +329,21 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 f"One or more invalid {comparison_types}, must be one of {COMP_TYPES}"
             )
 
+        if randomize_codons not in RANDOMIZE_TYPES:
+            raise ValueError(
+                f"invalid {randomize_codons=}, must be one of {RANDOMIZE_TYPES}"
+            )
+
+        if randomize_codons != RANDOMIZE_TYPES_NONE and self_test:
+            raise ValueError(f"When {randomize_codons=}, must skip self test")
+
         self.condition_on_ss = condition_on_ss
         self.consolidate_ss = consolidate_ss
         self.tuple_len = tuple_len
         self.codon_grouping_type = codon_grouping_type
         self.codon_grouping_position = codon_grouping_position
-        self.min_group_size = min_group_size
+        self.aggregation_type = aggregation_type
+        self.aggregation_min_group_size = aggregation_min_group_size
         self.strict_codons = strict_codons
         self.condition_on_prev = None
 
@@ -250,7 +353,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         self.bs_randstate = bs_randstate
         self.ddist_bs_niter = ddist_bs_niter
+        self.ddist_n_min = int(ddist_n_min) if ddist_n_min else 0
         self.ddist_n_max = int(ddist_n_max) if ddist_n_max else 0
+        self.ddist_n_max_aa = ddist_n_max_aa
         self.ddist_k = ddist_k
         self.ddist_k_min = int(ddist_k_min) if ddist_k_min else 0
         self.ddist_k_th = ddist_k_th
@@ -259,6 +364,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.comparison_types = comparison_types
         self.ss_group_any = ss_group_any
         self.ignore_omega = ignore_omega
+        self.randomize_codons = randomize_codons
+        self.self_test = self_test
 
         if condition_on_ss:
             consolidated_ss_types = [ss for ss in consolidate_ss.values() if ss]
@@ -309,8 +416,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 tw_test,
                 similarity_fn=flat_torus_distance_sq,
             )
+        elif ddist_statistic == "torus_ub":
+            assert self.ddist_k == 0, "torus test doesn't support permutations"
+            self.ddist_statistic_fn = _torus_ub
+        elif ddist_statistic == "torus_p":
+            assert self.ddist_k == 0, "torus test doesn't support permutations"
+            self.ddist_statistic_fn = _torus_p
         else:
             raise ValueError(f"Unexpected {ddist_statistic=}")
+
         self.ddist_statistic_fn_name = ddist_statistic
 
         # Initialize codon tuple names and corresponding indices
@@ -414,6 +528,19 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             converters=converters,
         )
 
+        # Load the metadata and extract structure resolutions
+        pdb_resolutions = None
+        if self.aggregation_type == AGGREGATION_TYPE_RESOLUTION:
+            df_meta = pd.read_csv(
+                str(self.dataset_dir / PREC_META_FILENAME),
+                usecols=(PDB_ID_COL, RESOLUTION_COL),
+                dtype={PDB_ID_COL: "str", RESOLUTION_COL: "float32"},
+                header=0,
+            )
+            pdb_resolutions = dict(
+                zip(df_meta[PDB_ID_COL], df_meta[RESOLUTION_COL].round(2))
+            )
+
         # Filter out rows with missing SS, unp_idx or with ambiguous codons
         idx_filter = ~df_pointwise.secondary.isnull()
         idx_filter &= ~df_pointwise.unp_idx.isnull()
@@ -434,17 +561,39 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_pointwise = df_pointwise[~idx_no_codon]
         df_pointwise[CODON_COL] = df_pointwise[[CODON_COL]].applymap(codon2aac)
 
-        async_results = []
+        # Randomize codons if needed
+        if self.randomize_codons != RANDOMIZE_TYPES_NONE:
+            # Shuffle codons withing each AA or AA+SS group
+            aas = df_pointwise[CODON_COL].map(lambda c: c[0])
+            df_pointwise[AA_COL] = aas
+            randomization_group = (
+                [AA_COL]
+                if (self.randomize_codons == RANDOMIZE_TYPES_AA)
+                else [AA_COL, SECONDARY_COL]
+            )
+            randomized_codons = df_pointwise.groupby(by=randomization_group)[
+                CODON_COL
+            ].transform(lambda x: x.sample(frac=1, replace=False).values)
+
+            # Sanity check: randomized codons should have same AAs as original codons
+            assert randomized_codons.map(lambda c: c[0]).equals(aas)
+            assert not randomized_codons.equals(df_pointwise[CODON_COL])
+
+            # Update codon with randomized versions
+            df_pointwise[CODON_COL] = randomized_codons
+            df_pointwise.drop(columns=[AA_COL], inplace=True)
+            LOGGER.info(f"Randomized codons conditioned on {randomization_group}")
 
         # Process groups in parallel.
         # Add additional conditioning on codon just to break it into many more groups
         # so that it parallelizes better.
+        async_results = []
         for group_idx, df_group in df_pointwise.groupby(by=[CONDITION_COL, CODON_COL]):
             condition_group_id, _ = group_idx
             async_results.append(
                 pool.apply_async(
                     self._preprocess_group,
-                    args=(condition_group_id, df_group),
+                    args=(condition_group_id, df_group, pdb_resolutions),
                 )
             )
 
@@ -464,17 +613,32 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             "n_TOTAL": len(df_processed),
         }
 
-    def _preprocess_group(self, group_id: str, df_group: pd.DataFrame):
+    def _preprocess_group(
+        self, group_id: str, df_group: pd.DataFrame, pdb_resolutions: Optional[dict]
+    ):
         """
         Applies pre-processing to a single group (e.g. SS) in the dataset.
         """
         processed_subgroups = []
 
+        if self.aggregation_type != AGGREGATION_TYPE_NONE:
+            # Create subgroups by grouping rows with the same unp_id, unp_idx and codon
+            subgroups = df_group.groupby([UNP_ID_COL, UNP_IDX_COL, CODON_COL])
+        else:
+            # Each single row will become a subgroup
+            subgroups = map(
+                lambda r: (  # r is (idx, series)
+                    (r[1][UNP_ID_COL], r[1][UNP_IDX_COL], r[1][CODON_COL]),  # idx
+                    pd.DataFrame([r[1]]),  # subgroup df
+                ),
+                df_group.iterrows(),
+            )
+
         # Group by each unique codon at a unique location in a unique protein
-        for subgroup_idx, df_subgroup in df_group.groupby(
-            [UNP_ID_COL, UNP_IDX_COL, CODON_COL]
-        ):
-            if len(df_subgroup) < self.min_group_size:
+        subgroup_idx: Tuple
+        df_subgroup: pd.DataFrame
+        for subgroup_idx, df_subgroup in subgroups:
+            if len(df_subgroup) < self.aggregation_min_group_size:
                 continue
 
             # There shouldn't be more than one SS type since all members of this
@@ -493,19 +657,43 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             if np.any(df_subgroup[[*PHI_PSI_COLS]].isnull()):
                 continue
 
-            # Calculate average angle from the different structures in this sub group
-            angles_centroid = _subgroup_centroid(df_subgroup, input_degrees=True)
+            if self.aggregation_type == AGGREGATION_TYPE_CENTROID:
+                # Calculate centroid angle from the structures in the subgroup
+                agg_angle = _subgroup_centroid(df_subgroup, input_degrees=True)
 
-            # Calculate variance of the angles around the centroid: average of
-            # squared distances to the centroid
-            angles_variance_rad = np.mean(
-                flat_torus_distance_sq(
-                    np.array([[angles_centroid.phi, angles_centroid.psi]]),
-                    np.deg2rad(df_subgroup[[*PHI_PSI_COLS]].values),
+                # Calculate variance of the angles around the centroid: average of
+                # squared distances to the centroid
+                angles_variance_rad = np.mean(
+                    flat_torus_distance_sq(
+                        np.array([[agg_angle.phi, agg_angle.psi]]),
+                        np.deg2rad(df_subgroup[[*PHI_PSI_COLS]].values),
+                    )
                 )
-            )
-            # Convert to standard deviation in degrees
-            angle_std_deg = np.rad2deg(np.sqrt(angles_variance_rad)).item()
+                # Convert to standard deviation in degrees
+                agg_angle_std_deg = np.rad2deg(np.sqrt(angles_variance_rad)).item()
+
+            elif self.aggregation_type == AGGREGATION_TYPE_RESOLUTION:
+                assert pdb_resolutions is not None
+                df_subgroup[RESOLUTION_COL] = df_subgroup[PDB_ID_COL].map(
+                    pdb_resolutions
+                )
+                df_subgroup = df_subgroup.sort_values(by=[RESOLUTION_COL])
+                agg_angle = Dihedral.from_deg(
+                    phi=df_subgroup.iloc[0][PHI_COL],
+                    psi=df_subgroup.iloc[0][PSI_COL],
+                )
+                agg_angle_std_deg = 0.0
+
+            elif self.aggregation_type == AGGREGATION_TYPE_NONE:
+                assert len(df_subgroup) == 1
+                agg_angle = Dihedral.from_deg(
+                    phi=df_subgroup.iloc[0][PHI_COL],
+                    psi=df_subgroup.iloc[0][PSI_COL],
+                )
+                agg_angle_std_deg = 0.0
+
+            else:
+                raise ValueError(f"Unexpected {self.aggregation_type=}")
 
             processed_subgroups.append(
                 {
@@ -515,17 +703,18 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     CODON_COL: aa_codon,
                     CONDITION_COL: group_id,
                     SECONDARY_COL: subgroup_ss,
-                    PHI_COL: angles_centroid.phi_deg,
-                    PSI_COL: angles_centroid.psi_deg,
+                    PHI_COL: agg_angle.phi_deg,
+                    PSI_COL: agg_angle.psi_deg,
                     OMEGA_COL: wraparound_mean(
                         np.array(df_subgroup[OMEGA_COL]), deg=True
                     )
                     if not self.ignore_omega
                     else np.nan,
                     GROUP_SIZE_COL: len(df_subgroup),
-                    GROUP_STD_COL: angle_std_deg,
+                    GROUP_STD_COL: agg_angle_std_deg,
                 }
             )
+
         return processed_subgroups
 
     def _create_tuples_dataset(self, pool: mp.pool.Pool) -> dict:
@@ -765,7 +954,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         def _non_syn_codons_pair_filter_fn(group: str, aact1: str, aact2: str) -> bool:
             # Returns True if aact1 and aact2 are synonymous (therefore should be
-            # analyzed).
+            # analyzed). Optionally skips self-tests.
+            if not self.self_test and aact1 == aact2:
+                return False
             return is_synonymous_tuple(aact_str2tuple(aact1), aact_str2tuple(aact2))
 
         def _aa_tuples_filter_fn(group: str, aat1: str, aat2: str):
@@ -781,33 +972,59 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Only analyze tuples where the first AA matches, e.g. A_X and A_Y.
             return aa11 == aa21
 
+        def _default_nmax_fn(group: str, aact1: str, aact2: str) -> int:
+            return self.ddist_n_max
+
         def _syn_codon_pair_nmax_fn(group: str, aact1: str, aact2: str) -> int:
             # Returns the maximal sample size to use when comparing two synonymous
             # codons. We're selecting the smallest sample size of all codons from the
             # same AA.
             aat = _aact_to_aat(aact1)
             assert aat == _aact_to_aat(aact2)  # sanity check
-            codon_counts = {
+            codon_counts_aa = {
                 aact: count
                 for aact, count in group_sizes[group][SUBGROUP_COL].items()
                 if _aact_to_aat(aact) == aat
             }
             # Codon counts also include the entire group, remove it
-            codon_counts.pop(aat)
+            codon_counts_aa.pop(aat)
             # Use minimal group size for all codons of this AA
-            min_group_size = np.min([*codon_counts.values()]).item()
-            # Make sure we have at least two samples (statistical analysis requires it)
-            if min_group_size < 2:
-                LOGGER.warning(
-                    f"Only one sample of smallest codon group for {group=},"
-                    f" {aact1=}, {aact2=}."
-                )
-            return max(min_group_size, 2)
+            min_codon_size_aa = np.min([*codon_counts_aa.values()]).item()
+
+            if self.ddist_n_max_aa:
+                # Make sure we have at least two samples (statistical tests requires it)
+                if min_codon_size_aa < 2:
+                    LOGGER.warning(
+                        f"Only one sample of smallest codon group for {group=},"
+                        f" {aact1=}, {aact2=}."
+                    )
+                # Set n_max for this comparison based on the smallest codon in the
+                # entire AA
+                n_max_aa = max(min_codon_size_aa, 2)
+            else:
+                # Set n_max for this comparison based on the smallest codon of the two
+                n_max_aa = min(codon_counts_aa[aact1], codon_counts_aa[aact2])
+
+            if self.ddist_n_max:  # Will be zero if unset
+                # Never use more than the maximum if it was set
+                n_max = min(n_max_aa, self.ddist_n_max)
+            else:
+                # If maximum wasn't set:
+                # - If we need to limit by smallest codon in AA, use that limit
+                # - Otherwise, keep unset for this comparison (no limit)
+                n_max = n_max_aa if self.ddist_n_max_aa else self.ddist_n_max
+
+            return n_max
 
         totals = {}
 
         comp_types_to_subgroup_pairs = {
-            COMP_TYPE_AA: (AA_COL, AA_COL, _aa_tuples_filter_fn, None),
+            COMP_TYPE_AA: (
+                AA_COL,
+                AA_COL,
+                _aa_tuples_filter_fn,
+                _default_nmax_fn,
+            ),
             COMP_TYPE_AAC: (
                 AA_COL,
                 CODON_COL,
@@ -896,7 +1113,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         subgroup1_col: str,
         subgroup2_col: str,
         pair_filter_fn: Optional[Callable[[str, str, str], bool]],
-        pair_nmax_fn: Optional[Callable[[str, str, str], int]],
+        pair_nmax_fn: Callable[[str, str, str], int],
     ):
         """
         Helper function that submits pairs of subgroups for pointwise angle-based
@@ -922,8 +1139,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             # Group by subgroup1 (e.g. AA  or codon)
             df_sub1_groups = df_group.groupby(subgroup1_col)
             for i, (sub1, df_sub1) in enumerate(df_sub1_groups):
-                # Need at least 2 observations in each statistical sample
-                if len(df_sub1) < 2:
+                if self.ddist_n_min and len(df_sub1) < self.ddist_n_min:
                     continue
 
                 # Group by subgroup2 (e.g. codon)
@@ -937,8 +1153,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     df_sub2_groups = df_sub1.groupby(subgroup2_col)
 
                 for j, (sub2, df_sub2) in enumerate(df_sub2_groups):
-                    # Need at least 2 observations in each statistical sample
-                    if len(df_sub2) < 2:
+                    if self.ddist_n_min and len(df_sub2) < self.ddist_n_min:
                         continue
 
                     # Skip redundant calculations: identical pairs with a different
@@ -953,13 +1168,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         continue
 
                     # Calculate ddist_nmax for pair based on custom logic
-                    if pair_nmax_fn is not None:
-                        ddist_n_max = pair_nmax_fn(group, sub1, sub2)
-                        # Never use more than the maximum if it was set
-                        if self.ddist_n_max:
-                            ddist_n_max = min(ddist_n_max, self.ddist_n_max)
-                    else:
-                        ddist_n_max = self.ddist_n_max
+                    ddist_n_max = pair_nmax_fn(group, sub1, sub2)
 
                     # Analyze the angles of subgroup1 and subgroup2
                     angles1 = np.deg2rad(df_sub1[[*PHI_PSI_COLS]].values)
@@ -1494,8 +1703,10 @@ def _subgroup_permutation_test(
     ddist_k_th: float,
 ) -> Tuple[float, float]:
     """
-    Calculates Tw^2 statistic and p-value to determine whether the dihedral angles of a
-    codon are significantly different then another.
+    Conducts a permutation-based statistical test to calculate a pvalue for
+    the null hypothesis that the dihedral angles of one codon come from the same
+    distribution as the angles of another.
+
     :param group_idx: Name of the group.
     :param subgroup1_idx: Name of subgroup.
     :param subgroup2_idx: Name of second subgroup.
@@ -1506,7 +1717,8 @@ def _subgroup_permutation_test(
     :param randstate: Random state for bootstrapping.
     :param ddist_bs_niter: Number of iterations for bootstrap sampling.
     :param ddist_n_max: Max sample size. If None or zero then no limit.
-    :param ddist_k: Number of permutations for computing significance.
+    :param ddist_k: Number of permutations for computing significance. If zero,
+        permutation tests are disabled.
     :param ddist_statistic_fn: Permutation test function to use for comparing the
         samples.
     :return: A Tuple (ddist, pval) containing the value of the ddist statistic and the p-value.
@@ -1522,13 +1734,31 @@ def _subgroup_permutation_test(
 
     # We use bootstrapping if requested more than one iteration or if we need to
     # limit the sample sizes
-    bootstrap_enabled = (ddist_bs_niter > 1) or bool(ddist_n_max)
     n1, n2 = len(subgroup1_data), len(subgroup2_data)
-    if not ddist_n_max:
-        ddist_n_max = max(n1, n2)
+
+    # If k=0 then permutations are disabled. In this case we allow only a single
+    # iteration of over the data, and no resampling.
+    permutations_enabled = ddist_k > 0
+    if not permutations_enabled:
+        assert ddist_bs_niter == 1
+        bootstrap_enabled = False
+        permutation_kwargs = dict()
+    else:
+        bootstrap_enabled = (ddist_bs_niter > 1) or bool(ddist_n_max)
+        if not ddist_n_max:
+            ddist_n_max = min(n1, n2)
+        permutation_kwargs = dict(
+            k=ddist_k,
+            # Disable early termination inside?
+            k_min=ddist_k_min,  # if not bootstrap_enabled else 0,
+            k_th=ddist_k_th,
+        )
 
     # Bootstrapping sample size is based on the minimum size of each group
-    bs_nsample = min(min(n1, n2), ddist_n_max)
+    bs_nsample = min(min(n1, n2), ddist_n_max) if bootstrap_enabled else None
+
+    # maximal number of permutations in all resamples
+    k_max = ddist_bs_niter * ddist_k
 
     # For a sample larger than ddist_n_max, we create a new sample from it by sampling
     # with replacement.
@@ -1543,28 +1773,27 @@ def _subgroup_permutation_test(
     # Run bootstrapped tests
     ddists, pvals, ks = [], [], []
     k_total, count_total, pval = 0, 0, 0.0
-    k_max = ddist_bs_niter * ddist_k  # maximal number of permutations in all resamples
     bs_idx = 0
     for bs_idx in range(ddist_bs_niter):
         curr_ddist, curr_pval, curr_k = ddist_statistic_fn(
             X=_bootstrap_resample(subgroup1_data),
             Y=_bootstrap_resample(subgroup2_data),
-            k=ddist_k,
-            # Disable early termination inside?
-            k_min=ddist_k_min,  # if not bootstrap_enabled else 0,
-            k_th=ddist_k_th,
+            **permutation_kwargs,
         )
         ddists.append(curr_ddist)
         pvals.append(curr_pval)
         ks.append(curr_k)
 
-        # Aggregate total number of permutations and counts to compute pval based
-        # on all permutations across resampling. This is equivalent to the pval we'd
-        # get if we'd run all the samples together in the same test for k_total
-        # permutations.
-        k_total += curr_k
-        count_total += max(int(curr_pval * (curr_k + 1)) - 1, 0)
-        pval = (count_total + 1) / (k_total + 1)
+        if permutations_enabled:
+            # Aggregate total number of permutations and counts to compute pval based
+            # on all permutations across resampling. This is equivalent to the pval we'd
+            # get if we'd run all the samples together in the same test for k_total
+            # permutations.
+            k_total += curr_k
+            count_total += max(int(curr_pval * (curr_k + 1)) - 1, 0)
+            pval = (count_total + 1) / (k_total + 1)
+        else:
+            pval = curr_pval
 
         # Early termination criterion: minimal number of permutations reached,
         # and pval is larger than some factor (k_th) times the smallest possible pvalue.

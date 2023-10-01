@@ -1,14 +1,31 @@
-from typing import Tuple, Union, Callable, Optional
+import pickle
+import logging
+from typing import Tuple, Callable, Optional
 
 import numba
 import numpy as np
+import rpy2.robjects as robjects
+import rpy2.robjects.numpy2ri
 from numpy import ndarray
+from filelock import FileLock
 from scipy.spatial.distance import pdist, squareform, sqeuclidean
 
-from pp5.distributions.kde import kde_2d, gaussian_kernel, w2_dist_sinkhorn
+import pp5
+from pp5.distributions.kde import kde_2d, gaussian_kernel
+
+_LOG = logging.getLogger(__name__)
+
 
 _NUMBA_PARALLEL = False
 
+# Names of R functions we use from the torustest R package.
+R_TORUSTEST_GEODESIC = "twosample.geodesic.torus.test"
+R_TORUSTEST_UBOUND = "twosample.ubound.torus.test"
+R_TORUSTEST_SIM_NULL_STAT = "sim.null.stat"
+
+# Setup conversion between python and R objects
+PY2R_CONVERTER = robjects.default_converter + robjects.numpy2ri.converter
+PY2R_CONVERTER.py2rpy.register(type(None), lambda _: robjects.NULL)
 
 # @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
 def _tw2_statistic(D: ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None) -> float:
@@ -353,3 +370,154 @@ def _two_sample_kernel_permutation_test_inner(
     # Calculate pval, and make sure it's not zero (it's possible that no iteration
     # produced stat_val <= stat_val_perm, but that doesn't mean the true pval is zero).
     return stat_val, pval, curr_permutation
+
+
+def torus_w2_ub_test(
+    X: ndarray,
+    Y: ndarray,
+    grid_low: float = -np.pi,
+    grid_high: float = np.pi,
+) -> Tuple[float, float]:
+    """
+
+    Two-sample test for the torus using the Wasserstein-2 distance. The computed
+    p-value is an upper bound of the pvalue for the null hypothesis that X and Y are
+    samples from the same distribution.
+
+    Uses code from: https://github.com/gonzalez-delgado/torustest
+
+    González-Delgado J, González-Sanz A, Cortés J, Neuvial P: Two-sample
+    goodness-of-fit tests on the flat torus based on Wasserstein distance and their
+    relevance to structural biology. Electron. J. Statist., 17(1): 1547–1586, 2023.
+
+    :param X: First sample observations, of shape (n, 2).
+    :param Y: Second sample observations, of shape (n, 2).
+    :param grid_low: Smallest value on the evaluation grid, inclusive.
+    :param grid_high: Largest value on the evaluation grid, exclusive.
+    :return: Tuple containing:
+    - w2 distance
+    - pvalue (upper bound)
+    """
+
+    # Scale X, Y from e.g. [-pi,pi) x [-pi,pi) to [0,1) x [0,1]
+    def _scale(Z: ndarray) -> ndarray:
+        return (Z - grid_low) / (grid_high - grid_low)
+
+    X, Y = _scale(X), _scale(Y)
+
+    # Get R-function to invoke for performing the test
+    test_fn_r = robjects.globalenv[R_TORUSTEST_UBOUND]
+
+    # Create a converter that converts np.ndarray to R array
+    with robjects.conversion.localconverter(PY2R_CONVERTER) as cv:
+        result = test_fn_r(X, Y, return_stat=True)
+        return result["stat"].item(), result["pval"].item()
+
+
+def torus_projection_test(
+    X: ndarray,
+    Y: ndarray,
+    grid_low: float = -np.pi,
+    grid_high: float = np.pi,
+    n_cores: int = 2,
+    n_geodesics: int = 2,
+    geodesics: Optional[np.array] = None,
+    n_cores_null_simulations: int = 8,
+    n_null_simulations: int = 2000,
+    n_null_sample_size: int = 30,
+) -> Tuple[float, float]:
+    """
+
+    Two-sample test for the torus using the projections onto closed geodesics.
+    The computed p-value is global pvalue obtained by n_gedesics(min(pvals))
+    where pvals are the per-projection p-values.
+
+    Uses code from: https://github.com/gonzalez-delgado/torustest
+
+    González-Delgado J, González-Sanz A, Cortés J, Neuvial P: Two-sample
+    goodness-of-fit tests on the flat torus based on Wasserstein distance and their
+    relevance to structural biology. Electron. J. Statist., 17(1): 1547–1586, 2023.
+
+    :param X: First sample observations, of shape (n, 2).
+    :param Y: Second sample observations, of shape (n, 2).
+    :param grid_low: Smallest value on the evaluation grid, inclusive.
+    :param grid_high: Largest value on the evaluation grid, exclusive.
+    :param n_cores: Number of cores to use for running on multiple processes.
+    :param n_geodesics: Number of geodesics lines to sample.
+    :param geodesics: An (n, 2) array. Each row is a vector defining a geodesic line on
+        the torus.
+    :param n_cores_null_simulations: Number of cores to use for null simulations.
+    :param n_null_simulations: Number of simulations to run for the null distribution.
+    :param n_null_sample_size: Number of samples to use for each null simulation.
+    :return: Tuple containing:
+    - w2 distance
+    - pvalue (upper bound)
+    """
+
+    # Scale X, Y from e.g. [-pi,pi) x [-pi,pi) to [0,1) x [0,1]
+    def _scale(Z: ndarray) -> ndarray:
+        return (Z - grid_low) / (grid_high - grid_low)
+
+    X, Y = _scale(X), _scale(Y)
+
+    # Get R-function to invoke for performing the test
+    test_fn_r = robjects.globalenv[R_TORUSTEST_GEODESIC]
+
+    sim_null_dist = torus_projection_test_null_samples(
+        n_simulations=n_null_simulations,
+        n_sample=n_null_sample_size,
+        n_cores=n_cores_null_simulations,
+    )
+
+    if geodesics is not None:
+        n_geodesics, _2 = geodesics.shape
+        assert _2 == 2
+
+    # Create a converter that converts np.ndarray to R array
+    with robjects.conversion.localconverter(PY2R_CONVERTER) as cv:
+        result = test_fn_r(
+            sample_1=X,
+            sample_2=Y,
+            n_geodesics=n_geodesics,
+            NC_geodesic=n_cores,
+            geodesic_list=geodesics,
+            sim_null=sim_null_dist,
+            return_stat=True,
+        )
+        return result["stat"].item(), result["pval"].item()
+
+
+def torus_projection_test_null_samples(
+    n_simulations: int, n_sample: int, n_cores: int = 8
+) -> np.ndarray:
+    """
+    Sample from the null distribution of the wasserstein statistic on S^1.
+
+    :param n_simulations: Number of simulations to perform.
+    :param n_sample: Sample size in each simulation.
+    :param n_cores: Number of cores to use for running on multiple processes.
+    :return: An array of simulated wasserstein statistics, of shape (n_simulations,).
+    """
+
+    filename = f"torustest_null_{n_simulations:05d}_{n_sample:05d}.pkl"
+    filepath = pp5.TORUSTEST_NULL_DIR / filename
+    lock_filepath = str(filepath).replace(".pkl", ".lock")
+    sim_null_fn_r = robjects.globalenv[R_TORUSTEST_SIM_NULL_STAT]
+
+    with FileLock(lock_filepath):
+        if filepath.exists():
+            with open(filepath, "rb") as f:
+                sim_null_dist = pickle.load(f)
+
+        else:
+            with robjects.conversion.localconverter(PY2R_CONVERTER) as cv:
+                _LOG.info(
+                    f"Calculating torustest null distribution {n_simulations=}, "
+                    f"{n_sample=}..."
+                )
+                sim_null_dist = sim_null_fn_r(NR=n_simulations, NC=n_cores, n=n_sample)
+                with open(filepath, "wb") as f:
+                    pickle.dump(sim_null_dist, f)
+                _LOG.info(f"Saved torustest null distribution to {filepath}")
+
+        return sim_null_dist
