@@ -746,6 +746,7 @@ class AtomLocationUncertainty(object):
         unit_cell: PDBUnitCell = None,
         isotropic=True,
         sigma_factor=1.0,
+        scale_as_bfactor=False,
     ):
         """
         :param backbone_only: Whether to only average over backbone atoms,
@@ -757,6 +758,9 @@ class AtomLocationUncertainty(object):
         temperature factors.
         :param sigma_factor: Constant factor to apply to covariance. For
         debugging.
+        :param scale_as_bfactor: Whether to return the uncertainties in
+        regular physical units of A^2, or scaled by 8pi^2 as for b-factors
+        (i.e., B = 8pi^2 U).
         """
         super().__init__()
         if unit_cell is None and isotropic is False:
@@ -765,36 +769,32 @@ class AtomLocationUncertainty(object):
         self.unit_cell = unit_cell
         self.isotropic = isotropic
         self.sigma_factor = sigma_factor
+        self.scale_as_bfactor = scale_as_bfactor
 
-    def mean_uncertainty(
-        self, pp: PDB.Polypeptide, scale_as_bfactor=False
-    ) -> List[float]:
+    def process_poly(self, pp: PDB.Polypeptide) -> Sequence[float]:
         """
         Calculates the average uncertainties for each residue in a polypeptide
         chain. The uncertainties will be returned in units of Angstroms^2.
         :param pp: The polypeptide.
-        :param scale_as_bfactor: Whether to return the uncertainties in
-        regular physical units of A^2, or scaled by 8pi^2 as for b-factors
-        (i.e., B = 8pi^2 U).
         :return: A list of uncertainties the same length as the polypeptide.
         Each value in the list is calculated based on b-factors from each
         atom (or only backbone atoms) in each residue.
         """
-        mean_bfactors = []
-        for res in pp:
-            bfactors = []
-            for atom in res:
-                atom: Atom
-                if self.bb_only and atom.get_name() not in BACKBONE_ATOMS:
-                    continue
-                bfactors.append(self.atom_avg(atom))
+        return tuple(self.process_residue(res) for res in pp)
 
-            res_mean = np.mean(bfactors).item()
-            if scale_as_bfactor:
-                res_mean *= CONST_8PI2
-            mean_bfactors.append(res_mean)
+    def process_residue(self, res: Residue) -> float:
+        bfactors = []
+        for atom in res:
+            atom: Atom
+            if self.bb_only and atom.get_name() not in BACKBONE_ATOMS:
+                continue
+            bfactors.append(self.atom_avg(atom))
 
-        return mean_bfactors
+        res_mean = np.mean(bfactors).item()
+        if self.scale_as_bfactor:
+            res_mean *= CONST_8PI2
+
+        return res_mean
 
     def mvn_mu_sigma(self, a: Atom):
         """
