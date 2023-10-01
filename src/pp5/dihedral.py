@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import math
+import functools
+import itertools
 from math import nan
-from typing import List, Union, Optional, Sequence
+from typing import Dict, List, Union, Optional, Sequence
+from contextlib import contextmanager
 
 import numba
 import numpy as np
@@ -11,7 +14,7 @@ import uncertainties.umath as umath
 import uncertainties.unumpy as unumpy
 from numpy import ndarray
 from pytest import approx
-from Bio.PDB.Atom import Atom
+from Bio.PDB.Atom import Atom, DisorderedAtom
 from scipy.optimize import minimize_scalar
 from Bio.PDB.Residue import Residue
 from Bio.PDB.Polypeptide import Polypeptide
@@ -26,6 +29,9 @@ BACKBONE_ATOM_C = "C"
 BACKBONE_ATOM_O = "O"
 BACKBONE_ATOMS = (BACKBONE_ATOM_N, BACKBONE_ATOM_CA, BACKBONE_ATOM_C)
 BACKBONE_ATOMS_O = tuple([*BACKBONE_ATOMS, BACKBONE_ATOM_O])
+NO_ALTLOC = None
+
+AltlocAtom = Union[Atom, DisorderedAtom]
 
 
 class Dihedral(object):
@@ -473,7 +479,7 @@ class DihedralAngleCalculator(object):
             r_prev = pp[i - 1] if i > 0 else None
             r_next = pp[i + 1] if i < len(pp) - 1 else None
 
-            d: Dihedral = self.process_res(r_curr, r_prev, r_next)
+            d: Dihedral = self.process_res(r_curr, r_prev, r_next)[NO_ALTLOC]
             angles.append(d)
 
         return angles
@@ -483,13 +489,19 @@ class DihedralAngleCalculator(object):
         r_curr: Residue,
         r_prev: Optional[Residue],
         r_next: Optional[Residue],
-    ) -> Dihedral:
+        with_altlocs: bool = False,
+    ) -> Dict[Optional[str], Dihedral]:
         """
         Calculate the dihedral angles for a single residue.
         :param r_curr: The residue for which to calculate angles.
         :param r_prev: The previous residue.
         :param r_next: The next residue.
-        :return: The dihedral angles for the residue.
+        :param with_altlocs: Whether to calculate angles for each alternate
+        location (altloc) that exists in r_curr.
+        :return: A dict containing the dihedral angles for the current residue,
+        per altloc. The result will always contain the key NO_ALTLOC, which is mapped to
+        the dihedral angles obtained without performing an altloc selection. Other keys
+        will correspond to the altloc ids exising in r_curr (only if with_altlocs=True).
         """
 
         r_prev_atoms = r_prev.child_dict if r_prev is not None else {}
@@ -502,44 +514,106 @@ class DihedralAngleCalculator(object):
             c: Atom = r_curr[BACKBONE_ATOM_C]
         except KeyError:
             # Phi/Psi cannot be calculated for this AA
-            return Dihedral.empty()
+            return {NO_ALTLOC: Dihedral.empty()}
 
         c_prev: Optional[Atom] = r_prev_atoms.get(BACKBONE_ATOM_C)
         ca_prev: Optional[Atom] = r_prev_atoms.get(BACKBONE_ATOM_CA)
         n_next: Optional[Atom] = r_next_atoms.get(BACKBONE_ATOM_N)
 
-        return self.process_atoms(n, ca, c, c_prev, ca_prev, n_next)
+        return self.process_disordered_atoms(
+            n, ca, c, c_prev, ca_prev, n_next, with_altlocs=with_altlocs
+        )
+
+    def process_disordered_atoms(
+        self,
+        n: AltlocAtom,
+        ca: AltlocAtom,
+        c: AltlocAtom,
+        c_prev: Optional[AltlocAtom],
+        ca_prev: Optional[AltlocAtom],
+        n_next: Optional[AltlocAtom],
+        with_altlocs: bool = False,
+    ) -> Dict[Optional[str], Dihedral]:
+
+        # Calculate the dihedral angles using the default altloc conformation
+        dihedrals = {NO_ALTLOC: self.process_atoms(n, ca, c, c_prev, ca_prev, n_next)}
+
+        # Check whether any of the atoms are disordered
+        curr_atoms = (n, ca, c)
+        disorder = (isinstance(a, DisorderedAtom) for a in curr_atoms)
+
+        # If we don't need to account for altlocs, or there are no disordered atoms,
+        # skip altloc processing by simply treating each atom as non-disordered.
+        if not with_altlocs or not any(disorder):
+            return dihedrals
+
+        # Get the ids of all altloc in the backbone of the current residue
+        altloc_ids = sorted(
+            set(
+                itertools.chain(
+                    *[
+                        a.disordered_get_id_list()
+                        for a in curr_atoms
+                        if isinstance(a, DisorderedAtom)
+                    ]
+                )
+            )
+        )
+
+        @contextmanager
+        def _altloc_ctx(a: AltlocAtom, altloc_id: str):
+            """Context that sets and then restores the selected altloc for an atom"""
+            if isinstance(a, DisorderedAtom):
+                selected_altloc = a.get_altloc()
+                if a.disordered_has_id(altloc_id):
+                    a.disordered_select(altloc_id)
+                yield
+                a.disordered_select(selected_altloc)
+            else:
+                yield
+
+        # For each altloc id, set the altloc id of all atoms to the current altloc,
+        # and calculate dihedral angles using the resulting atom locations. If the
+        # prev/next atoms also have this id, we'll use that id with them as well.
+        for altloc_id in altloc_ids:
+            _alt = functools.partial(_altloc_ctx, altloc_id=altloc_id)
+            with _alt(n), _alt(ca), _alt(c), _alt(c_prev), _alt(ca_prev), _alt(n_next):
+                dihedrals[altloc_id] = self.process_atoms(
+                    n, ca, c, c_prev, ca_prev, n_next
+                )
+
+        return dihedrals
 
     def process_atoms(
         self,
-        n: Atom,
-        ca: Atom,
-        c: Atom,
-        c_prev: Optional[Atom],
-        ca_prev: Optional[Atom],
-        n_next: Optional[Atom],
+        n: AltlocAtom,
+        ca: AltlocAtom,
+        c: AltlocAtom,
+        c_prev: Optional[AltlocAtom],
+        ca_prev: Optional[AltlocAtom],
+        n_next: Optional[AltlocAtom],
     ) -> Dihedral:
         phi, psi, omega = nan, nan, nan
 
-        def _dihedral_angle(a1: Atom, a2: Atom, a3: Atom, a4: Atom):
-            """Calculates the dihedral angle between four atoms."""
-            return calc_dihedral2(
-                a1.get_vector().get_array(),
-                a2.get_vector().get_array(),
-                a3.get_vector().get_array(),
-                a4.get_vector().get_array(),
-            )
-
         if c_prev is not None:
-            phi = _dihedral_angle(c_prev, n, ca, c)
+            phi = self._calc_fn(c_prev, n, ca, c)
 
             if ca_prev is not None:
-                omega = _dihedral_angle(ca_prev, c_prev, n, ca)
+                omega = self._calc_fn(ca_prev, c_prev, n, ca)
 
         if n_next is not None:
-            psi = _dihedral_angle(n, ca, c, n_next)
+            psi = self._calc_fn(n, ca, c, n_next)
 
         return Dihedral.from_rad(phi, psi, omega)
+
+    def _calc_fn(self, a1: Atom, a2: Atom, a3: Atom, a4: Atom):
+        """Calculates the dihedral angle between four atoms."""
+        return calc_dihedral2(
+            a1.get_vector().get_array(),
+            a2.get_vector().get_array(),
+            a3.get_vector().get_array(),
+            a4.get_vector().get_array(),
+        )
 
 
 class DihedralAnglesUncertaintyEstimator(DihedralAngleCalculator):
@@ -624,7 +698,7 @@ class DihedralAnglesMonteCarloEstimator(DihedralAnglesUncertaintyEstimator):
         for i in range(self.n_samples):
             # Take one sample of each atom
             xs = [sample[i] for sample in samples]
-            angles[i] = self.calc_dihedral2(*xs)
+            angles[i] = calc_dihedral2(*xs)
 
         return np.mean(angles), np.std(angles)
 
