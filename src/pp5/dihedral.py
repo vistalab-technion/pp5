@@ -128,12 +128,20 @@ class Dihedral(object):
     def omega_std_deg(self):
         return self._deg(self._omega_std)
 
-    def as_dict(self, degrees=False, skip_omega=False, with_std=False):
+    def as_dict(
+        self,
+        degrees=False,
+        skip_omega=False,
+        with_std=False,
+        prefix: str = "",
+        postfix: str = "",
+    ):
         """
         Convert this instance into a dict.
         :param degrees: Whether to output as degrees.
         :param skip_omega: Whether to discard omega from output.
         :param with_std: Whether to include std values in the output.
+        :param prefix: A prefix to add to each key.
         :return: A dict with keys phi, psi and possibly omega.
         """
         names = Dihedral.NAMES
@@ -148,7 +156,10 @@ class Dihedral(object):
         else:
             attrs = names
 
-        return {name: getattr(self, attr) for name, attr in zip(names, attrs)}
+        return {
+            f"{prefix}{name}{postfix}": getattr(self, attr)
+            for name, attr in zip(names, attrs)
+        }
 
     def __getstate__(self):
         return self.as_dict(degrees=False, skip_omega=False, with_std=True)
