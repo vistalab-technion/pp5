@@ -418,6 +418,36 @@ def wraparound_mean(angles: Union[np.ndarray, Sequence[float]], deg: bool = Fals
     return atan_rad
 
 
+@numba.jit(nopython=True)
+def calc_dihedral2(v1: ndarray, v2: ndarray, v3: ndarray, v4: ndarray):
+    """
+    Calculates the dihedral angle defined by four 3d points.
+    This is the angle between the plane defined by the first three
+    points and the plane defined by the last three points.
+    Fast approach, based on https://stackoverflow.com/a/34245697/1230403
+    """
+    b0 = v1 - v2
+    b1 = v3 - v2
+    b2 = v4 - v3
+
+    # normalize b1 so that it does not influence magnitude of vector
+    # rejections that come next
+    b1 /= np.linalg.norm(b1)
+
+    # v = projection of b0 onto plane perpendicular to b1
+    #   = b0 minus component that aligns with b1
+    # w = projection of b2 onto plane perpendicular to b1
+    #   = b2 minus component that aligns with b1
+    v = b0 - np.dot(b0, b1) * b1
+    w = b2 - np.dot(b2, b1) * b1
+
+    # angle between v and w in a plane is the torsion angle
+    # v and w may not be normalized but that's fine since tan is y/x
+    x = np.dot(v, w)
+    y = np.dot(np.cross(b1, v), w)
+    return np.arctan2(y, x)
+
+
 class DihedralAngleCalculator(object):
     """
     Calculates dihedral angles for a polypeptide chain of a Protein.
@@ -449,7 +479,10 @@ class DihedralAngleCalculator(object):
         return angles
 
     def process_res(
-        self, r_curr: Residue, r_prev: Optional[Residue], r_next: Optional[Residue]
+        self,
+        r_curr: Residue,
+        r_prev: Optional[Residue],
+        r_next: Optional[Residue],
     ) -> Dihedral:
         """
         Calculate the dihedral angles for a single residue.
@@ -459,73 +492,54 @@ class DihedralAngleCalculator(object):
         :return: The dihedral angles for the residue.
         """
 
-        r_prev = r_prev or {}
-        r_next = r_next or {}
-        phi, psi, omega = nan, nan, nan
+        r_prev_atoms = r_prev.child_dict if r_prev is not None else {}
+        r_next_atoms = r_next.child_dict if r_next is not None else {}
 
         try:
             # Get the backbone atoms
-            n = r_curr[BACKBONE_ATOM_N]
-            ca = r_curr[BACKBONE_ATOM_CA]
-            c = r_curr[BACKBONE_ATOM_C]
+            n: Atom = r_curr[BACKBONE_ATOM_N]
+            ca: Atom = r_curr[BACKBONE_ATOM_CA]
+            c: Atom = r_curr[BACKBONE_ATOM_C]
         except KeyError:
             # Phi/Psi cannot be calculated for this AA
             return Dihedral.empty()
 
-        # Phi
-        if BACKBONE_ATOM_C in r_prev:
-            c_prev = r_prev[BACKBONE_ATOM_C]
-            phi = self._calc_fn(c_prev, n, ca, c)
+        c_prev: Optional[Atom] = r_prev_atoms.get(BACKBONE_ATOM_C)
+        ca_prev: Optional[Atom] = r_prev_atoms.get(BACKBONE_ATOM_CA)
+        n_next: Optional[Atom] = r_next_atoms.get(BACKBONE_ATOM_N)
 
-        # Psi
-        if BACKBONE_ATOM_N in r_next:
-            n_next = r_next[BACKBONE_ATOM_N]
-            psi = self._calc_fn(n, ca, c, n_next)
+        return self.process_atoms(n, ca, c, c_prev, ca_prev, n_next)
 
-        # Omega
-        if BACKBONE_ATOM_C in r_prev and BACKBONE_ATOM_CA in r_prev:
-            c_prev, ca_prev = r_prev[BACKBONE_ATOM_C], r_prev[BACKBONE_ATOM_CA]
-            omega = self._calc_fn(ca_prev, c_prev, n, ca)
+    def process_atoms(
+        self,
+        n: Atom,
+        ca: Atom,
+        c: Atom,
+        c_prev: Optional[Atom],
+        ca_prev: Optional[Atom],
+        n_next: Optional[Atom],
+    ) -> Dihedral:
+        phi, psi, omega = nan, nan, nan
+
+        def _dihedral_angle(a1: Atom, a2: Atom, a3: Atom, a4: Atom):
+            """Calculates the dihedral angle between four atoms."""
+            return calc_dihedral2(
+                a1.get_vector().get_array(),
+                a2.get_vector().get_array(),
+                a3.get_vector().get_array(),
+                a4.get_vector().get_array(),
+            )
+
+        if c_prev is not None:
+            phi = _dihedral_angle(c_prev, n, ca, c)
+
+            if ca_prev is not None:
+                omega = _dihedral_angle(ca_prev, c_prev, n, ca)
+
+        if n_next is not None:
+            psi = _dihedral_angle(n, ca, c, n_next)
 
         return Dihedral.from_rad(phi, psi, omega)
-
-    @staticmethod
-    @numba.jit(nopython=True)
-    def calc_dihedral2(v1: ndarray, v2: ndarray, v3: ndarray, v4: ndarray):
-        """
-        Calculates the dihedral angle defined by four 3d points.
-        This is the angle between the plane defined by the first three
-        points and the plane defined by the last three points.
-        Fast approach, based on https://stackoverflow.com/a/34245697/1230403
-        """
-        b0 = v1 - v2
-        b1 = v3 - v2
-        b2 = v4 - v3
-
-        # normalize b1 so that it does not influence magnitude of vector
-        # rejections that come next
-        b1 /= np.linalg.norm(b1)
-
-        # v = projection of b0 onto plane perpendicular to b1
-        #   = b0 minus component that aligns with b1
-        # w = projection of b2 onto plane perpendicular to b1
-        #   = b2 minus component that aligns with b1
-        v = b0 - np.dot(b0, b1) * b1
-        w = b2 - np.dot(b2, b1) * b1
-
-        # angle between v and w in a plane is the torsion angle
-        # v and w may not be normalized but that's fine since tan is y/x
-        x = np.dot(v, w)
-        y = np.dot(np.cross(b1, v), w)
-        return np.arctan2(y, x)
-
-    def _calc_fn(self, a1: Atom, a2: Atom, a3: Atom, a4: Atom):
-        return self.calc_dihedral2(
-            a1.get_vector().get_array(),
-            a2.get_vector().get_array(),
-            a3.get_vector().get_array(),
-            a4.get_vector().get_array(),
-        )
 
 
 class DihedralAnglesUncertaintyEstimator(DihedralAngleCalculator):
