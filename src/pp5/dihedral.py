@@ -477,7 +477,9 @@ class DihedralAngleCalculator(object):
         self, pp: Polypeptide, with_altlocs: bool = False
     ) -> List[Dict[str, Dihedral]]:
         """
-        Calculate the dihedral angles from a polypeptide chain.
+        Calculate the dihedral angles from a polypeptide chain, with optional support
+        for alternate locations (altlocs).
+
         :param pp: A polypeptide.
         :param with_altlocs: Whether to calculate angles for each alternate location.
         :return: A list with a dict per residue in the polypepdide. Each dict maps
@@ -493,14 +495,14 @@ class DihedralAngleCalculator(object):
             r_prev = pp[i - 1] if i > 0 else None
             r_next = pp[i + 1] if i < len(pp) - 1 else None
 
-            d: Dict[str, Dihedral] = self.process_res(
+            d: Dict[str, Dihedral] = self.process_residues(
                 r_curr, r_prev, r_next, with_altlocs=with_altlocs
             )
             angles.append(d)
 
         return angles
 
-    def process_res(
+    def process_residues(
         self,
         r_curr: Residue,
         r_prev: Optional[Residue],
@@ -593,6 +595,8 @@ class DihedralAngleCalculator(object):
         # prev/next atoms also have this id, we'll use that id with them as well.
         for altloc_id in altloc_ids:
             _alt = functools.partial(_altloc_ctx, altloc_id=altloc_id)
+
+            # Select current altloc_id for all associated atoms
             with _alt(n), _alt(ca), _alt(c), _alt(c_prev), _alt(ca_prev), _alt(n_next):
                 dihedrals[altloc_id] = self.process_atoms(
                     n, ca, c, c_prev, ca_prev, n_next
