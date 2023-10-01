@@ -166,18 +166,15 @@ class ResidueRecord(object):
         self.secondary = secondary
         self.num_altlocs = len([k for k in angles.keys() if k != NO_ALTLOC])
 
-    def as_dict(self, skip_omega=False, convert_none=False):
+    def as_dict(self, skip_omega=False):
         """
         Creates a dict representation of the data in this residue. The angles object
         will we flattened out so its attributes will be placed directly in the
-        resulting dict. The backbone angles will be converted to a nested list.
+        resulting dict.
         :param skip_omega: Whether to not include the omega angle in the output.
-        :param convert_none: Whether to convert None to an empty string.
         :return:
         """
         d = self.__dict__.copy()
-        if convert_none:
-            d = {k: v if v is not None else "" for k, v in d.items()}
 
         # Replace angles object with the angles themselves
         d.pop("angles")
@@ -962,7 +959,7 @@ class ProteinRecord(object):
         )
         df_data = []
         for res_id, res_rec in self.items():
-            res_rec_dict = res_rec.as_dict(skip_omega=False, convert_none=True)
+            res_rec_dict = res_rec.as_dict(skip_omega=False)
             if with_backbone:
                 res_backbone = backbone_coords.get(res_id)
                 res_rec_dict["backbone"] = (
@@ -971,6 +968,7 @@ class ProteinRecord(object):
             df_data.append(res_rec_dict)
 
         df_prec = pd.DataFrame(df_data)
+        df_prec.fillna(value="", inplace=True)
 
         if with_contacts:
             contact_kwargs = (
