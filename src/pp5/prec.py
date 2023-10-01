@@ -50,7 +50,7 @@ from pp5.dihedral import (
     BACKBONE_ATOMS_O,
     Dihedral,
     AtomLocationUncertainty,
-    DihedralAnglesEstimator,
+    DihedralAngleCalculator,
     DihedralAnglesMonteCarloEstimator,
     DihedralAnglesUncertaintyEstimator,
 )
@@ -563,7 +563,7 @@ class ProteinRecord(object):
 
             pdb_aa_seq += str(pp.get_sequence())
             res_ids.extend(_residue_to_res_id(res) for res in pp)
-            angles.extend(dihedral_est.estimate(pp))
+            angles.extend(dihedral_est.process_poly(pp))
             bfactors.extend(bfactor_est.mean_uncertainty(pp, True))
             chain_res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
             sss = (ss_dict.get(res_id, "-") for res_id in chain_res_ids)
@@ -1267,7 +1267,7 @@ class ProteinRecord(object):
         elif est_name == "erp":
             d_est = DihedralAnglesUncertaintyEstimator(unit_cell, **args)
         else:
-            d_est = DihedralAnglesEstimator(**args)
+            d_est = DihedralAngleCalculator(**args)
 
         b_est = AtomLocationUncertainty(
             backbone_only=True, unit_cell=None, isotropic=True

@@ -12,10 +12,10 @@ from Bio.PDB import PPBuilder
 import pymol.cmd as pymol
 
 from pp5 import dihedral
-from pp5.dihedral import Dihedral, DihedralAnglesEstimator
+from pp5.dihedral import Dihedral, DihedralAngleCalculator
 from pp5.external_dbs import pdb
 
-calc_dihedral2 = DihedralAnglesEstimator.calc_dihedral2
+calc_dihedral2 = DihedralAngleCalculator.calc_dihedral2
 
 
 def random_angles(n=100, low=-np.pi, high=np.pi):
@@ -124,7 +124,7 @@ class TestDihedralAnglesVsPyMOL(object):
 
     @pytest.mark.parametrize("pdb_id", TEST_PDB_IDS)
     def test_basic_estimator(self, pdb_id):
-        estimator = dihedral.DihedralAnglesEstimator()
+        estimator = dihedral.DihedralAngleCalculator()
         self._compare_to_pymol(pdb_id, estimator)
 
     def _compare_to_pymol(self, pdb_id, estimator):
@@ -145,7 +145,7 @@ class TestDihedralAnglesVsPyMOL(object):
                 pp_list = PPBuilder().build_peptides(chain, aa_only=False)
                 pp5_angles = []
                 for pp in pp_list:
-                    pp5_angles.extend(estimator.estimate(pp))
+                    pp5_angles.extend(estimator.process_poly(pp))
 
                 # discard first and last angle pairs as PyMOL doesn't compute
                 pp5_angles = pp5_angles[1:-1]
@@ -194,7 +194,7 @@ class TestDihedralAnglesEstimators(object):
                 (degrees(phi) if phi else None, degrees(psi) if psi else None)
                 for phi, psi in biopython_angles
             ]
-            angles = estimator.estimate(pp)
+            angles = estimator.process_poly(pp)
 
             assert len(angles) == len(biopython_angles)
             for i in range(len(angles)):
@@ -214,7 +214,7 @@ class TestDihedralAnglesEstimators(object):
 
     @pytest.mark.parametrize("pdb_id", TEST_PDB_IDS)
     def test_basic_estimator(self, pdb_id):
-        estimator = dihedral.DihedralAnglesEstimator()
+        estimator = dihedral.DihedralAngleCalculator()
         self._compare_with_estimator(pdb_id, estimator)
 
     @pytest.mark.parametrize("pdb_id", TEST_PDB_IDS)

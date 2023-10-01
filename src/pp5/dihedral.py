@@ -418,7 +418,7 @@ def wraparound_mean(angles: Union[np.ndarray, Sequence[float]], deg: bool = Fals
     return atan_rad
 
 
-class DihedralAnglesEstimator(object):
+class DihedralAngleCalculator(object):
     """
     Calculates dihedral angles for a polypeptide chain of a Protein.
     """
@@ -426,9 +426,10 @@ class DihedralAnglesEstimator(object):
     def __init__(self, **kw):
         pass
 
-    def estimate(self, pp: Polypeptide) -> List[Dihedral]:
+    def process_poly(self, pp: Polypeptide) -> List[Dihedral]:
         """
-        Estimate the dihedral angles of a polypeptide chain.
+        Calculate the dihedral angles from a polypeptide chain.
+
         :param pp: A polypeptide.
         :return: A list of Dihedral objects containing the angles. The
         length of the list will be identical to the length of the
@@ -512,7 +513,7 @@ class DihedralAnglesEstimator(object):
         )
 
 
-class DihedralAnglesUncertaintyEstimator(DihedralAnglesEstimator):
+class DihedralAnglesUncertaintyEstimator(DihedralAngleCalculator):
     """
     Calculates dihedral angles with uncertainty estimation based on
     b-factors and error propagation.
