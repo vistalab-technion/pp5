@@ -29,7 +29,7 @@ BACKBONE_ATOM_C = "C"
 BACKBONE_ATOM_O = "O"
 BACKBONE_ATOMS = (BACKBONE_ATOM_N, BACKBONE_ATOM_CA, BACKBONE_ATOM_C)
 BACKBONE_ATOMS_O = tuple([*BACKBONE_ATOMS, BACKBONE_ATOM_O])
-NO_ALTLOC = None
+NO_ALTLOC = "_"
 
 AltlocAtom = Union[Atom, DisorderedAtom]
 
@@ -471,6 +471,20 @@ class DihedralAngleCalculator(object):
         length of the list will be identical to the length of the
         polypeptide in AAs.
         """
+        return [d[NO_ALTLOC] for d in self.process_poly_altlocs(pp, with_altlocs=False)]
+
+    def process_poly_altlocs(
+        self, pp: Polypeptide, with_altlocs: bool = False
+    ) -> List[Dict[str, Dihedral]]:
+        """
+        Calculate the dihedral angles from a polypeptide chain.
+        :param pp: A polypeptide.
+        :param with_altlocs: Whether to calculate angles for each alternate location.
+        :return: A list with a dict per residue in the polypepdide. Each dict maps
+        from the altloc id to the dihedral angles for that altloc (if with_altlocs=True)
+        Each dict will always contain the key NO_ALTLOC, which is mapped to the
+        dihedral angles obtained without performing an altloc selection.
+        """
         angles = []
 
         # Loop over amino acids (AAs) in the polypeptide
@@ -479,7 +493,9 @@ class DihedralAngleCalculator(object):
             r_prev = pp[i - 1] if i > 0 else None
             r_next = pp[i + 1] if i < len(pp) - 1 else None
 
-            d: Dihedral = self.process_res(r_curr, r_prev, r_next)[NO_ALTLOC]
+            d: Dict[str, Dihedral] = self.process_res(
+                r_curr, r_prev, r_next, with_altlocs=with_altlocs
+            )
             angles.append(d)
 
         return angles
@@ -490,7 +506,7 @@ class DihedralAngleCalculator(object):
         r_prev: Optional[Residue],
         r_next: Optional[Residue],
         with_altlocs: bool = False,
-    ) -> Dict[Optional[str], Dihedral]:
+    ) -> Dict[str, Dihedral]:
         """
         Calculate the dihedral angles for a single residue.
         :param r_curr: The residue for which to calculate angles.
@@ -533,7 +549,7 @@ class DihedralAngleCalculator(object):
         ca_prev: Optional[AltlocAtom],
         n_next: Optional[AltlocAtom],
         with_altlocs: bool = False,
-    ) -> Dict[Optional[str], Dihedral]:
+    ) -> Dict[str, Dihedral]:
 
         # Calculate the dihedral angles using the default altloc conformation
         dihedrals = {NO_ALTLOC: self.process_atoms(n, ca, c, c_prev, ca_prev, n_next)}
