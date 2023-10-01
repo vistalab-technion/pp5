@@ -46,6 +46,7 @@ from pp5.codons import (
     CODON_OPTS_SEP,
 )
 from pp5.dihedral import (
+    NO_ALTLOC,
     BACKBONE_ATOMS,
     BACKBONE_ATOMS_O,
     Dihedral,
@@ -132,10 +133,9 @@ class ResidueRecord(object):
         codon: str,
         codon_score: float,
         codon_opts: Union[Iterable[str], str],
-        angles: Dihedral,
+        angles: Dict[str, Dihedral],
         bfactor: float,
         secondary: str,
-        num_conformations: int,
     ):
         """
 
@@ -147,11 +147,10 @@ class ResidueRecord(object):
         :param codon: Three-letter nucleotide sequence of codon matched to this residue.
         :param codon_score: Confidence measure for the codon match.
         :param codon_opts: All possible codons found in DNA sequences of the protein.
-        :param angles: A Dihedral objet containing the dihedral angles.
+        :param angles: A mapping from an alternate conformation (altloc) id to a
+            Dihedral object containing the dihedral angles for that conformation.
         :param bfactor: Average b-factor along of the residue's backbone atoms.
         :param secondary: Single-letter secondary structure code.
-        :param num_conformations: Number of possible conformations in the PDB entry of
-        this residue.
         """
         self.res_id, self.name = str(res_id), name
         self.unp_idx = unp_idx
@@ -160,8 +159,12 @@ class ResidueRecord(object):
             self.codon_opts = codon_opts
         else:
             self.codon_opts = str.join(CODON_OPTS_SEP, codon_opts)
-        self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
-        self.num_conformations = num_conformations
+
+        assert NO_ALTLOC in angles
+        self.angles = angles
+        self.bfactor = bfactor
+        self.secondary = secondary
+        self.num_altlocs = len([k for k in angles.keys() if k != NO_ALTLOC])
 
     def as_dict(self, skip_omega=False, convert_none=False):
         """
@@ -178,8 +181,20 @@ class ResidueRecord(object):
 
         # Replace angles object with the angles themselves
         d.pop("angles")
-        a = self.angles
-        d.update(a.as_dict(degrees=True, with_std=True, skip_omega=skip_omega))
+        a: Dihedral = self.angles[NO_ALTLOC]
+        d.update(a.as_dict(degrees=True, with_std=False, skip_omega=skip_omega))
+
+        for altloc_id, a in self.angles.items():
+            if altloc_id == NO_ALTLOC:
+                continue
+            d.update(
+                a.as_dict(
+                    degrees=True,
+                    with_std=False,
+                    skip_omega=skip_omega,
+                    postfix=f"_{altloc_id}",
+                )
+            )
 
         return d
 
@@ -542,7 +557,6 @@ class ProteinRecord(object):
         # list of multiple Polypeptide objects because we split them at
         # non-standard residues (HETATM atoms in PDB).
         pdb_aa_seq, res_ids, angles, bfactors, sstructs = "", [], [], [], []
-        num_conformations = []
         for i, pp in enumerate(self.polypeptides):
             curr_start_idx = pp[0].get_id()[1]
             curr_end_idx = pp[-1].get_id()[1]
@@ -556,19 +570,17 @@ class ProteinRecord(object):
                 # fill in the gaps
                 pdb_aa_seq += UNKNOWN_AA * gap_len
                 res_ids.extend(range(prev_end_idx + 1, curr_start_idx))
-                angles.extend([Dihedral.empty()] * gap_len)
+                angles.extend([{NO_ALTLOC: Dihedral.empty()}] * gap_len)
                 bfactors.extend([math.nan] * gap_len)
                 sstructs.extend(["-"] * gap_len)
-                num_conformations.extend([1] * gap_len)
 
             pdb_aa_seq += str(pp.get_sequence())
             res_ids.extend(_residue_to_res_id(res) for res in pp)
-            angles.extend(dihedral_est.process_poly(pp))
+            angles.extend(dihedral_est.process_poly_altlocs(pp, with_altlocs=True))
             bfactors.extend(bfactor_est.mean_uncertainty(pp, True))
             chain_res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
             sss = (ss_dict.get(res_id, "-") for res_id in chain_res_ids)
             sstructs.extend(sss)
-            num_conformations.extend(len(_residue_conformations(res)) for res in pp)
 
         # Find the alignment between the PDB AA sequence and the Uniprot AA sequence.
         pdb_to_unp_idx = self._find_unp_alignment(pdb_aa_seq, self.unp_rec.sequence)
@@ -603,7 +615,6 @@ class ProteinRecord(object):
                 angles=angles[i],
                 bfactor=bfactors[i],
                 secondary=sstructs[i],
-                num_conformations=num_conformations[i],
             )
             residue_recs.append(rr)
 
@@ -922,15 +933,11 @@ class ProteinRecord(object):
         return self._pp
 
     @property
-    def num_conformations(self) -> int:
+    def num_altlocs(self) -> int:
         """
-        :return: Number of possible conformations of this chain.
-        The product of the number of conformations in the PDB representation of each
-        residue.
+        :return: Number of positions with alternate locations (altlocs) in this chain.
         """
-        return math.prod(
-            (r.num_conformations or 1) for r in self._residue_recs.values()
-        )
+        return sum(r.num_altlocs > 1 for r in self._residue_recs.values())
 
     def to_dataframe(
         self,
