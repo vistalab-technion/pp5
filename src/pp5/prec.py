@@ -89,37 +89,6 @@ def _backbone_coords(res: Residue, with_oxygen: bool = False) -> Optional[np.nda
     return np.stack(coords).astype(float)
 
 
-def _residue_conformations(res: Residue) -> Sequence[str]:
-    """
-    :param res: A Residue.
-    :return: Sequence with names of this residue's possible backbone conformations.
-    For example, might return ("A", "B") in case this residue's backbone atoms all
-    have two possible locations named "A" and "B" in the PDB file.
-    If there are no alternative conformations returns ("",) which represents a single
-    unnamed conformation.
-    """
-    res_bb_atoms = [res.child_dict.get(atom_name) for atom_name in BACKBONE_ATOMS_O]
-    conformations = ("",)  # By default, we assume a single unnamed conformation.
-
-    is_disordered = all([isinstance(a, DisorderedAtom) for a in res_bb_atoms])
-    if is_disordered:
-        d_atom: DisorderedAtom
-        disordered_ids_all = [
-            d_atom.disordered_get_id_list() for d_atom in res_bb_atoms
-        ]
-        if not all(
-            disordered_ids_all[k] == disordered_ids_all[0]
-            for k in range(len(disordered_ids_all))
-        ):
-            res_id = _residue_to_res_id(res)
-            res_name = res.get_resname()
-            LOGGER.warning(f"Inconsistent disordered ids for {res_id} {res_name}")
-
-        conformations = tuple(disordered_ids_all[0])
-
-    return conformations
-
-
 class ResidueRecord(object):
     """
     Represents a single residue in a protein record.
@@ -467,6 +436,7 @@ class ProteinRecord(object):
         max_ena: int = None,
         strict_unp_xref: bool = True,
         numeric_chain: bool = False,
+        with_altlocs: bool = False,
     ):
         """
         Initialize a protein record from both Uniprot and PDB ids.
@@ -494,6 +464,8 @@ class ProteinRecord(object):
         cross-ref for the given Uniprot ID.
         :param numeric_chain: Whether the given chain id (if any) is
         numeric. In rare cases PDB structures have numbers as chain ids.
+        :param with_altlocs: Whether to include alternate conformations in the
+        protein record. If False, only the default conformation will be used.
         """
         if not (unp_id and pdb_id):
             raise ProteinInitError("Must provide both Uniprot and PDB IDs")
@@ -548,36 +520,33 @@ class ProteinRecord(object):
             dihedral_est_name, dihedral_est_args
         )
 
-        # Extract the PDB AA sequence, dihedral angles and b-factors
-        # from the PDB structure.
-        # Even though we're working with one PDB chain, the results is a
-        # list of multiple Polypeptide objects because we split them at
-        # non-standard residues (HETATM atoms in PDB).
-        pdb_aa_seq, res_ids, angles, bfactors, sstructs = "", [], [], [], []
+        # Extract the residues from the PDB structure
+        pdb_aa_seq, residues = "", []
         for i, pp in enumerate(self.polypeptides):
-            curr_start_idx = pp[0].get_id()[1]
-            curr_end_idx = pp[-1].get_id()[1]
+            first_res: Residue = pp[0]
+            _, curr_start_idx, _ = first_res.get_id()
 
             # More than one pp means there are gaps due to non-standard AAs
             if i > 0:
                 # Calculate index gap between this polypeptide and previous
-                prev_end_idx = self.polypeptides[i - 1][-1].get_id()[1]
+                prev_pp_last_res: Residue = self.polypeptides[i - 1][-1]
+                _, prev_end_idx, _ = prev_pp_last_res.get_id()
                 gap_len = curr_start_idx - prev_end_idx - 1
 
                 # fill in the gaps
                 pdb_aa_seq += UNKNOWN_AA * gap_len
-                res_ids.extend(range(prev_end_idx + 1, curr_start_idx))
-                angles.extend([{NO_ALTLOC: Dihedral.empty()}] * gap_len)
-                bfactors.extend([math.nan] * gap_len)
-                sstructs.extend(["-"] * gap_len)
+                residues.extend(
+                    [
+                        Residue(("", j, ""), UNKNOWN_AA, i)
+                        for j in range(prev_end_idx + 1, curr_start_idx)
+                    ]
+                )
 
             pdb_aa_seq += str(pp.get_sequence())
-            res_ids.extend(_residue_to_res_id(res) for res in pp)
-            angles.extend(dihedral_est.process_poly_altlocs(pp, with_altlocs=True))
-            bfactors.extend(bfactor_est.mean_uncertainty(pp, True))
-            chain_res_ids = ((self.pdb_chain_id, res.get_id()) for res in pp)
-            sss = (ss_dict.get(res_id, "-") for res_id in chain_res_ids)
-            sstructs.extend(sss)
+            residues.extend(pp)
+
+        assert len(pdb_aa_seq) == len(residues)
+        n_residues = len(pdb_aa_seq)
 
         # Find the alignment between the PDB AA sequence and the Uniprot AA sequence.
         pdb_to_unp_idx = self._find_unp_alignment(pdb_aa_seq, self.unp_rec.sequence)
@@ -591,6 +560,20 @@ class ProteinRecord(object):
         # Create a ResidueRecord holding all data we need per residue
         residue_recs = []
         for i in range(len(pdb_aa_seq)):
+            r_curr: Residue = residues[i]
+
+            # Extract basic features
+            res_id: str = _residue_to_res_id(r_curr)
+            bfactor: float = bfactor_est.process_residue(r_curr)
+            secondary: str = ss_dict.get((self.pdb_chain_id, r_curr.get_id()), "-")
+
+            # Calculate dihedral angles
+            r_prev: Optional[Residue] = residues[i - 1] if i > 0 else None
+            r_next: Optional[Residue] = residues[i + 1] if i < n_residues - 1 else None
+            angles: Dict[str, Dihedral] = dihedral_est.process_residues(
+                r_curr, r_prev, r_next, with_altlocs=with_altlocs
+            )
+
             # Get the best codon and calculate its 'score' based on how many
             # other options there are
             codon_counts = idx_to_codons.get(i, {})
@@ -603,15 +586,15 @@ class ProteinRecord(object):
             codon_opts = codon_counts.keys()
 
             rr = ResidueRecord(
-                res_id=res_ids[i],
+                res_id=res_id,
                 unp_idx=pdb_to_unp_idx.get(i, None),
                 name=pdb_aa_seq[i],
                 codon=best_codon,
                 codon_score=codon_score,
                 codon_opts=codon_opts,
-                angles=angles[i],
-                bfactor=bfactors[i],
-                secondary=sstructs[i],
+                angles=angles,
+                bfactor=bfactor,
+                secondary=secondary,
             )
             residue_recs.append(rr)
 
@@ -1275,7 +1258,7 @@ class ProteinRecord(object):
             d_est = DihedralAngleCalculator(**args)
 
         b_est = AtomLocationUncertainty(
-            backbone_only=True, unit_cell=None, isotropic=True
+            backbone_only=True, unit_cell=None, isotropic=True, scale_as_bfactor=True
         )
         return d_est, b_est
 
