@@ -12,10 +12,8 @@ from Bio.PDB import PPBuilder
 import pymol.cmd as pymol
 
 from pp5 import dihedral
-from pp5.dihedral import Dihedral, DihedralAngleCalculator
+from pp5.dihedral import Dihedral, DihedralAngleCalculator, calc_dihedral2
 from pp5.external_dbs import pdb
-
-calc_dihedral2 = DihedralAngleCalculator.calc_dihedral2
 
 
 def random_angles(n=100, low=-np.pi, high=np.pi):
@@ -179,10 +177,6 @@ class TestDihedralAnglesVsPyMOL(object):
 
 class TestDihedralAnglesEstimators(object):
     TEST_PDB_IDS = ["5jdt", "3ajo", "1b0y", "2wur"]
-
-    @classmethod
-    def setup_class(cls):
-        pass
 
     def _compare_with_estimator(self, pdb_id, estimator, **kw):
         pdb_rec = pdb.pdb_struct(pdb_id)
