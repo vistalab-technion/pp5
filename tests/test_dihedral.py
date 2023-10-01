@@ -1,4 +1,5 @@
 import math
+import itertools
 import contextlib
 from math import degrees, radians
 
@@ -12,7 +13,7 @@ from Bio.PDB import PPBuilder
 import pymol.cmd as pymol
 
 from pp5 import dihedral
-from pp5.dihedral import Dihedral, DihedralAngleCalculator, calc_dihedral2
+from pp5.dihedral import NO_ALTLOC, Dihedral, DihedralAngleCalculator, calc_dihedral2
 from pp5.external_dbs import pdb
 
 
@@ -222,6 +223,55 @@ class TestDihedralAnglesEstimators(object):
         estimator = dihedral.DihedralAnglesMonteCarloEstimator(unit_cell)
         # Not sure how to test, for now set infinite abs error
         self._compare_with_estimator(pdb_id, estimator, abs=math.inf)
+
+    @pytest.mark.parametrize("pdb_id", TEST_PDB_IDS)
+    def test_altloc(self, pdb_id):
+        pdb_rec = pdb.pdb_struct(pdb_id)
+        pp_chains = PPBuilder().build_peptides(pdb_rec, aa_only=True)
+
+        estimator = dihedral.DihedralAngleCalculator()
+        for i_pp, pp in enumerate(pp_chains):
+
+            # To make sure all altlocs are set back to default, we will calculate all
+            # dihedrals with and without altlocs, before and after they are changed,
+            # and compare the results.
+            pp_dihedrals_noalt1 = estimator.process_poly_altlocs(pp, with_altlocs=False)
+            pp_dihedrals_alt = estimator.process_poly_altlocs(pp, with_altlocs=True)
+            pp_dihedrals_noalt2 = estimator.process_poly_altlocs(pp, with_altlocs=False)
+
+            assert len(pp_dihedrals_noalt1) == len(pp_dihedrals_noalt2)
+            assert len(pp_dihedrals_alt) == len(pp_dihedrals_noalt1)
+            assert len(pp_dihedrals_alt) == len(pp)
+
+            # Changing the selected altloc should have no effect on subsequent
+            # calculations.
+            assert pp_dihedrals_noalt1 is not pp_dihedrals_noalt2
+            assert pp_dihedrals_noalt1 == pp_dihedrals_noalt2
+
+            n_altlocs = len([d for d in pp_dihedrals_alt if len(d) > 1])
+            print(f"{pdb_id.upper()} (chain {i_pp}) has {n_altlocs=}")
+
+            for i, altloc_dihedrals in enumerate(pp_dihedrals_alt):
+                # NO_ALTLOC should always be present
+                assert NO_ALTLOC in altloc_dihedrals
+
+                # angle at NO_ALTLOC should be equal to default
+                assert altloc_dihedrals[NO_ALTLOC] == pp_dihedrals_noalt1[i][NO_ALTLOC]
+
+                altloc_ids = sorted(set(altloc_dihedrals.keys()) - {NO_ALTLOC})
+                if len(altloc_ids) == 0:
+                    continue
+
+                # There are multiple altlocs, make sure they are distinct
+                for altloc1, altloc2 in itertools.combinations(altloc_ids, 2):
+                    assert altloc_dihedrals[altloc1] != altloc_dihedrals[altloc2]
+
+                # There are multiple altlocs, make sure at least one is different
+                # from the default (NO_ALTLOC)
+                assert any(
+                    altloc_dihedrals[altloc_id] != altloc_dihedrals[NO_ALTLOC]
+                    for altloc_id in altloc_ids
+                )
 
 
 class TestInit:
