@@ -439,40 +439,55 @@ class DihedralAngleCalculator(object):
 
         # Loop over amino acids (AAs) in the polypeptide
         for i in range(len(pp)):
-            phi, psi, omega = nan, nan, nan
+            r_curr: Residue = pp[i]
+            r_prev = pp[i - 1] if i > 0 else None
+            r_next = pp[i + 1] if i < len(pp) - 1 else None
 
-            aa_curr: Residue = pp[i]
-            aa_prev = pp[i - 1] if i > 0 else {}
-            aa_next = pp[i + 1] if i < len(pp) - 1 else {}
-
-            try:
-                # Get the locations (x, y, z) of backbone atoms
-                n = aa_curr[BACKBONE_ATOM_N]
-                ca = aa_curr[BACKBONE_ATOM_CA]  # Alpha-carbon
-                c = aa_curr[BACKBONE_ATOM_C]
-            except KeyError:
-                # Phi/Psi cannot be calculated for this AA
-                angles.append(Dihedral.empty())
-                continue
-
-            # Phi
-            if BACKBONE_ATOM_C in aa_prev:
-                c_prev = aa_prev[BACKBONE_ATOM_C]
-                phi = self._calc_fn(c_prev, n, ca, c)
-
-            # Psi
-            if BACKBONE_ATOM_N in aa_next:
-                n_next = aa_next[BACKBONE_ATOM_N]
-                psi = self._calc_fn(n, ca, c, n_next)
-
-            # Omega
-            if BACKBONE_ATOM_C in aa_prev and BACKBONE_ATOM_CA in aa_prev:
-                c_prev, ca_prev = aa_prev[BACKBONE_ATOM_C], aa_prev[BACKBONE_ATOM_CA]
-                omega = self._calc_fn(ca_prev, c_prev, n, ca)
-
-            angles.append(Dihedral.from_rad(phi, psi, omega))
+            d: Dihedral = self.process_res(r_curr, r_prev, r_next)
+            angles.append(d)
 
         return angles
+
+    def process_res(
+        self, r_curr: Residue, r_prev: Optional[Residue], r_next: Optional[Residue]
+    ) -> Dihedral:
+        """
+        Calculate the dihedral angles for a single residue.
+        :param r_curr: The residue for which to calculate angles.
+        :param r_prev: The previous residue.
+        :param r_next: The next residue.
+        :return: The dihedral angles for the residue.
+        """
+
+        r_prev = r_prev or {}
+        r_next = r_next or {}
+        phi, psi, omega = nan, nan, nan
+
+        try:
+            # Get the backbone atoms
+            n = r_curr[BACKBONE_ATOM_N]
+            ca = r_curr[BACKBONE_ATOM_CA]
+            c = r_curr[BACKBONE_ATOM_C]
+        except KeyError:
+            # Phi/Psi cannot be calculated for this AA
+            return Dihedral.empty()
+
+        # Phi
+        if BACKBONE_ATOM_C in r_prev:
+            c_prev = r_prev[BACKBONE_ATOM_C]
+            phi = self._calc_fn(c_prev, n, ca, c)
+
+        # Psi
+        if BACKBONE_ATOM_N in r_next:
+            n_next = r_next[BACKBONE_ATOM_N]
+            psi = self._calc_fn(n, ca, c, n_next)
+
+        # Omega
+        if BACKBONE_ATOM_C in r_prev and BACKBONE_ATOM_CA in r_prev:
+            c_prev, ca_prev = r_prev[BACKBONE_ATOM_C], r_prev[BACKBONE_ATOM_CA]
+            omega = self._calc_fn(ca_prev, c_prev, n, ca)
+
+        return Dihedral.from_rad(phi, psi, omega)
 
     @staticmethod
     @numba.jit(nopython=True)
