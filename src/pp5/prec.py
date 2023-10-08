@@ -102,9 +102,10 @@ class ResidueRecord(object):
         codon: str,
         codon_score: float,
         codon_opts: Union[Iterable[str], str],
-        angles: Dict[str, Dihedral],
+        angles: Dihedral,
         bfactor: float,
         secondary: str,
+        num_altlocs: int,
     ):
         """
 
@@ -116,10 +117,10 @@ class ResidueRecord(object):
         :param codon: Three-letter nucleotide sequence of codon matched to this residue.
         :param codon_score: Confidence measure for the codon match.
         :param codon_opts: All possible codons found in DNA sequences of the protein.
-        :param angles: A mapping from an alternate conformation (altloc) id to a
-            Dihedral object containing the dihedral angles for that conformation.
+        :param angles: A Dihedral object containing the dihedral angles.
         :param bfactor: Average b-factor along of the residue's backbone atoms.
         :param secondary: Single-letter secondary structure code.
+        :param num_altlocs: Number of alternate conformations in the PDB entry of this residue.
         """
         self.res_id, self.name = str(res_id), name
         self.unp_idx = unp_idx
@@ -128,18 +129,14 @@ class ResidueRecord(object):
             self.codon_opts = codon_opts
         else:
             self.codon_opts = str.join(CODON_OPTS_SEP, codon_opts)
-
-        assert NO_ALTLOC in angles
-        self.angles = angles
-        self.bfactor = bfactor
-        self.secondary = secondary
-        self.num_altlocs = len([k for k in angles.keys() if k != NO_ALTLOC])
+        self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
+        self.num_altlocs = num_altlocs
 
     def as_dict(self, skip_omega=False):
         """
         Creates a dict representation of the data in this residue. The angles object
         will we flattened out so its attributes will be placed directly in the
-        resulting dict.
+        resulting dict. The backbone angles will be converted to a nested list.
         :param skip_omega: Whether to not include the omega angle in the output.
         :return:
         """
@@ -147,20 +144,8 @@ class ResidueRecord(object):
 
         # Replace angles object with the angles themselves
         d.pop("angles")
-        a: Dihedral = self.angles[NO_ALTLOC]
-        d.update(a.as_dict(degrees=True, with_std=False, skip_omega=skip_omega))
-
-        for altloc_id, a in self.angles.items():
-            if altloc_id == NO_ALTLOC:
-                continue
-            d.update(
-                a.as_dict(
-                    degrees=True,
-                    with_std=False,
-                    skip_omega=skip_omega,
-                    postfix=f"_{altloc_id}",
-                )
-            )
+        a = self.angles
+        d.update(a.as_dict(degrees=True, with_std=True, skip_omega=skip_omega))
 
         return d
 
@@ -564,6 +549,7 @@ class ProteinRecord(object):
 
             # Extract basic features
             res_id: str = _residue_to_res_id(r_curr)
+            unp_idx: Optional[str] = pdb_to_unp_idx.get(i, None)
             bfactor: float = bfactor_est.process_residue(r_curr)
             secondary: str = ss_dict.get((self.pdb_chain_id, r_curr.get_id()), "-")
 
@@ -571,7 +557,7 @@ class ProteinRecord(object):
             r_prev: Optional[Residue] = residues[i - 1] if i > 0 else None
             r_next: Optional[Residue] = residues[i + 1] if i < n_residues - 1 else None
             angles: Dict[str, Dihedral] = dihedral_est.process_residues(
-                r_curr, r_prev, r_next, with_altlocs=with_altlocs
+                r_curr, r_prev, r_next, with_altlocs=True  # for counting altlocs
             )
 
             # Get the best codon and calculate its 'score' based on how many
@@ -585,17 +571,22 @@ class ProteinRecord(object):
             codon_score = max_count / total_count if total_count else 0
             codon_opts = codon_counts.keys()
 
-            rr = ResidueRecord(
-                res_id=res_id,
-                unp_idx=pdb_to_unp_idx.get(i, None),
-                name=pdb_aa_seq[i],
-                codon=best_codon,
-                codon_score=codon_score,
-                codon_opts=codon_opts,
-                angles=angles,
-                bfactor=bfactor,
-                secondary=secondary,
-            )
+            if not with_altlocs:
+                rr = ResidueRecord(
+                    res_id=res_id,
+                    unp_idx=unp_idx,
+                    name=pdb_aa_seq[i],
+                    codon=best_codon,
+                    codon_score=codon_score,
+                    codon_opts=codon_opts,
+                    angles=angles[NO_ALTLOC],
+                    bfactor=bfactor,
+                    secondary=secondary,
+                    num_altlocs=len(angles) - 1,
+                )
+            else:
+                raise NotImplementedError("Alternate conformations not supported yet")
+
             residue_recs.append(rr)
 
         self._protein_seq = pdb_aa_seq
