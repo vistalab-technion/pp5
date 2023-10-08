@@ -1306,6 +1306,22 @@ class ResidueMatch(ResidueRecord):
     structure.
     """
 
+    def __init__(
+        self,
+        query_idx: int,
+        match_type: ResidueMatchType,
+        match_len: int,
+        ang_dist: float,
+        full_context: int,
+        **res_rec_args,
+    ):
+        self.idx = query_idx
+        self.type = match_type
+        self.match_len = match_len
+        self.ang_dist = ang_dist
+        self.context = full_context
+        super().__init__(**res_rec_args)
+
     @classmethod
     def from_residues(
         cls,
@@ -1341,9 +1357,7 @@ class ResidueMatch(ResidueRecord):
             angles=query_angle,
             bfactor=max(q.bfactor for q in query_residues),
             secondary=_join(q.secondary for q in query_residues),
-            num_conformations=math.prod(
-                (q.num_conformations or 1) for q in query_residues
-            ),
+            num_altlocs=math.prod((q.num_altlocs or 1) for q in query_residues),
         )
 
         return cls(
@@ -1354,22 +1368,6 @@ class ResidueMatch(ResidueRecord):
             full_context,
             **query_res.__dict__,
         )
-
-    def __init__(
-        self,
-        query_idx: int,
-        match_type: ResidueMatchType,
-        match_len: int,
-        ang_dist: float,
-        full_context: int,
-        **res_rec_args,
-    ):
-        self.idx = query_idx
-        self.type = match_type
-        self.match_len = match_len
-        self.ang_dist = ang_dist
-        self.context = full_context
-        super().__init__(**res_rec_args)
 
     def __repr__(self):
         return (
@@ -1419,7 +1417,7 @@ class ResidueMatchGroup(object):
         self.ang_dist = ang_dist
         self.match_len = match_len
         assert self.match_len in (1, 2)
-        self.max_conformations = max(m.num_conformations for m in match_group.values())
+        self.max_conformations = max(m.num_altlocs for m in match_group.values())
 
         # Save information about the structures in this group
         vs = ((m.idx, m.res_id, m.context, m.angles) for m in match_group.values())
