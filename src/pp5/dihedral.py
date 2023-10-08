@@ -34,6 +34,87 @@ NO_ALTLOC = "_"
 AltlocAtom = Union[Atom, DisorderedAtom]
 
 
+def _altloc_ids(atoms: Sequence[AltlocAtom]):
+    """
+    Returns a list of all altloc ids which exist in a list of atoms.
+    :param atoms: The atoms to check.
+    :return: The list of altloc ids.
+    """
+    return sorted(
+        set(
+            itertools.chain(
+                *[
+                    a.disordered_get_id_list()
+                    for a in atoms
+                    if isinstance(a, DisorderedAtom)
+                ]
+            )
+        )
+    )
+
+
+@contextmanager
+def _altloc_ctx(atom: AltlocAtom, altloc_id: str):
+    """
+    Context that sets and then restores the selected altloc for an atom.
+    :param atom: The atom to set the altloc for.
+    :param altloc_id: The altloc id to select.
+    """
+    if isinstance(atom, DisorderedAtom):
+        selected_altloc = atom.get_altloc()
+        if atom.disordered_has_id(altloc_id):
+            atom.disordered_select(altloc_id)
+        yield
+        atom.disordered_select(selected_altloc)
+    else:
+        yield
+
+
+@contextmanager
+def _altloc_ctx_all(atoms: Sequence[AltlocAtom], altloc_id: str):
+    """
+    Context that sets and then restores the selected altloc for a list of atoms.
+    :param atoms: The atoms to set the altloc for.
+    :param altloc_id: The altloc id to select.
+    """
+    if not atoms:
+        yield None
+    else:
+        with _altloc_ctx(atoms[0], altloc_id):
+            with _altloc_ctx_all(atoms[1:], altloc_id):
+                yield None
+
+
+def _get_selected_altloc(atom: AltlocAtom) -> Optional[str]:
+    """
+    Returns the altloc id selected for an atom. If the atom is not disordered, returns
+    None.
+    """
+    if not isinstance(atom, DisorderedAtom):
+        return None
+
+    a_to_id = {child_atom: child_id for child_id, child_atom in atom.child_dict.items()}
+    selected_id = a_to_id[atom.selected_child]
+    return selected_id
+
+
+def _verify_altloc(atoms: Sequence[AltlocAtom], altloc_id: str):
+    """
+    Verifies that all given atoms have the same altloc id selected if they are
+    disordered. Raises an AssertionError if not. Regular (non disordered) atoms are
+    ignored.
+
+    :param atoms: The atoms to check.
+    :param altloc_id: The altloc id to check with.
+    """
+    for a in atoms:
+        if isinstance(a, DisorderedAtom):
+            selected_altloc = _get_selected_altloc(a)
+            assert (
+                selected_altloc == altloc_id
+            ), f"Atom {a} has {selected_altloc=} but expected {altloc_id=}"
+
+
 class Dihedral(object):
     """
     Holds the three dihedral angles associated with adjacent AAs.
@@ -569,6 +650,7 @@ class DihedralAngleCalculator(object):
 
         # Check whether any of the atoms are disordered
         curr_atoms = (n, ca, c)
+        all_atoms = (n, ca, c, c_prev, ca_prev, n_next)
         disorder = (isinstance(a, DisorderedAtom) for a in curr_atoms)
 
         # If we don't need to account for altlocs, or there are no disordered atoms,
@@ -577,41 +659,21 @@ class DihedralAngleCalculator(object):
             return dihedrals
 
         # Get the ids of all altloc in the backbone of the current residue
-        altloc_ids = sorted(
-            set(
-                itertools.chain(
-                    *[
-                        a.disordered_get_id_list()
-                        for a in curr_atoms
-                        if isinstance(a, DisorderedAtom)
-                    ]
-                )
-            )
-        )
-
-        @contextmanager
-        def _altloc_ctx(a: AltlocAtom, altloc_id: str):
-            """Context that sets and then restores the selected altloc for an atom"""
-            if isinstance(a, DisorderedAtom):
-                selected_altloc = a.get_altloc()
-                if a.disordered_has_id(altloc_id):
-                    a.disordered_select(altloc_id)
-                yield
-                a.disordered_select(selected_altloc)
-            else:
-                yield
+        altloc_ids = _altloc_ids(curr_atoms)
 
         # For each altloc id, set the altloc id of all atoms to the current altloc,
         # and calculate dihedral angles using the resulting atom locations. If the
         # prev/next atoms also have this id, we'll use that id with them as well.
         for altloc_id in altloc_ids:
-            _alt = functools.partial(_altloc_ctx, altloc_id=altloc_id)
-
             # Select current altloc_id for all associated atoms
-            with _alt(n), _alt(ca), _alt(c), _alt(c_prev), _alt(ca_prev), _alt(n_next):
-                dihedrals[altloc_id] = self.process_atoms(
-                    n, ca, c, c_prev, ca_prev, n_next
-                )
+            with _altloc_ctx_all(atoms=all_atoms, altloc_id=altloc_id):
+                # Make sure all disordered atoms were set to the same altloc id
+                _verify_altloc(all_atoms, altloc_id)
+
+                # Calculate dihedral angles for this altloc
+                d: Dihedral = self.process_atoms(n, ca, c, c_prev, ca_prev, n_next)
+
+            dihedrals[altloc_id] = d
 
         return dihedrals
 
