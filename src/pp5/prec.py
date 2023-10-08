@@ -45,10 +45,8 @@ from pp5.codons import (
     UNKNOWN_CODON,
     CODON_OPTS_SEP,
 )
+from pp5.backbone import NO_ALTLOC, BACKBONE_ATOMS, BACKBONE_ATOMS_O, residue_altloc_ids
 from pp5.dihedral import (
-    NO_ALTLOC,
-    BACKBONE_ATOMS,
-    BACKBONE_ATOMS_O,
     Dihedral,
     AtomLocationUncertainty,
     DihedralAngleCalculator,
@@ -549,16 +547,12 @@ class ProteinRecord(object):
 
             # Extract basic features
             res_id: str = _residue_to_res_id(r_curr)
-            unp_idx: Optional[str] = pdb_to_unp_idx.get(i, None)
-            bfactor: float = bfactor_est.process_residue(r_curr)
+            unp_idx: Optional[int] = pdb_to_unp_idx.get(i, None)
             secondary: str = ss_dict.get((self.pdb_chain_id, r_curr.get_id()), "-")
 
             # Calculate dihedral angles
             r_prev: Optional[Residue] = residues[i - 1] if i > 0 else None
             r_next: Optional[Residue] = residues[i + 1] if i < n_residues - 1 else None
-            angles: Dict[str, Dihedral] = dihedral_est.process_residues(
-                r_curr, r_prev, r_next, with_altlocs=True  # for counting altlocs
-            )
 
             # Get the best codon and calculate its 'score' based on how many
             # other options there are
@@ -572,6 +566,10 @@ class ProteinRecord(object):
             codon_opts = codon_counts.keys()
 
             if not with_altlocs:
+                angles: Dihedral = dihedral_est.process_residues(
+                    r_curr, r_prev, r_next
+                )[NO_ALTLOC]
+                bfactor: float = bfactor_est.process_residue(r_curr)
                 rr = ResidueRecord(
                     res_id=res_id,
                     unp_idx=unp_idx,
@@ -579,10 +577,10 @@ class ProteinRecord(object):
                     codon=best_codon,
                     codon_score=codon_score,
                     codon_opts=codon_opts,
-                    angles=angles[NO_ALTLOC],
+                    angles=angles,
                     bfactor=bfactor,
                     secondary=secondary,
-                    num_altlocs=len(angles) - 1,
+                    num_altlocs=len(residue_altloc_ids(r_curr)),
                 )
             else:
                 raise NotImplementedError("Alternate conformations not supported yet")
