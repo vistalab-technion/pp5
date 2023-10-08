@@ -62,6 +62,12 @@ with warnings.catch_warnings():
 
 LOGGER = logging.getLogger(__name__)
 
+DEFAULT_ANGLE_CALC = DihedralAngleCalculator()
+
+DEFAULT_BFACTOR_CALC = AtomLocationUncertainty(
+    backbone_only=True, unit_cell=None, isotropic=True, scale_as_bfactor=True
+)
+
 
 def _residue_to_res_id(res: Residue) -> str:
     """
@@ -129,6 +135,63 @@ class ResidueRecord(object):
             self.codon_opts = str.join(CODON_OPTS_SEP, codon_opts)
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
         self.num_altlocs = num_altlocs
+
+    @classmethod
+    def from_residue(
+        cls,
+        r_curr: Residue,
+        r_prev: Optional[Residue] = None,
+        r_next: Optional[Residue] = None,
+        unp_idx: Optional[int] = None,
+        codon_counts: Optional[Dict[str, int]] = None,
+        secondary: Optional[str] = None,
+        dihedral_est: DihedralAngleCalculator = DEFAULT_ANGLE_CALC,
+        bfactor_est: AtomLocationUncertainty = DEFAULT_BFACTOR_CALC,
+    ):
+        """
+        Creates a ResidueRecord from biopython Residue objects.
+
+        :param r_curr: The residue for which to create a record.
+        :param r_prev: The previous residue in the sequence.
+        :param r_next: The next residue in the sequence.
+        :param unp_idx: The index of this residue in the corresponding Uniprot sequence.
+        :param codon_counts: A dict mapping codons to the number of occurrences in
+        DNA sequences associated with the Uniprot identifier of the containing protein.
+        :param secondary: The DSSP secondary structure code for this residue.
+        :param dihedral_est: A DihedralAngleCalculator for calculating dihedral angles.
+        :param bfactor_est: A AtomLocationUncertainty for calculating b-factors.
+        :return: An initialized ResidueRecord.
+        """
+        res_id: str = _residue_to_res_id(r_curr)
+        res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
+
+        # Get the best codon and calculate its 'score' based on how many
+        # other options there are
+        best_codon, max_count, total_count = UNKNOWN_CODON, 0, 0
+        for codon, count in codon_counts.items():
+            total_count += count
+            if count > max_count and codon != UNKNOWN_CODON:
+                best_codon, max_count = codon, count
+        codon_score = max_count / total_count if total_count else 0
+        codon_opts = codon_counts.keys()
+
+        angles: Dihedral = dihedral_est.process_residues(r_curr, r_prev, r_next)[
+            NO_ALTLOC
+        ]
+        bfactor: float = bfactor_est.process_residue(r_curr)
+
+        return cls(
+            res_id=res_id,
+            unp_idx=unp_idx,
+            name=res_name,
+            codon=best_codon,
+            codon_score=codon_score,
+            codon_opts=codon_opts,
+            secondary=secondary,
+            angles=angles,
+            bfactor=bfactor,
+            num_altlocs=len(residue_altloc_ids(r_curr)),
+        )
 
     def as_dict(self, skip_omega=False):
         """
@@ -545,42 +608,32 @@ class ProteinRecord(object):
         for i in range(len(pdb_aa_seq)):
             r_curr: Residue = residues[i]
 
-            # Extract basic features
-            res_id: str = _residue_to_res_id(r_curr)
-            unp_idx: Optional[int] = pdb_to_unp_idx.get(i, None)
-            secondary: str = ss_dict.get((self.pdb_chain_id, r_curr.get_id()), "-")
+            # Sanity check
+            assert pdb_aa_seq[i] == ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
 
-            # Calculate dihedral angles
+            # Get the residues before and after this one
             r_prev: Optional[Residue] = residues[i - 1] if i > 0 else None
             r_next: Optional[Residue] = residues[i + 1] if i < n_residues - 1 else None
 
-            # Get the best codon and calculate its 'score' based on how many
-            # other options there are
-            codon_counts = idx_to_codons.get(i, {})
-            best_codon, max_count, total_count = UNKNOWN_CODON, 0, 0
-            for codon, count in codon_counts.items():
-                total_count += count
-                if count > max_count and codon != UNKNOWN_CODON:
-                    best_codon, max_count = codon, count
-            codon_score = max_count / total_count if total_count else 0
-            codon_opts = codon_counts.keys()
+            # Alignment to UNP
+            unp_idx: Optional[int] = pdb_to_unp_idx.get(i, None)
+
+            # Secondary structure annotation
+            secondary: str = ss_dict.get((self.pdb_chain_id, r_curr.get_id()), "-")
+
+            # Codons options for residue
+            codon_counts: Dict[str, int] = idx_to_codons.get(i, {})
 
             if not with_altlocs:
-                angles: Dihedral = dihedral_est.process_residues(
-                    r_curr, r_prev, r_next
-                )[NO_ALTLOC]
-                bfactor: float = bfactor_est.process_residue(r_curr)
-                rr = ResidueRecord(
-                    res_id=res_id,
+                rr = ResidueRecord.from_residue(
+                    r_curr,
+                    r_prev,
+                    r_next,
                     unp_idx=unp_idx,
-                    name=pdb_aa_seq[i],
-                    codon=best_codon,
-                    codon_score=codon_score,
-                    codon_opts=codon_opts,
-                    angles=angles,
-                    bfactor=bfactor,
+                    codon_counts=codon_counts,
                     secondary=secondary,
-                    num_altlocs=len(residue_altloc_ids(r_curr)),
+                    dihedral_est=dihedral_est,
+                    bfactor_est=bfactor_est,
                 )
             else:
                 raise NotImplementedError("Alternate conformations not supported yet")
@@ -1244,11 +1297,11 @@ class ProteinRecord(object):
         elif est_name == "erp":
             d_est = DihedralAnglesUncertaintyEstimator(unit_cell, **args)
         else:
-            d_est = DihedralAngleCalculator(**args)
+            if est_args:
+                raise ProteinInitError(f"est_args not supported for {est_name=}")
+            d_est = DEFAULT_ANGLE_CALC
 
-        b_est = AtomLocationUncertainty(
-            backbone_only=True, unit_cell=None, isotropic=True, scale_as_bfactor=True
-        )
+        b_est = DEFAULT_BFACTOR_CALC
         return d_est, b_est
 
     def __iter__(self) -> Iterator[ResidueRecord]:
