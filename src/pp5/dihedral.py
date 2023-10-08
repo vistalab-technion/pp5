@@ -34,7 +34,7 @@ NO_ALTLOC = "_"
 AltlocAtom = Union[Atom, DisorderedAtom]
 
 
-def _altloc_ids(atoms: Sequence[AltlocAtom]):
+def _altloc_ids(atoms: Sequence[AltlocAtom]) -> Sequence[str]:
     """
     Returns a list of all altloc ids which exist in a list of atoms.
     :param atoms: The atoms to check.
@@ -51,6 +51,27 @@ def _altloc_ids(atoms: Sequence[AltlocAtom]):
             )
         )
     )
+
+
+def _backbone_atoms(res: Residue) -> Sequence[Atom]:
+    """
+    Returns a list of all backbone atoms in a residue.
+
+    :param res: The residue to check.
+    :return: The list of backbone atoms.
+    """
+    return tuple(a for a in res.get_atoms() if a.get_name() in BACKBONE_ATOMS)
+
+
+def _residue_altloc_ids(res: Residue, backbone_only: bool = True) -> Sequence[str]:
+    """
+    Returns a list of all altloc ids which exist in a residue.
+
+    :param res: The residue to check.
+    :param backbone_only: Whether to only check backbone atoms.
+    """
+    atoms = tuple(res.get_atoms() if not backbone_only else _backbone_atoms(res))
+    return _altloc_ids(atoms)
 
 
 @contextmanager
@@ -837,6 +858,7 @@ class AtomLocationUncertainty(object):
         """
         Calculates the average uncertainties for each residue in a polypeptide
         chain. The uncertainties will be returned in units of Angstroms^2.
+
         :param pp: The polypeptide.
         :return: A list of uncertainties the same length as the polypeptide.
         Each value in the list is calculated based on b-factors from each
@@ -845,6 +867,11 @@ class AtomLocationUncertainty(object):
         return tuple(self.process_residue(res) for res in pp)
 
     def process_residue(self, res: Residue) -> float:
+        """
+        Calculates the average uncertainty over atoms of a residue.
+
+        :param res: The residue.
+        """
         bfactors = []
         for atom in res:
             atom: Atom
@@ -857,6 +884,24 @@ class AtomLocationUncertainty(object):
             res_mean *= CONST_8PI2
 
         return res_mean
+
+    def process_residue_altlocs(self, res: Residue) -> Dict[str, float]:
+        """
+        Calculates the average uncertainty over atoms of a residue, for each altloc.
+
+        :param res: The residue.
+        :return: A dict mapping from altloc id to the uncertainty. The special id
+        NO_ALTLOC will always be included in the result.
+        """
+        bfactors = {NO_ALTLOC: self.process_residue(res)}
+
+        atoms = _backbone_atoms(res) if self.bb_only else tuple(res.get_atoms())
+        for altloc_id in _residue_altloc_ids(res):
+            _verify_altloc(atoms, altloc_id)
+            with _altloc_ctx_all(atoms, altloc_id):
+                bfactors[altloc_id] = self.process_residue(res)
+
+        return bfactors
 
     def mvn_mu_sigma(self, a: Atom):
         """
