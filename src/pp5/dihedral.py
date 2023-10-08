@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import math
-import functools
-import itertools
 from math import nan
 from typing import Dict, List, Union, Optional, Sequence
-from contextlib import contextmanager
 
 import numba
 import numpy as np
@@ -19,121 +16,22 @@ from scipy.optimize import minimize_scalar
 from Bio.PDB.Residue import Residue
 from Bio.PDB.Polypeptide import Polypeptide
 
+from pp5.backbone import (
+    NO_ALTLOC,
+    BACKBONE_ATOMS,
+    BACKBONE_ATOM_C,
+    BACKBONE_ATOM_N,
+    BACKBONE_ATOM_CA,
+    AltlocAtom,
+    verify_altloc,
+    altloc_ctx_all,
+    atom_altloc_ids,
+    residue_altloc_ids,
+    residue_backbone_atoms,
+)
 from pp5.external_dbs.pdb import PDBUnitCell
 
 CONST_8PI2 = math.pi * math.pi * 8
-
-BACKBONE_ATOM_N = "N"
-BACKBONE_ATOM_CA = "CA"
-BACKBONE_ATOM_C = "C"
-BACKBONE_ATOM_O = "O"
-BACKBONE_ATOMS = (BACKBONE_ATOM_N, BACKBONE_ATOM_CA, BACKBONE_ATOM_C)
-BACKBONE_ATOMS_O = tuple([*BACKBONE_ATOMS, BACKBONE_ATOM_O])
-NO_ALTLOC = "_"
-
-AltlocAtom = Union[Atom, DisorderedAtom]
-
-
-def _altloc_ids(atoms: Sequence[AltlocAtom]) -> Sequence[str]:
-    """
-    Returns a list of all altloc ids which exist in a list of atoms.
-    :param atoms: The atoms to check.
-    :return: The list of altloc ids.
-    """
-    return sorted(
-        set(
-            itertools.chain(
-                *[
-                    a.disordered_get_id_list()
-                    for a in atoms
-                    if isinstance(a, DisorderedAtom)
-                ]
-            )
-        )
-    )
-
-
-def _backbone_atoms(res: Residue) -> Sequence[Atom]:
-    """
-    Returns a list of all backbone atoms in a residue.
-
-    :param res: The residue to check.
-    :return: The list of backbone atoms.
-    """
-    return tuple(a for a in res.get_atoms() if a.get_name() in BACKBONE_ATOMS)
-
-
-def _residue_altloc_ids(res: Residue, backbone_only: bool = True) -> Sequence[str]:
-    """
-    Returns a list of all altloc ids which exist in a residue.
-
-    :param res: The residue to check.
-    :param backbone_only: Whether to only check backbone atoms.
-    """
-    atoms = tuple(res.get_atoms() if not backbone_only else _backbone_atoms(res))
-    return _altloc_ids(atoms)
-
-
-@contextmanager
-def _altloc_ctx(atom: AltlocAtom, altloc_id: str):
-    """
-    Context that sets and then restores the selected altloc for an atom.
-    :param atom: The atom to set the altloc for.
-    :param altloc_id: The altloc id to select.
-    """
-    if isinstance(atom, DisorderedAtom):
-        selected_altloc = atom.get_altloc()
-        if atom.disordered_has_id(altloc_id):
-            atom.disordered_select(altloc_id)
-        yield
-        atom.disordered_select(selected_altloc)
-    else:
-        yield
-
-
-@contextmanager
-def _altloc_ctx_all(atoms: Sequence[AltlocAtom], altloc_id: str):
-    """
-    Context that sets and then restores the selected altloc for a list of atoms.
-    :param atoms: The atoms to set the altloc for.
-    :param altloc_id: The altloc id to select.
-    """
-    if not atoms:
-        yield None
-    else:
-        with _altloc_ctx(atoms[0], altloc_id):
-            with _altloc_ctx_all(atoms[1:], altloc_id):
-                yield None
-
-
-def _get_selected_altloc(atom: AltlocAtom) -> Optional[str]:
-    """
-    Returns the altloc id selected for an atom. If the atom is not disordered, returns
-    None.
-    """
-    if not isinstance(atom, DisorderedAtom):
-        return None
-
-    a_to_id = {child_atom: child_id for child_id, child_atom in atom.child_dict.items()}
-    selected_id = a_to_id[atom.selected_child]
-    return selected_id
-
-
-def _verify_altloc(atoms: Sequence[AltlocAtom], altloc_id: str):
-    """
-    Verifies that all given atoms have the same altloc id selected if they are
-    disordered. Raises an AssertionError if not. Regular (non disordered) atoms are
-    ignored.
-
-    :param atoms: The atoms to check.
-    :param altloc_id: The altloc id to check with.
-    """
-    for a in atoms:
-        if isinstance(a, DisorderedAtom):
-            selected_altloc = _get_selected_altloc(a)
-            assert (
-                selected_altloc == altloc_id
-            ), f"Atom {a} has {selected_altloc=} but expected {altloc_id=}"
 
 
 class Dihedral(object):
@@ -680,16 +578,16 @@ class DihedralAngleCalculator(object):
             return dihedrals
 
         # Get the ids of all altloc in the backbone of the current residue
-        altloc_ids = _altloc_ids(curr_atoms)
+        curr_altloc_ids = atom_altloc_ids(curr_atoms)
 
         # For each altloc id, set the altloc id of all atoms to the current altloc,
         # and calculate dihedral angles using the resulting atom locations. If the
         # prev/next atoms also have this id, we'll use that id with them as well.
-        for altloc_id in altloc_ids:
+        for altloc_id in curr_altloc_ids:
             # Select current altloc_id for all associated atoms
-            with _altloc_ctx_all(atoms=all_atoms, altloc_id=altloc_id):
+            with altloc_ctx_all(atoms=all_atoms, altloc_id=altloc_id):
                 # Make sure all disordered atoms were set to the same altloc id
-                _verify_altloc(all_atoms, altloc_id)
+                verify_altloc(all_atoms, altloc_id)
 
                 # Calculate dihedral angles for this altloc
                 d: Dihedral = self.process_atoms(n, ca, c, c_prev, ca_prev, n_next)
@@ -895,10 +793,10 @@ class AtomLocationUncertainty(object):
         """
         bfactors = {NO_ALTLOC: self.process_residue(res)}
 
-        atoms = _backbone_atoms(res) if self.bb_only else tuple(res.get_atoms())
-        for altloc_id in _residue_altloc_ids(res):
-            _verify_altloc(atoms, altloc_id)
-            with _altloc_ctx_all(atoms, altloc_id):
+        atoms = residue_backbone_atoms(res) if self.bb_only else tuple(res.get_atoms())
+        for altloc_id in residue_altloc_ids(res):
+            with altloc_ctx_all(atoms, altloc_id):
+                verify_altloc(atoms, altloc_id)
                 bfactors[altloc_id] = self.process_residue(res)
 
         return bfactors

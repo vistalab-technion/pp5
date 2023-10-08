@@ -13,7 +13,8 @@ from Bio.PDB import PPBuilder
 import pymol.cmd as pymol
 
 from pp5 import dihedral
-from pp5.dihedral import NO_ALTLOC, Dihedral, DihedralAngleCalculator, calc_dihedral2
+from pp5.backbone import NO_ALTLOC
+from pp5.dihedral import Dihedral, DihedralAngleCalculator, calc_dihedral2
 from pp5.external_dbs import pdb
 
 
