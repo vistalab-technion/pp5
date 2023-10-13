@@ -24,11 +24,11 @@ from pp5.backbone import (
     BACKBONE_ATOM_N,
     BACKBONE_ATOM_CA,
     AltlocAtom,
-    verify_altloc,
     altloc_ctx_all,
     atom_altloc_ids,
     residue_altloc_ids,
     residue_backbone_atoms,
+    verify_disordered_selection,
 )
 from pp5.external_dbs.pdb import PDBUnitCell
 
@@ -576,20 +576,24 @@ class DihedralAngleCalculator(object):
         if not with_altlocs or not any(disorder):
             return dihedrals
 
-        # Get the ids of all altloc in the backbone of the current residue
-        curr_altloc_ids = atom_altloc_ids(curr_atoms)
+        # Get the ids of all altlocs in the backbone of the current residue.
+        # Here we require that these altlocs are common to all backbone atoms.
+        curr_altloc_ids = atom_altloc_ids(curr_atoms, allow_disjoint=False)
 
         # For each altloc id, set the altloc id of all atoms to the current altloc,
         # and calculate dihedral angles using the resulting atom locations. If the
         # prev/next atoms also have this id, we'll use that id with them as well.
         for altloc_id in curr_altloc_ids:
             # Select current altloc_id for all associated atoms
-            with altloc_ctx_all(atoms=all_atoms, altloc_id=altloc_id):
-                # Make sure all disordered atoms were set to the same altloc id
-                verify_altloc(all_atoms, altloc_id)
+            with altloc_ctx_all(atoms=all_atoms, altloc_id=altloc_id) as _all_atoms:
+                # Make sure all disordered atoms were set to the correct altloc id
+                verify_disordered_selection(all_atoms, _all_atoms, altloc_id)
 
                 # Calculate dihedral angles for this altloc
-                d: Dihedral = self.process_atoms(n, ca, c, c_prev, ca_prev, n_next)
+                _n, _ca, _c, _c_prev, _ca_prev, _n_next = _all_atoms
+                d: Dihedral = self.process_atoms(
+                    _n, _ca, _c, _c_prev, _ca_prev, _n_next
+                )
 
             dihedrals[altloc_id] = d
 
@@ -794,8 +798,8 @@ class AtomLocationUncertainty(object):
 
         atoms = residue_backbone_atoms(res) if self.bb_only else tuple(res.get_atoms())
         for altloc_id in residue_altloc_ids(res):
-            with altloc_ctx_all(atoms, altloc_id):
-                verify_altloc(atoms, altloc_id)
+            with altloc_ctx_all(atoms, altloc_id) as _atoms:
+                verify_disordered_selection(atoms, _atoms, altloc_id)
                 bfactors[altloc_id] = self.process_residue(res)
 
         return bfactors
