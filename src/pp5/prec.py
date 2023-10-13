@@ -187,13 +187,12 @@ class ResidueRecord(object):
             num_altlocs=len(residue_altloc_ids(r_curr)),
         )
 
-    def as_dict(self, skip_omega: bool = False, with_std: bool = False):
+    def as_dict(self, dihedral_args: Dict[str, Any] = None):
         """
         Creates a dict representation of the data in this residue. The angles object
         will we flattened out so its attributes will be placed directly in the
         resulting dict. The backbone angles will be converted to a nested list.
-        :param skip_omega: Whether to not include the omega angle in the output.
-        :param with_std: Whether to include the standard deviation of the angles.
+        :param dihedral_args: A dict of arguments to pass to Dihedral.as_dict.
         :return: A dict representation of this residue.
         """
         return dict(
@@ -204,11 +203,9 @@ class ResidueRecord(object):
             codon_score=self.codon_score,
             codon_opts=self.codon_opts,
             secondary=self.secondary,
-            bfactor=self.bfactor,
             num_altlocs=self.num_altlocs,
-            **self.angles.as_dict(
-                degrees=True, with_std=with_std, skip_omega=skip_omega
-            ),
+            **self.angles.as_dict(**(dihedral_args or {})),
+            bfactor=self.bfactor,
         )
 
     def __repr__(self):
@@ -232,6 +229,88 @@ class ResidueRecord(object):
             if not equal:
                 return False
         return True
+
+
+class AltlocResidueRecord(ResidueRecord):
+    def __init__(
+        self,
+        res_id: Union[str, int],
+        unp_idx: int,
+        name: str,
+        codon_counts: Optional[Dict[str, int]],
+        secondary: str,
+        altloc_angles: Dict[str, Dihedral],
+        altloc_bfactors: Dict[str, float],
+    ):
+        """
+        Represents a residue with (potential) altlocs.
+        All params as for ResidueRecord, except:
+
+        :param altloc_angles: A mapping from an alternate conformation (altloc) id to a
+            Dihedral object containing the dihedral angles for that conformation.
+        :param altloc_bfactors: A mapping from an alternate conformation (altloc) id
+            to the average b-factor for that conformation.
+        """
+        altloc_ids = sorted(altloc_angles.keys())
+        assert NO_ALTLOC in altloc_ids
+        assert altloc_ids == sorted(altloc_bfactors.keys())
+
+        self.altloc_ids = tuple(set(altloc_ids) - {NO_ALTLOC})
+        self.altloc_angles = altloc_angles
+        self.altloc_bfactors = altloc_bfactors
+
+        super().__init__(
+            res_id=res_id,
+            unp_idx=unp_idx,
+            name=name,
+            codon_counts=codon_counts,
+            angles=altloc_angles[NO_ALTLOC],
+            bfactor=altloc_bfactors[NO_ALTLOC],
+            secondary=secondary,
+            num_altlocs=len(self.altloc_ids),
+        )
+
+    @classmethod
+    def from_residue(
+        cls,
+        r_curr: Residue,
+        r_prev: Optional[Residue] = None,
+        r_next: Optional[Residue] = None,
+        unp_idx: Optional[int] = None,
+        codon_counts: Optional[Dict[str, int]] = None,
+        secondary: Optional[str] = None,
+        dihedral_est: DihedralAngleCalculator = DEFAULT_ANGLE_CALC,
+        bfactor_est: AtomLocationUncertainty = DEFAULT_BFACTOR_CALC,
+    ):
+        res_id: str = _residue_to_res_id(r_curr)
+        res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
+
+        altloc_angles: Dict[str, Dihedral] = dihedral_est.process_residues(
+            r_curr, r_prev, r_next, with_altlocs=True
+        )
+        altloc_bfactors: Dict[str, float] = bfactor_est.process_residue_altlocs(r_curr)
+        return cls(
+            res_id=res_id,
+            unp_idx=unp_idx,
+            name=res_name,
+            codon_counts=codon_counts,
+            secondary=secondary,
+            altloc_angles=altloc_angles,
+            altloc_bfactors=altloc_bfactors,
+        )
+
+    def as_dict(self, dihedral_args: Dict[str, Any] = None):
+        dihedral_args = dihedral_args or {}
+        d = super().as_dict(dihedral_args)
+
+        for altloc_id in self.altloc_ids:
+            postfix = f"_{altloc_id}"
+            d.update(
+                self.altloc_angles[altloc_id].as_dict(**dihedral_args, postfix=postfix)
+            )
+            d[f"bfactor{postfix}"] = self.altloc_bfactors[altloc_id]
+
+        return d
 
 
 class ResidueContacts(object):
@@ -626,20 +705,18 @@ class ProteinRecord(object):
             # Codons options for residue
             codon_counts: Dict[str, int] = idx_to_codons.get(i, {})
 
-            if not with_altlocs:
-                rr = ResidueRecord.from_residue(
-                    r_curr,
-                    r_prev,
-                    r_next,
-                    unp_idx=unp_idx,
-                    codon_counts=codon_counts,
-                    secondary=secondary,
-                    dihedral_est=dihedral_est,
-                    bfactor_est=bfactor_est,
-                )
-            else:
-                raise NotImplementedError("Alternate conformations not supported yet")
-
+            # Instantiate a ResidueRecord
+            residue_record_cls = AltlocResidueRecord if with_altlocs else ResidueRecord
+            rr = residue_record_cls.from_residue(
+                r_curr,
+                r_prev,
+                r_next,
+                unp_idx=unp_idx,
+                codon_counts=codon_counts,
+                secondary=secondary,
+                dihedral_est=dihedral_est,
+                bfactor_est=bfactor_est,
+            )
             residue_recs.append(rr)
 
         self._protein_seq = pdb_aa_seq
@@ -984,9 +1061,14 @@ class ProteinRecord(object):
         backbone_coords = (
             self.backbone_coordinates(with_oxygen=True) if with_backbone else None
         )
+        dihedral_args = dict(
+            degrees=True,
+            skip_omega=False,
+            with_std=(self.dihedral_est_name is not None),
+        )
         df_data = []
         for res_id, res_rec in self.items():
-            res_rec_dict = res_rec.as_dict(skip_omega=False)
+            res_rec_dict = res_rec.as_dict(dihedral_args=dihedral_args)
             if with_backbone:
                 res_backbone = backbone_coords.get(res_id)
                 res_rec_dict["backbone"] = (
