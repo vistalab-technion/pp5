@@ -144,9 +144,58 @@ def verify_altloc(atoms: Sequence[AltlocAtom], altloc_id: str):
     for a in atoms:
         if isinstance(a, DisorderedAtom):
             selected_altloc = get_selected_altloc(a)
-            assert (
-                selected_altloc == altloc_id
-            ), f"Atom {a} has {selected_altloc=} but expected {altloc_id=}"
+            if selected_altloc != altloc_id:
+                raise ValueError(
+                    f"Atom {a} has {selected_altloc=} but expected {altloc_id=}"
+                )
+
+
+def verify_not_disordered(atoms: Sequence[AltlocAtom]):
+    """
+    Verifies that none of the given atoms are disordered. Raises an error otherwise.
+    :param atoms: The atoms to check.
+    """
+
+    for a in atoms:
+        if isinstance(a, DisorderedAtom):
+            raise ValueError(f"Atom {a} is disordered")
+
+
+def verify_disordered_selection(
+    atoms: Sequence[Optional[AltlocAtom]],
+    selected_atoms: Sequence[Optional[Atom]],
+    altloc_id: str,
+):
+    """
+    Verifies that the given selected atoms match the given altloc id of the
+    (potentially) disordered atoms.
+
+    :param atoms: The potentially disordered atoms.
+    :param selected_atoms: The selected atoms.
+    :param altloc_id: The altloc id that was selected.
+    """
+    assert len(atoms) == len(selected_atoms)
+
+    for atom, selected_atom in zip(atoms, selected_atoms):
+        if atom is None:
+            assert selected_atom is None
+
+        elif isinstance(atom, DisorderedAtom):
+            if selected_atom is None:
+                # No atom was selected - make sure the altloc is indeed missing in
+                # this disordered atom.
+                assert not atom.disordered_has_id(altloc_id)
+            else:
+                # An atom was selected - make sure it's the correct one.
+                assert atom.disordered_has_id(altloc_id)
+                assert atom.selected_child == selected_atom
+                assert atom.name == selected_atom.name
+
+        elif isinstance(atom, Atom):
+            assert atom == selected_atom
+
+        else:
+            raise ValueError(f"Unexpected atom type for {atom}")
 
 
 def residue_altloc_ca_dists(res: Residue, normalize: bool = False) -> Dict[str, float]:
