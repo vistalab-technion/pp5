@@ -12,13 +12,24 @@ from pp5.external_dbs.pdb import PDB_DOWNLOAD_SOURCES
 
 
 class TestMethods:
+    @pytest.fixture(
+        autouse=False,
+        scope="class",
+        params=[True, False],
+        ids=["with_altlocs", "no_altlocs"],
+    )
+    def with_altlocs(self, request):
+        return request.param
+
     @pytest.fixture(autouse=False, scope="class", params=["102L:A", "2WUR:A"])
-    def prec(self, request):
+    def prec(self, with_altlocs, request):
         pdb_id = request.param
-        prec = ProteinRecord.from_pdb(pdb_id)
+        prec = ProteinRecord.from_pdb(pdb_id, with_altlocs=with_altlocs)
         return prec
 
-    @pytest.mark.parametrize("with_oxygen", [True, False])
+    @pytest.mark.parametrize(
+        "with_oxygen", [True, False], ids=["with_oxygen", "no_oxygen"]
+    )
     def test_backbone(self, prec, with_oxygen):
         backbone = prec.backbone_coordinates(with_oxygen=with_oxygen)
         for res_id, coords in backbone.items():
@@ -27,11 +38,14 @@ class TestMethods:
                 j = 3
             assert coords.shape == (4, 3) if with_oxygen else (3, 3)
 
-    @pytest.mark.parametrize("with_ids", [True, False])
-    @pytest.mark.parametrize("with_backbone", [True, False])
+    @pytest.mark.parametrize("with_ids", [True, False], ids=["with_ids", "no_ids"])
+    @pytest.mark.parametrize(
+        "with_backbone", [True, False], ids=["with_backbone", "no_backbone"]
+    )
     @pytest.mark.parametrize(
         "with_contacts",
         [False, True],
+        ids=["no_contacts", "with_contacts"],
     )
     def test_to_dataframe(self, prec, with_ids, with_backbone, with_contacts):
         if isinstance(with_contacts, dict):
