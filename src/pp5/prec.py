@@ -102,6 +102,7 @@ class ResidueRecord(object):
         self,
         res_id: Union[str, int],
         unp_idx: int,
+        rel_loc: float,
         name: str,
         codon_counts: Optional[Dict[str, int]],
         angles: Dihedral,
@@ -115,6 +116,8 @@ class ResidueRecord(object):
             integer + insertion code if present, which indicates some alteration
             compared to the wild-type.
         :param unp_idx: index of this residue in the corresponding UNP record.
+        :param rel_loc: relative location of this residue in the protein sequence,
+            a number between 0 and 1.
         :param name: single-letter name of the residue or X for unknown.
         :param codon_counts: A dict mapping codons to the number of occurrences in
         DNA sequences associated with the Uniprot identifier of the containing protein.
@@ -135,7 +138,7 @@ class ResidueRecord(object):
         codon_opts = codon_counts.keys()
 
         self.res_id, self.name = str(res_id), name
-        self.unp_idx = unp_idx
+        self.unp_idx, self.rel_loc = unp_idx, rel_loc
         self.codon, self.codon_score = best_codon, codon_score
         self.codon_opts = str.join(CODON_OPTS_SEP, codon_opts)
         self.codon_counts = codon_counts
@@ -149,6 +152,7 @@ class ResidueRecord(object):
         r_prev: Optional[Residue] = None,
         r_next: Optional[Residue] = None,
         unp_idx: Optional[int] = None,
+        rel_loc: Optional[float] = None,
         codon_counts: Optional[Dict[str, int]] = None,
         secondary: Optional[str] = None,
         dihedral_est: DihedralAngleCalculator = DEFAULT_ANGLE_CALC,
@@ -161,6 +165,8 @@ class ResidueRecord(object):
         :param r_prev: The previous residue in the sequence.
         :param r_next: The next residue in the sequence.
         :param unp_idx: The index of this residue in the corresponding Uniprot sequence.
+        :param rel_loc: The relative location of this residue in the protein
+        sequence, a number between 0 and 1.
         :param codon_counts: A dict mapping codons to the number of occurrences in
         DNA sequences associated with the Uniprot identifier of the containing protein.
         :param secondary: The DSSP secondary structure code for this residue.
@@ -179,6 +185,7 @@ class ResidueRecord(object):
         return cls(
             res_id=res_id,
             unp_idx=unp_idx,
+            rel_loc=rel_loc,
             name=res_name,
             codon_counts=codon_counts,
             secondary=secondary,
@@ -199,6 +206,7 @@ class ResidueRecord(object):
             res_id=self.res_id,
             name=self.name,
             unp_idx=self.unp_idx,
+            rel_loc=self.rel_loc,
             codon=self.codon,
             codon_score=self.codon_score,
             codon_opts=self.codon_opts,
@@ -236,6 +244,7 @@ class AltlocResidueRecord(ResidueRecord):
         self,
         res_id: Union[str, int],
         unp_idx: int,
+        rel_loc: float,
         name: str,
         codon_counts: Optional[Dict[str, int]],
         secondary: str,
@@ -262,6 +271,7 @@ class AltlocResidueRecord(ResidueRecord):
         super().__init__(
             res_id=res_id,
             unp_idx=unp_idx,
+            rel_loc=rel_loc,
             name=name,
             codon_counts=codon_counts,
             angles=altloc_angles[NO_ALTLOC],
@@ -277,6 +287,7 @@ class AltlocResidueRecord(ResidueRecord):
         r_prev: Optional[Residue] = None,
         r_next: Optional[Residue] = None,
         unp_idx: Optional[int] = None,
+        rel_loc: Optional[float] = None,
         codon_counts: Optional[Dict[str, int]] = None,
         secondary: Optional[str] = None,
         dihedral_est: DihedralAngleCalculator = DEFAULT_ANGLE_CALC,
@@ -292,6 +303,7 @@ class AltlocResidueRecord(ResidueRecord):
         return cls(
             res_id=res_id,
             unp_idx=unp_idx,
+            rel_loc=rel_loc,
             name=res_name,
             codon_counts=codon_counts,
             secondary=secondary,
@@ -686,8 +698,9 @@ class ProteinRecord(object):
 
         # Create a ResidueRecord holding all data we need per residue
         residue_recs = []
-        for i in range(len(pdb_aa_seq)):
+        for i in range(n_residues):
             r_curr: Residue = residues[i]
+            relative_location = (i + 1) / n_residues
 
             # Sanity check
             assert pdb_aa_seq[i] == ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
@@ -712,6 +725,7 @@ class ProteinRecord(object):
                 r_prev,
                 r_next,
                 unp_idx=unp_idx,
+                rel_loc=relative_location,
                 codon_counts=codon_counts,
                 secondary=secondary,
                 dihedral_est=dihedral_est,

@@ -1348,6 +1348,7 @@ class ResidueMatch(ResidueRecord):
         query_res = ResidueRecord(
             res_id=_join(q.res_id for q in query_residues),
             unp_idx=query_residues[0].unp_idx,
+            rel_loc=query_residues[0].rel_loc,
             name=_join(q.name for q in query_residues),
             codon_counts=dict(codon_counts),
             angles=query_angle,
@@ -1364,6 +1365,7 @@ class ResidueMatch(ResidueRecord):
             full_context=full_context,
             res_id=query_res.res_id,
             unp_idx=query_res.unp_idx,
+            rel_loc=query_res.rel_loc,
             name=query_res.name,
             codon_counts=query_res.codon_counts,
             angles=query_res.angles,
