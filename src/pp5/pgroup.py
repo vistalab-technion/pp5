@@ -619,7 +619,9 @@ class ProteinGroup(object):
                 q_prec = self.query_pdb_to_prec[query_pdb_id]
 
                 data = {"unp_id": q_prec.unp_id}
-                data.update(match.as_dict(skip_omega=True))
+                data.update(
+                    match.as_dict(dihedral_args=dict(degrees=True, skip_omega=True))
+                )
                 data["type"] = match.type.name  # change from number to name
 
                 df_data.append(data)
