@@ -76,35 +76,47 @@ def residue_altloc_ids(
 
 
 @contextmanager
-def altloc_ctx(atom: AltlocAtom, altloc_id: str):
+def altloc_ctx(atom: AltlocAtom, altloc_id: str) -> Optional[Atom]:
     """
-    Context that sets and then restores the selected altloc for an atom.
+    Context that sets and then restores the selected altloc for a potentially
+    disordered atom, and yields the selected atom.
+    If the atom is not disordered, yields the atom as is.
+
     :param atom: The atom to set the altloc for.
     :param altloc_id: The altloc id to select.
+    :return: The selected atom or None if the altloc id does not exist.
     """
     if isinstance(atom, DisorderedAtom):
         selected_altloc = atom.get_altloc()
         if atom.disordered_has_id(altloc_id):
             atom.disordered_select(altloc_id)
-        yield
+            yield atom.selected_child
+
+        else:
+            yield None
+
         atom.disordered_select(selected_altloc)
     else:
-        yield
+        yield atom
 
 
 @contextmanager
-def altloc_ctx_all(atoms: Sequence[AltlocAtom], altloc_id: str):
+def altloc_ctx_all(
+    atoms: Sequence[AltlocAtom], altloc_id: str
+) -> Sequence[Optional[Atom]]:
     """
-    Context that sets and then restores the selected altloc for a list of atoms.
+    Context that sets and then restores the selected altloc for a list of
+    potentially disordered atoms. A new list is yielded, containing the selected atoms.
+
     :param atoms: The atoms to set the altloc for.
     :param altloc_id: The altloc id to select.
     """
     if not atoms:
-        yield None
+        yield []
     else:
-        with altloc_ctx(atoms[0], altloc_id):
-            with altloc_ctx_all(atoms[1:], altloc_id):
-                yield None
+        with altloc_ctx(atoms[0], altloc_id) as a0:
+            with altloc_ctx_all(atoms[1:], altloc_id) as a1_to_aN:
+                yield [a0, *a1_to_aN]
 
 
 def get_selected_altloc(atom: AltlocAtom) -> Optional[str]:
