@@ -18,6 +18,7 @@ from Bio.PDB.Polypeptide import Polypeptide
 
 from pp5.backbone import (
     NO_ALTLOC,
+    CONST_8PI2,
     BACKBONE_ATOMS,
     BACKBONE_ATOM_C,
     BACKBONE_ATOM_N,
@@ -30,8 +31,6 @@ from pp5.backbone import (
     residue_backbone_atoms,
 )
 from pp5.external_dbs.pdb import PDBUnitCell
-
-CONST_8PI2 = math.pi * math.pi * 8
 
 
 class Dihedral(object):
