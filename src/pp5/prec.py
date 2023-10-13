@@ -103,9 +103,7 @@ class ResidueRecord(object):
         res_id: Union[str, int],
         unp_idx: int,
         name: str,
-        codon: str,
-        codon_score: float,
-        codon_opts: Union[Iterable[str], str],
+        codon_counts: Optional[Dict[str, int]],
         angles: Dihedral,
         bfactor: float,
         secondary: str,
@@ -118,21 +116,29 @@ class ResidueRecord(object):
             compared to the wild-type.
         :param unp_idx: index of this residue in the corresponding UNP record.
         :param name: single-letter name of the residue or X for unknown.
-        :param codon: Three-letter nucleotide sequence of codon matched to this residue.
-        :param codon_score: Confidence measure for the codon match.
-        :param codon_opts: All possible codons found in DNA sequences of the protein.
+        :param codon_counts: A dict mapping codons to the number of occurrences in
+        DNA sequences associated with the Uniprot identifier of the containing protein.
         :param angles: A Dihedral object containing the dihedral angles.
         :param bfactor: Average b-factor along of the residue's backbone atoms.
         :param secondary: Single-letter secondary structure code.
         :param num_altlocs: Number of alternate conformations in the PDB entry of this residue.
         """
+
+        # # Get the best codon and calculate its 'score' based on how many
+        # # other options there are
+        best_codon, max_count, total_count = UNKNOWN_CODON, 0, 0
+        for codon, count in codon_counts.items():
+            total_count += count
+            if count > max_count and codon != UNKNOWN_CODON:
+                best_codon, max_count = codon, count
+        codon_score = max_count / total_count if total_count else 0
+        codon_opts = codon_counts.keys()
+
         self.res_id, self.name = str(res_id), name
         self.unp_idx = unp_idx
-        self.codon, self.codon_score = codon, codon_score
-        if isinstance(codon_opts, str):
-            self.codon_opts = codon_opts
-        else:
-            self.codon_opts = str.join(CODON_OPTS_SEP, codon_opts)
+        self.codon, self.codon_score = best_codon, codon_score
+        self.codon_opts = str.join(CODON_OPTS_SEP, codon_opts)
+        self.codon_counts = codon_counts
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
         self.num_altlocs = num_altlocs
 
@@ -165,16 +171,6 @@ class ResidueRecord(object):
         res_id: str = _residue_to_res_id(r_curr)
         res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
 
-        # Get the best codon and calculate its 'score' based on how many
-        # other options there are
-        best_codon, max_count, total_count = UNKNOWN_CODON, 0, 0
-        for codon, count in codon_counts.items():
-            total_count += count
-            if count > max_count and codon != UNKNOWN_CODON:
-                best_codon, max_count = codon, count
-        codon_score = max_count / total_count if total_count else 0
-        codon_opts = codon_counts.keys()
-
         angles: Dihedral = dihedral_est.process_residues(r_curr, r_prev, r_next)[
             NO_ALTLOC
         ]
@@ -184,31 +180,36 @@ class ResidueRecord(object):
             res_id=res_id,
             unp_idx=unp_idx,
             name=res_name,
-            codon=best_codon,
-            codon_score=codon_score,
-            codon_opts=codon_opts,
+            codon_counts=codon_counts,
             secondary=secondary,
             angles=angles,
             bfactor=bfactor,
             num_altlocs=len(residue_altloc_ids(r_curr)),
         )
 
-    def as_dict(self, skip_omega=False):
+    def as_dict(self, skip_omega: bool = False, with_std: bool = False):
         """
         Creates a dict representation of the data in this residue. The angles object
         will we flattened out so its attributes will be placed directly in the
         resulting dict. The backbone angles will be converted to a nested list.
         :param skip_omega: Whether to not include the omega angle in the output.
-        :return:
+        :param with_std: Whether to include the standard deviation of the angles.
+        :return: A dict representation of this residue.
         """
-        d = self.__dict__.copy()
-
-        # Replace angles object with the angles themselves
-        d.pop("angles")
-        a = self.angles
-        d.update(a.as_dict(degrees=True, with_std=True, skip_omega=skip_omega))
-
-        return d
+        return dict(
+            res_id=self.res_id,
+            name=self.name,
+            unp_idx=self.unp_idx,
+            codon=self.codon,
+            codon_score=self.codon_score,
+            codon_opts=self.codon_opts,
+            secondary=self.secondary,
+            bfactor=self.bfactor,
+            num_altlocs=self.num_altlocs,
+            **self.angles.as_dict(
+                degrees=True, with_std=with_std, skip_omega=skip_omega
+            ),
+        )
 
     def __repr__(self):
         return (
@@ -562,6 +563,7 @@ class ProteinRecord(object):
         ss_dict, _ = pdb.pdb_to_secondary_structure(self.pdb_id, pdb_source=pdb_source)
 
         # Get estimators of dihedral angles and b-factor
+        self.dihedral_est_name = dihedral_est_name
         dihedral_est, bfactor_est = self._get_dihedral_estimators(
             dihedral_est_name, dihedral_est_args
         )

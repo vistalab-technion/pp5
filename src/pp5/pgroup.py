@@ -1339,21 +1339,15 @@ class ResidueMatch(ResidueRecord):
         def _join(x: Iterable) -> str:
             return str.join("_", x)
 
+        codon_counts: Counter = sum(
+            [Counter(q.codon_counts) for q in query_residues], start=Counter()
+        )
+
         query_res = ResidueRecord(
             res_id=_join(q.res_id for q in query_residues),
             unp_idx=query_residues[0].unp_idx,
             name=_join(q.name for q in query_residues),
-            codon=_join(q.codon for q in query_residues),
-            codon_score=min(q.codon_score for q in query_residues),
-            codon_opts=str.join(
-                CODON_OPTS_SEP,
-                [
-                    _join(opt1_opt2)
-                    for opt1_opt2 in it.product(
-                        *(q.codon_opts.split(CODON_OPTS_SEP) for q in query_residues)
-                    )
-                ],
-            ),
+            codon_counts=dict(codon_counts),
             angles=query_angle,
             bfactor=max(q.bfactor for q in query_residues),
             secondary=_join(q.secondary for q in query_residues),
@@ -1361,12 +1355,19 @@ class ResidueMatch(ResidueRecord):
         )
 
         return cls(
-            query_idx,
-            match_type,
-            match_len,
-            query_ref_angle_dist,
-            full_context,
-            **query_res.__dict__,
+            query_idx=query_idx,
+            match_type=match_type,
+            match_len=match_len,
+            ang_dist=query_ref_angle_dist,
+            full_context=full_context,
+            res_id=query_res.res_id,
+            unp_idx=query_res.unp_idx,
+            name=query_res.name,
+            codon_counts=query_res.codon_counts,
+            angles=query_res.angles,
+            bfactor=query_res.bfactor,
+            secondary=query_res.secondary,
+            num_altlocs=query_res.num_altlocs,
         )
 
     def __repr__(self):
