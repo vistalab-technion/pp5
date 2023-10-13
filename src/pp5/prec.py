@@ -197,7 +197,7 @@ class ResidueRecord(object):
             secondary=secondary,
             angles=angles,
             bfactor=bfactor,
-            num_altlocs=len(residue_altloc_ids(r_curr)),
+            num_altlocs=len(residue_altloc_ids(r_curr, allow_disjoint=True)),
         )
 
     def as_dict(self, dihedral_args: Dict[str, Any] = None):
@@ -254,6 +254,7 @@ class AltlocResidueRecord(ResidueRecord):
         name: str,
         codon_counts: Optional[Dict[str, int]],
         secondary: str,
+        altloc_ids: Sequence[str],
         altloc_angles: Dict[str, Dihedral],
         altloc_bfactors: Dict[str, float],
         altloc_ca_dists: Dict[str, float],
@@ -269,11 +270,22 @@ class AltlocResidueRecord(ResidueRecord):
         :param altloc_ca_dists: A mapping from an a pair of altloc ids (as a joined
         string, e.g. AB) to the CA-CA distance between them.
         """
-        altloc_ids = sorted(altloc_angles.keys())
-        assert NO_ALTLOC in altloc_ids
-        assert altloc_ids == sorted(altloc_bfactors.keys())
 
-        self.altloc_ids = tuple(set(altloc_ids) - {NO_ALTLOC})
+        # altloc_ids should contain all altlocs in any backbone atom of the current
+        # residue
+        altloc_ids = set(altloc_ids)
+        assert NO_ALTLOC not in altloc_ids
+
+        # the angles and bfactors dicts should only contain altlocs common to all
+        # backbone atoms
+        for d in [altloc_angles, altloc_bfactors, altloc_ca_dists]:
+            for altloc_id in set(d.keys()) - {NO_ALTLOC}:
+                assert altloc_id[0] in altloc_ids
+                assert altloc_id[-1] in altloc_ids  # In case it's a dist pair ("AB")
+
+        no_altloc_angle = altloc_angles.pop(NO_ALTLOC)
+        no_altloc_bfactor = altloc_bfactors.pop(NO_ALTLOC)
+        self.altloc_ids = tuple(sorted(altloc_ids))
         self.altloc_angles = altloc_angles
         self.altloc_bfactors = altloc_bfactors
         self.altloc_ca_dists = altloc_ca_dists
@@ -284,8 +296,8 @@ class AltlocResidueRecord(ResidueRecord):
             rel_loc=rel_loc,
             name=name,
             codon_counts=codon_counts,
-            angles=altloc_angles[NO_ALTLOC],
-            bfactor=altloc_bfactors[NO_ALTLOC],
+            angles=no_altloc_angle,
+            bfactor=no_altloc_bfactor,
             secondary=secondary,
             num_altlocs=len(self.altloc_ids),
         )
@@ -306,6 +318,7 @@ class AltlocResidueRecord(ResidueRecord):
         res_id: str = _residue_to_res_id(r_curr)
         res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
 
+        altloc_ids = residue_altloc_ids(r_curr, allow_disjoint=True)
         altloc_angles: Dict[str, Dihedral] = dihedral_est.process_residues(
             r_curr, r_prev, r_next, with_altlocs=True
         )
@@ -319,6 +332,7 @@ class AltlocResidueRecord(ResidueRecord):
             name=res_name,
             codon_counts=codon_counts,
             secondary=secondary,
+            altloc_ids=altloc_ids,
             altloc_angles=altloc_angles,
             altloc_bfactors=altloc_bfactors,
             altloc_ca_dists=altloc_ca_dists,
@@ -328,15 +342,23 @@ class AltlocResidueRecord(ResidueRecord):
         dihedral_args = dihedral_args or {}
         d = super().as_dict(dihedral_args)
 
-        for altloc_id in self.altloc_ids:
-            postfix = f"_{altloc_id}"
+        d["altloc_ids"] = str.join(";", self.altloc_ids)
+
+        def _altloc_postfix(_altloc_id: str) -> str:
+            return f"_{_altloc_id}"
+
+        for altloc_id, altloc_angles in self.altloc_angles.items():
             d.update(
-                self.altloc_angles[altloc_id].as_dict(**dihedral_args, postfix=postfix)
+                altloc_angles.as_dict(
+                    **dihedral_args, postfix=_altloc_postfix(altloc_id)
+                )
             )
-            d[f"bfactor{postfix}"] = self.altloc_bfactors[altloc_id]
+
+        for altloc_id, altloc_bfactor in self.altloc_bfactors.items():
+            d[f"bfactor{_altloc_postfix(altloc_id)}"] = altloc_bfactor
 
         for altloc_pair_ids, ca_dist in self.altloc_ca_dists.items():
-            d[f"d_{altloc_pair_ids}"] = ca_dist
+            d[f"d{_altloc_postfix(altloc_pair_ids)}"] = ca_dist
 
         return d
 
