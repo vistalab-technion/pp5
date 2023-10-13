@@ -45,7 +45,13 @@ from pp5.codons import (
     UNKNOWN_CODON,
     CODON_OPTS_SEP,
 )
-from pp5.backbone import NO_ALTLOC, BACKBONE_ATOMS, BACKBONE_ATOMS_O, residue_altloc_ids
+from pp5.backbone import (
+    NO_ALTLOC,
+    BACKBONE_ATOMS,
+    BACKBONE_ATOMS_O,
+    residue_altloc_ids,
+    residue_altloc_ca_dists,
+)
 from pp5.dihedral import (
     Dihedral,
     AtomLocationUncertainty,
@@ -250,15 +256,18 @@ class AltlocResidueRecord(ResidueRecord):
         secondary: str,
         altloc_angles: Dict[str, Dihedral],
         altloc_bfactors: Dict[str, float],
+        altloc_ca_dists: Dict[str, float],
     ):
         """
-        Represents a residue with (potential) altlocs.
+        Represents a residue with (potential) alternate conformations (altlocs).
         All params as for ResidueRecord, except:
 
-        :param altloc_angles: A mapping from an alternate conformation (altloc) id to a
-            Dihedral object containing the dihedral angles for that conformation.
-        :param altloc_bfactors: A mapping from an alternate conformation (altloc) id
-            to the average b-factor for that conformation.
+        :param altloc_angles: A mapping from an altloc id to a Dihedral object
+        containing the dihedral angles for that conformation.
+        :param altloc_bfactors: A mapping from an altloc id to the average b-factor for
+        that conformation.
+        :param altloc_ca_dists: A mapping from an a pair of altloc ids (as a joined
+        string, e.g. AB) to the CA-CA distance between them.
         """
         altloc_ids = sorted(altloc_angles.keys())
         assert NO_ALTLOC in altloc_ids
@@ -267,6 +276,7 @@ class AltlocResidueRecord(ResidueRecord):
         self.altloc_ids = tuple(set(altloc_ids) - {NO_ALTLOC})
         self.altloc_angles = altloc_angles
         self.altloc_bfactors = altloc_bfactors
+        self.altloc_ca_dists = altloc_ca_dists
 
         super().__init__(
             res_id=res_id,
@@ -300,6 +310,8 @@ class AltlocResidueRecord(ResidueRecord):
             r_curr, r_prev, r_next, with_altlocs=True
         )
         altloc_bfactors: Dict[str, float] = bfactor_est.process_residue_altlocs(r_curr)
+        altloc_ca_dists = residue_altloc_ca_dists(r_curr, normalize=True)
+
         return cls(
             res_id=res_id,
             unp_idx=unp_idx,
@@ -309,6 +321,7 @@ class AltlocResidueRecord(ResidueRecord):
             secondary=secondary,
             altloc_angles=altloc_angles,
             altloc_bfactors=altloc_bfactors,
+            altloc_ca_dists=altloc_ca_dists,
         )
 
     def as_dict(self, dihedral_args: Dict[str, Any] = None):
@@ -321,6 +334,9 @@ class AltlocResidueRecord(ResidueRecord):
                 self.altloc_angles[altloc_id].as_dict(**dihedral_args, postfix=postfix)
             )
             d[f"bfactor{postfix}"] = self.altloc_bfactors[altloc_id]
+
+        for altloc_pair_ids, ca_dist in self.altloc_ca_dists.items():
+            d[f"d_{altloc_pair_ids}"] = ca_dist
 
         return d
 
