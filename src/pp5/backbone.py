@@ -32,34 +32,47 @@ def residue_backbone_atoms(res: Residue) -> Sequence[Atom]:
     return tuple(a for a in res.get_atoms() if a.get_name() in BACKBONE_ATOMS)
 
 
-def atom_altloc_ids(atoms: Sequence[AltlocAtom]) -> Sequence[str]:
+def atom_altloc_ids(
+    atoms: Sequence[AltlocAtom], allow_disjoint: bool = False
+) -> Sequence[str]:
     """
     Returns a list of all altloc ids which exist in a list of atoms.
+
     :param atoms: The atoms to check.
+    :param allow_disjoint: Whether to return altloc ids which are not present in all
+    the given atoms. If False (default) only the common altloc ids are returned.
     :return: The list of altloc ids.
     """
-    return sorted(
-        set(
-            itertools.chain(
-                *[
-                    a.disordered_get_id_list()
-                    for a in atoms
-                    if isinstance(a, DisorderedAtom)
-                ]
-            )
-        )
-    )
+
+    if not atoms:
+        return tuple()
+
+    per_atom_altloc_ids: Sequence[set] = [
+        set(a.disordered_get_id_list()) if isinstance(a, DisorderedAtom) else set()
+        for a in atoms
+    ]
+
+    if not allow_disjoint:
+        altloc_ids = set.intersection(*per_atom_altloc_ids)
+    else:
+        altloc_ids = set.union(*per_atom_altloc_ids)
+
+    return tuple(sorted(altloc_ids))
 
 
-def residue_altloc_ids(res: Residue, backbone_only: bool = True) -> Sequence[str]:
+def residue_altloc_ids(
+    res: Residue, backbone_only: bool = True, allow_disjoint: bool = False
+) -> Sequence[str]:
     """
     Returns a list of all altloc ids which exist in a residue.
 
     :param res: The residue to check.
     :param backbone_only: Whether to only check backbone atoms.
+    :param allow_disjoint: Whether to return altloc ids which are not present in all
+    the relevant atoms. If False (default) only the common altloc ids are returned.
     """
     atoms = tuple(res.get_atoms() if not backbone_only else residue_backbone_atoms(res))
-    return atom_altloc_ids(atoms)
+    return atom_altloc_ids(atoms, allow_disjoint=allow_disjoint)
 
 
 @contextmanager
