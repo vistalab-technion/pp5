@@ -222,29 +222,31 @@ def residue_altloc_ca_dists(res: Residue, normalize: bool = False) -> Dict[str, 
     :param res: The residue to check.
     :param normalize: Whether to normalize the distances by the isotropic B-factors of
         the atoms. If true, the distance between altlocs A and B will be
-        sqrt(d_AB^2 / ( sigma_A * sigma_B))
+        d_AB / sqrt( sigma_A * sigma_B )
         where d_AB is the CA-CA distance between altlocs A and B, and sigma_A/B
         are their isotropic B-factors in angstroms.
+        The normalized distances will be added to the output in addition to the
+        regular distances, with a NORMALIZED_POSTFIX suffix.
     :return: A dictionary mapping two joined altloc ids (e.g. "AB") to the pairwise
         distances between CA in altlocs A and B.
     """
     ca_locations: Dict[str, np.ndarray] = {}
-    sigmas: Dict[str, np.ndarray] = {}
+    sigmas: Dict[str, float] = {}
     altloc_ids = residue_altloc_ids(res, backbone_only=True)
 
     for altloc_id in altloc_ids:
         ca: AltlocAtom = res[BACKBONE_ATOM_CA]
-        with altloc_ctx(ca, altloc_id):
-            ca_locations[altloc_id] = ca.get_coord()
-            sigmas[altloc_id] = ca.get_bfactor() / CONST_8PI2  # convert to Angstroms
+        with altloc_ctx(ca, altloc_id) as _ca:
+            ca_locations[altloc_id] = _ca.get_coord()
+            sigmas[altloc_id] = atom_location_sigma(_ca)
 
     ca_dists: Dict[str, np.ndarray] = {}
     for altloc_id1, altloc_id2 in itertools.combinations(ca_locations.keys(), 2):
         dist = np.linalg.norm(ca_locations[altloc_id1] - ca_locations[altloc_id2])
+        ca_dists[f"{altloc_id1}{altloc_id2}"] = dist.item()
 
         if normalize:
-            dist = np.sqrt(dist**2 / (sigmas[altloc_id1] * sigmas[altloc_id2]))
-
-        ca_dists[f"{altloc_id1}{altloc_id2}"] = dist.item()
+            dist = dist / np.sqrt(sigmas[altloc_id1] * sigmas[altloc_id2])
+            ca_dists[f"{altloc_id1}{altloc_id2}{NORMALIZED_POSTFIX}"] = dist.item()
 
     return ca_dists
