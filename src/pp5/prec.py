@@ -51,6 +51,7 @@ from pp5.backbone import (
     BACKBONE_ATOMS_O,
     residue_altloc_ids,
     residue_altloc_ca_dists,
+    residue_altloc_peptide_bond_lengths,
 )
 from pp5.dihedral import (
     Dihedral,
@@ -258,6 +259,7 @@ class AltlocResidueRecord(ResidueRecord):
         altloc_angles: Dict[str, Dihedral],
         altloc_bfactors: Dict[str, float],
         altloc_ca_dists: Dict[str, float],
+        altloc_peptide_bond_lengths: Dict[str, float],
     ):
         """
         Represents a residue with (potential) alternate conformations (altlocs).
@@ -278,10 +280,9 @@ class AltlocResidueRecord(ResidueRecord):
 
         # the angles and bfactors dicts should only contain altlocs common to all
         # backbone atoms
-        for d in [altloc_angles, altloc_bfactors, altloc_ca_dists]:
+        for d in [altloc_angles, altloc_bfactors]:
             for altloc_id in set(d.keys()) - {NO_ALTLOC}:
-                assert altloc_id[0] in altloc_ids
-                assert altloc_id[-1] in altloc_ids  # In case it's a dist pair ("AB")
+                assert altloc_id in altloc_ids
 
         no_altloc_angle = altloc_angles.pop(NO_ALTLOC)
         no_altloc_bfactor = altloc_bfactors.pop(NO_ALTLOC)
@@ -289,6 +290,7 @@ class AltlocResidueRecord(ResidueRecord):
         self.altloc_angles = altloc_angles
         self.altloc_bfactors = altloc_bfactors
         self.altloc_ca_dists = altloc_ca_dists
+        self.altloc_peptide_bond_lengths = altloc_peptide_bond_lengths
 
         super().__init__(
             res_id=res_id,
@@ -324,6 +326,9 @@ class AltlocResidueRecord(ResidueRecord):
         )
         altloc_bfactors: Dict[str, float] = bfactor_est.process_residue_altlocs(r_curr)
         altloc_ca_dists = residue_altloc_ca_dists(r_curr, normalize=True)
+        altloc_peptide_bond_lengths = residue_altloc_peptide_bond_lengths(
+            r_curr, r_next, normalize=True
+        )
 
         return cls(
             res_id=res_id,
@@ -336,6 +341,7 @@ class AltlocResidueRecord(ResidueRecord):
             altloc_angles=altloc_angles,
             altloc_bfactors=altloc_bfactors,
             altloc_ca_dists=altloc_ca_dists,
+            altloc_peptide_bond_lengths=altloc_peptide_bond_lengths,
         )
 
     def as_dict(self, dihedral_args: Dict[str, Any] = None):
@@ -358,7 +364,10 @@ class AltlocResidueRecord(ResidueRecord):
             d[f"bfactor{_altloc_postfix(altloc_id)}"] = altloc_bfactor
 
         for altloc_pair_ids, ca_dist in self.altloc_ca_dists.items():
-            d[f"d{_altloc_postfix(altloc_pair_ids)}"] = ca_dist
+            d[f"dist_CA{_altloc_postfix(altloc_pair_ids)}"] = ca_dist
+
+        for altloc_pair_ids, pb_len in self.altloc_peptide_bond_lengths.items():
+            d[f"len_pb{_altloc_postfix(altloc_pair_ids)}"] = pb_len
 
         return d
 
