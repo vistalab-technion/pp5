@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import itertools
-from typing import Dict, Union, Iterator, Optional, Sequence
+from typing import Dict, Union, Optional, Sequence
 from contextlib import contextmanager
 
 import numpy as np
@@ -51,7 +51,9 @@ def residue_backbone_atoms(res: Residue) -> Sequence[Atom]:
 
 
 def atom_altloc_ids(
-    atoms: Sequence[AltlocAtom], allow_disjoint: bool = False
+    atoms: Sequence[AltlocAtom],
+    allow_disjoint: bool = False,
+    include_none: bool = False,
 ) -> Sequence[str]:
     """
     Returns a list of all altloc ids which exist in a list of atoms.
@@ -59,6 +61,8 @@ def atom_altloc_ids(
     :param atoms: The atoms to check.
     :param allow_disjoint: Whether to return altloc ids which are not present in all
     the given atoms. If False (default) only the common altloc ids are returned.
+    :param include_none: Whether to return a sequence with the special altloc id
+    NO_ALTLOC which represents that no altlocs are defined.
     :return: The list of altloc ids.
     """
 
@@ -75,11 +79,17 @@ def atom_altloc_ids(
     else:
         altloc_ids = set.union(*per_atom_altloc_ids)
 
+    if include_none and not altloc_ids:
+        altloc_ids = [NO_ALTLOC]
+
     return tuple(sorted(altloc_ids))
 
 
 def residue_altloc_ids(
-    res: Residue, backbone_only: bool = True, allow_disjoint: bool = False
+    res: Residue,
+    backbone_only: bool = True,
+    allow_disjoint: bool = False,
+    include_none: bool = False,
 ) -> Sequence[str]:
     """
     Returns a list of all altloc ids which exist in a residue.
@@ -88,9 +98,13 @@ def residue_altloc_ids(
     :param backbone_only: Whether to only check backbone atoms.
     :param allow_disjoint: Whether to return altloc ids which are not present in all
     the relevant atoms. If False (default) only the common altloc ids are returned.
+    :param include_none: Whether to return a sequence with the special altloc id
+    NO_ALTLOC which represents that no altlocs are defined.
     """
     atoms = tuple(res.get_atoms() if not backbone_only else residue_backbone_atoms(res))
-    return atom_altloc_ids(atoms, allow_disjoint=allow_disjoint)
+    return atom_altloc_ids(
+        atoms, allow_disjoint=allow_disjoint, include_none=include_none
+    )
 
 
 @contextmanager
@@ -250,3 +264,70 @@ def residue_altloc_ca_dists(res: Residue, normalize: bool = False) -> Dict[str, 
             ca_dists[f"{altloc_id1}{altloc_id2}{NORMALIZED_POSTFIX}"] = dist.item()
 
     return ca_dists
+
+
+def residue_altloc_peptide_bond_lengths(
+    res1: Residue, res2: Optional[Residue], normalize: bool = False
+) -> Dict[str, float]:
+    """
+    Calculates the peptide bond lengths between two residues.
+    If any or both residues contain altlocs, the peptide bond lengths will be
+    calculated for each combination of altlocs from the first and second residues.
+
+    :param res1: The first residue.
+    :param res2: The residue immediately following res1, or None if res1 is the last
+    residue.
+    :param normalize: Whether to normalize the distances by the isotropic B-factors
+    of the atom locations. The normalized distances will be added to the output with a
+    NORMALIZED_POSTFIX suffix. The normalization factor is
+    sqrt(sigma(res1_c) * sigma(res2_n)).
+    :return: A dictionary mapping two joined altloc ids (e.g. "AB") to peptide bond
+    length. In case one or both have no altlocs, the NO_ALTLOC string will be used
+    as a placeholder.
+    """
+
+    if res2 is None:
+        return {}
+
+    # Get list of altlocs for each residue, with the special altloc id NO_ALTLOC if
+    # there are no altlocs for either of them.
+    res1_altloc_ids, res2_altloc_ids = [
+        residue_altloc_ids(
+            r, backbone_only=True, allow_disjoint=False, include_none=True
+        )
+        for r in [res1, res2]
+    ]
+
+    # Iterate over all combinations of altlocs and calculate peptide bond lengths.
+    peptide_bond_lengths: Dict[str, float] = {}
+    for res1_altloc_id, res2_altloc_id in itertools.product(
+        res1_altloc_ids, res2_altloc_ids
+    ):
+        res1_c: AltlocAtom = res1[BACKBONE_ATOM_C]
+        res2_n: AltlocAtom = res2[BACKBONE_ATOM_N]
+
+        _res1_c: Atom
+        _res2_n: Atom
+        with (
+            altloc_ctx(res1_c, res1_altloc_id) as _res1_c,
+            altloc_ctx(res2_n, res2_altloc_id) as _res2_n,
+        ):
+            # Both should not be none because we used allow_disjoint=False.
+            # It's possible the one or both didn't have altlocs, in which case
+            # we'll have res1_c==_rec1_c and res2_n==_res2_n.
+            assert _res1_c is not None and _res2_n is not None
+
+            # peptide bond length
+            pb_len = np.linalg.norm(_res1_c.get_coord() - _res2_n.get_coord())
+            peptide_bond_lengths[f"{res1_altloc_id}{res2_altloc_id}"] = pb_len.item()
+
+            if normalize:
+                # Normalize by the isotropic B-factors of the atoms.
+                pb_len = pb_len / np.sqrt(
+                    atom_location_sigma(_res1_c) * atom_location_sigma(_res2_n)
+                )
+                peptide_bond_lengths[
+                    f"{res1_altloc_id}{res2_altloc_id}{NORMALIZED_POSTFIX}"
+                ] = pb_len.item()
+
+    return peptide_bond_lengths
