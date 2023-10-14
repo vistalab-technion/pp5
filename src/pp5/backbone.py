@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import itertools
-from typing import Dict, Union, Optional, Sequence
+from typing import Dict, Union, Iterator, Optional, Sequence
 from contextlib import contextmanager
 
 import numpy as np
@@ -15,11 +15,29 @@ BACKBONE_ATOM_C = "C"
 BACKBONE_ATOM_O = "O"
 BACKBONE_ATOMS = (BACKBONE_ATOM_N, BACKBONE_ATOM_CA, BACKBONE_ATOM_C)
 BACKBONE_ATOMS_O = tuple([*BACKBONE_ATOMS, BACKBONE_ATOM_O])
-NO_ALTLOC = "_"
+NO_ALTLOC = "~"
+NORMALIZED_POSTFIX = "_norm"
+
+CONST_8PI2 = math.pi * math.pi * 8
+
+
 AltlocAtom = Union[Atom, DisorderedAtom]
 
 
-CONST_8PI2 = math.pi * math.pi * 8
+def atom_location_sigma(atom: Atom) -> float:
+    """
+    Returns the standard deviation (sigma) in Angsroms, of the location of an atom,
+    based on its isotropic B-factor.
+
+    This is based on
+        B = 8*pi^2 * U
+    where B is the isotropic B-factor and U is the mean-square displacement (or
+    variance) of the atom location, in units of A^2.
+
+    :param atom: The atom to calculate the sigma for.
+    :return: The sigma in Angstroms.
+    """
+    return math.sqrt(atom.get_bfactor() / CONST_8PI2)
 
 
 def residue_backbone_atoms(res: Residue) -> Sequence[Atom]:
