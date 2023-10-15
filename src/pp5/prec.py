@@ -549,7 +549,7 @@ class ProteinRecord(object):
                 pdb_id = f"{pdb_base_id}:{chain_id}"
 
             if cache and chain_id:
-                prec = cls.from_cache(pdb_id, cache_dir)
+                prec = cls.from_cache(pdb_id, cache_dir=cache_dir)
                 if prec is not None:
                     return prec
 

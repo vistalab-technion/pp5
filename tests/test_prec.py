@@ -239,6 +239,7 @@ class TestCache:
     @pytest.mark.parametrize("pdb_id", ["1MWC:A", "4N6V:1"])
     @pytest.mark.parametrize("pdb_source", tuple(PDB_DOWNLOAD_SOURCES))
     def test_from_pdb_with_cache(self, pdb_id, pdb_source, cache_dir, with_altlocs):
+        cache_dir = cache_dir / f"{pdb_source}"
         prec = ProteinRecord.from_pdb(
             pdb_id,
             pdb_source=pdb_source,
