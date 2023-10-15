@@ -26,30 +26,36 @@ os.chdir(REPO_ROOT)
 sys.path.append(REPO_ROOT)
 from pp5.utils import elapsed_seconds_to_dhms
 
-PROCESSES = 90
+PROCESSES = 30
 
 TUPLE_LEN = 1
 MIN_GROUP = 1
 KDE_NBINS = 128
 KDE_WIDTH = 200
-DDIST_BS_NITER = 25
-DDIST_K = 200
+DDIST_BS_NITER = 1 # 25
+DDIST_K = 5000 # 200
 DDIST_K_MIN = 100
 DDIST_K_TH = 50
-DDIST_NMAX = 200
+DDIST_NMAX = 1000 #200
+DDIST_NMAX_AA = True # Limit n_max per AA based on smallest codon
 DDIST_STATISTIC = "kde_g"  # 'tw', 'mmd', 'kde'
-DDIST_KERNEL_SIZE = 2.0
-CODON_GROUPING_TYPE = ""  # "any", "last_nucleotide"
+DDIST_KERNEL_SIZE = 16.0 # 2.0
+CODON_GROUPING_TYPE = ""  # "", "any", "last_nucleotide"
+CODON_GROUPING_POSITION = "1"  # 0,1
 FDR = 0.05
 COMPARISON_TYPES = [
-    "aa",
+    # "aa",
     "cc",
 ]
-SS_GROUP_ANY = False
+SS_GROUP_ANY = True # Include group of all SS?
 IGNORE_OMEGA = True
+RANDOMIZE_CODONS = "" # "aa", "aa_ss" or "" for no randomization
+SELF_TEST = False # whether to compare codons to themselves
 
 DATASET_PATHS = [
-    Path("out/prec-collected/20211001_124553-aida-ex_EC-src_EC/"),
+    # Path("out/prec-collected/20230730_063523-aida-ex_EC-src_EC-re/"),
+    # Path("out/prec-collected/20211001_124553-aida-ex_EC-src_EC/")
+    Path("out/prec-collected/cope_sim_w_ena/")
 ]
 
 DATASETS = {
@@ -66,18 +72,28 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
 
     codon_grouping_tag = ""
     if CODON_GROUPING_TYPE:
-        codon_grouping_tag = f"-g_{CODON_GROUPING_TYPE}"
+        codon_grouping_tag = f"-g_{CODON_GROUPING_TYPE}_star{CODON_GROUPING_POSITION}"
 
-    tag = f"t_{TUPLE_LEN}-bs_{DDIST_BS_NITER}-k_{DDIST_K}-nmax_{DDIST_NMAX}-q_{FDR}-{ddist_statistic_tag}{codon_grouping_tag}"
+    codon_randomization_tag = ""
+    if RANDOMIZE_CODONS:
+        codon_randomization_tag = f"-cr_{RANDOMIZE_CODONS}"
+
+    self_test_tag = ""
+    if not SELF_TEST:
+        self_test_tag = "-noself"
+
+
+    tag = f"t_{TUPLE_LEN}-bs_{DDIST_BS_NITER}-k_{DDIST_K}-nmax_{DDIST_NMAX}-{ddist_statistic_tag}{codon_grouping_tag}{codon_randomization_tag}{self_test_tag}"
 
     command_line = [
         "pp5",
-        f"-p={PROCESSES}",
+        f"--processes={PROCESSES}",
         f"analyze-pointwise",
         f"--dataset-dir={dataset_path!s}",
         f"--min-group-size={MIN_GROUP}",
         f"--tuple-len={TUPLE_LEN}",
-        f"--codon-grouping-type={CODON_GROUPING_TYPE}",
+        f"--codon-grouping-position={CODON_GROUPING_POSITION}" if TUPLE_LEN>1 else "",
+        f"--codon-grouping-type={CODON_GROUPING_TYPE}" if TUPLE_LEN>1 else "",
         f"--kde-width={KDE_WIDTH}",
         f"--kde-nbins={KDE_NBINS}",
         f"--ddist-statistic={DDIST_STATISTIC}",
@@ -86,14 +102,18 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
         f"--ddist-k-th={DDIST_K_TH}",
         f"--ddist-bs-niter={DDIST_BS_NITER}",
         f"--ddist-n-max={DDIST_NMAX}",
+        f"--no-ddist-n-max-aa" if not DDIST_NMAX_AA else "",
         f"--ddist-kernel-size={DDIST_KERNEL_SIZE}",
         f"--fdr={FDR}",
-        f"--comparison-types",
-        *COMPARISON_TYPES,
+        f"--comparison-types={str.join(',',COMPARISON_TYPES)}",
+        f"--randomize-codons={RANDOMIZE_CODONS}",
+        f"--no-self-test" if not SELF_TEST else "",
         f"--ss-group-any" if SS_GROUP_ANY else "",
         f"--ignore-omega" if IGNORE_OMEGA else "",
         f"--out-tag={tag}",
     ]
+
+    command_line = [c for c in command_line if c]
 
     out_file_path = OUT_DIR.joinpath(f"analyze-pointwise_{dataset_name}-{tag}.log")
 
@@ -121,7 +141,7 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
                 return_code = process.wait(timeout=10.0)
                 elapsed = elapsed_seconds_to_dhms(time.time() - start_time)
                 print("", file=sys.stdout)
-                print(f"### DONE ({return_code=}), ELAPSED={elapsed}", file=sys.stdout)
+                print(f"### DONE ({return_code=}), ELAPSED={elapsed} TAG={tag}", file=sys.stdout)
                 break
             except subprocess.TimeoutExpired as e:
                 print(".", end="", file=sys.stdout)
