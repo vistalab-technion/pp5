@@ -6,6 +6,7 @@ import socket
 import string
 import logging
 import zipfile
+import itertools
 import multiprocessing as mp
 from pprint import pformat
 from typing import Set, Dict, List, Callable, Iterable, Optional, Sequence
@@ -305,6 +306,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         with_backbone: bool = False,
         with_contacts: bool = False,
         with_altlocs: bool = False,
+        entity_single_chain: bool = False,
         out_dir: Path = pp5.out_subdir("prec-collected"),
         out_tag: Optional[str] = None,
         prec_out_dir: Path = pp5.out_subdir("prec"),
@@ -336,6 +338,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         :param with_contacts: Whether to include tertiary contact features per residue.
         :param with_altlocs: Whether to include alternate locations (altlocs) in the
         output.
+        :param entity_single_chain: Whether to collect only a single chain per entity.
         :param write_csv: Whether to write the ProteinRecords to
             the prec_out_dir as CSV files.
         :param async_timeout: Timeout in seconds for each worker
@@ -402,6 +405,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         self.with_backbone = with_backbone
         self.with_contacts = with_contacts
         self.with_altlocs = with_altlocs
+        self.entity_single_chain = entity_single_chain
 
         self.prec_out_dir = prec_out_dir
         self.write_csv = write_csv
@@ -433,6 +437,7 @@ class ProteinRecordCollector(ParallelDataCollector):
                 with_backbone=self.with_backbone,
                 with_contacts=ARPEGGIO_ARGS if self.with_contacts else None,
                 with_altlocs=self.with_altlocs,
+                entity_single_chain=self.entity_single_chain,
             )
             r = pool.apply_async(_collect_single_structure, args, kwds)
             async_results.append(r)
@@ -979,6 +984,7 @@ def _collect_single_structure(
     with_backbone: bool = False,
     with_contacts: Optional[Dict] = None,
     with_altlocs: bool = False,
+    entity_single_chain: bool = False,
 ) -> List[dict]:
     """
     Downloads a single PDB entry, and creates a prec for all its chains.
@@ -994,6 +1000,9 @@ def _collect_single_structure(
     locally and also write contact features to csv. The dict contains kwargs for
     arpeggio.
     :param with_altlocs: Whether to include alternate locations in the prec.
+    :param entity_single_chain: Whether to collect only a single chain from each
+    unique entity. If True, the first chain will be collected from each entity.
+    Otherwise, all chains will be collected.
     :return: A list of dicts, each containing metadata about one of the collected
         chains.
     """
@@ -1005,22 +1014,37 @@ def _collect_single_structure(
     )
     meta = pdb.PDBMetadata(pdb_id, pdb_source=pdb_source, struct_d=pdb_dict)
 
-    # If we got an entity id instead of chain, discover the chain.
-    if entity_id:
+    # Determine all chains we need to collect from the PDB structure
+    chains_to_collect: Sequence[str]
+    if chain_id is not None:
+        # If we got a single chain, use only that
+        chains_to_collect = (chain_id,)
+    elif entity_id is not None:
         entity_id = int(entity_id)
-        chain_id = meta.get_chain(entity_id)
 
-    if chain_id:
-        # If we have a specific chain, use only that
-        all_chains = (chain_id,)
+        # If we got an entity id, discover all corresponding chains
+        chains_to_collect = tuple(
+            chain_id
+            for chain_id, chain_entity_id in meta.chain_entities.items()
+            if entity_id == chain_entity_id
+        )
+
+        if entity_single_chain:
+            chains_to_collect = (chains_to_collect[0],)
     else:
-        # Otherwise, we'll take all UNIQUE chains: only one chain from
-        # each unique entity. This is important, since chains from the same
-        # entity are identical, so they're redundant.
-        all_chains = [meta.get_chain(e) for e in meta.entity_sequence]
+        # Otherwise, we have no entity id or chain id; we'll take chains from all
+        # available entities.
+        chains_to_collect = tuple(
+            itertools.chain(
+                *[
+                    (chain_ids[0],) if entity_single_chain else chain_ids
+                    for entity_id, chain_ids in meta.entity_chains.items()
+                ]
+            )
+        )
 
     chain_data = []
-    for chain_id in all_chains:
+    for chain_id in chains_to_collect:
         pdb_id_full = f"{pdb_base_id}:{chain_id}"
 
         # Skip chains with no Uniprot ID

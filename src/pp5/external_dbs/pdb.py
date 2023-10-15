@@ -7,9 +7,9 @@ import warnings
 from math import cos, sin
 from math import degrees as deg
 from math import radians as rad
-from typing import Any, Dict, List, Type, Tuple, Union, Optional
+from typing import Any, Dict, List, Type, Tuple, Union, Optional, Sequence
 from pathlib import Path
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
 import numpy as np
 from Bio import PDB as PDB
@@ -676,6 +676,16 @@ class PDBMetadata(object):
 
     def as_dict(self) -> Dict[str, Any]:
         return {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
+
+    @property
+    def entity_chains(self) -> Dict[int, Sequence[str]]:
+        """
+        :return: Mapping from entity id to a list of chains belonging to that entity.
+        """
+        entity_chains = defaultdict(list)
+        for chain, entity in self.chain_entities.items():
+            entity_chains[entity].append(chain)
+        return dict(entity_chains)
 
     def __repr__(self):
         return str(self.as_dict())
