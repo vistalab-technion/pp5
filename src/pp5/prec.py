@@ -48,8 +48,10 @@ from pp5.codons import (
 from pp5.backbone import (
     NO_ALTLOC,
     BACKBONE_ATOMS,
+    BACKBONE_ATOM_CA,
     BACKBONE_ATOMS_O,
     residue_altloc_ids,
+    residue_altloc_sigmas,
     residue_altloc_ca_dists,
     residue_altloc_peptide_bond_lengths,
 )
@@ -237,7 +239,7 @@ class ResidueRecord(object):
             return False
         for k, v in self.__dict__.items():
             other_v = other.__dict__.get(k, math.inf)
-            if isinstance(v, (float, list, tuple, np.ndarray)):
+            if isinstance(v, (float, np.ndarray)):
                 equal = np.allclose(v, other_v, equal_nan=True)
             else:
                 equal = v == other_v
@@ -259,6 +261,7 @@ class AltlocResidueRecord(ResidueRecord):
         altloc_angles: Dict[str, Dihedral],
         altloc_bfactors: Dict[str, float],
         altloc_ca_dists: Dict[str, float],
+        altloc_sigmas: Dict[str, Dict[str, float]],
         altloc_peptide_bond_lengths: Dict[str, float],
     ):
         """
@@ -271,6 +274,11 @@ class AltlocResidueRecord(ResidueRecord):
         that conformation.
         :param altloc_ca_dists: A mapping from an a pair of altloc ids (as a joined
         string, e.g. AB) to the CA-CA distance between them.
+        :param altloc_sigmas: A mappting atom_name -> altloc_id -> sigma, where sigma is
+        the standard deviation of the atom's location in the altloc conformation.
+        :param altloc_peptide_bond_lengths: A mapping from an a pair of altloc ids
+        to\the peptide bond length between this residue and the next one with those
+        altloc ids.
         """
 
         # altloc_ids should contain all altlocs in any backbone atom of the current
@@ -290,6 +298,7 @@ class AltlocResidueRecord(ResidueRecord):
         self.altloc_angles = altloc_angles
         self.altloc_bfactors = altloc_bfactors
         self.altloc_ca_dists = altloc_ca_dists
+        self.altloc_sigmas = altloc_sigmas
         self.altloc_peptide_bond_lengths = altloc_peptide_bond_lengths
 
         super().__init__(
@@ -325,10 +334,15 @@ class AltlocResidueRecord(ResidueRecord):
             r_curr, r_prev, r_next, with_altlocs=True
         )
         altloc_bfactors: Dict[str, float] = bfactor_est.process_residue_altlocs(r_curr)
-        altloc_ca_dists = residue_altloc_ca_dists(r_curr, normalize=True)
-        altloc_peptide_bond_lengths = residue_altloc_peptide_bond_lengths(
-            r_curr, r_next, normalize=True
+        altloc_ca_dists: Dict[str, float] = residue_altloc_ca_dists(
+            r_curr, normalize=True
         )
+        altloc_sigmas: Dict[str, Dict[str, float]] = residue_altloc_sigmas(
+            r_curr, atom_names=[BACKBONE_ATOM_CA]
+        )
+        altloc_peptide_bond_lengths: Dict[
+            str, float
+        ] = residue_altloc_peptide_bond_lengths(r_curr, r_next, normalize=True)
 
         return cls(
             res_id=res_id,
@@ -341,6 +355,7 @@ class AltlocResidueRecord(ResidueRecord):
             altloc_angles=altloc_angles,
             altloc_bfactors=altloc_bfactors,
             altloc_ca_dists=altloc_ca_dists,
+            altloc_sigmas=altloc_sigmas,
             altloc_peptide_bond_lengths=altloc_peptide_bond_lengths,
         )
 
@@ -365,6 +380,10 @@ class AltlocResidueRecord(ResidueRecord):
 
         for altloc_pair_ids, ca_dist in self.altloc_ca_dists.items():
             d[f"dist_CA{_altloc_postfix(altloc_pair_ids)}"] = ca_dist
+
+        for atom_name, altloc_sigmas in self.altloc_sigmas.items():
+            for altloc_id, sigma in altloc_sigmas.items():
+                d[f"sigma_{atom_name}{_altloc_postfix(altloc_id)}"] = sigma
 
         for altloc_pair_ids, pb_len in self.altloc_peptide_bond_lengths.items():
             d[f"len_pb{_altloc_postfix(altloc_pair_ids)}"] = pb_len
