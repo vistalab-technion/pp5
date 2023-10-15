@@ -11,16 +11,17 @@ from pp5.external_dbs import unp
 from pp5.external_dbs.pdb import PDB_DOWNLOAD_SOURCES
 
 
-class TestMethods:
-    @pytest.fixture(
-        autouse=False,
-        scope="class",
-        params=[True, False],
-        ids=["with_altlocs", "no_altlocs"],
-    )
-    def with_altlocs(self, request):
-        return request.param
+@pytest.fixture(
+    autouse=False,
+    scope="class",
+    params=[True, False],
+    ids=["with_altlocs", "no_altlocs"],
+)
+def with_altlocs(request):
+    return request.param
 
+
+class TestMethods:
     @pytest.fixture(autouse=False, scope="class", params=["102L:A", "2WUR:A"])
     def prec(self, with_altlocs, request):
         pdb_id = request.param
@@ -220,8 +221,8 @@ class TestSave:
         cls.TEMP_PATH = get_tmp_path("data/prec")
 
     @pytest.mark.parametrize("pdb_id", ["2WUR:A", "102L", "5NL4:A"])
-    def test_save_roundtrip(self, pdb_id):
-        prec = ProteinRecord.from_pdb(pdb_id)
+    def test_save_roundtrip(self, pdb_id, with_altlocs):
+        prec = ProteinRecord.from_pdb(pdb_id, with_altlocs=with_altlocs)
         filepath = prec.save(out_dir=self.TEMP_PATH)
 
         with open(str(filepath), "rb") as f:
@@ -237,13 +238,14 @@ class TestCache:
 
     @pytest.mark.parametrize("pdb_id", ["1MWC:A", "4N6V:1"])
     @pytest.mark.parametrize("pdb_source", tuple(PDB_DOWNLOAD_SOURCES))
-    def test_from_pdb_with_cache(self, pdb_id, pdb_source, cache_dir):
+    def test_from_pdb_with_cache(self, pdb_id, pdb_source, cache_dir, with_altlocs):
         prec = ProteinRecord.from_pdb(
             pdb_id,
             pdb_source=pdb_source,
             cache=True,
             cache_dir=cache_dir,
             strict_unp_xref=False,
+            with_altlocs=with_altlocs,
         )
 
         filename = f"{prec.pdb_id.replace(':', '_')}-{pdb_source}.prec"
