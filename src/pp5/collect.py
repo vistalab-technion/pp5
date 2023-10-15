@@ -304,6 +304,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         prec_init_args=None,
         with_backbone: bool = False,
         with_contacts: bool = False,
+        with_altlocs: bool = False,
         out_dir: Path = pp5.out_subdir("prec-collected"),
         out_tag: Optional[str] = None,
         prec_out_dir: Path = pp5.out_subdir("prec"),
@@ -333,6 +334,8 @@ class ProteinRecordCollector(ParallelDataCollector):
         :param with_backbone: Whether to include a 'backbone' column which contain the
         backbone atom coordinates of each residue in the order N, CA, C, O.
         :param with_contacts: Whether to include tertiary contact features per residue.
+        :param with_altlocs: Whether to include alternate locations (altlocs) in the
+        output.
         :param write_csv: Whether to write the ProteinRecords to
             the prec_out_dir as CSV files.
         :param async_timeout: Timeout in seconds for each worker
@@ -398,6 +401,7 @@ class ProteinRecordCollector(ParallelDataCollector):
 
         self.with_backbone = with_backbone
         self.with_contacts = with_contacts
+        self.with_altlocs = with_altlocs
 
         self.prec_out_dir = prec_out_dir
         self.write_csv = write_csv
@@ -428,6 +432,7 @@ class ProteinRecordCollector(ParallelDataCollector):
                 csv_out_dir=self.prec_out_dir if self.write_csv else None,
                 with_backbone=self.with_backbone,
                 with_contacts=ARPEGGIO_ARGS if self.with_contacts else None,
+                with_altlocs=self.with_altlocs,
             )
             r = pool.apply_async(_collect_single_structure, args, kwds)
             async_results.append(r)
@@ -600,6 +605,7 @@ class ProteinRecordCollector(ParallelDataCollector):
                         kwds=dict(
                             with_backbone=self.with_backbone,
                             with_contacts=ARPEGGIO_ARGS if self.with_contacts else None,
+                            with_altlocs=self.with_altlocs,
                         ),
                     )
                 )
@@ -970,6 +976,7 @@ def _collect_single_structure(
     csv_tag: str = None,
     with_backbone: bool = False,
     with_contacts: Optional[Dict] = None,
+    with_altlocs: bool = False,
 ) -> List[dict]:
     """
     Downloads a single PDB entry, and creates a prec for all its chains.
@@ -984,6 +991,7 @@ def _collect_single_structure(
     :param with_contacts: Whether to run Arpeggio so that it's results are cached
     locally and also write contact features to csv. The dict contains kwargs for
     arpeggio.
+    :param with_altlocs: Whether to include alternate locations in the prec.
     :return: A list of dicts, each containing metadata about one of the collected
         chains.
     """
@@ -1038,6 +1046,7 @@ def _collect_single_structure(
                 pdb_dict=pdb_dict,
                 strict_unp_xref=False,
                 numeric_chain=nc,
+                with_altlocs=with_altlocs,
             )
 
             # Save into cache
@@ -1240,9 +1249,12 @@ def _load_prec_df_from_cache(
     pdb_source: str,
     with_backbone: bool = False,
     with_contacts: Optional[Dict] = None,
+    with_altlocs: bool = False,
 ):
     try:
-        prec = ProteinRecord.from_pdb(pdb_id, pdb_source=pdb_source, cache=True)
+        prec = ProteinRecord.from_pdb(
+            pdb_id, pdb_source=pdb_source, with_altlocs=with_altlocs, cache=True
+        )
         df = prec.to_dataframe(
             with_ids=True, with_backbone=with_backbone, with_contacts=with_contacts
         )
