@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import logging
 from math import nan
 from typing import Dict, List, Union, Optional, Sequence
 
@@ -31,6 +32,8 @@ from pp5.backbone import (
     verify_disordered_selection,
 )
 from pp5.external_dbs.pdb import PDBUnitCell
+
+_LOG = logging.getLogger(__name__)
 
 
 class Dihedral(object):
@@ -577,20 +580,35 @@ class DihedralAngleCalculator(object):
             return dihedrals
 
         # Get the ids of all altlocs in the backbone of the current residue.
-        # Here we require that these altlocs are common to all backbone atoms.
-        curr_altloc_ids = atom_altloc_ids(curr_atoms, allow_disjoint=False)
+        # Here we use the CA atom only as the representative of the backbone,
+        # since in many cases altlocs are only modeled for CA.
+        ca_altloc_ids = atom_altloc_ids(ca)
 
         # For each altloc id, set the altloc id of all atoms to the current altloc,
         # and calculate dihedral angles using the resulting atom locations. If the
         # prev/next atoms also have this id, we'll use that id with them as well.
-        for altloc_id in curr_altloc_ids:
+        for altloc_id in ca_altloc_ids:
             # Select current altloc_id for all associated atoms
             with altloc_ctx_all(atoms=all_atoms, altloc_id=altloc_id) as _all_atoms:
                 # Make sure all disordered atoms were set to the correct altloc id
                 verify_disordered_selection(all_atoms, _all_atoms, altloc_id)
 
-                # Calculate dihedral angles for this altloc
+                # Get the non-disordered atoms with the selected altloc. If the
+                # original atom was not disordered, this will be the same atom.
                 _n, _ca, _c, _c_prev, _ca_prev, _n_next = _all_atoms
+
+                # Since we use only CA to determine altloc ids we expect that the N
+                # and C have either the same altlocs or no altlocs at all. However,
+                # if they have DIFFERENT altlocs than CA, we'll get None for these:
+                if _n is None or _c is None:
+                    _LOG.warning(
+                        f"Inconsistent altloc ids for CA ({ca_altloc_ids}) "
+                        f"and N ({atom_altloc_ids(n)} or C "
+                        f"{atom_altloc_ids(c)})"
+                    )
+                    continue
+
+                # Calculate dihedral angles for this altloc
                 d: Dihedral = self.process_atoms(
                     _n, _ca, _c, _c_prev, _ca_prev, _n_next
                 )
