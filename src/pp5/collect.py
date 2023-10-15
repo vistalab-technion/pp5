@@ -601,46 +601,45 @@ class ProteinRecordCollector(ParallelDataCollector):
         LOGGER.info(f"Creating dataset file for {len(pdb_ids)} precs...")
 
         filepath = self.out_dir.joinpath(f"{self.DATASET_FILENAME}.csv")
-        n_entries = 0
 
-        # Parallelize creation of dataframes in chunks.
-        chunk_size = 128
-        for pdb_ids_chunk in more_itertools.chunked(pdb_ids, chunk_size):
-            async_results = []
-            for i, pdb_id in enumerate(pdb_ids_chunk):
-                async_results.append(
-                    pool.apply_async(
-                        _load_prec_df_from_cache,
-                        args=(pdb_id, self.pdb_source),
-                        kwds=dict(
-                            with_backbone=self.with_backbone,
-                            with_contacts=ARPEGGIO_ARGS if self.with_contacts else None,
-                            with_altlocs=self.with_altlocs,
-                        ),
-                    )
+        # Obtain dataframes for each pdb_id
+        async_results = []
+        for i, pdb_id in enumerate(pdb_ids):
+            async_results.append(
+                pool.apply_async(
+                    _load_prec_df_from_cache,
+                    args=(pdb_id, self.pdb_source),
+                    kwds=dict(
+                        with_backbone=self.with_backbone,
+                        with_contacts=ARPEGGIO_ARGS if self.with_contacts else None,
+                        with_altlocs=self.with_altlocs,
+                    ),
                 )
-
-            _, elapsed, pdb_id_dataframes = self._handle_async_results(
-                async_results,
-                collect=True,
-                flatten=False,
             )
 
-            # Writing the dataframes to a single file must be sequential
-            pdb_id_dataframes = [
-                df for df in pdb_id_dataframes if (df is not None and not df.empty)
-            ]
-            full_df = pd.concat(
-                pdb_id_dataframes, ignore_index=True, sort=False, copy=False
-            )
-            del pdb_id_dataframes
-            n_entries = len(full_df)
-            with open(str(filepath), mode="a", encoding="utf-8") as f:
-                full_df.to_csv(f, header=True, index=False, float_format="%.2f")
+        _, elapsed, pdb_id_dataframes = self._handle_async_results(
+            async_results,
+            collect=True,
+            flatten=False,
+        )
+
+        # Writing the dataframes to a single file must be sequential
+        pdb_id_dataframes = [
+            df for df in pdb_id_dataframes if (df is not None and len(df) > 0)
+        ]
+        n_result_dfs = len(pdb_id_dataframes)
+        LOGGER.info(f"Concatenating {n_result_dfs} dataframes...")
+        full_df = pd.concat(
+            pdb_id_dataframes, ignore_index=True, sort=False, copy=False
+        )
+        del pdb_id_dataframes
+        n_rows = len(full_df)
+        with open(str(filepath), mode="w", encoding="utf-8") as f:
+            full_df.to_csv(f, header=True, index=False, na_rep="")
 
         dataset_size_mb = os.path.getsize(filepath) / 1024 / 1024
-        LOGGER.info(f"Wrote {filepath} ({n_entries=}, {dataset_size_mb:.2f}MB)")
-        meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}", "n_entries": n_entries}
+        LOGGER.info(f"Wrote {filepath} ({n_rows=}, {dataset_size_mb:.2f}MB)")
+        meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}", "n_entries": n_rows}
         return meta
 
 
