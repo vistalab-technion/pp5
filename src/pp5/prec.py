@@ -50,6 +50,7 @@ from pp5.backbone import (
     BACKBONE_ATOMS,
     BACKBONE_ATOM_CA,
     BACKBONE_ATOMS_O,
+    atom_altloc_ids,
     residue_altloc_ids,
     residue_altloc_sigmas,
     residue_altloc_ca_dists,
@@ -257,7 +258,7 @@ class AltlocResidueRecord(ResidueRecord):
         name: str,
         codon_counts: Optional[Dict[str, int]],
         secondary: str,
-        altloc_ids: Sequence[str],
+        altloc_ids: Dict[str, Sequence[str]],
         altloc_angles: Dict[str, Dihedral],
         altloc_bfactors: Dict[str, float],
         altloc_ca_dists: Dict[str, float],
@@ -268,6 +269,8 @@ class AltlocResidueRecord(ResidueRecord):
         Represents a residue with (potential) alternate conformations (altlocs).
         All params as for ResidueRecord, except:
 
+        :param altloc_ids: A mapping from atom_name -> [altloc_id1, altloc_id2,...]
+        representing the altloc ids of each atom in the residue.
         :param altloc_angles: A mapping from an altloc id to a Dihedral object
         containing the dihedral angles for that conformation.
         :param altloc_bfactors: A mapping from an altloc id to the average b-factor for
@@ -280,21 +283,9 @@ class AltlocResidueRecord(ResidueRecord):
         to\the peptide bond length between this residue and the next one with those
         altloc ids.
         """
-
-        # altloc_ids should contain all altlocs in any backbone atom of the current
-        # residue
-        altloc_ids = set(altloc_ids)
-        assert NO_ALTLOC not in altloc_ids
-
-        # the angles and bfactors dicts should only contain altlocs common to all
-        # backbone atoms
-        for d in [altloc_angles, altloc_bfactors]:
-            for altloc_id in set(d.keys()) - {NO_ALTLOC}:
-                assert altloc_id in altloc_ids
-
         no_altloc_angle = altloc_angles.pop(NO_ALTLOC)
         no_altloc_bfactor = altloc_bfactors.pop(NO_ALTLOC)
-        self.altloc_ids = tuple(sorted(altloc_ids))
+        self.altloc_ids = altloc_ids
         self.altloc_angles = altloc_angles
         self.altloc_bfactors = altloc_bfactors
         self.altloc_ca_dists = altloc_ca_dists
@@ -329,7 +320,13 @@ class AltlocResidueRecord(ResidueRecord):
         res_id: str = _residue_to_res_id(r_curr)
         res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
 
-        altloc_ids = residue_altloc_ids(r_curr, allow_disjoint=True)
+        # mapping atom_name -> [altloc_id1, altloc_id2, ...]
+        altloc_ids: Dict[str, Sequence[str]] = {
+            atom_name: atom_altloc_ids(r_curr[atom_name])
+            for atom_name in BACKBONE_ATOMS
+            if atom_name in r_curr
+        }
+
         altloc_angles: Dict[str, Dihedral] = dihedral_est.process_residues(
             r_curr, r_prev, r_next, with_altlocs=True
         )
@@ -363,10 +360,11 @@ class AltlocResidueRecord(ResidueRecord):
         dihedral_args = dihedral_args or {}
         d = super().as_dict(dihedral_args)
 
-        d["altloc_ids"] = str.join(";", self.altloc_ids)
-
         def _altloc_postfix(_altloc_id: str) -> str:
             return f"_{_altloc_id}"
+
+        for atom_name, altloc_ids in self.altloc_ids.items():
+            d[f"altlocs_{atom_name}"] = str.join(";", altloc_ids)
 
         for altloc_id, altloc_angles in self.altloc_angles.items():
             d.update(
