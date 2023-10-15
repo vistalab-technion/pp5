@@ -517,6 +517,11 @@ class ProteinRecordCollector(ParallelDataCollector):
         return idx_filter
 
     def _filter_redundant_unps(self, pool: mp.Pool, df_all: pd.DataFrame) -> pd.Series:
+
+        if self.seq_similarity_thresh == 1.0:
+            LOGGER.info("Skipping sequence similarity filter...")
+            return pd.Series(data=[True] * len(df_all), index=df_all.index)
+
         # Create a similarity matrix for pairs of structures (in terms of sequence)
         all_unp_ids = tuple(sorted(set(df_all[COL_UNP_ID])))
         n_unps = len(all_unp_ids)
