@@ -617,14 +617,16 @@ class ProteinRecordCollector(ParallelDataCollector):
             )
 
             # Writing the dataframes to a single file must be sequential
+            pdb_id_dataframes = [
+                df for df in pdb_id_dataframes if (df is not None and not df.empty)
+            ]
+            full_df = pd.concat(
+                pdb_id_dataframes, ignore_index=True, sort=False, copy=False
+            )
+            del pdb_id_dataframes
+            n_entries = len(full_df)
             with open(str(filepath), mode="a", encoding="utf-8") as f:
-                for df in pdb_id_dataframes:
-                    if df is None or df.empty:
-                        continue
-                    df.to_csv(
-                        f, header=n_entries == 0, index=False, float_format="%.2f"
-                    )
-                    n_entries += len(df)
+                full_df.to_csv(f, header=True, index=False, float_format="%.2f")
 
         dataset_size_mb = os.path.getsize(filepath) / 1024 / 1024
         LOGGER.info(f"Wrote {filepath} ({n_entries=}, {dataset_size_mb:.2f}MB)")
