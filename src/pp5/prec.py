@@ -301,7 +301,7 @@ class AltlocResidueRecord(ResidueRecord):
             angles=no_altloc_angle,
             bfactor=no_altloc_bfactor,
             secondary=secondary,
-            num_altlocs=len(self.altloc_ids),
+            num_altlocs=len(set(chain(*altloc_ids.values()))),
         )
 
     @classmethod
