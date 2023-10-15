@@ -30,7 +30,7 @@ def atom_location_sigma(atom: Atom) -> float:
     based on its isotropic B-factor.
 
     This is based on
-        B = 8*pi^2 * U
+        B = 8*pi^2 * U^2
     where B is the isotropic B-factor and U is the mean-square displacement (or
     variance) of the atom location, in units of A^2.
 
@@ -51,7 +51,7 @@ def residue_backbone_atoms(res: Residue) -> Sequence[Atom]:
 
 
 def atom_altloc_ids(
-    atoms: Sequence[AltlocAtom],
+    *atoms: Sequence[AltlocAtom],
     allow_disjoint: bool = False,
     include_none: bool = False,
 ) -> Sequence[str]:
@@ -103,7 +103,7 @@ def residue_altloc_ids(
     """
     atoms = tuple(res.get_atoms() if not backbone_only else residue_backbone_atoms(res))
     return atom_altloc_ids(
-        atoms, allow_disjoint=allow_disjoint, include_none=include_none
+        *atoms, allow_disjoint=allow_disjoint, include_none=include_none
     )
 
 
@@ -230,6 +230,31 @@ def verify_disordered_selection(
             raise ValueError(f"Unexpected atom type for {atom}")
 
 
+def residue_altloc_sigmas(
+    res: Residue, atom_names: Sequence[str] = BACKBONE_ATOMS
+) -> Dict[str, Dict[str, float]]:
+    """
+    Calculates the standard deviation (sigma) in Angstroms, of the location of each
+    atom per altloc in a residue.
+
+    :param res:
+    :param atom_names:
+    :return: A nested dict, mapping atom_name -> altloc_id -> sigma.
+    """
+    assert atom_names
+
+    sigmas: Dict[str, Dict[str, float]] = {atom_name: {} for atom_name in atom_names}
+    for atom_name in atom_names:
+        if atom_name not in res:
+            continue
+        atom: AltlocAtom = res[atom_name]
+        for altloc_id in atom_altloc_ids(atom):
+            with altloc_ctx(atom, altloc_id) as _atom:
+                sigmas[atom_name][altloc_id] = atom_location_sigma(_atom)
+
+    return sigmas
+
+
 def residue_altloc_ca_dists(res: Residue, normalize: bool = False) -> Dict[str, float]:
     """
     Calculates the pairwise distances between CA atoms in a residue, for each altloc.
@@ -244,16 +269,25 @@ def residue_altloc_ca_dists(res: Residue, normalize: bool = False) -> Dict[str, 
     :return: A dictionary mapping two joined altloc ids (e.g. "AB") to the pairwise
         distances between CA in altlocs A and B.
     """
-    ca_locations: Dict[str, np.ndarray] = {}
-    sigmas: Dict[str, float] = {}
-    altloc_ids = residue_altloc_ids(res, backbone_only=True)
 
+    sigmas: Optional[Dict[str, float]]  # altloc_id -> sigma
+    if normalize:
+        sigmas = residue_altloc_sigmas(res, atom_names=[BACKBONE_ATOM_CA])[
+            BACKBONE_ATOM_CA
+        ]
+        altloc_ids = sigmas.keys()
+    else:
+        sigmas = None
+        altloc_ids = atom_altloc_ids(res[BACKBONE_ATOM_CA])
+
+    # Get the location of each CA atom per altloc that exists for the CA atom.
+    ca_locations: Dict[str, np.ndarray] = {}  # altloc_id -> location
     for altloc_id in altloc_ids:
         ca: AltlocAtom = res[BACKBONE_ATOM_CA]
         with altloc_ctx(ca, altloc_id) as _ca:
             ca_locations[altloc_id] = _ca.get_coord()
-            sigmas[altloc_id] = atom_location_sigma(_ca)
 
+    # Calculate the pairwise distances between CA atoms of altlocs.
     ca_dists: Dict[str, np.ndarray] = {}
     for altloc_id1, altloc_id2 in itertools.combinations(ca_locations.keys(), 2):
         dist = np.linalg.norm(ca_locations[altloc_id1] - ca_locations[altloc_id2])
