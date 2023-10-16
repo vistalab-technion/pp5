@@ -310,7 +310,8 @@ class ProteinRecordCollector(ParallelDataCollector):
         out_dir: Path = pp5.out_subdir("prec-collected"),
         out_tag: Optional[str] = None,
         prec_out_dir: Path = pp5.out_subdir("prec"),
-        write_csv=True,
+        write_csv: bool = False,
+        write_zip: bool = False,
         async_timeout=600,
     ):
         """
@@ -348,7 +349,7 @@ class ProteinRecordCollector(ParallelDataCollector):
             async_timeout=async_timeout,
             out_dir=out_dir,
             tag=out_tag,
-            create_zip=False,
+            create_zip=write_zip,
             pdb_source=pdb_source,
         )
         if resolution is None:
@@ -450,7 +451,9 @@ class ProteinRecordCollector(ParallelDataCollector):
         df_all = pd.DataFrame(pdb_id_data)
         n_collected = len(df_all)
 
-        _write_df_csv(df_all, self.out_dir, self.ALL_STRUCTS_FILENAME)
+        self._out_filepaths.append(
+            _write_df_csv(df_all, self.out_dir, self.ALL_STRUCTS_FILENAME)
+        )
 
         meta["n_collected"] = n_collected
         LOGGER.info(
@@ -494,7 +497,9 @@ class ProteinRecordCollector(ParallelDataCollector):
 
         # Write the filtered structures
         df_filtered = df_all[filter_idx]
-        _write_df_csv(df_filtered, self.out_dir, self.FILTERED_STRUCTS_FILENAME)
+        self._out_filepaths.append(
+            _write_df_csv(df_filtered, self.out_dir, self.FILTERED_STRUCTS_FILENAME)
+        )
 
         # Write the rejected structures and specify which filter rejected them
         df_rejected = df_all
@@ -502,7 +507,9 @@ class ProteinRecordCollector(ParallelDataCollector):
         for filter_name, rejected_idx in rejected_idxs.items():
             df_rejected.loc[rejected_idx, COL_REJECTED_BY] = filter_name
         df_rejected = df_rejected[~filter_idx]
-        _write_df_csv(df_rejected, self.out_dir, self.REJECTED_STRUCTS_FILENAME)
+        self._out_filepaths.append(
+            _write_df_csv(df_rejected, self.out_dir, self.REJECTED_STRUCTS_FILENAME)
+        )
 
         return {
             "n_rejected": rejected_counts,
@@ -555,8 +562,10 @@ class ProteinRecordCollector(ParallelDataCollector):
         df_blast_scores = pd.DataFrame(
             data=blast_matrix, index=all_unp_ids, columns=all_unp_ids
         )
-        _write_df_csv(
-            df_blast_scores, self.out_dir, self.BLAST_SCORES_FILENAME, index=True
+        self._out_filepaths.append(
+            _write_df_csv(
+                df_blast_scores, self.out_dir, self.BLAST_SCORES_FILENAME, index=True
+            )
         )
 
         # Filter out similar sequences
@@ -636,6 +645,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         n_rows = len(full_df)
         with open(str(filepath), mode="w", encoding="utf-8") as f:
             full_df.to_csv(f, header=True, index=False, na_rep="")
+        self._out_filepaths.append(filepath)
 
         dataset_size_mb = os.path.getsize(filepath) / 1024 / 1024
         LOGGER.info(f"Wrote {filepath} ({n_rows=}, {dataset_size_mb:.2f}MB)")
@@ -1094,6 +1104,7 @@ def _collect_single_structure(
                     with_backbone=with_backbone,
                     with_contacts=with_contacts,
                 )
+
         except Exception as e:
             LOGGER.warning(
                 f"Failed to create ProteinRecord for "
