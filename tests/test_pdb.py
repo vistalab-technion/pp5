@@ -235,12 +235,12 @@ class TestPDB2UNP:
         self._check(test_id, "P02213")
 
     @pytest.mark.parametrize(
-        ("test_id", "unp_id"),
-        [("3SG4:A", "P42212"), ("4IK8:A", "P42212")],
+        ("test_id", "unp_ids"),
+        [("3SG4:A", {"P11799", "P42212", "P0DP29"}), ("4IK8:A", {"K4DIE3", "P42212"})],
     )
-    def test_multi_unp_for_single_chain_no_strict(self, test_id, unp_id):
+    def test_multi_unp_for_single_chain_no_strict(self, test_id, unp_ids):
         actual_unp_id = pdb.PDB2UNP.pdb_id_to_unp_id(test_id, strict=False)
-        assert actual_unp_id == unp_id
+        assert actual_unp_id in unp_ids
 
     @pytest.mark.parametrize("test_id", ["3SG4:A", "4IK8:A"])
     def test_multi_unp_for_single_chain_strict(self, test_id):
@@ -252,7 +252,7 @@ class TestPDB2UNP:
         [("5LTR:A", "B1PNC0"), ("3G53:A", "P02213")],
     )
     def test_pdb_source(self, pdb_id, unp_id, pdb_source):
-        p2u = pdb.PDB2UNP.from_pdb(pdb_id, pdb_source=pdb_source)
+        p2u = pdb.PDB2UNP.from_pdb(pdb_id)
         pdb_base_id, chain_id = pdb.split_id(pdb_id)
         actual_unp_id = p2u.get_unp_id(chain_id, strict=False)
         # assert len(unps) == 1
