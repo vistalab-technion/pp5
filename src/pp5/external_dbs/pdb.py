@@ -9,7 +9,7 @@ from math import degrees as deg
 from math import radians as rad
 from typing import Any, Dict, List, Type, Tuple, Union, Optional, Sequence
 from pathlib import Path
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 
 import numpy as np
 from Bio import PDB as PDB
@@ -109,10 +109,10 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB) -> Pa
             if not entity_id:
                 raise ValueError(f"Chain or entity must be specified for {pdb_source=}")
 
-            # Obtain uniprot ids from entity
-            entity_chains: dict = PDB2UNP.query_all_uniprot_ids(
-                pdb_id, map_from_entities=True
-            ).get(entity_id, {})
+            # Obtain uniprot ids from entity (entity -> chain -> unp ids)
+            entity_chains: dict = PDB2UNP.query_entity_uniprot_ids(pdb_id).get(
+                entity_id, {}
+            )
             if not entity_chains:
                 raise ValueError(f"Failed to obtain chain for {pdb_id}:{entity_id}")
             chain_id = [*entity_chains.keys()][0]  # arbitrary chain from the entity
@@ -125,7 +125,7 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB) -> Pa
             return filename
 
         # Get uniprot id for this chain (only if we didn't get them from entity)
-        unp_ids = unp_ids or PDB2UNP.query_all_uniprot_ids(pdb_id).get(chain_id, [])
+        unp_ids = unp_ids or PDB2UNP.query_chain_uniprot_ids(pdb_id).get(chain_id, [])
         if len(unp_ids) != 1:
             raise ValueError(
                 f"Can't determine unique uniprot id for {pdb_id}:{chain_id}, "
@@ -253,42 +253,19 @@ class PDB2UNP(JSONCacheableMixin, object):
     to that chain, and their locations in the PDB sequence.
     """
 
-    def __init__(self, pdb_id: str, pdb_source: str = PDB_RCSB, struct_d: dict = None):
+    def __init__(self, pdb_id: str):
         """
         Initialize a PDB to Uniprot mapping.
-        :param pdb_id: PDB ID, without chain. Chain will be ignored if
-        specified.
-        :param pdb_source: Source from which to obtain the pdb file.
-        :param struct_d: Optional parsed PDB file dict.
+        :param pdb_id: PDB ID, without chain. Chain will be ignored if specified.
         """
         pdb_base_id, _ = split_id(pdb_id)
-        struct_d = pdb_dict(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
 
         # Get all chain Uniprot IDs by querying PDB. This gives us the most
-        # up to date IDs, but it doesn't provide alignment info between the
+        # up-to-date IDs and provides the alignment info between the
         # PDB structure's sequence and the Uniprot xref sequence.
-        # Map is chain -> [unp1, unp2, ...]
-        chain_to_unp_ids = self.query_all_uniprot_ids(pdb_id)
-
-        # Get Uniprot cross-refs from the PDB file. Map is
-        # chain -> unp -> [ (s1,e1), (s2, e2), ... ]
-        chain_to_unp_xrefs = self.parse_all_uniprot_xrefs(pdb_id, pdb_source, struct_d)
-
-        # Make sure all Uniprot IDs we got from the PDB API exist in our
-        # final dict and appear in the order we got them from the PDB API.
-        # If not, we need to add them. For now we'll add
-        # these missing Uniprot IDs with an empty list of ranges.
-        # It's possible to query PDB for these ranges, see here:
-        # https://www.rcsb.org/pdb/software/rest.do#dasfeatures
-        for chain, unp_ids in chain_to_unp_ids.items():
-            d = OrderedDict()
-            curr_chain_xrefs = chain_to_unp_xrefs.setdefault(chain, d)
-            for unp_id in reversed(unp_ids):
-                curr_chain_xrefs.setdefault(unp_id, [])
-                curr_chain_xrefs.move_to_end(unp_id, last=False)
-
+        # Map is chain -> unp -> [ (s1,e1), (s2, e2), ... ]
+        self.chain_to_unp_xrefs = self.query_chain_uniprot_id_alignments(pdb_id)
         self.pdb_id = pdb_base_id
-        self.chain_to_unp_xrefs = chain_to_unp_xrefs
 
     def get_unp_id(self, chain_id: str, strict=True) -> str:
         """
@@ -372,21 +349,89 @@ class PDB2UNP(JSONCacheableMixin, object):
     def __repr__(self):
         return f"PDB2UNP({self.pdb_id})={self.get_chain_to_unp_ids()}"
 
-    @staticmethod
-    def query_all_uniprot_ids(
-        pdb_id: str, map_from_entities: bool = False
-    ) -> Union[Dict[str, List[str]], Dict[str, Dict[str, List[str]]]]:
+    @classmethod
+    def query_chain_uniprot_ids(cls, pdb_id: str) -> Dict[str, Sequence[str]]:
         """
-        Retrieves all Uniprot IDs associated with a PDB structure by querying
-        the PDB database. Returns a map from either chain id or entity id to the
-        associated unp ids.
+        Retrieves all Uniprot IDs associated with a PDB structure chains by querying
+        the PDB database.
 
         :param pdb_id: The PDB ID to search for. Chain or entity will be ignored.
-        :param map_from_entities: Whether to return a map from chain ids (False) or
-        from entity ids (True).
-        :return: if map_from_entities=False, mapping from each chain id in
-        the given structure to a list of associated Uniprot IDs; otherwise a mapping
-        from entity id to a mapping from chain to a list of uniprot ids.
+        :return: a map: chain -> [unp1, unp2, ...]
+        where unp1, unp2, ... are Uniprot IDs associated with the chain.
+        :raises pdb_api.PDBAPIException: If there's a problem obtaining the data.
+        """
+
+        # entity -> chain -> unp -> [ (s1,e1), ... ]
+        entity_map = cls.query_entity_uniprot_id_alignments(pdb_id)
+
+        all_chain_map = {}
+        for entity_id, chain_map in entity_map.items():
+            for chain_id, unp_map in chain_map.items():
+                # chain -> [unp1, unp2, ...]
+                all_chain_map[chain_id] = tuple(unp_map.keys())
+
+        return all_chain_map
+
+    @classmethod
+    def query_chain_uniprot_id_alignments(
+        cls, pdb_id: str
+    ) -> Dict[str, Dict[str, List[Tuple[int, int]]]]:
+        """
+        Retrieves all Uniprot IDs associated with a PDB structure chains by querying
+        the PDB database.
+
+        :param pdb_id: The PDB ID to search for. Chain or entity will be ignored.
+        :return: a map: chain -> unp -> [ (s1,e1), ... ]
+        where (s1,e1) are alignment start,end indices between the UNP and PDB sequences.
+        :raises pdb_api.PDBAPIException: If there's a problem obtaining the data.
+        """
+        # entity -> chain -> unp -> [ (s1,e1), ... ]
+        entity_map = cls.query_entity_uniprot_id_alignments(pdb_id)
+
+        all_chain_map = {}
+        for entity_id, chain_map in entity_map.items():
+            for chain_id, unp_map in chain_map.items():
+                # chain -> unp -> [ (s1,e1), ... ]
+                all_chain_map[chain_id] = unp_map
+
+        return all_chain_map
+
+    @classmethod
+    def query_entity_uniprot_ids(
+        cls, pdb_id: str
+    ) -> Dict[str, Dict[str, Sequence[str]]]:
+        """
+        Retrieves all Uniprot IDs associated with a PDB structure entities by querying
+        the PDB database.
+
+        :param pdb_id: The PDB ID to search for. Chain or entity will be ignored.
+        :return: a map: entity -> chain ->[unp1, unp2, ...]
+        where unp1, unp2, ... are Uniprot IDs associated with the entity.
+        :raises pdb_api.PDBAPIException: If there's a problem obtaining the data.
+        """
+
+        # entity -> chain -> unp -> [ (s1,e1), ... ]
+        entity_map = cls.query_entity_uniprot_id_alignments(pdb_id)
+
+        new_entity_map = defaultdict(dict)
+        for entity_id, chain_map in entity_map.items():
+            for chain_id, unp_map in chain_map.items():
+                # entity -> chain -> [unp1, unp2, ...]
+                new_entity_map[entity_id][chain_id] = tuple(unp_map.keys())
+
+        return dict(new_entity_map)
+
+    @classmethod
+    def query_entity_uniprot_id_alignments(
+        cls, pdb_id: str
+    ) -> Dict[str, Dict[str, Dict[str, List[Tuple[int, int]]]]]:
+        """
+        Retrieves all Uniprot IDs associated with a PDB structure entities by querying
+        the PDB database.
+
+        :param pdb_id: The PDB ID to search for. Chain or entity will be ignored.
+        :return: a map: entity -> chain -> unp -> [ (s1,e1), ...]
+        where (s1,e1) are alignment start,end indices between the UNP and PDB sequences.
         :raises pdb_api.PDBAPIException: If there's a problem obtaining the data.
         """
         map_to_unp_ids = {}
@@ -410,90 +455,38 @@ class PDB2UNP(JSONCacheableMixin, object):
             entity_chains = entity_containers.get("asym_ids", [])
             entity_unp_ids = entity_containers.get("uniprot_ids", [])
 
-            if map_from_entities:
-                map_to_unp_ids[entity_id] = {
-                    chain_id: entity_unp_ids for chain_id in entity_chains
-                }
-            else:
-                # Save the mapping from each chain to these uniprot IDs.
-                for chain_id in entity_chains:
-                    map_to_unp_ids[chain_id] = entity_unp_ids
+            unp_alignments: Dict[str, List[Tuple[int, int]]] = {}
+            for alignment_entry in entity_data.get("rcsb_polymer_entity_align", []):
+                if alignment_entry["reference_database_name"].lower() != "uniprot":
+                    continue
+
+                unp_id = alignment_entry["reference_database_accession"]
+                if unp_id not in entity_unp_ids:
+                    continue
+
+                unp_alignments[unp_id] = []
+                for alignment_region in alignment_entry["aligned_regions"]:
+                    align_start = alignment_region["entity_beg_seq_id"]
+                    align_end = align_start + alignment_region["length"] - 1
+                    unp_alignments[unp_id].append((align_start, align_end))
+
+            map_to_unp_ids[entity_id] = {
+                chain_id: unp_alignments for chain_id in entity_chains
+            }
 
         return map_to_unp_ids
-
-    @staticmethod
-    def parse_all_uniprot_xrefs(
-        pdb_id: str, pdb_source: str = PDB_RCSB, struct_d: dict = None
-    ) -> Dict[str, Dict[str, List[tuple]]]:
-        """
-        Parses the Uniprot cross references and sequence ranges from a PDB
-        file of a given PDB ID.
-        :param pdb_id: The PDB ID.
-        :param pdb_source: Source from which to obtain the pdb file.
-        :param struct_d: Optional parsed PDB file.
-        :return: Uniprot cross-refs from the PDB file. Mapping is
-        chain -> unp -> [ (s1,e1), (s2, e2), ... ]
-        """
-
-        pdb_base_id, _ = split_id(pdb_id)
-        struct_d = pdb_dict(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
-
-        # Go over referenced DBs and take all uniprot IDs
-        unp_ids = set()
-        if "_struct_ref.db_name" in struct_d:
-            for i, db_name in enumerate(struct_d["_struct_ref.db_name"]):
-                if db_name.lower() == "unp":
-                    unp_ids.add(struct_d["_struct_ref.pdbx_db_accession"][i])
-
-        # Get Uniprot cross-refs from the PDB file. Map is
-        # chain -> unp -> [ (s1,e1), (s2, e2), ... ]
-        chain_to_unp_xrefs: Dict[str, Dict[str, List[tuple]]] = {}
-
-        if not unp_ids or "_struct_ref_seq.pdbx_db_accession" not in struct_d:
-            return chain_to_unp_xrefs
-
-        for i, curr_id in enumerate(struct_d["_struct_ref_seq.pdbx_db_accession"]):
-            curr_id = curr_id.upper()
-
-            # In case the xref DB id is not from Uniprot
-            if curr_id not in unp_ids:
-                continue
-
-            if "_struct_ref_seq.pdbx_strand_id" not in struct_d:
-                continue
-
-            curr_chain = struct_d["_struct_ref_seq.pdbx_strand_id"][i].upper()
-
-            d = OrderedDict()
-            curr_chain_xrefs = chain_to_unp_xrefs.setdefault(curr_chain, d)
-            curr_chain_unp_ranges = curr_chain_xrefs.setdefault(curr_id, [])
-
-            if (
-                "_struct_ref_seq.seq_align_beg" not in struct_d
-                or "_struct_ref_seq.seq_align_end" not in struct_d
-            ):
-                continue
-
-            ref_start = int(struct_d["_struct_ref_seq.seq_align_beg"][i])
-            ref_end = int(struct_d["_struct_ref_seq.seq_align_end"][i])
-            curr_chain_unp_ranges.append((ref_start, ref_end))
-
-        return chain_to_unp_xrefs
 
     @classmethod
     def pdb_id_to_unp_id(
         cls,
         pdb_id: str,
-        pdb_source: str = PDB_RCSB,
         strict=True,
         cache=False,
-        struct_d: dict = None,
     ) -> str:
         """
         Given a PDB ID, returns a single Uniprot id for it.
         :param pdb_id: PDB ID, with optional chain. If provided chain will
         be used.
-        :param pdb_source: Source from which to obtain the pdb file.
         :param cache: Whether to use cached mapping.
         :param strict: Whether to raise an error (True) or just warn (False)
         if the PDB ID cannot be uniquely mapped to a single Uniprot ID.
@@ -501,11 +494,10 @@ class PDB2UNP(JSONCacheableMixin, object):
         different Uniprot IDs for different chains (e.g. 4HHB); (2) Chain was
         specified but there are multiple Uniprot IDs for the chain
         (chimeric entry, e.g. 3SG4:A).
-        :param struct_d: Optional parsed PDB file.
         :return: A Uniprot ID.
         """
         pdb_base_id, chain_id = split_id(pdb_id)
-        pdb2unp = cls.from_pdb(pdb_id, pdb_source, cache=cache, struct_d=struct_d)
+        pdb2unp = cls.from_pdb(pdb_id, cache=cache)
 
         all_unp_ids = pdb2unp.get_all_unp_ids()
         if not all_unp_ids:
@@ -529,15 +521,11 @@ class PDB2UNP(JSONCacheableMixin, object):
         return pdb2unp.get_unp_id(chain_id, strict=strict)
 
     @classmethod
-    def from_pdb(
-        cls, pdb_id: str, pdb_source: str = PDB_RCSB, cache=False, struct_d: dict = None
-    ) -> PDB2UNP:
+    def from_pdb(cls, pdb_id: str, cache=False) -> PDB2UNP:
         """
         Create a PDB2UNP mapping from a given PDB ID.
         :param pdb_id: The PDB ID to map for. Chain will be ignored if present.
-        :param pdb_source: Source from which to obtain the pdb file.
         :param cache: Whether to load a cached mapping if available.
-        :param struct_d: Optional parsed PDB file.
         :return: A PDB2UNP mapping object.
         """
         pdb_base_id, _ = split_id(pdb_id)
@@ -547,7 +535,7 @@ class PDB2UNP(JSONCacheableMixin, object):
             if pdb2unp is not None:
                 return pdb2unp
 
-        pdb2unp = cls(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
+        pdb2unp = cls(pdb_id)
         pdb2unp.save()
         return pdb2unp
 

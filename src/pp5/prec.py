@@ -559,11 +559,7 @@ class ProteinRecord(object):
                 )
 
             unp_id = pdb.PDB2UNP.pdb_id_to_unp_id(
-                pdb_id,
-                pdb_source=pdb_source,
-                strict=strict_pdb_xref,
-                cache=True,
-                struct_d=pdb_dict,
+                pdb_id, strict=strict_pdb_xref, cache=cache
             )
 
             prec = cls(
