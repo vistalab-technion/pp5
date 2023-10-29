@@ -455,16 +455,17 @@ class PDB2UNP(JSONCacheableMixin, object):
             entity_chains = entity_containers.get("asym_ids", [])
             entity_unp_ids = entity_containers.get("uniprot_ids", [])
 
-            unp_alignments: Dict[str, List[Tuple[int, int]]] = {}
+            unp_alignments: Dict[str, List[Tuple[int, int]]] = {
+                unp_id: [] for unp_id in entity_unp_ids
+            }
             for alignment_entry in entity_data.get("rcsb_polymer_entity_align", []):
                 if alignment_entry["reference_database_name"].lower() != "uniprot":
                     continue
 
                 unp_id = alignment_entry["reference_database_accession"]
-                if unp_id not in entity_unp_ids:
+                if unp_id not in unp_alignments:
                     continue
 
-                unp_alignments[unp_id] = []
                 for alignment_region in alignment_entry["aligned_regions"]:
                     align_start = alignment_region["entity_beg_seq_id"]
                     align_end = align_start + alignment_region["length"] - 1
