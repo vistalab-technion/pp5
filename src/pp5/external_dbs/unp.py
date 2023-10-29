@@ -2,7 +2,7 @@ import shutil
 import logging
 import os.path
 from io import StringIO
-from typing import List, Union, Iterable, NamedTuple
+from typing import List, Union, Iterable, Sequence, NamedTuple
 from pathlib import Path
 
 import requests
@@ -29,20 +29,22 @@ def unp_api_metadata(unp_id: str) -> dict:
     return response.json()
 
 
-def replacement_ids(unp_id: str):
+def unp_replacement_ids(unp_id: str, raise_on_missing: bool = False) -> Sequence[str]:
     """
     Sometimes a uniprot ID is not valid and there are replacement ids for it.
     This method retrieves them.
     :param unp_id: The id to find a replacement for.
+    :param raise_on_missing: Whether to raise an exception if no replacement is found.
     :return: A list of replacement ids.
     """
     metadata = unp_api_metadata(unp_id)
     inactive_reason = metadata.get("inactiveReason", {})
     ids = inactive_reason.get("mergeDemergeTo", [])
     if not ids:
-        raise ValueError(f"UNP id {unp_id} has no replacements")
+        if raise_on_missing:
+            raise ValueError(f"UNP id {unp_id} has no replacements")
 
-    return ids
+    return tuple(ids)
 
 
 def unp_download(unp_id: str, unp_dir=UNP_DIR) -> Path:
@@ -56,7 +58,7 @@ def unp_download(unp_id: str, unp_dir=UNP_DIR) -> Path:
     # Zero-length output without HTTP error:
     # We assume this uniprot ID was replaced by a newer one, and we try to find a
     # replacement uniprot id.
-    new_unp_id = replacement_ids(unp_id)[0]
+    new_unp_id = unp_replacement_ids(unp_id, raise_on_missing=True)[0]
     LOGGER.warning(f"UNP id {unp_id} replaced by {new_unp_id}")
     new_filename = unp_download(new_unp_id, unp_dir)
     filename.unlink()
