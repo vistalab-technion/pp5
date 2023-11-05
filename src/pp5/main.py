@@ -180,18 +180,26 @@ def _parse_cli():
     _, init_args = _generate_cli_from_func(
         ProteinRecord.__init__, skip=["unp_id", "pdb_dict", "numeric_chain"]
     )
+    _, df_args = _generate_cli_from_func(ProteinRecord.to_dataframe)
     _, csv_args = _generate_cli_from_func(ProteinRecord.to_csv)
 
-    def _handle_prec(args=args, init_args=init_args, csv_args=csv_args, **parsed_args):
+    def _handle_prec(
+        args=args,
+        init_args=init_args,
+        df_args=df_args,
+        csv_args=csv_args,
+        **parsed_args,
+    ):
         kw1 = {k: parsed_args[k] for k in _merge_dicts(args, init_args)}
         prec = ProteinRecord.from_pdb(**kw1)
 
+        csv_args = {**df_args, **csv_args}
         kw2 = {k: parsed_args[k] for k in csv_args}
         prec.to_csv(**kw2)
 
     sp_prec = sp.add_parser("prec", help=desc, formatter_class=hf)
     sp_prec.set_defaults(handler=_handle_prec)
-    for _, arg_dict in _merge_dicts(args, init_args, csv_args).items():
+    for _, arg_dict in _merge_dicts(args, init_args, csv_args, df_args).items():
         arg_dict = arg_dict.copy()
         names = arg_dict.pop("names")
         sp_prec.add_argument(*names, **arg_dict)
