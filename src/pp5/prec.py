@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import math
 import pickle
+import string
 import logging
 import warnings
 from typing import (
@@ -277,10 +278,10 @@ class AltlocResidueRecord(ResidueRecord):
         that conformation.
         :param altloc_ca_dists: A mapping from an a pair of altloc ids (as a joined
         string, e.g. AB) to the CA-CA distance between them.
-        :param altloc_sigmas: A mappting atom_name -> altloc_id -> sigma, where sigma is
+        :param altloc_sigmas: A mapping atom_name -> altloc_id -> sigma, where sigma is
         the standard deviation of the atom's location in the altloc conformation.
         :param altloc_peptide_bond_lengths: A mapping from an a pair of altloc ids
-        to\the peptide bond length between this residue and the next one with those
+        to the peptide bond length between this residue and the next one with those
         altloc ids.
         """
         no_altloc_angle = altloc_angles.pop(NO_ALTLOC)
@@ -356,35 +357,86 @@ class AltlocResidueRecord(ResidueRecord):
             altloc_peptide_bond_lengths=altloc_peptide_bond_lengths,
         )
 
-    def as_dict(self, dihedral_args: Dict[str, Any] = None):
+    def as_dict(
+        self, dihedral_args: Dict[str, Any] = None, map_altloc_ids: bool = True
+    ):
         dihedral_args = dihedral_args or {}
         d = super().as_dict(dihedral_args)
+
+        # Normalize altloc ids to be in the range [A, Z] and always start from A.
+        # Map from original altloc to new altloc id
+        _new_altloc_ids = list(reversed(string.ascii_uppercase))
+        _altloc_map_orig_new = {NO_ALTLOC: NO_ALTLOC}
+
+        def _populate_altloc_map(_orig_altloc_id: str) -> str:
+            if _orig_altloc_id not in _altloc_map_orig_new:
+                _altloc_map_orig_new[_orig_altloc_id] = (
+                    _new_altloc_ids.pop() if map_altloc_ids else _orig_altloc_id
+                )
+            return _altloc_map_orig_new[_orig_altloc_id]
 
         def _altloc_postfix(_altloc_id: str) -> str:
             return f"_{_altloc_id}"
 
+        def _map_altloc(_altloc_id: str) -> str:
+            """
+            X -> A
+            """
+            return _altloc_map_orig_new.get(_altloc_id, _altloc_id)
+
+        def _map_altloc_pair(_altloc_pair_ids) -> str:
+            """
+            XY -> AB
+            XY_norm -> AB_norm
+            """
+            _altloc_pair_ids, *_suffix = _altloc_pair_ids.split("_")
+            _altloc_pair_ids = str.join("", map(_map_altloc, _altloc_pair_ids))
+            if _suffix:
+                return str.join("_", [_altloc_pair_ids, *_suffix])
+            else:
+                return _altloc_pair_ids
+
+        # Map in current AA
+        for _, orig_altloc_ids in self.altloc_ids.items():
+            for orig_altloc_id in orig_altloc_ids:
+                _populate_altloc_map(orig_altloc_id)
+
+        # Map in next AA
+        for altloc_pair_ids, _ in self.altloc_peptide_bond_lengths.items():
+            orig_altloc_pair_ids, *_suffix = altloc_pair_ids.split("_")
+            for orig_altloc_id in orig_altloc_pair_ids:
+                _populate_altloc_map(orig_altloc_id)
+
         for atom_name, altloc_ids in self.altloc_ids.items():
-            d[f"altlocs_{atom_name}"] = str.join(";", altloc_ids)
+            # Write both the original altloc id and the new one for context,
+            # if they're different.
+            mapped_altloc_ids = [
+                orig_altloc_id
+                if _map_altloc(orig_altloc_id) == orig_altloc_id
+                else f"{_map_altloc(orig_altloc_id)}({orig_altloc_id})"
+                for orig_altloc_id in altloc_ids
+            ]
+            d[f"altlocs_{atom_name}"] = str.join(";", mapped_altloc_ids)
 
         for altloc_id, altloc_angles in self.altloc_angles.items():
             d.update(
                 altloc_angles.as_dict(
-                    **dihedral_args, postfix=_altloc_postfix(altloc_id)
+                    **dihedral_args, postfix=_altloc_postfix(_map_altloc(altloc_id))
                 )
             )
 
         for altloc_id, altloc_bfactor in self.altloc_bfactors.items():
-            d[f"bfactor{_altloc_postfix(altloc_id)}"] = altloc_bfactor
+            d[f"bfactor{_altloc_postfix(_map_altloc(altloc_id))}"] = altloc_bfactor
 
         for altloc_pair_ids, ca_dist in self.altloc_ca_dists.items():
-            d[f"dist_CA{_altloc_postfix(altloc_pair_ids)}"] = ca_dist
+            d[f"dist_CA{_altloc_postfix(_map_altloc_pair(altloc_pair_ids))}"] = ca_dist
 
         for atom_name, altloc_sigmas in self.altloc_sigmas.items():
             for altloc_id, sigma in altloc_sigmas.items():
-                d[f"sigma_{atom_name}{_altloc_postfix(altloc_id)}"] = sigma
+                d[f"sigma_{atom_name}{_altloc_postfix(_map_altloc(altloc_id))}"] = sigma
 
         for altloc_pair_ids, pb_len in self.altloc_peptide_bond_lengths.items():
-            d[f"len_pb{_altloc_postfix(altloc_pair_ids)}"] = pb_len
+            d[f"len_pb{_altloc_postfix(_map_altloc_pair(altloc_pair_ids))}"] = pb_len
 
         return d
 
