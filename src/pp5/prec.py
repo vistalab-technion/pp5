@@ -250,6 +250,72 @@ class ResidueRecord(object):
         return True
 
 
+class AltlocNameMap(dict):
+    """
+    Normalizes altloc ids to be in the range [A, Z] and always start from A.
+    Maps from original altloc to new altloc id.
+    """
+
+    def __init__(self, map_altloc_ids: bool = True):
+        """
+        :param map_altloc_ids: Whether to map altloc ids.
+        If False, then this class is a no-op: maps every altloc to itself.
+        """
+        self._new_altloc_ids = list(reversed(string.ascii_uppercase))
+        self._should_map_altloc_ids = map_altloc_ids
+        super().__init__({NO_ALTLOC: NO_ALTLOC})
+
+    def add(self, orig_altloc_id: str) -> str:
+        """
+        Adds a new altloc id to the map.
+        A new altloc id is chosen from the sequence A-Z and the original will be
+        mapped to the new.
+        :param orig_altloc_id: The original altloc id.
+        :return: The new altloc id.
+        """
+        if orig_altloc_id not in self:
+            super().__setitem__(
+                orig_altloc_id,
+                (
+                    self._new_altloc_ids.pop()
+                    if self._should_map_altloc_ids
+                    else orig_altloc_id
+                ),
+            )
+        return self[orig_altloc_id]
+
+    def map_altloc(self, _altloc_id: str) -> str:
+        """
+        Maps e.g. X -> A
+        """
+        return self.get(_altloc_id, _altloc_id)
+
+    def map_altloc_pair(self, altloc_pair_ids: str) -> str:
+        """
+        Maps pairs of altlocs, e.g.
+        XY -> AB
+        XY_norm -> AB_norm
+        """
+        altloc_pair_ids, *_suffix = altloc_pair_ids.split("_")
+        assert len(altloc_pair_ids) == 2  # make sure it's really a pair
+        altloc_pair_ids = str.join("", map(self.map_altloc, altloc_pair_ids))
+        if _suffix:
+            return str.join("_", [altloc_pair_ids, *_suffix])
+        else:
+            return altloc_pair_ids
+
+    def __setitem__(self, key, value):
+        raise KeyError("Can't manually set items in AltlocNameMap. Use add(key)")
+
+    def __getitem__(self, altloc_id: str) -> str:
+        if not altloc_id:
+            raise KeyError("Empty altloc id")
+        elif len(altloc_id) == 1:
+            return self.map_altloc(altloc_id)
+        else:
+            return self.map_altloc_pair(altloc_id)
+
+
 class AltlocResidueRecord(ResidueRecord):
     def __init__(
         self,
@@ -363,57 +429,31 @@ class AltlocResidueRecord(ResidueRecord):
         dihedral_args = dihedral_args or {}
         d = super().as_dict(dihedral_args)
 
-        # Normalize altloc ids to be in the range [A, Z] and always start from A.
-        # Map from original altloc to new altloc id
-        _new_altloc_ids = list(reversed(string.ascii_uppercase))
-        _altloc_map_orig_new = {NO_ALTLOC: NO_ALTLOC}
-
-        def _populate_altloc_map(_orig_altloc_id: str) -> str:
-            if _orig_altloc_id not in _altloc_map_orig_new:
-                _altloc_map_orig_new[_orig_altloc_id] = (
-                    _new_altloc_ids.pop() if map_altloc_ids else _orig_altloc_id
-                )
-            return _altloc_map_orig_new[_orig_altloc_id]
-
         def _altloc_postfix(_altloc_id: str) -> str:
             return f"_{_altloc_id}"
 
-        def _map_altloc(_altloc_id: str) -> str:
-            """
-            X -> A
-            """
-            return _altloc_map_orig_new.get(_altloc_id, _altloc_id)
-
-        def _map_altloc_pair(_altloc_pair_ids) -> str:
-            """
-            XY -> AB
-            XY_norm -> AB_norm
-            """
-            _altloc_pair_ids, *_suffix = _altloc_pair_ids.split("_")
-            _altloc_pair_ids = str.join("", map(_map_altloc, _altloc_pair_ids))
-            if _suffix:
-                return str.join("_", [_altloc_pair_ids, *_suffix])
-            else:
-                return _altloc_pair_ids
-
-        # Map in current AA
+        # Map altloc names in current AA
+        altloc_map = AltlocNameMap(map_altloc_ids=map_altloc_ids)
         for _, orig_altloc_ids in self.altloc_ids.items():
             for orig_altloc_id in orig_altloc_ids:
-                _populate_altloc_map(orig_altloc_id)
+                altloc_map.add(orig_altloc_id)
 
-        # Map in next AA
+        # Map altloc names in next AA
+        altloc_map_next = AltlocNameMap(map_altloc_ids=map_altloc_ids)
         for altloc_pair_ids, _ in self.altloc_peptide_bond_lengths.items():
+            if altloc_pair_ids.startswith(NO_ALTLOC * 2):
+                continue
             orig_altloc_pair_ids, *_suffix = altloc_pair_ids.split("_")
             for orig_altloc_id in orig_altloc_pair_ids:
-                _populate_altloc_map(orig_altloc_id)
+                altloc_map_next.add(orig_altloc_id)
 
         for atom_name, altloc_ids in self.altloc_ids.items():
             # Write both the original altloc id and the new one for context,
             # if they're different.
             mapped_altloc_ids = [
                 orig_altloc_id
-                if _map_altloc(orig_altloc_id) == orig_altloc_id
-                else f"{_map_altloc(orig_altloc_id)}({orig_altloc_id})"
+                if altloc_map[orig_altloc_id] == orig_altloc_id
+                else f"{altloc_map[orig_altloc_id]}({orig_altloc_id})"
                 for orig_altloc_id in altloc_ids
             ]
             d[f"altlocs_{atom_name}"] = str.join(";", mapped_altloc_ids)
@@ -421,22 +461,22 @@ class AltlocResidueRecord(ResidueRecord):
         for altloc_id, altloc_angles in self.altloc_angles.items():
             d.update(
                 altloc_angles.as_dict(
-                    **dihedral_args, postfix=_altloc_postfix(_map_altloc(altloc_id))
+                    **dihedral_args, postfix=_altloc_postfix(altloc_map[altloc_id])
                 )
             )
 
         for altloc_id, altloc_bfactor in self.altloc_bfactors.items():
-            d[f"bfactor{_altloc_postfix(_map_altloc(altloc_id))}"] = altloc_bfactor
+            d[f"bfactor{_altloc_postfix(altloc_map[altloc_id])}"] = altloc_bfactor
 
         for altloc_pair_ids, ca_dist in self.altloc_ca_dists.items():
-            d[f"dist_CA{_altloc_postfix(_map_altloc_pair(altloc_pair_ids))}"] = ca_dist
+            d[f"dist_CA{_altloc_postfix(altloc_map[altloc_pair_ids])}"] = ca_dist
 
         for atom_name, altloc_sigmas in self.altloc_sigmas.items():
             for altloc_id, sigma in altloc_sigmas.items():
-                d[f"sigma_{atom_name}{_altloc_postfix(_map_altloc(altloc_id))}"] = sigma
+                d[f"sigma_{atom_name}{_altloc_postfix(altloc_map[altloc_id])}"] = sigma
 
         for altloc_pair_ids, pb_len in self.altloc_peptide_bond_lengths.items():
-            d[f"len_pb{_altloc_postfix(_map_altloc_pair(altloc_pair_ids))}"] = pb_len
+            d[f"len_pb{_altloc_postfix(altloc_map_next[altloc_pair_ids])}"] = pb_len
 
         return d
 
