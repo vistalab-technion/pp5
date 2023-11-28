@@ -1085,6 +1085,7 @@ def _collect_single_structure(
                 strict_unp_xref=False,
                 numeric_chain=nc,
                 with_altlocs=with_altlocs,
+                with_backbone=with_backbone,
             )
 
             # Save into cache
@@ -1099,7 +1100,6 @@ def _collect_single_structure(
                 prec.to_csv(
                     csv_out_dir,
                     tag=csv_tag,
-                    with_backbone=with_backbone,
                     with_contacts=with_contacts,
                 )
 
@@ -1292,11 +1292,13 @@ def _load_prec_df_from_cache(
 ):
     try:
         prec = ProteinRecord.from_pdb(
-            pdb_id, pdb_source=pdb_source, with_altlocs=with_altlocs, cache=True
+            pdb_id,
+            pdb_source=pdb_source,
+            with_altlocs=with_altlocs,
+            with_backbone=with_backbone,
+            cache=True,
         )
-        df = prec.to_dataframe(
-            with_ids=True, with_backbone=with_backbone, with_contacts=with_contacts
-        )
+        df = prec.to_dataframe(with_ids=True, with_contacts=with_contacts)
         return df
     except ProteinInitError as e:
         LOGGER.error(f"Failed to create {pdb_id} from cache: {e}")

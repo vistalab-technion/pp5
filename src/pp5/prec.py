@@ -120,6 +120,7 @@ class ResidueRecord(object):
         bfactor: float,
         secondary: str,
         num_altlocs: int,
+        backbone_coords: Optional[np.ndarray] = None,
     ):
         """
 
@@ -155,6 +156,7 @@ class ResidueRecord(object):
         self.codon_counts = codon_counts
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
         self.num_altlocs = num_altlocs
+        self.backbone_coords = backbone_coords
 
     @classmethod
     def from_residue(
@@ -168,6 +170,7 @@ class ResidueRecord(object):
         secondary: Optional[str] = None,
         dihedral_est: DihedralAngleCalculator = DEFAULT_ANGLE_CALC,
         bfactor_est: AtomLocationUncertainty = DEFAULT_BFACTOR_CALC,
+        with_backbone: bool = False,
     ):
         """
         Creates a ResidueRecord from biopython Residue objects.
@@ -183,6 +186,7 @@ class ResidueRecord(object):
         :param secondary: The DSSP secondary structure code for this residue.
         :param dihedral_est: A DihedralAngleCalculator for calculating dihedral angles.
         :param bfactor_est: A AtomLocationUncertainty for calculating b-factors.
+        :param with_backbone: Whether to include the backbone coordinates in the record.
         :return: An initialized ResidueRecord.
         """
         res_id: str = _residue_to_res_id(r_curr)
@@ -192,6 +196,10 @@ class ResidueRecord(object):
             NO_ALTLOC
         ]
         bfactor: float = bfactor_est.process_residue(r_curr)
+
+        backbone_coords = None
+        if with_backbone:
+            backbone_coords = _backbone_coords(r_curr, with_oxygen=True)
 
         return cls(
             res_id=res_id,
@@ -203,6 +211,7 @@ class ResidueRecord(object):
             angles=angles,
             bfactor=bfactor,
             num_altlocs=len(residue_altloc_ids(r_curr, allow_disjoint=True)),
+            backbone_coords=backbone_coords,
         )
 
     def as_dict(self, dihedral_args: Dict[str, Any] = None):
@@ -213,6 +222,7 @@ class ResidueRecord(object):
         :param dihedral_args: A dict of arguments to pass to Dihedral.as_dict.
         :return: A dict representation of this residue.
         """
+
         return dict(
             res_id=self.res_id,
             name=self.name,
@@ -225,6 +235,11 @@ class ResidueRecord(object):
             num_altlocs=self.num_altlocs,
             **self.angles.as_dict(**(dihedral_args or {})),
             bfactor=self.bfactor,
+            **(
+                dict(backbone=self.backbone_coords.round(4).tolist())
+                if self.backbone_coords is not None
+                else {}
+            ),
         )
 
     def __repr__(self):
@@ -331,6 +346,7 @@ class AltlocResidueRecord(ResidueRecord):
         altloc_ca_dists: Dict[str, float],
         altloc_sigmas: Dict[str, Dict[str, float]],
         altloc_peptide_bond_lengths: Dict[str, float],
+        backbone_coords: Optional[np.ndarray] = None,
     ):
         """
         Represents a residue with (potential) alternate conformations (altlocs).
@@ -369,6 +385,7 @@ class AltlocResidueRecord(ResidueRecord):
             bfactor=no_altloc_bfactor,
             secondary=secondary,
             num_altlocs=len(set(chain(*altloc_ids.values()))),
+            backbone_coords=backbone_coords,
         )
 
     @classmethod
@@ -383,6 +400,7 @@ class AltlocResidueRecord(ResidueRecord):
         secondary: Optional[str] = None,
         dihedral_est: DihedralAngleCalculator = DEFAULT_ANGLE_CALC,
         bfactor_est: AtomLocationUncertainty = DEFAULT_BFACTOR_CALC,
+        with_backbone: bool = False,
     ):
         res_id: str = _residue_to_res_id(r_curr)
         res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
@@ -421,6 +439,9 @@ class AltlocResidueRecord(ResidueRecord):
             altloc_ca_dists=altloc_ca_dists,
             altloc_sigmas=altloc_sigmas,
             altloc_peptide_bond_lengths=altloc_peptide_bond_lengths,
+            backbone_coords=_backbone_coords(r_curr, with_oxygen=True)
+            if with_backbone
+            else None,
         )
 
     def as_dict(
@@ -727,6 +748,7 @@ class ProteinRecord(object):
         strict_unp_xref: bool = True,
         numeric_chain: bool = False,
         with_altlocs: bool = False,
+        with_backbone: bool = False,
     ):
         """
         Initialize a protein record from both Uniprot and PDB ids.
@@ -756,6 +778,7 @@ class ProteinRecord(object):
         numeric. In rare cases PDB structures have numbers as chain ids.
         :param with_altlocs: Whether to include alternate conformations in the
         protein record. If False, only the default conformation will be used.
+        :param with_backbone: Whether to include backbone atoms in the protein record.
         """
         if not (unp_id and pdb_id):
             raise ProteinInitError("Must provide both Uniprot and PDB IDs")
@@ -882,6 +905,7 @@ class ProteinRecord(object):
                 secondary=secondary,
                 dihedral_est=dihedral_est,
                 bfactor_est=bfactor_est,
+                with_backbone=with_backbone,
             )
             residue_recs.append(rr)
 
@@ -953,28 +977,6 @@ class ProteinRecord(object):
     @property
     def dihedral_angles(self) -> Dict[str, Dihedral]:
         return {x.res_id: x.angles for x in self}
-
-    def backbone_coordinates(self, with_oxygen: bool = False) -> Dict[str, np.ndarray]:
-        """
-        Returns the backbone atom coordinates for each residue in the chain.
-        :param with_oxygen: Whether to include oxygen in the coordinates of each
-        residue.
-        :return: A dict from a residue id to a 3x3 (when with_oxygen=False) or 4x3 (when
-        with_oxygen=True) ndarray containing atom coordinates on the backbone.
-        Rows represent N, CA, C and O backbone atoms.
-        """
-        backbone_coords = {}
-
-        pp: Polypeptide
-        for pp in self.polypeptides:
-            res: Residue
-            for res in pp:
-                res_id = _residue_to_res_id(res)
-                coords = _backbone_coords(res, with_oxygen=with_oxygen)
-                if coords is not None:
-                    backbone_coords[res_id] = coords
-
-        return backbone_coords
 
     @property
     def contacts_df(self) -> pd.DataFrame:
@@ -1209,24 +1211,18 @@ class ProteinRecord(object):
     def to_dataframe(
         self,
         with_ids: bool = False,
-        with_backbone: bool = False,
         with_contacts: Optional[Union[bool, Dict[str, Any]]] = False,
     ):
         """
         :param with_ids: Whether to include pdb_id and unp_id columns. Usually this
         is redundant since it's the same for all rows, but can be useful if this
         dataframe is combined with others.
-        :param with_backbone: Whether to include a 'backbone' column which contain the
-        backbone atom coordinates of each residue in the order N, CA, C, O.
         :param with_contacts: Whether to include tertiary contact features per
         residue. Can be a dict, in which case it will be treated as kwargs to pass to
         Arpeggio.
         :return: A Pandas dataframe where each row is a ResidueRecord from
         this ProteinRecord.
         """
-        backbone_coords = (
-            self.backbone_coordinates(with_oxygen=True) if with_backbone else None
-        )
         dihedral_args = dict(
             degrees=True,
             skip_omega=False,
@@ -1235,11 +1231,6 @@ class ProteinRecord(object):
         df_data = []
         for res_id, res_rec in self.items():
             res_rec_dict = res_rec.as_dict(dihedral_args=dihedral_args)
-            if with_backbone:
-                res_backbone = backbone_coords.get(res_id)
-                res_rec_dict["backbone"] = (
-                    res_backbone.round(4).tolist() if res_backbone is not None else []
-                )
             df_data.append(res_rec_dict)
 
         df_prec = pd.DataFrame(df_data)
