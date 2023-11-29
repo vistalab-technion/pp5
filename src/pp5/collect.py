@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 import dask.dataframe as dd
 from Bio.Align import PairwiseAligner
+from dask.distributed import Client
 
 import pp5
 import pp5.parallel
@@ -622,24 +623,26 @@ class ProteinRecordCollector(ParallelDataCollector):
         ]
 
         # Concatenate (lazily)
-        LOGGER.info(f"Concatenating {len(dask_dfs)} dask dfs...")
-        full_df = dd.concat(dask_dfs, axis=0)
+        with Client(n_workers=4) as client:
+            LOGGER.info(f"Concatenating {len(dask_dfs)} dask dfs...")
+            full_df = dd.concat(dask_dfs, axis=0)
 
-        filepath = self.out_dir.joinpath(f"{self.DATASET_FILENAME}.csv")
+            filepath = self.out_dir.joinpath(f"{self.DATASET_FILENAME}.csv")
 
-        LOGGER.info(f"Writing concatenated dataset to file...")
-        dd.to_csv(
-            full_df,
-            filename=str(filepath),
-            single_file=True,
-            index=False,
-            encoding="utf-8",
-        )
-        self._out_filepaths.append(filepath)
+            LOGGER.info(f"Writing concatenated dataset to file...")
+            dd.to_csv(
+                full_df,
+                filename=str(filepath),
+                single_file=True,
+                index=False,
+                encoding="utf-8",
+            )
+            self._out_filepaths.append(filepath)
 
-        LOGGER.info(f"Calculating dataset rows and size...")
-        n_rows = len(full_df)
-        dataset_size_mb = os.path.getsize(filepath) / 1024 / 1024
+            LOGGER.info(f"Calculating dataset rows and size...")
+            n_rows = len(full_df)
+            dataset_size_mb = os.path.getsize(filepath) / 1024 / 1024
+
         LOGGER.info(f"Wrote {filepath} ({n_rows=}, {dataset_size_mb:.2f}MB)")
         meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}", "n_entries": n_rows}
         return meta
