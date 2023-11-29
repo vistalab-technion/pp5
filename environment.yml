@@ -5,7 +5,6 @@ channels:
   - schrodinger # pymol
   - bioconda    # clustal, muscle, blast
   - salilab     # dssp
-  - r           # some R packages
 dependencies:
   # Basic
   - pip
@@ -16,6 +15,7 @@ dependencies:
   - black
   - blast
   - clustalo
+  - dask
   - dssp
   - ipython
   - jupyter
@@ -30,6 +30,7 @@ dependencies:
   - pandas
   - pre-commit
   - pymol-bundle
+  - vtk-m=1.5.1 # required due to issue with pymol, newer version causes failure
   - pytest
   - pytest-benchmark
   - pytest-cov
@@ -45,7 +46,7 @@ dependencies:
   - uncertainties
   # r-dependencies (for torustest)
   - r-doparallel
-  - r-fraction
+  - r-fraction # (might require r channel)
   - r-ggplot2
   - r-pracma
   - r-proxy
