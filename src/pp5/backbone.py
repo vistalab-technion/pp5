@@ -320,16 +320,18 @@ def residue_altloc_peptide_bond_lengths(
     as a placeholder.
     """
 
-    if res2 is None:
+    # Pathological cases
+    if res2 is None or BACKBONE_ATOM_C not in res1 or BACKBONE_ATOM_N not in res2:
         return {}
+
+    # Get atoms participating in the peptide bond
+    res1_c: AltlocAtom = res1[BACKBONE_ATOM_C]
+    res2_n: AltlocAtom = res2[BACKBONE_ATOM_N]
 
     # Get list of altlocs for each residue, with the special altloc id NO_ALTLOC if
     # there are no altlocs for either of them.
     res1_altloc_ids, res2_altloc_ids = [
-        residue_altloc_ids(
-            r, backbone_only=True, allow_disjoint=False, include_none=True
-        )
-        for r in [res1, res2]
+        atom_altloc_ids(a, include_none=True) for a in [res1_c, res2_n]
     ]
 
     # Iterate over all combinations of altlocs and calculate peptide bond lengths.
@@ -337,18 +339,15 @@ def residue_altloc_peptide_bond_lengths(
     for res1_altloc_id, res2_altloc_id in itertools.product(
         res1_altloc_ids, res2_altloc_ids
     ):
-        res1_c: AltlocAtom = res1[BACKBONE_ATOM_C]
-        res2_n: AltlocAtom = res2[BACKBONE_ATOM_N]
-
         _res1_c: Atom
         _res2_n: Atom
         with (
             altloc_ctx(res1_c, res1_altloc_id) as _res1_c,
             altloc_ctx(res2_n, res2_altloc_id) as _res2_n,
         ):
-            # Both should not be none because we used allow_disjoint=False.
-            # It's possible the one or both didn't have altlocs, in which case
-            # we'll have res1_c==_rec1_c and res2_n==_res2_n.
+            # Both should not be none because we used the specific atoms to get the
+            # altloc ids. It's possible the one or both didn't have altlocs, in which
+            # case we'll have res1_c==_rec1_c and res2_n==_res2_n.
             assert _res1_c is not None and _res2_n is not None
 
             # peptide bond length
