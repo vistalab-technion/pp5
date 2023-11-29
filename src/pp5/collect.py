@@ -38,6 +38,7 @@ COL_PDB_ID = "pdb_id"
 COL_ENA_ID = "ena_id"
 COL_RESOLUTION = "resolution"
 COL_SEQ_LEN = "seq_len"
+COL_SEQ_GAPS = "seq_gaps"
 COL_DESCRIPTION = "description"
 COL_DEPOSITION_DATE = "deposition_date"
 COL_SRC_ORG = "src_org"
@@ -1117,6 +1118,7 @@ def _collect_single_structure(
                 COL_ENA_ID: prec.ena_id,
                 COL_RESOLUTION: meta.resolution,
                 COL_SEQ_LEN: seq_len,
+                COL_SEQ_GAPS: str.join(";", [f"{s}-{e}" for (s, e) in prec.seq_gaps]),
                 COL_DESCRIPTION: meta.description,
                 COL_DEPOSITION_DATE: meta.deposition_date,
                 COL_SRC_ORG: meta.src_org,
