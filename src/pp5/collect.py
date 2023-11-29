@@ -17,7 +17,7 @@ from multiprocessing.pool import AsyncResult
 
 import numpy as np
 import pandas as pd
-import more_itertools
+import dask.dataframe as dd
 from Bio.Align import PairwiseAligner
 
 import pp5
@@ -50,6 +50,7 @@ COL_SPACE_GROUP = "space_group"
 COL_CG_PH = "cg_ph"
 COL_CG_TEMP = "cg_temp"
 COL_PDB_SOURCE = "pdb_source"
+COL_PREC_CSV_PATH = "prec_csv_path"
 COL_REJECTED_BY = "rejected_by"
 COL_NUM_ALTLOCS = "num_altlocs"
 
@@ -311,7 +312,6 @@ class ProteinRecordCollector(ParallelDataCollector):
         out_dir: Path = pp5.out_subdir("prec-collected"),
         out_tag: Optional[str] = None,
         prec_out_dir: Path = pp5.out_subdir("prec"),
-        write_csv: bool = False,
         write_zip: bool = False,
         async_timeout=600,
     ):
@@ -341,8 +341,6 @@ class ProteinRecordCollector(ParallelDataCollector):
         :param with_altlocs: Whether to include alternate locations (altlocs) in the
         output.
         :param entity_single_chain: Whether to collect only a single chain per entity.
-        :param write_csv: Whether to write the ProteinRecords to
-            the prec_out_dir as CSV files.
         :param async_timeout: Timeout in seconds for each worker
             process result.
         """
@@ -409,8 +407,9 @@ class ProteinRecordCollector(ParallelDataCollector):
         self.with_altlocs = with_altlocs
         self.entity_single_chain = entity_single_chain
 
-        self.prec_out_dir = prec_out_dir
-        self.write_csv = write_csv
+        # Unique output dir for this collection run
+        self.prec_csv_out_dir = prec_out_dir / self.id
+        self.prec_csv_out_dir.mkdir(parents=True, exist_ok=True)
 
     def __repr__(self):
         return f"{self.__class__.__name__} query={self.query}"
@@ -435,7 +434,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         for i, pdb_id in enumerate(pdb_ids):
             args = (pdb_id, self.pdb_source, (i, n_structs))
             kwds = dict(
-                csv_out_dir=self.prec_out_dir if self.write_csv else None,
+                csv_out_dir=self.prec_csv_out_dir,
                 with_backbone=self.with_backbone,
                 with_contacts=ARPEGGIO_ARGS if self.with_contacts else None,
                 with_altlocs=self.with_altlocs,
@@ -444,12 +443,12 @@ class ProteinRecordCollector(ParallelDataCollector):
             r = pool.apply_async(_collect_single_structure, args, kwds)
             async_results.append(r)
 
-        _, elapsed, pdb_id_data = self._handle_async_results(
+        _, elapsed, pdb_id_metadata = self._handle_async_results(
             async_results, collect=True, flatten=True
         )
 
-        # Create a dataframe from the collected data
-        df_all = pd.DataFrame(pdb_id_data)
+        # Create a dataframe containing metadata from the collected precs
+        df_all = pd.DataFrame(pdb_id_metadata)
         n_collected = len(df_all)
 
         self._out_filepaths.append(
@@ -605,49 +604,38 @@ class ProteinRecordCollector(ParallelDataCollector):
 
     def _write_dataset(self, pool: mp.Pool) -> dict:
         df_pdb_ids: pd.DataFrame = _read_df_csv(
-            self.out_dir, self.FILTERED_STRUCTS_FILENAME, usecols=["pdb_id"]
+            self.out_dir,
+            self.FILTERED_STRUCTS_FILENAME,
+            usecols=[COL_PDB_ID, COL_PREC_CSV_PATH],
         )
-        pdb_ids = df_pdb_ids["pdb_id"]
-        LOGGER.info(f"Creating dataset file for {len(pdb_ids)} precs...")
+        pdb_id_to_csv_path: Dict[str, Path] = {
+            row[COL_PDB_ID]: Path(row[COL_PREC_CSV_PATH])
+            for _, row in df_pdb_ids.iterrows()
+        }
+        n_pdb_ids = len(pdb_id_to_csv_path)
+        LOGGER.info(f"Creating dataset file from {n_pdb_ids} precs...")
+
+        # Create dask dataframe from each CSV (no data is actually loaded)
+        dask_dfs = [
+            dd.read_csv(csv_path, dtype="string", encoding="utf-8")
+            for csv_path in pdb_id_to_csv_path.values()
+        ]
+
+        # Concatenate (lazily)
+        full_df = dd.concat(dask_dfs, axis=0)
 
         filepath = self.out_dir.joinpath(f"{self.DATASET_FILENAME}.csv")
-
-        # Obtain dataframes for each pdb_id
-        async_results = []
-        for i, pdb_id in enumerate(pdb_ids):
-            async_results.append(
-                pool.apply_async(
-                    _load_prec_df_from_cache,
-                    args=(pdb_id, self.pdb_source),
-                    kwds=dict(
-                        with_backbone=self.with_backbone,
-                        with_contacts=ARPEGGIO_ARGS if self.with_contacts else None,
-                        with_altlocs=self.with_altlocs,
-                    ),
-                )
-            )
-
-        _, elapsed, pdb_id_dataframes = self._handle_async_results(
-            async_results,
-            collect=True,
-            flatten=False,
+        dd.to_csv(
+            full_df,
+            filename=str(filepath),
+            single_file=True,
+            index=False,
+            encoding="utf-8",
         )
 
-        # Writing the dataframes to a single file must be sequential
-        pdb_id_dataframes = [
-            df for df in pdb_id_dataframes if (df is not None and len(df) > 0)
-        ]
-        n_result_dfs = len(pdb_id_dataframes)
-        LOGGER.info(f"Concatenating {n_result_dfs} dataframes...")
-        full_df = pd.concat(
-            pdb_id_dataframes, ignore_index=True, sort=False, copy=False
-        )
-        del pdb_id_dataframes
-        n_rows = len(full_df)
-        with open(str(filepath), mode="w", encoding="utf-8") as f:
-            full_df.to_csv(f, header=True, index=False, na_rep="")
         self._out_filepaths.append(filepath)
 
+        n_rows = len(full_df)
         dataset_size_mb = os.path.getsize(filepath) / 1024 / 1024
         LOGGER.info(f"Wrote {filepath} ({n_rows=}, {dataset_size_mb:.2f}MB)")
         meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}", "n_entries": n_rows}
@@ -1097,9 +1085,11 @@ def _collect_single_structure(
                 _ = arpeggio.contact_df(pdb_id_full)
 
             # Write CSV if requested
+            csv_path: Optional[Path] = None
             if csv_out_dir is not None:
-                prec.to_csv(
+                csv_path = prec.to_csv(
                     csv_out_dir,
+                    with_ids=True,
                     tag=csv_tag,
                     with_contacts=with_contacts,
                 )
@@ -1131,6 +1121,7 @@ def _collect_single_structure(
                 COL_CG_PH: meta.cg_ph,
                 COL_CG_TEMP: meta.cg_temp,
                 COL_PDB_SOURCE: pdb_source,
+                COL_PREC_CSV_PATH: str(csv_path) if csv_path else "",
             }
         )
 
