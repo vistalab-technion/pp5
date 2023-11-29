@@ -967,6 +967,25 @@ class ProteinRecord(object):
         return SeqRecord(Seq(self._protein_seq), self.pdb_id, "", "")
 
     @property
+    def seq_gaps(self) -> Sequence[Tuple[str, str]]:
+        """
+        :return: A list of tuples (start, end) of residue ids corresponding to
+        the beginning and end of gaps in the protein sequence. A gap is determined
+        by one or more residues with a non-standard AA.
+        """
+        gaps = []
+        res_iter = iter(self)
+        for res in res_iter:
+            curr_gap = []
+            while res.name is UNKNOWN_AA:
+                curr_gap.append(res.res_id)
+                res = next(res_iter)
+            if curr_gap:
+                gaps.append((curr_gap[0], curr_gap[-1]))
+
+        return tuple(gaps)
+
+    @property
     def codons(self) -> Dict[str, str]:
         """
         :return: Protein sequence based on translating DNA sequence with
