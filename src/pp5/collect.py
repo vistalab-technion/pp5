@@ -622,9 +622,12 @@ class ProteinRecordCollector(ParallelDataCollector):
         ]
 
         # Concatenate (lazily)
+        LOGGER.info(f"Concatenating {len(dask_dfs)} dask dfs...")
         full_df = dd.concat(dask_dfs, axis=0)
 
         filepath = self.out_dir.joinpath(f"{self.DATASET_FILENAME}.csv")
+
+        LOGGER.info(f"Writing concatenated dataset to file...")
         dd.to_csv(
             full_df,
             filename=str(filepath),
@@ -632,9 +635,9 @@ class ProteinRecordCollector(ParallelDataCollector):
             index=False,
             encoding="utf-8",
         )
-
         self._out_filepaths.append(filepath)
 
+        LOGGER.info(f"Calculating dataset rows and size...")
         n_rows = len(full_df)
         dataset_size_mb = os.path.getsize(filepath) / 1024 / 1024
         LOGGER.info(f"Wrote {filepath} ({n_rows=}, {dataset_size_mb:.2f}MB)")
