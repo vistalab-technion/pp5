@@ -1,12 +1,14 @@
 import pickle
+from math import isnan
 
 import pytest
 
 import pp5
 from tests import get_tmp_path
-from pp5.prec import ProteinRecord
+from pp5.prec import ProteinRecord, ResidueRecord
 from pp5.align import DEFAULT_ARPEGGIO_ARGS, Arpeggio
 from pp5.utils import ProteinInitError
+from pp5.codons import UNKNOWN_AA
 from pp5.external_dbs import unp
 from pp5.external_dbs.pdb import PDB_DOWNLOAD_SOURCES
 
@@ -21,28 +23,37 @@ def with_altlocs(request):
     return request.param
 
 
+@pytest.fixture(
+    autouse=False,
+    scope="class",
+    params=[False, True],
+    ids=["no_backbone", "with_backbone"],
+)
+def with_backbone(request):
+    return request.param
+
+
 class TestMethods:
     @pytest.fixture(autouse=False, scope="class", params=["102L:A", "2WUR:A"])
-    def prec(self, with_altlocs, request):
+    def prec(self, with_altlocs, with_backbone, request):
         pdb_id = request.param
-        prec = ProteinRecord.from_pdb(pdb_id, with_altlocs=with_altlocs)
+        prec = ProteinRecord.from_pdb(
+            pdb_id, with_altlocs=with_altlocs, with_backbone=with_backbone
+        )
         return prec
 
-    @pytest.mark.parametrize(
-        "with_oxygen", [True, False], ids=["with_oxygen", "no_oxygen"]
-    )
-    def test_backbone(self, prec, with_oxygen):
-        backbone = prec.backbone_coordinates(with_oxygen=with_oxygen)
-        for res_id, coords in backbone.items():
-            assert res_id in prec
-            if coords is None:
-                j = 3
-            assert coords.shape == (4, 3) if with_oxygen else (3, 3)
+    def test_backbone(self, prec, with_backbone):
+        res: ResidueRecord
+        for res in prec:
+            if res.name == UNKNOWN_AA or isnan(res.angles.phi):
+                continue
+            if with_backbone:
+                assert res.backbone_coords is not None
+                assert res.backbone_coords.shape == (4, 3)
+            else:
+                assert res.backbone_coords is None
 
     @pytest.mark.parametrize("with_ids", [True, False], ids=["with_ids", "no_ids"])
-    @pytest.mark.parametrize(
-        "with_backbone", [True, False], ids=["with_backbone", "no_backbone"]
-    )
     @pytest.mark.parametrize(
         "with_contacts",
         [False, True],
@@ -53,9 +64,7 @@ class TestMethods:
             if not Arpeggio.can_execute(**DEFAULT_ARPEGGIO_ARGS):
                 pytest.skip()
 
-        df = prec.to_dataframe(
-            with_ids=with_ids, with_backbone=with_backbone, with_contacts=with_contacts
-        )
+        df = prec.to_dataframe(with_ids=with_ids, with_contacts=with_contacts)
         assert len(df) == len(prec)
 
         if with_ids:
