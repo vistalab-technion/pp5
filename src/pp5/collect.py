@@ -440,6 +440,7 @@ class ProteinRecordCollector(ParallelDataCollector):
                 with_contacts=ARPEGGIO_ARGS if self.with_contacts else None,
                 with_altlocs=self.with_altlocs,
                 entity_single_chain=self.entity_single_chain,
+                no_cache=True,
             )
             r = pool.apply_async(_collect_single_structure, args, kwds)
             async_results.append(r)
@@ -994,6 +995,7 @@ def _collect_single_structure(
     with_contacts: Optional[Dict] = None,
     with_altlocs: bool = False,
     entity_single_chain: bool = False,
+    no_cache: bool = False,
 ) -> List[dict]:
     """
     Downloads a single PDB entry, and creates a prec for all its chains.
@@ -1012,6 +1014,8 @@ def _collect_single_structure(
     :param entity_single_chain: Whether to collect only a single chain from each
     unique entity. If True, the first chain will be collected from each entity.
     Otherwise, all chains will be collected.
+    :param no_cache: If True, will not save precs to cache (only makes sense if
+    csv_out_dir is not None)
     :return: A list of dicts, each containing metadata about one of the collected
         chains.
     """
@@ -1084,7 +1088,8 @@ def _collect_single_structure(
             )
 
             # Save into cache
-            prec.save()
+            if not no_cache:
+                prec.save()
 
             if with_contacts:
                 arpeggio = Arpeggio(**with_contacts, pdb_source=pdb_source)
