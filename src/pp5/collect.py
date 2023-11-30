@@ -6,6 +6,7 @@ import socket
 import string
 import logging
 import zipfile
+import warnings
 import itertools
 import multiprocessing as mp
 from pprint import pformat
@@ -17,9 +18,7 @@ from multiprocessing.pool import AsyncResult
 
 import numpy as np
 import pandas as pd
-import dask.dataframe as dd
 from Bio.Align import PairwiseAligner
-from dask.distributed import Client
 
 import pp5
 import pp5.parallel
@@ -31,6 +30,12 @@ from pp5.pgroup import ProteinGroup
 from pp5.external_dbs import pdb, unp, pdb_api
 from pp5.external_dbs.pdb import PDB_RCSB
 from pp5.external_dbs.unp import unp_record
+
+with warnings.catch_warnings():
+    # Due to dask warning about pyarrow version - should update pyarrow and remove
+    warnings.simplefilter(action="ignore", category=FutureWarning)
+    import dask.dataframe as dd
+    from dask.distributed import Client
 
 LOGGER = logging.getLogger(__name__)
 
