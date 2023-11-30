@@ -1253,7 +1253,6 @@ class ProteinRecord(object):
             df_data.append(res_rec_dict)
 
         df_prec = pd.DataFrame(df_data)
-        df_prec.fillna(value="", inplace=True)
 
         if with_contacts:
             contact_kwargs = (
@@ -1293,11 +1292,11 @@ class ProteinRecord(object):
         df = self.to_dataframe(**to_dataframe_kwargs)
         df.to_csv(
             filepath,
-            na_rep="nan",
+            na_rep="",
             header=True,
             index=False,
             encoding="utf-8",
-            float_format="%.3f",
+            float_format="%.4f",
         )
 
         LOGGER.info(f"Wrote {self} to {filepath}")
