@@ -9,7 +9,7 @@ import zipfile
 import itertools
 import multiprocessing as mp
 from pprint import pformat
-from typing import Set, Dict, List, Callable, Iterable, Optional, Sequence
+from typing import Set, Dict, List, Union, Callable, Iterable, Optional, Sequence
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass
@@ -77,7 +77,8 @@ class ParallelDataCollector(abc.ABC):
         id: str = None,
         out_dir: Path = None,
         tag: str = None,
-        async_timeout: float = None,
+        async_timeout: Optional[float] = None,
+        async_retry_delta: float = 0.001,
         create_zip=True,
         pdb_source: str = PDB_RCSB,
     ):
@@ -87,7 +88,12 @@ class ParallelDataCollector(abc.ABC):
         :param out_dir: Output directory, if necessary. A subdirectory with
         a unique id will be created within foe this collection.
         :param tag: Tag (postfix) for unique id of output subdir.
-        :param async_timeout: Timeout for async results.
+        :param async_timeout: Total time to wait for each async result.
+        None means no limit.
+        :param async_retry_delta: Number of seconds between each retry when
+        waiting for an async result.
+        Number of tries will be async_timeout / async_retry_delta, so that the total
+        wait time per result will be async_timeout.
         :param create_zip: Whether to create a zip file with all the result
         files.
         :param pdb_source: Source from which to obtain the pdb file.
@@ -98,9 +104,13 @@ class ParallelDataCollector(abc.ABC):
         else:
             hostname = "localhost"
 
+        # Timeout, if set, must be greater than retry delta
+        assert async_timeout is None or (async_timeout > async_retry_delta)
+
         self.hostname = hostname
         self.out_tag = tag
         self.async_timeout = async_timeout
+        self.async_retry_delta = async_retry_delta
         self.create_zip = create_zip
         self.pdb_source = pdb_source
 
@@ -207,14 +217,16 @@ class ParallelDataCollector(abc.ABC):
 
     def _handle_async_results(
         self,
-        async_results: List[AsyncResult],
+        async_results: Union[Dict[str, AsyncResult], List[AsyncResult]],
         collect=False,
         flatten=False,
         result_callback: Callable = None,
     ):
         """
         Handles a list of AsyncResult objects.
-        :param async_results: List of objects.
+
+        :param async_results: List of async results, or a dict with the keys being
+        identifiers.
         :param collect: Whether to add all obtained results to a list and
         return it.
         :param flatten: Whether to flatten results (useful i.e. if each
@@ -224,35 +236,29 @@ class ParallelDataCollector(abc.ABC):
         collected results (will be empty if collect is False).
         """
         count, start_time = 0, time.time()
-        results = []
-        for i, async_result in enumerate(async_results):
-            try:
-                res = async_result.get(self.async_timeout)
-                count += 1
+        collected_results = []
 
-                if result_callback is not None:
-                    result_callback(res)
+        for res_id, res in pp5.parallel.yield_async_results(
+            async_results,
+            wait_time_sec=self.async_retry_delta,
+            max_retries=int(self.async_timeout / self.async_retry_delta)
+            if self.async_timeout is not None
+            else None,
+            re_raise=False,
+        ):
+            if result_callback is not None:
+                result_callback(res)
 
-                if not collect:
-                    continue
+            if not collect:
+                continue
 
-                if flatten and isinstance(res, Iterable):
-                    results.extend(res)
-                else:
-                    results.append(res)
-
-            except mp.TimeoutError as e:
-                LOGGER.error(
-                    f"Timeout getting async result #{i}"
-                    f"res={async_result}, skipping: {e}"
-                )
-            except ProteinInitError as e:
-                LOGGER.error(f"Failed to create protein: {e}")
-            except Exception as e:
-                LOGGER.error("Unexpected error", exc_info=e)
+            if flatten and isinstance(res, Iterable):
+                collected_results.extend(res)
+            else:
+                collected_results.append(res)
 
         elapsed_time = time.time() - start_time
-        return count, elapsed_time, results
+        return count, elapsed_time, collected_results
 
     @abc.abstractmethod
     def _collection_functions(
@@ -314,7 +320,8 @@ class ProteinRecordCollector(ParallelDataCollector):
         out_tag: Optional[str] = None,
         prec_out_dir: Path = pp5.out_subdir("prec"),
         write_zip: bool = False,
-        async_timeout=600,
+        async_timeout: Optional[float] = 600,
+        async_retry_delta: float = 0.001,
     ):
         """
         Collects ProteinRecords based on a PDB query results, and saves them
@@ -342,11 +349,13 @@ class ProteinRecordCollector(ParallelDataCollector):
         :param with_altlocs: Whether to include alternate locations (altlocs) in the
         output.
         :param entity_single_chain: Whether to collect only a single chain per entity.
-        :param async_timeout: Timeout in seconds for each worker
-            process result.
+        :param async_timeout: Total timeout for each async result. None means no limit.
+        :param async_retry_delta: Number of seconds between each retry when
+        waiting for an async result.
         """
         super().__init__(
             async_timeout=async_timeout,
+            async_retry_delta=async_retry_delta,
             out_dir=out_dir,
             tag=out_tag,
             create_zip=write_zip,
@@ -431,7 +440,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         meta["n_query_results"] = len(pdb_ids)
         LOGGER.info(f"Got {n_structs} structures from PDB, collecting...")
 
-        async_results = []
+        async_results = {}
         for i, pdb_id in enumerate(pdb_ids):
             args = (pdb_id, self.pdb_source, (i, n_structs))
             kwds = dict(
@@ -443,7 +452,7 @@ class ProteinRecordCollector(ParallelDataCollector):
                 no_cache=True,
             )
             r = pool.apply_async(_collect_single_structure, args, kwds)
-            async_results.append(r)
+            async_results[pdb_id] = r
 
         _, elapsed, pdb_id_metadata = self._handle_async_results(
             async_results, collect=True, flatten=True
@@ -671,8 +680,9 @@ class ProteinGroupCollector(ParallelDataCollector):
         write_pgroup_csvs=True,
         out_tag: str = None,
         ref_file: str = None,
-        async_timeout: float = 3600,
         create_zip=True,
+        async_timeout: Optional[float] = 3600,
+        async_retry_delta: float = 0.001,
     ):
         """
         Collects ProteinGroup reference structures based on a PDB query
@@ -718,14 +728,16 @@ class ProteinGroupCollector(ParallelDataCollector):
         Allows to skip the first and second collection steps (finding PDB
         IDs for the reference structures) and immediately collect
         ProteinGroups for the references in the file.
-        :param async_timeout: Timeout in seconds for each worker
-        process result, or None for no timeout.
+        :param async_timeout: Total timeout for each async result. None means no limit.
+        :param async_retry_delta: Number of seconds between each retry when
+        waiting for an async result.
         :param create_zip: Whether to create a zip file with all output files.
         """
         super().__init__(
             out_dir=out_dir,
             tag=out_tag,
             async_timeout=async_timeout,
+            async_retry_delta=async_retry_delta,
             create_zip=create_zip,
             pdb_source=pdb_source,
         )
@@ -811,11 +823,11 @@ class ProteinGroupCollector(ParallelDataCollector):
             meta["query"] = str(self.query)
             meta["n_query_results"] = len(pdb_ids)
 
-            async_results = []
+            async_results = {}
             for i, pdb_id in enumerate(pdb_ids):
                 args = (pdb_id, self.pdb_source, (i, n_structs))
                 r = pool.apply_async(_collect_single_structure, args=args)
-                async_results.append(r)
+                async_results[pdb_id] = r
 
             count, elapsed, pdb_id_data = self._handle_async_results(
                 async_results,
@@ -860,11 +872,11 @@ class ProteinGroupCollector(ParallelDataCollector):
             LOGGER.info(f"Finding reference structures...")
             groups = self._df_all.groupby("unp_id")
 
-            async_results = []
+            async_results = {}
             for unp_id, df_group in groups:
                 args = (unp_id, df_group)
                 r = pool.apply_async(_collect_single_ref, args=args)
-                async_results.append(r)
+                async_results[unp_id] = r
 
             count, elapsed, group_datas = self._handle_async_results(
                 async_results,
@@ -898,7 +910,7 @@ class ProteinGroupCollector(ParallelDataCollector):
 
         LOGGER.info(f"Creating ProteinGroup for each reference...")
         ref_pdb_ids = self._df_ref["ref_pdb_id"].values
-        async_results = []
+        async_results = {}
         all_pdb_ids = set(self._df_all["pdb_id"])
         for i, ref_pdb_id in enumerate(ref_pdb_ids):
             idx = (i, len(ref_pdb_ids))
@@ -921,7 +933,7 @@ class ProteinGroupCollector(ParallelDataCollector):
                 idx,
             )
             r = pool.apply_async(_collect_single_pgroup, args=args)
-            async_results.append(r)
+            async_results[ref_pdb_id] = r
 
         count, elapsed, collected_data = self._handle_async_results(
             async_results,
