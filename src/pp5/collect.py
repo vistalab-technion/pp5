@@ -208,12 +208,13 @@ class ParallelDataCollector(abc.ABC):
         zip_filename = Path(f"{self.id}.zip")
         zip_filepath = self.out_dir.joinpath(zip_filename)
 
+        LOGGER.info(f"Compressing results into {zip_filename!s}...")
         with zipfile.ZipFile(
             zip_filepath, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
         ) as z:
             for out_filepath in self._out_filepaths:
-                LOGGER.info(f"Compressing {out_filepath}")
-                arcpath = f"{zip_filename.stem}/{out_filepath.name}"
+                rel_out_filepath = out_filepath.relative_to(self.out_dir)
+                arcpath = f"{zip_filename.stem}/{rel_out_filepath!s}"
                 z.write(str(out_filepath), arcpath)
 
         zipsize_mb = os.path.getsize(str(zip_filepath)) / 1024 / 1024
@@ -655,7 +656,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         n_rows = sum(n_rows_per_file)
         dataset_size_mb = sum(os.path.getsize(p) for p in all_csvs) / 1024**2
 
-        self._out_filepaths.append(self.prec_csv_out_dir)
+        self._out_filepaths.extend(all_csvs)
         LOGGER.info(f"Wrote {n_pdb_ids} files, ({n_rows=}, {dataset_size_mb:.2f}MB)")
         meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}", "n_entries": n_rows}
         return meta
