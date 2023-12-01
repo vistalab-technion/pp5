@@ -10,7 +10,7 @@ import warnings
 import itertools
 import multiprocessing as mp
 from pprint import pformat
-from typing import Set, Dict, List, Union, Callable, Iterable, Optional, Sequence
+from typing import Set, Dict, List, Tuple, Union, Callable, Iterable, Optional, Sequence
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass
@@ -56,7 +56,6 @@ COL_SPACE_GROUP = "space_group"
 COL_CG_PH = "cg_ph"
 COL_CG_TEMP = "cg_temp"
 COL_PDB_SOURCE = "pdb_source"
-COL_PREC_CSV_PATH = "prec_csv_path"
 COL_REJECTED_BY = "rejected_by"
 COL_NUM_ALTLOCS = "num_altlocs"
 
@@ -304,7 +303,7 @@ class ProteinRecordCollector(ParallelDataCollector):
     FILTERED_STRUCTS_FILENAME = "meta-structs_filtered"
     REJECTED_STRUCTS_FILENAME = "meta-structs_rejected"
     BLAST_SCORES_FILENAME = "meta-blast_scores"
-    DATASET_FILENAME = "data-precs"
+    DATASET_DIRNAME = "data-precs"
 
     def __init__(
         self,
@@ -323,7 +322,6 @@ class ProteinRecordCollector(ParallelDataCollector):
         entity_single_chain: bool = False,
         out_dir: Path = pp5.out_subdir("prec-collected"),
         out_tag: Optional[str] = None,
-        prec_out_dir: Path = pp5.out_subdir("prec"),
         write_zip: bool = False,
         async_timeout: Optional[float] = 600,
         async_retry_delta: float = 0.001,
@@ -346,7 +344,6 @@ class ProteinRecordCollector(ParallelDataCollector):
         the maximum deposition date (inclusive).
         :param out_dir: Output folder for collected metadata.
         :param out_tag: Extra tag to add to the output file names.
-        :param prec_out_dir: Output folder for prec CSV files.
         :param prec_init_args: Arguments for initializing each ProteinRecord
         :param with_backbone: Whether to include a 'backbone' column which contain the
         backbone atom coordinates of each residue in the order N, CA, C, O.
@@ -423,7 +420,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         self.entity_single_chain = entity_single_chain
 
         # Unique output dir for this collection run
-        self.prec_csv_out_dir = prec_out_dir / self.id
+        self.prec_csv_out_dir = self.out_dir / self.DATASET_DIRNAME
         self.prec_csv_out_dir.mkdir(parents=True, exist_ok=True)
 
     def __repr__(self):
@@ -619,46 +616,47 @@ class ProteinRecordCollector(ParallelDataCollector):
         return filtered_idx
 
     def _write_dataset(self, pool: mp.Pool) -> dict:
-        df_pdb_ids: pd.DataFrame = _read_df_csv(
-            self.out_dir,
-            self.FILTERED_STRUCTS_FILENAME,
-            usecols=[COL_PDB_ID, COL_PREC_CSV_PATH],
-        )
-        pdb_id_to_csv_path: Dict[str, Path] = {
-            row[COL_PDB_ID]: Path(row[COL_PREC_CSV_PATH])
-            for _, row in df_pdb_ids.iterrows()
-        }
-        n_pdb_ids = len(pdb_id_to_csv_path)
+        all_csvs = tuple(self.prec_csv_out_dir.glob("*.csv"))
+        n_pdb_ids = len(all_csvs)
         LOGGER.info(f"Creating dataset file from {n_pdb_ids} precs...")
 
-        # Create dask dataframe from each CSV (no data is actually loaded)
-        dask_dfs = [
-            dd.read_csv(csv_path, dtype="string", encoding="utf-8")
-            for csv_path in pdb_id_to_csv_path.values()
-        ]
+        # discover common columns
+        LOGGER.info(f"Normalizing columns...")
+        common_columns_to_idx = {}
+        for csv_path in all_csvs:
+            with open(csv_path, "r", encoding="utf-8") as f:
+                line = f.readline().strip()
+            if not line:
+                continue
+            columns = line.split(",")
+            for i, col in enumerate(columns):
+                if col not in common_columns_to_idx:
+                    common_columns_to_idx[col] = i + 1
 
-        # Concatenate (lazily)
-        with Client(n_workers=4) as client:
-            LOGGER.info(f"Concatenating {len(dask_dfs)} dask dfs...")
-            full_df = dd.concat(dask_dfs, axis=0)
+        # give common columns a canonical order
+        common_columns = tuple(
+            col for col, i in sorted(common_columns_to_idx.items(), key=lambda x: x[1])
+        )
 
-            filepath = self.out_dir.joinpath(f"{self.DATASET_FILENAME}.csv")
-
-            LOGGER.info(f"Writing concatenated dataset to file...")
-            dd.to_csv(
-                full_df,
-                filename=str(filepath),
-                single_file=True,
-                index=False,
-                encoding="utf-8",
+        async_results = {}
+        for i, csv_path in enumerate(all_csvs):
+            kwds = dict(
+                csv_path=csv_path,
+                common_columns=common_columns,
+                _seq=(i, len(all_csvs)),
             )
-            self._out_filepaths.append(filepath)
+            r = pool.apply_async(_normalize_csv, args=[], kwds=kwds)
+            async_results[str(csv_path)] = r
 
-            LOGGER.info(f"Calculating dataset rows and size...")
-            n_rows = len(full_df)
-            dataset_size_mb = os.path.getsize(filepath) / 1024 / 1024
+        _, elapsed, n_rows_per_file = self._handle_async_results(
+            async_results, collect=True, flatten=False
+        )
 
-        LOGGER.info(f"Wrote {filepath} ({n_rows=}, {dataset_size_mb:.2f}MB)")
+        n_rows = sum(n_rows_per_file)
+        dataset_size_mb = sum(os.path.getsize(p) for p in all_csvs) / 1024**2
+
+        self._out_filepaths.append(self.prec_csv_out_dir)
+        LOGGER.info(f"Wrote {n_pdb_ids} files, ({n_rows=}, {dataset_size_mb:.2f}MB)")
         meta = {f"dataset_size_mb": f"{dataset_size_mb:.2f}", "n_entries": n_rows}
         return meta
 
@@ -1113,9 +1111,8 @@ def _collect_single_structure(
                 _ = arpeggio.contact_df(pdb_id_full)
 
             # Write CSV if requested
-            csv_path: Optional[Path] = None
             if csv_out_dir is not None:
-                csv_path = prec.to_csv(
+                prec.to_csv(
                     csv_out_dir,
                     with_ids=True,
                     tag=csv_tag,
@@ -1149,7 +1146,6 @@ def _collect_single_structure(
                 COL_CG_PH: meta.cg_ph,
                 COL_CG_TEMP: meta.cg_temp,
                 COL_PDB_SOURCE: pdb_source,
-                COL_PREC_CSV_PATH: str(csv_path) if csv_path else "",
             }
         )
 
@@ -1348,3 +1344,34 @@ def _read_df_csv(out_dir: Path, filename: str, usecols: list = None) -> pd.DataF
 
     LOGGER.info(f"Loaded {filepath}")
     return df
+
+
+def _normalize_csv(
+    csv_path: Path, common_columns: Sequence[str], _seq: Optional[Tuple[int, int]]
+) -> int:
+    """
+    Adds missing columns to a dataframe CSV file, and writes the result back to the
+    same file.
+
+    :param csv_path: The path to the file.
+    :param common_columns: The common columns.
+    :param _seq: Index and length of this file in the sequence of all files. Just for logging.
+    :return: Number of rows in the file.
+    """
+    df = pd.read_csv(csv_path, header=0, index_col=None, encoding="utf-8")
+
+    # add missing columns
+    missing_cols = set(common_columns) - set(df.columns)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        df = df.assign(**{col: "" for col in missing_cols})
+
+    # reorder
+    df = df[[*common_columns]]
+
+    # write back
+    df.to_csv(csv_path, header=True, index=False)
+
+    seq_str = f"({_seq[0]+1}/{_seq[1]})" if _seq else ""
+    LOGGER.info(f"Normalized {csv_path!s} {seq_str}")
+    return len(df)
