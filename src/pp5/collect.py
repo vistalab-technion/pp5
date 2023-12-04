@@ -223,8 +223,9 @@ class ParallelDataCollector(abc.ABC):
     def _handle_async_results(
         self,
         async_results: Union[Dict[str, AsyncResult], List[AsyncResult]],
-        collect=False,
-        flatten=False,
+        collect: bool = False,
+        flatten: bool = False,
+        allow_none: bool = False,
         result_callback: Callable = None,
     ):
         """
@@ -236,6 +237,7 @@ class ParallelDataCollector(abc.ABC):
         return it.
         :param flatten: Whether to flatten results (useful i.e. if each
         result is a list or tuple).
+        :param allow_none: Whether to allow None results.
         :param result_callback: Callable to invoke on each result.
         :return: Number of handled results, time elapsed in seconds, list of
         collected results (will be empty if collect is False).
@@ -255,6 +257,9 @@ class ParallelDataCollector(abc.ABC):
                 result_callback(res)
 
             if not collect:
+                continue
+
+            if res is None and not allow_none:
                 continue
 
             if flatten and isinstance(res, Iterable):
