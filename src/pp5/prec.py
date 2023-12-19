@@ -168,7 +168,7 @@ class ResidueRecord(object):
             bfactor=self.bfactor,
             **{
                 f"backbone_{atom_name}": str.join(
-                    ";",
+                    ",",
                     map(
                         str,
                         [
@@ -179,6 +179,7 @@ class ResidueRecord(object):
                 )
                 for atom_name, coords in self.backbone_coords.items()
             },
+            **(self.contacts.as_dict() if self.contacts else {}),
             num_altlocs=self.num_altlocs,
         )
 
@@ -532,6 +533,27 @@ class ResidueContacts(object):
         self.contact_non_aa = contact_non_aa
         self.contact_aas = contact_aas
 
+    def as_dict(self, key_postfix: str = "", join_lists: bool = True):
+        def _join(s):
+            return str.join(",", s) if join_lists else s
+
+        d = dict(
+            contact_count=self.contact_count,
+            contact_types=_join(self.contact_types),
+            contact_dmin=self.contact_dmin,
+            contact_dmax=self.contact_dmax,
+            contact_smin=self.contact_smin,
+            contact_smax=self.contact_smax,
+            contact_ooc=_join(self.contact_ooc),
+            contact_non_aa=_join(self.contact_non_aa),
+            contact_aas=_join(self.contact_aas),
+        )
+
+        if key_postfix:
+            d = {f"{k}_{key_postfix}": v for k, v in d.items()}
+
+        return d
+
 
 class ProteinRecord(object):
     """
@@ -860,8 +882,6 @@ class ProteinRecord(object):
         self.ena_id = dna_seq_record.id
 
         # Calculate contacts if requested
-        # TODO: Remove _contacts_df from state
-        self._contacts_df: Optional[pd.DataFrame] = None
         contacts_from: Optional[
             Union[Dict[str, ResidueContacts], NeighborSearch]
         ] = None
@@ -877,8 +897,8 @@ class ProteinRecord(object):
                     ),
                 }
             )
-            self._contacts_df = arpeggio.residue_contacts_df(pdb_id=self.pdb_id)
-            contacts_df_rows = self._contacts_df.reset_index().transpose().to_dict()
+            contacts_df = arpeggio.residue_contacts_df(pdb_id=self.pdb_id)
+            contacts_df_rows = contacts_df.reset_index().transpose().to_dict()
             contacts_from = {
                 row["res_id"]: ResidueContacts(**row)
                 for row in contacts_df_rows.values()
@@ -1072,10 +1092,6 @@ class ProteinRecord(object):
             df_data.append(res_rec_dict)
 
         df_prec = pd.DataFrame(df_data)
-
-        if self.with_contacts:
-            # TODO: This should be handled by ResidueRecord.as_dict
-            df_prec = df_prec.join(self._contacts_df, how="left", on="res_id")
 
         if with_ids:
             df_prec.insert(loc=0, column="unp_id", value=self.unp_id)
