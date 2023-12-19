@@ -356,6 +356,7 @@ class ProteinGroup(object):
             strict_pdb_xref=self.strict_pdb_xref,
             strict_unp_xref=self.strict_unp_xref,
             pdb_dict=ref_pdb_dict,
+            with_contacts=self.compare_contacts,
         )
 
         # Align all query structure residues to the reference structure
@@ -768,6 +769,7 @@ class ProteinGroup(object):
                 cache=self.prec_cache,
                 strict_pdb_xref=self.strict_pdb_xref,
                 strict_unp_xref=self.strict_unp_xref,
+                with_contacts=self.compare_contacts,
             )
         except ProteinInitError as e:
             LOGGER.error(f"{self}: Failed to create prec for query structure: {e}")
