@@ -100,9 +100,6 @@ class TestMethods:
         if with_contacts:
             assert "contact_count" in df.columns
 
-    @pytest.mark.skipif(
-        not Arpeggio.can_execute(**DEFAULT_ARPEGGIO_ARGS), reason="no arpeggio"
-    )
     def test_contacts(self, prec, with_contacts):
         if not with_contacts:
             return
@@ -115,7 +112,8 @@ class TestMethods:
         assert 0 < len(valid_contacts) <= len(prec)
         for res_id, res_contacts in valid_contacts.items():
             assert res_id in prec
-            assert len(res_contacts.contact_aas) == res_contacts.contact_count
+            assert res_contacts.contact_count > 0
+            assert res_contacts.contact_dmin > 0
 
 
 class TestFromUnp:
