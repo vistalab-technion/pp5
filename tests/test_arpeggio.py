@@ -13,11 +13,17 @@ CONDA_ENV_NAME = "arpeggio"
     not Arpeggio.can_execute(use_conda_env=CONDA_ENV_NAME), reason="no arpeggio"
 )
 class TestArpeggio:
-    @pytest.fixture(autouse=True, params=[*PDB_DOWNLOAD_SOURCES.keys()])
-    def setup(self, request):
-        pdb_source = request.param
+    @pytest.fixture(autouse=False, scope="class", params=[*PDB_DOWNLOAD_SOURCES.keys()])
+    def pdb_source(self, request):
+        return request.param
 
-        self.arpeggio = Arpeggio(
+    @pytest.fixture(autouse=False, scope="class", params=["2WUR:A"])
+    def pdb_id(self, request):
+        return request.param
+
+    @pytest.fixture(autouse=False, scope="class")
+    def arpeggio(self, pdb_source, pdb_id) -> Arpeggio:
+        return Arpeggio(
             out_dir=get_tmp_path("arpeggio", clear=True),
             interaction_cutoff=0.1,
             use_conda_env=CONDA_ENV_NAME,
@@ -25,12 +31,22 @@ class TestArpeggio:
             pdb_source=pdb_source,
         )
 
-    def test_no_chain(self):
-        with pytest.raises(ValueError, match="chain"):
-            self.arpeggio.contact_df("2WUR")
+    @pytest.fixture(autouse=False, scope="class")
+    def pre_compute(self, arpeggio, pdb_id):
+        # pre-compute at class level
+        _ = arpeggio.contacts_df(pdb_id)
 
-    def test_from_pdb(self):
-        df_single = self.arpeggio.contact_df("2WUR:A", single_sided=True)
-        df_double = self.arpeggio.contact_df("2WUR:A", single_sided=False)
+    def test_no_chain(self, arpeggio):
+        with pytest.raises(ValueError, match="chain"):
+            arpeggio.contacts_df("2WUR")
+
+    def test_contacts_df(self, arpeggio, pdb_id, pre_compute):
+        df_single = arpeggio.contacts_df(pdb_id, single_sided=True)
+        df_double = arpeggio.contacts_df(pdb_id, single_sided=False)
         assert len(df_single) > 0
         assert len(df_single) * 2 == len(df_double)
+
+    def test_residue_contacts(self, arpeggio, pdb_id, pre_compute):
+        df = arpeggio.residue_contacts_df(pdb_id)
+        assert len(df) > 0
+        assert df["contact_count"].sum() > 0
