@@ -14,14 +14,12 @@ from typing import (
     Tuple,
     Union,
     Callable,
-    Iterable,
     Iterator,
     Optional,
     Sequence,
     ItemsView,
 )
 from pathlib import Path
-from functools import partial
 from itertools import chain
 from collections import OrderedDict
 
@@ -30,7 +28,6 @@ import pandas as pd
 from Bio.PDB import PPBuilder
 from Bio.Seq import Seq
 from Bio.Align import PairwiseAligner
-from Bio.PDB.Atom import DisorderedAtom
 from Bio.SeqRecord import SeqRecord
 from Bio.PDB.Residue import Residue
 from Bio.PDB.Polypeptide import Polypeptide
@@ -51,11 +48,10 @@ from pp5.backbone import (
     NO_ALTLOC,
     BACKBONE_ATOMS,
     BACKBONE_ATOM_CA,
-    BACKBONE_ATOMS_O,
     atom_altloc_ids,
-    residue_altloc_ids,
     residue_altloc_sigmas,
     residue_altloc_ca_dists,
+    residue_backbone_coords,
     residue_altloc_peptide_bond_lengths,
 )
 from pp5.dihedral import (
@@ -88,23 +84,6 @@ def _residue_to_res_id(res: Residue) -> str:
     return str.join("", map(str, res.get_id())).strip()
 
 
-def _backbone_coords(res: Residue, with_oxygen: bool = False) -> Optional[np.ndarray]:
-    """
-    Returns the backbone atom locations of a Residue.
-    :param res: A Residue.
-    :param with_oxygen: Whether to include the oxygen atom.
-    :return: The backbone locations as a 3x3 (no oxygen) or 4x3 matrix (with oxigen).
-    """
-    atom_names = BACKBONE_ATOMS_O if with_oxygen else BACKBONE_ATOMS
-    coords = []
-    try:
-        for atom_name in atom_names:
-            coords.append(res[atom_name].coord)
-    except KeyError:
-        return None
-    return np.stack(coords).astype(float)
-
-
 class ResidueRecord(object):
     """
     Represents a single residue in a protein record.
@@ -121,7 +100,7 @@ class ResidueRecord(object):
         bfactor: float,
         secondary: str,
         num_altlocs: int,
-        backbone_coords: Optional[np.ndarray] = None,
+        backbone_coords: Optional[Dict[str, Optional[np.ndarray]]] = None,
     ):
         """
 
@@ -138,6 +117,7 @@ class ResidueRecord(object):
         :param bfactor: Average b-factor along of the residue's backbone atoms.
         :param secondary: Single-letter secondary structure code.
         :param num_altlocs: Number of alternate conformations in the PDB entry of this residue.
+        :param backbone_coords: A dict mapping atom names to their backbone coordinates.
         """
 
         # # Get the best codon and calculate its 'score' based on how many
@@ -157,7 +137,7 @@ class ResidueRecord(object):
         self.codon_counts = codon_counts
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
         self.num_altlocs = num_altlocs
-        self.backbone_coords = backbone_coords
+        self.backbone_coords = backbone_coords or {}
 
     def as_dict(self, dihedral_args: Dict[str, Any] = None):
         """
@@ -178,11 +158,19 @@ class ResidueRecord(object):
             secondary=self.secondary,
             **self.angles.as_dict(**(dihedral_args or {})),
             bfactor=self.bfactor,
-            **(
-                dict(backbone=self.backbone_coords.round(4).tolist())
-                if self.backbone_coords is not None
-                else {}
-            ),
+            **{
+                f"backbone_{atom_name}": str.join(
+                    ";",
+                    map(
+                        str,
+                        [
+                            np.round(c, 4)
+                            for c in (coords if coords is not None else [])
+                        ],
+                    ),
+                )
+                for atom_name, coords in self.backbone_coords.items()
+            },
             num_altlocs=self.num_altlocs,
         )
 
@@ -290,7 +278,7 @@ class AltlocResidueRecord(ResidueRecord):
         altloc_ca_dists: Dict[str, float],
         altloc_sigmas: Dict[str, Dict[str, float]],
         altloc_peptide_bond_lengths: Dict[str, float],
-        backbone_coords: Optional[np.ndarray] = None,
+        backbone_coords: Optional[Dict[str, Optional[np.ndarray]]] = None,
     ):
         """
         Represents a residue with (potential) alternate conformations (altlocs).
@@ -387,7 +375,9 @@ class AltlocResidueRecord(ResidueRecord):
             altloc_ca_dists=altloc_ca_dists,
             altloc_sigmas=altloc_sigmas,
             altloc_peptide_bond_lengths=altloc_peptide_bond_lengths,
-            backbone_coords=_backbone_coords(r_curr, with_oxygen=True)
+            backbone_coords=residue_backbone_coords(
+                r_curr, with_oxygen=True, with_altlocs=with_altlocs
+            )
             if with_backbone
             else None,
         )
