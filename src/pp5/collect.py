@@ -454,7 +454,7 @@ class ProteinRecordCollector(ParallelDataCollector):
             kwds = dict(
                 csv_out_dir=self.prec_csv_out_dir,
                 with_backbone=self.with_backbone,
-                with_contacts=ARPEGGIO_ARGS if self.with_contacts else None,
+                with_contacts=self.with_contacts,
                 with_altlocs=self.with_altlocs,
                 entity_single_chain=self.entity_single_chain,
                 no_cache=True,
@@ -1013,7 +1013,7 @@ def _collect_single_structure(
     csv_out_dir: Optional[Path] = None,
     csv_tag: str = None,
     with_backbone: bool = False,
-    with_contacts: Optional[Dict] = None,
+    with_contacts: bool = False,
     with_altlocs: bool = False,
     entity_single_chain: bool = False,
     no_cache: bool = False,
@@ -1106,24 +1106,16 @@ def _collect_single_structure(
                 numeric_chain=nc,
                 with_altlocs=with_altlocs,
                 with_backbone=with_backbone,
+                with_contacts=with_contacts,
             )
 
             # Save into cache
             if not no_cache:
                 prec.save()
 
-            if with_contacts:
-                arpeggio = Arpeggio(**with_contacts, pdb_source=pdb_source)
-                _ = arpeggio.contact_df(pdb_id_full)
-
             # Write CSV if requested
             if csv_out_dir is not None:
-                prec.to_csv(
-                    csv_out_dir,
-                    with_ids=True,
-                    tag=csv_tag,
-                    with_contacts=with_contacts,
-                )
+                prec.to_csv(csv_out_dir, with_ids=True, tag=csv_tag)
 
         except Exception as e:
             LOGGER.warning(
@@ -1310,7 +1302,7 @@ def _load_prec_df_from_cache(
     pdb_id: str,
     pdb_source: str,
     with_backbone: bool = False,
-    with_contacts: Optional[Dict] = None,
+    with_contacts: bool = False,
     with_altlocs: bool = False,
 ):
     try:
@@ -1319,9 +1311,10 @@ def _load_prec_df_from_cache(
             pdb_source=pdb_source,
             with_altlocs=with_altlocs,
             with_backbone=with_backbone,
+            with_contacts=with_contacts,
             cache=True,
         )
-        df = prec.to_dataframe(with_ids=True, with_contacts=with_contacts)
+        df = prec.to_dataframe(with_ids=True)
         return df
     except ProteinInitError as e:
         LOGGER.error(f"Failed to create {pdb_id} from cache: {e}")
