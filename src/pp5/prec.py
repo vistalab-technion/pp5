@@ -749,6 +749,7 @@ class ProteinRecord(object):
         numeric_chain: bool = False,
         with_altlocs: bool = False,
         with_backbone: bool = False,
+        with_contacts: bool = False,
     ):
         """
         Initialize a protein record from both Uniprot and PDB ids.
@@ -779,6 +780,7 @@ class ProteinRecord(object):
         :param with_altlocs: Whether to include alternate conformations in the
         protein record. If False, only the default conformation will be used.
         :param with_backbone: Whether to include backbone atoms in the protein record.
+        :param with_contacts: Whether to calculate per-residue contacts.
         """
         if not (unp_id and pdb_id):
             raise ProteinInitError("Must provide both Uniprot and PDB IDs")
@@ -793,11 +795,15 @@ class ProteinRecord(object):
             LOGGER.warning(f"Replacing outdated UNP ID: {unp_id} -> {rec_unp_id}")
             self.unp_id = rec_unp_id
 
+        self.strict_unp_xref = strict_unp_xref
+        self.numeric_chain = numeric_chain
+        self.with_altlocs = with_altlocs
+        self.with_backbone = with_backbone
+        self.with_contacts = with_contacts
+
         # First we must find a matching PDB structure and chain for the
         # Uniprot id. If a pdb_id is given we'll try to use that, depending
         # on whether there's a Uniprot xref for it and on strict_unp_xref.
-        self.strict_unp_xref = strict_unp_xref
-        self.numeric_chain = numeric_chain
         self.pdb_base_id, self.pdb_chain_id = self._find_pdb_xref(pdb_id)
         self.pdb_id = f"{self.pdb_base_id}:{self.pdb_chain_id}"
         self.pdb_source = pdb_source
@@ -809,9 +815,6 @@ class ProteinRecord(object):
         )
         if not self.pdb_meta.resolution and self.pdb_source != PDB_AFLD:
             raise ProteinInitError(f"Unknown resolution for {pdb_id}")
-
-        self._contacts_df: Optional[pd.DataFrame] = None
-        self._contacts: Optional[Dict[str, ResidueContacts]] = None
 
         LOGGER.info(
             f"{self}: {self.pdb_meta.description}, "
@@ -915,6 +918,21 @@ class ProteinRecord(object):
             rr.res_id: rr for rr in residue_recs
         }
 
+        # Calculate contacts if requested
+        # TODO: Should happen before residue_recs are created, so that we can pass
+        #  the contact info to them
+        self._contacts_df: Optional[pd.DataFrame] = None
+        self._contacts: Optional[Dict[str, ResidueContacts]] = None
+        if with_contacts:
+            # TODO: Support both arpeggio and biopython contacts
+            self._contacts_df = self._generate_contacts_df()
+            contacts_df_rows = self._contacts_df.reset_index().transpose().to_dict()
+            self._contacts = {
+                row["res_id"]: ResidueContacts(**row)
+                for row in contacts_df_rows.values()
+                if row["res_id"] in self
+            }
+
     @property
     def unp_rec(self) -> UNPRecord:
         """
@@ -998,28 +1016,12 @@ class ProteinRecord(object):
         return {x.res_id: x.angles for x in self}
 
     @property
-    def contacts_df(self) -> pd.DataFrame:
-        """
-        :return: Dataframe containing tertiary contact features aggregated per residue.
-        """
-        if self._contacts_df is None:
-            self._contacts_df = self._generate_contacts_df()
-
-        return self._contacts_df
-
-    @property
     def contacts(self) -> Dict[str, ResidueContacts]:
         """
         :return: Mapping from residue id to its contact features.
         """
-        if self._contacts is None:
-            contacts_df_rows = self.contacts_df.reset_index().transpose().to_dict()
-            self._contacts = {
-                row["res_id"]: ResidueContacts(**row)
-                for row in contacts_df_rows.values()
-                if row["res_id"] in self
-            }
-
+        if not self.with_contacts:
+            raise ValueError("Contacts were not calculated for this protein record")
         return self._contacts
 
     def _generate_contacts_df(self, **arpeggio_kwargs) -> pd.DataFrame:
@@ -1230,15 +1232,11 @@ class ProteinRecord(object):
     def to_dataframe(
         self,
         with_ids: bool = False,
-        with_contacts: Optional[Union[bool, Dict[str, Any]]] = False,
     ):
         """
         :param with_ids: Whether to include pdb_id and unp_id columns. Usually this
         is redundant since it's the same for all rows, but can be useful if this
         dataframe is combined with others.
-        :param with_contacts: Whether to include tertiary contact features per
-        residue. Can be a dict, in which case it will be treated as kwargs to pass to
-        Arpeggio.
         :return: A Pandas dataframe where each row is a ResidueRecord from
         this ProteinRecord.
         """
@@ -1254,15 +1252,9 @@ class ProteinRecord(object):
 
         df_prec = pd.DataFrame(df_data)
 
-        if with_contacts:
-            contact_kwargs = (
-                with_contacts
-                if isinstance(with_contacts, dict)
-                else DEFAULT_ARPEGGIO_ARGS
-            )
-            df_prec = df_prec.join(self.contacts_df, how="left", on="res_id")
-            df_prec["contact_count"].fillna(0, inplace=True)
-            df_prec["contact_types"].fillna("", inplace=True)
+        if self.with_contacts:
+            # TODO: This should be handled by ResidueRecord.as_dict
+            df_prec = df_prec.join(self._contacts_df, how="left", on="res_id")
 
         if with_ids:
             df_prec.insert(loc=0, column="unp_id", value=self.unp_id)
