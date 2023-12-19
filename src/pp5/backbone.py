@@ -107,19 +107,62 @@ def residue_altloc_ids(
     )
 
 
+def residue_backbone_coords(
+    res: Residue, with_oxygen: bool = False, with_altlocs: bool = False
+) -> Dict[str, Optional[np.ndarray]]:
+    """
+    Returns the backbone atom locations of a Residue.
+
+    :param res: A Residue.
+    :param with_oxygen: Whether to include the oxygen atom.
+    :param with_altlocs: Whether to include backbone locations for each altloc.
+    :return: A dictionary mapping atom name (with possible altloc) to location, e.g.:
+    CA -> [x1, y1, z1]
+    CA_A -> [x2, y2, z2]
+    CA_B -> [x3, y3, z3]
+    """
+    atom_names = BACKBONE_ATOMS_O if with_oxygen else BACKBONE_ATOMS
+    atoms: Dict[str, Optional[AltlocAtom]] = {
+        atom_name: res[atom_name] if atom_name in res else None
+        for atom_name in atom_names
+    }
+
+    altloc_ids = [NO_ALTLOC]
+    if with_altlocs:
+        altloc_ids = atom_altloc_ids(
+            *[a for a in atoms.values() if a is not None],
+            allow_disjoint=True,
+            include_none=True,
+        )
+
+    coords = {}
+    for atom_name, atom in atoms.items():
+        for altloc_id in altloc_ids:
+            altloc_postfix = "" if altloc_id == NO_ALTLOC else f"_{altloc_id}"
+            atom_name_altloc = f"{atom_name}{altloc_postfix}"
+
+            with altloc_ctx(atom, altloc_id) as _atom:
+                c = _atom.coord if _atom is not None else None
+                coords[atom_name_altloc] = c
+
+    return coords
+
+
 @contextmanager
 def altloc_ctx(atom: AltlocAtom, altloc_id: str) -> Optional[Atom]:
     """
     Context that sets and then restores the selected altloc for a potentially
     disordered atom, and yields the selected atom.
-    If the atom is not disordered, yields the atom as is.
+    If the atom is not disordered or if the altloc id is NO_ALTLOC,
+    yields the given atom as is.
 
     :param atom: The atom to set the altloc for.
     :param altloc_id: The altloc id to select.
     :return: The selected atom or None if the altloc id does not exist.
     """
-    if isinstance(atom, DisorderedAtom):
+    if isinstance(atom, DisorderedAtom) and altloc_id != NO_ALTLOC:
         selected_altloc = atom.get_altloc()
+
         if atom.disordered_has_id(altloc_id):
             atom.disordered_select(altloc_id)
             yield atom.selected_child
