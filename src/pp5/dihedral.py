@@ -804,15 +804,21 @@ class AtomLocationUncertainty(object):
 
         return res_mean
 
-    def process_residue_altlocs(self, res: Residue) -> Dict[str, float]:
+    def process_residue_altlocs(
+        self, res: Residue, with_altlocs: bool = False
+    ) -> Dict[str, float]:
         """
-        Calculates the average uncertainty over atoms of a residue, for each altloc.
+        Calculates the average uncertainty over atoms of a residue, with optional
+        support for altlocs.
 
         :param res: The residue.
+        :param with_altlocs: Whether to calculate uncertainties for each altloc.
         :return: A dict mapping from altloc id to the uncertainty. The special id
         NO_ALTLOC will always be included in the result.
         """
         bfactors = {NO_ALTLOC: self.process_residue(res)}
+        if not with_altlocs:
+            return bfactors
 
         atoms = residue_backbone_atoms(res) if self.bb_only else tuple(res.get_atoms())
         for altloc_id in residue_altloc_ids(res):
