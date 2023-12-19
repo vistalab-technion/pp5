@@ -79,9 +79,9 @@ DEFAULT_BFACTOR_CALC = AtomLocationUncertainty(
 )
 
 CONTACT_DEFAULT_RADIUS = 4.5
-CONTACT_METHOD_ARPEGGIO = "arpeggio"
-CONTACT_METHOD_BIOPYTHON = "biopython"
-CONTACT_METHODS = (CONTACT_METHOD_ARPEGGIO, CONTACT_METHOD_BIOPYTHON)
+CONTACT_METHOD_ARPEGGIO = "arp"
+CONTACT_METHOD_NEIGHBOR = "ns"
+CONTACT_METHODS = (CONTACT_METHOD_ARPEGGIO, CONTACT_METHOD_NEIGHBOR)
 
 
 def _residue_to_res_id(res: Residue) -> str:
@@ -839,7 +839,7 @@ class ProteinRecord(object):
         with_altlocs: bool = False,
         with_backbone: bool = False,
         with_contacts: bool = False,
-        contact_method: str = CONTACT_METHOD_ARPEGGIO,
+        contact_method: str = CONTACT_METHOD_NEIGHBOR,
         contact_radius: float = CONTACT_DEFAULT_RADIUS,
     ):
         """
@@ -872,6 +872,9 @@ class ProteinRecord(object):
         protein record. If False, only the default conformation will be used.
         :param with_backbone: Whether to include backbone atoms in the protein record.
         :param with_contacts: Whether to calculate per-residue contacts.
+        :param contact_method: Method for calculating contacts.
+        Options are: 'ns' for neighbor search; 'arp' for arpeggio.
+        :param contact_radius: Radius for calculating contacts.
         """
         if not (unp_id and pdb_id):
             raise ProteinInitError("Must provide both Uniprot and PDB IDs")
