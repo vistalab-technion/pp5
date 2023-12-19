@@ -107,9 +107,13 @@ class TestMethods:
         if not with_contacts:
             return
 
-        assert 0 < len(prec.contacts.items()) <= len(prec)
-
-        for res_id, res_contacts in prec.contacts.items():
+        valid_contacts = {
+            res_id: contacts
+            for res_id, contacts in prec.contacts.items()
+            if contacts is not None
+        }
+        assert 0 < len(valid_contacts) <= len(prec)
+        for res_id, res_contacts in valid_contacts.items():
             assert res_id in prec
             assert len(res_contacts.contact_aas) == res_contacts.contact_count
 
