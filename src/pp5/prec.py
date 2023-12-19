@@ -20,6 +20,7 @@ from typing import (
     ItemsView,
 )
 from pathlib import Path
+from functools import partial
 from itertools import chain
 from collections import OrderedDict
 
@@ -48,6 +49,7 @@ from pp5.backbone import (
     NO_ALTLOC,
     BACKBONE_ATOMS,
     BACKBONE_ATOM_CA,
+    altloc_ctx,
     atom_altloc_ids,
     residue_altloc_sigmas,
     residue_altloc_ca_dists,
@@ -354,6 +356,7 @@ class AltlocResidueRecord(ResidueRecord):
             # or a NeighborSearch object with all atoms from the structure.
             Union[Dict[str, ResidueContacts], NeighborSearch]
         ] = None,
+        contacts_radius: float = CONTACT_DEFAULT_RADIUS,
     ):
         res_id: str = _residue_to_res_id(r_curr)
         res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
@@ -391,16 +394,20 @@ class AltlocResidueRecord(ResidueRecord):
                     f"When {with_contacts=}, contacts_from must be provided"
                 )
             elif isinstance(contacts_from, dict):
-                # TODO: This combo should be disallowed at the prec level
-                # if with_altlocs:
-                #     raise ValueError(
-                #         f"When {with_altlocs=}, pre-computed contacts are not supported"
-                #     )
                 altloc_contacts[NO_ALTLOC] = contacts_from.get(res_id)
-            else:
-                # TODO
-                # Compute per-altloc contacts based on NeighborSearch
-                raise NotImplementedError("TODO")
+            elif BACKBONE_ATOM_CA in r_curr:
+                # Calculate contacts for each altloc by searching in a radius around
+                # the CA atom location of that altloc.
+                for altloc_id in {NO_ALTLOC, *altloc_ids[BACKBONE_ATOM_CA]}:
+                    with altloc_ctx(r_curr[BACKBONE_ATOM_CA], altloc_id) as _ca:
+                        altloc_contacts[altloc_id] = ResidueContacts.from_residues(
+                            res=r_curr,
+                            res_contacts=contacts_from.search(
+                                _ca.get_coord(),
+                                radius=contacts_radius,
+                                level="R",  # crucial to return residues here
+                            ),
+                        )
 
         # Backbone
         altloc_backbone_coords: Dict[str, Optional[np.ndarray]] = {}
@@ -496,10 +503,10 @@ class ResidueContacts(object):
         contact_types: Union[Set[str], str],
         contact_dmin: float,
         contact_dmax: float,
-        contact_smin: float,
-        contact_smax: float,
-        contact_ooc: Union[Set[str], str],
-        contact_non_aa: Union[Set[str], str],
+        contact_smin: Union[int, float],
+        contact_smax: Union[int, float],
+        contact_ooc: Union[Sequence[str], str],
+        contact_non_aa: Union[Sequence[str], str],
         contact_aas: Union[Sequence[str], str],
     ):
         def _split(s: str):
@@ -512,26 +519,24 @@ class ResidueContacts(object):
             return s_split
 
         if isinstance(contact_types, str):
-            contact_types = set(_split(contact_types))
+            contact_types = sorted(set(_split(contact_types)))
         if isinstance(contact_ooc, str):
-            contact_ooc = set(_split(contact_ooc))
+            contact_ooc = sorted(set(_split(contact_ooc)))
         if isinstance(contact_non_aa, str):
-            contact_non_aa = set(_split(contact_non_aa))
+            contact_non_aa = sorted(set(_split(contact_non_aa)))
         if isinstance(contact_aas, str):
-            contact_aas = tuple(_split(contact_aas))
+            contact_aas = sorted(set(_split(contact_aas)))
 
-        assert contact_count == len(contact_aas)
-
-        self.res_id = res_id
-        self.contact_count = contact_count
-        self.contact_types = contact_types
-        self.contact_dmin = contact_dmin
-        self.contact_dmax = contact_dmax
-        self.contact_smin = contact_smin
-        self.contact_smax = contact_smax
-        self.contact_ooc = contact_ooc
-        self.contact_non_aa = contact_non_aa
-        self.contact_aas = contact_aas
+        self.res_id = str(res_id)
+        self.contact_count = int(contact_count or 0)
+        self.contact_types = tuple(contact_types)
+        self.contact_dmin = float(contact_dmin or 0)
+        self.contact_dmax = float(contact_dmax or 0)
+        self.contact_smin = int(contact_smin or 0)
+        self.contact_smax = int(contact_smax or 0)
+        self.contact_ooc = tuple(contact_ooc)
+        self.contact_non_aa = tuple(contact_non_aa)
+        self.contact_aas = tuple(contact_aas)
 
     def as_dict(self, key_postfix: str = "", join_lists: bool = True):
         def _join(s):
@@ -553,6 +558,87 @@ class ResidueContacts(object):
             d = {f"{k}_{key_postfix}": v for k, v in d.items()}
 
         return d
+
+    @classmethod
+    def from_residues(
+        cls, res: Residue, res_contacts: Sequence[Residue]
+    ) -> ResidueContacts:
+        """
+        Constructs a ResidueContacts object from a list of residues deemed to be in
+        contact with a central residue.
+
+        :param res: The central residue which is in contact with the given residues.
+        :param res_contacts: A list of residues which the given residue is in
+        contact with.
+        """
+
+        res_contacts_set = set(res_contacts)
+
+        # First, remove all water molecule contacts as we don't count these
+        res_contacts_water = [r for r in res_contacts_set if r.get_resname() == "HOH"]
+        res_contacts_set -= set(res_contacts_water)
+
+        # Remove the residue itself from the contacts
+        res_contacts_set -= {res}
+
+        # Compute min and max distances to any atom in the contacts
+        r_CA = res[BACKBONE_ATOM_CA]
+        contact_atoms = [
+            # if r has a CA atom use that, otherwise use the closest atom
+            r[BACKBONE_ATOM_CA]
+            if BACKBONE_ATOM_CA in r
+            else min(r.get_atoms(), key=lambda a: a - r_CA)
+            for r in res_contacts_set
+        ]
+
+        dists = [r_CA - a for a in contact_atoms]
+        contact_dmin, contact_dmax = min(dists), max(dists)
+
+        # Separate all the non-AA contacts
+        res_contacts_non_aa = [
+            # id starts with H_ for HETATM
+            r
+            for r in res_contacts_set
+            if r.get_id()[0].startswith("H_")
+        ]
+        res_contacts_set -= set(res_contacts_non_aa)
+
+        # Separate the out-of-chain (OOC) AA contacts
+        res_contacts_ooc = [
+            # residue parent is a chain
+            r
+            for r in res_contacts_set
+            if r.get_parent() != res.get_parent()
+        ]
+        res_contacts_set -= set(res_contacts_ooc)
+
+        # Separate the in-chain AA contacts
+        res_contacts_aas = list(res_contacts_set)
+
+        # Compute min and max sequence distances, in-chain only
+        _, r_seq, _ = res.get_id()
+        seq_dists = [abs(r_seq - r.get_id()[1]) for r in res_contacts_aas]
+        contact_smin, contact_smax = min(seq_dists), max(seq_dists)
+
+        def _to_str(r: Residue, with_chain: bool = False) -> str:
+            chain = f"{r.get_parent().get_id()}:" if with_chain else ""
+            resname = r.get_resname()
+            resname = ACIDS_3TO1.get(resname, resname)
+            resseq = r.get_id()[1]
+            return f"{chain}{resname}{resseq}"
+
+        return ResidueContacts(
+            res_id=_residue_to_res_id(res),
+            contact_count=len(res_contacts),
+            contact_types="proximal",  # use arpeggio name, but not meaningful here
+            contact_dmin=contact_dmin,
+            contact_dmax=contact_dmax,
+            contact_smin=contact_smin,
+            contact_smax=contact_smax,
+            contact_ooc=tuple(map(partial(_to_str, with_chain=True), res_contacts_ooc)),
+            contact_non_aa=tuple(map(_to_str, res_contacts_non_aa)),
+            contact_aas=tuple(map(_to_str, res_contacts_aas)),
+        )
 
 
 class ProteinRecord(object):
@@ -800,6 +886,14 @@ class ProteinRecord(object):
             LOGGER.warning(f"Replacing outdated UNP ID: {unp_id} -> {rec_unp_id}")
             self.unp_id = rec_unp_id
 
+        if contact_method not in CONTACT_METHODS:
+            raise ValueError(
+                f"Unknown {contact_method=}, must be one of {CONTACT_METHODS}"
+            )
+
+        if with_altlocs and contact_method == CONTACT_METHOD_ARPEGGIO:
+            raise ValueError(f"Altlocs not supported with {contact_method=}")
+
         self.strict_unp_xref = strict_unp_xref
         self.numeric_chain = numeric_chain
         self.with_altlocs = with_altlocs
@@ -886,23 +980,25 @@ class ProteinRecord(object):
             Union[Dict[str, ResidueContacts], NeighborSearch]
         ] = None
         if with_contacts:
-            # TODO: Support both arpeggio and biopython contacts
-            arpeggio = Arpeggio(
-                **{
-                    # Override default args
-                    **DEFAULT_ARPEGGIO_ARGS,
-                    **dict(
-                        interaction_cutoff=self.contact_radius,
-                        pdb_source=self.pdb_source,
-                    ),
+            if contact_method == CONTACT_METHOD_ARPEGGIO:
+                arpeggio = Arpeggio(
+                    **{
+                        # Override default args
+                        **DEFAULT_ARPEGGIO_ARGS,
+                        **dict(
+                            interaction_cutoff=self.contact_radius,
+                            pdb_source=self.pdb_source,
+                        ),
+                    }
+                )
+                contacts_df = arpeggio.residue_contacts_df(pdb_id=self.pdb_id)
+                contacts_df_rows = contacts_df.reset_index().transpose().to_dict()
+                contacts_from = {
+                    row["res_id"]: ResidueContacts(**row)
+                    for row in contacts_df_rows.values()
                 }
-            )
-            contacts_df = arpeggio.residue_contacts_df(pdb_id=self.pdb_id)
-            contacts_df_rows = contacts_df.reset_index().transpose().to_dict()
-            contacts_from = {
-                row["res_id"]: ResidueContacts(**row)
-                for row in contacts_df_rows.values()
-            }
+            else:
+                contacts_from = NeighborSearch([*self.pdb_rec.get_atoms()])
 
         # Create a ResidueRecord holding all data we need per residue
         residue_recs = []
@@ -941,6 +1037,7 @@ class ProteinRecord(object):
                 with_altlocs=with_altlocs,
                 with_contacts=with_contacts,
                 contacts_from=contacts_from,
+                contacts_radius=contact_radius,
             )
             residue_recs.append(rr)
 
