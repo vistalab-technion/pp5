@@ -16,7 +16,7 @@ import pp5
 from pp5.prec import ProteinRecord, ResidueRecord, ResidueContacts
 from pp5.align import BLOSUM80, PYMOL_ALIGN_SYMBOL
 from pp5.align import PYMOL_SA_GAP_SYMBOLS as PSA_GAP
-from pp5.align import DEFAULT_ARPEGGIO_ARGS, ProteinBLAST, StructuralAlignment
+from pp5.align import ProteinBLAST, StructuralAlignment
 from pp5.utils import ProteinInitError
 from pp5.codons import UNKNOWN_AA, UNKNOWN_CODON, CODON_OPTS_SEP
 from pp5.dihedral import Dihedral

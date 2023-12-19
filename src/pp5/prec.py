@@ -36,7 +36,7 @@ from Bio.PDB.Residue import Residue
 from Bio.PDB.Polypeptide import Polypeptide
 
 import pp5
-from pp5.align import BLOSUM80, DEFAULT_ARPEGGIO_ARGS, Arpeggio
+from pp5.align import BLOSUM80
 from pp5.utils import ProteinInitError
 from pp5.codons import (
     ACIDS_3TO1,
@@ -46,6 +46,7 @@ from pp5.codons import (
     UNKNOWN_CODON,
     CODON_OPTS_SEP,
 )
+from pp5.arpeggio import DEFAULT_ARPEGGIO_ARGS, Arpeggio
 from pp5.backbone import (
     NO_ALTLOC,
     BACKBONE_ATOMS,

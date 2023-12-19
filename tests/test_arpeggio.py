@@ -3,7 +3,7 @@ import os
 import pytest
 
 from tests import get_tmp_path
-from pp5.align import Arpeggio
+from pp5.arpeggio import Arpeggio
 from pp5.external_dbs.pdb import PDB_DOWNLOAD_SOURCES
 
 CONDA_ENV_NAME = "arpeggio"
