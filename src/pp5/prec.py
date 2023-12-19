@@ -159,62 +159,6 @@ class ResidueRecord(object):
         self.num_altlocs = num_altlocs
         self.backbone_coords = backbone_coords
 
-    @classmethod
-    def from_residue(
-        cls,
-        r_curr: Residue,
-        r_prev: Optional[Residue] = None,
-        r_next: Optional[Residue] = None,
-        unp_idx: Optional[int] = None,
-        rel_loc: Optional[float] = None,
-        codon_counts: Optional[Dict[str, int]] = None,
-        secondary: Optional[str] = None,
-        dihedral_est: DihedralAngleCalculator = DEFAULT_ANGLE_CALC,
-        bfactor_est: AtomLocationUncertainty = DEFAULT_BFACTOR_CALC,
-        with_backbone: bool = False,
-    ):
-        """
-        Creates a ResidueRecord from biopython Residue objects.
-
-        :param r_curr: The residue for which to create a record.
-        :param r_prev: The previous residue in the sequence.
-        :param r_next: The next residue in the sequence.
-        :param unp_idx: The index of this residue in the corresponding Uniprot sequence.
-        :param rel_loc: The relative location of this residue in the protein
-        sequence, a number between 0 and 1.
-        :param codon_counts: A dict mapping codons to the number of occurrences in
-        DNA sequences associated with the Uniprot identifier of the containing protein.
-        :param secondary: The DSSP secondary structure code for this residue.
-        :param dihedral_est: A DihedralAngleCalculator for calculating dihedral angles.
-        :param bfactor_est: A AtomLocationUncertainty for calculating b-factors.
-        :param with_backbone: Whether to include the backbone coordinates in the record.
-        :return: An initialized ResidueRecord.
-        """
-        res_id: str = _residue_to_res_id(r_curr)
-        res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
-
-        angles: Dihedral = dihedral_est.process_residues(r_curr, r_prev, r_next)[
-            NO_ALTLOC
-        ]
-        bfactor: float = bfactor_est.process_residue(r_curr)
-
-        backbone_coords = None
-        if with_backbone:
-            backbone_coords = _backbone_coords(r_curr, with_oxygen=True)
-
-        return cls(
-            res_id=res_id,
-            unp_idx=unp_idx,
-            rel_loc=rel_loc,
-            name=res_name,
-            codon_counts=codon_counts,
-            secondary=secondary,
-            angles=angles,
-            bfactor=bfactor,
-            num_altlocs=len(residue_altloc_ids(r_curr, allow_disjoint=True)),
-            backbone_coords=backbone_coords,
-        )
-
     def as_dict(self, dihedral_args: Dict[str, Any] = None):
         """
         Creates a dict representation of the data in this residue. The angles object
@@ -223,7 +167,6 @@ class ResidueRecord(object):
         :param dihedral_args: A dict of arguments to pass to Dihedral.as_dict.
         :return: A dict representation of this residue.
         """
-
         return dict(
             res_id=self.res_id,
             name=self.name,
@@ -233,7 +176,6 @@ class ResidueRecord(object):
             codon_score=self.codon_score,
             codon_opts=self.codon_opts,
             secondary=self.secondary,
-            num_altlocs=self.num_altlocs,
             **self.angles.as_dict(**(dihedral_args or {})),
             bfactor=self.bfactor,
             **(
@@ -241,6 +183,7 @@ class ResidueRecord(object):
                 if self.backbone_coords is not None
                 else {}
             ),
+            num_altlocs=self.num_altlocs,
         )
 
     def __repr__(self):
@@ -402,6 +345,7 @@ class AltlocResidueRecord(ResidueRecord):
         dihedral_est: DihedralAngleCalculator = DEFAULT_ANGLE_CALC,
         bfactor_est: AtomLocationUncertainty = DEFAULT_BFACTOR_CALC,
         with_backbone: bool = False,
+        with_altlocs: bool = False,
     ):
         res_id: str = _residue_to_res_id(r_curr)
         res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
@@ -414,18 +358,21 @@ class AltlocResidueRecord(ResidueRecord):
         }
 
         altloc_angles: Dict[str, Dihedral] = dihedral_est.process_residues(
-            r_curr, r_prev, r_next, with_altlocs=True
+            r_curr, r_prev, r_next, with_altlocs=with_altlocs
         )
-        altloc_bfactors: Dict[str, float] = bfactor_est.process_residue_altlocs(r_curr)
-        altloc_ca_dists: Dict[str, float] = residue_altloc_ca_dists(
-            r_curr, normalize=True
+        altloc_bfactors: Dict[str, float] = bfactor_est.process_residue_altlocs(
+            r_curr, with_altlocs=with_altlocs
         )
-        altloc_sigmas: Dict[str, Dict[str, float]] = residue_altloc_sigmas(
-            r_curr, atom_names=[BACKBONE_ATOM_CA]
-        )
-        altloc_peptide_bond_lengths: Dict[
-            str, float
-        ] = residue_altloc_peptide_bond_lengths(r_curr, r_next, normalize=True)
+
+        altloc_ca_dists: Dict[str, float] = {}
+        altloc_sigmas: Dict[str, Dict[str, float]] = {}
+        altloc_peptide_bond_lengths: Dict[str, float] = {}
+        if with_altlocs:
+            altloc_ca_dists = residue_altloc_ca_dists(r_curr, normalize=True)
+            altloc_sigmas = residue_altloc_sigmas(r_curr, atom_names=[BACKBONE_ATOM_CA])
+            altloc_peptide_bond_lengths = residue_altloc_peptide_bond_lengths(
+                r_curr, r_next, normalize=True
+            )
 
         return cls(
             res_id=res_id,
@@ -898,8 +845,7 @@ class ProteinRecord(object):
             codon_counts: Dict[str, int] = idx_to_codons.get(i, {})
 
             # Instantiate a ResidueRecord
-            residue_record_cls = AltlocResidueRecord if with_altlocs else ResidueRecord
-            rr = residue_record_cls.from_residue(
+            rr = AltlocResidueRecord.from_residue(
                 r_curr,
                 r_prev,
                 r_next,
@@ -910,6 +856,7 @@ class ProteinRecord(object):
                 dihedral_est=dihedral_est,
                 bfactor_est=bfactor_est,
                 with_backbone=with_backbone,
+                with_altlocs=with_altlocs,
             )
             residue_recs.append(rr)
 
