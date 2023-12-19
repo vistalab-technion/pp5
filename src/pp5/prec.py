@@ -25,7 +25,7 @@ from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
-from Bio.PDB import PPBuilder
+from Bio.PDB import PPBuilder, NeighborSearch
 from Bio.Seq import Seq
 from Bio.Align import PairwiseAligner
 from Bio.SeqRecord import SeqRecord
@@ -76,6 +76,11 @@ DEFAULT_BFACTOR_CALC = AtomLocationUncertainty(
     backbone_only=True, unit_cell=None, isotropic=True, scale_as_bfactor=True
 )
 
+CONTACT_DEFAULT_RADIUS = 4.5
+CONTACT_METHOD_ARPEGGIO = "arpeggio"
+CONTACT_METHOD_BIOPYTHON = "biopython"
+CONTACT_METHODS = (CONTACT_METHOD_ARPEGGIO, CONTACT_METHOD_BIOPYTHON)
+
 
 def _residue_to_res_id(res: Residue) -> str:
     """
@@ -101,6 +106,7 @@ class ResidueRecord(object):
         secondary: str,
         num_altlocs: int,
         backbone_coords: Optional[Dict[str, Optional[np.ndarray]]] = None,
+        contacts: Optional[ResidueContacts] = None,
     ):
         """
 
@@ -118,6 +124,7 @@ class ResidueRecord(object):
         :param secondary: Single-letter secondary structure code.
         :param num_altlocs: Number of alternate conformations in the PDB entry of this residue.
         :param backbone_coords: A dict mapping atom names to their backbone coordinates.
+        :param contacts: A ResidueContacts object containing the residue's tertiary contacts.
         """
 
         # # Get the best codon and calculate its 'score' based on how many
@@ -138,6 +145,7 @@ class ResidueRecord(object):
         self.angles, self.bfactor, self.secondary = angles, bfactor, secondary
         self.num_altlocs = num_altlocs
         self.backbone_coords = backbone_coords or {}
+        self.contacts = contacts
 
     def as_dict(self, dihedral_args: Dict[str, Any] = None):
         """
@@ -278,6 +286,7 @@ class AltlocResidueRecord(ResidueRecord):
         altloc_ca_dists: Dict[str, float],
         altloc_sigmas: Dict[str, Dict[str, float]],
         altloc_peptide_bond_lengths: Dict[str, float],
+        altloc_contacts: Optional[Dict[str, ResidueContacts]] = None,
         backbone_coords: Optional[Dict[str, Optional[np.ndarray]]] = None,
     ):
         """
@@ -297,15 +306,18 @@ class AltlocResidueRecord(ResidueRecord):
         :param altloc_peptide_bond_lengths: A mapping from an a pair of altloc ids
         to the peptide bond length between this residue and the next one with those
         altloc ids.
+        :param altloc_contacts: A mapping from an altloc id to a ResidueContacts object.
         """
         no_altloc_angle = altloc_angles.pop(NO_ALTLOC)
         no_altloc_bfactor = altloc_bfactors.pop(NO_ALTLOC)
+        no_altloc_contacts = (altloc_contacts or {}).pop(NO_ALTLOC, None)
         self.altloc_ids = altloc_ids
         self.altloc_angles = altloc_angles
         self.altloc_bfactors = altloc_bfactors
-        self.altloc_ca_dists = altloc_ca_dists
-        self.altloc_sigmas = altloc_sigmas
-        self.altloc_peptide_bond_lengths = altloc_peptide_bond_lengths
+        self.altloc_ca_dists = altloc_ca_dists or {}
+        self.altloc_sigmas = altloc_sigmas or {}
+        self.altloc_peptide_bond_lengths = altloc_peptide_bond_lengths or {}
+        self.altloc_contacts = altloc_contacts or {}
 
         super().__init__(
             res_id=res_id,
@@ -318,6 +330,7 @@ class AltlocResidueRecord(ResidueRecord):
             secondary=secondary,
             num_altlocs=len(set(chain(*altloc_ids.values()))),
             backbone_coords=backbone_coords,
+            contacts=no_altloc_contacts,
         )
 
     @classmethod
@@ -334,6 +347,12 @@ class AltlocResidueRecord(ResidueRecord):
         bfactor_est: AtomLocationUncertainty = DEFAULT_BFACTOR_CALC,
         with_backbone: bool = False,
         with_altlocs: bool = False,
+        with_contacts: bool = False,
+        contacts_from: Optional[
+            # Either a pre-computed dict of contacts (from arpeggio),
+            # or a NeighborSearch object with all atoms from the structure.
+            Union[Dict[str, ResidueContacts], NeighborSearch]
+        ] = None,
     ):
         res_id: str = _residue_to_res_id(r_curr)
         res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
@@ -352,6 +371,7 @@ class AltlocResidueRecord(ResidueRecord):
             r_curr, with_altlocs=with_altlocs
         )
 
+        # Distances
         altloc_ca_dists: Dict[str, float] = {}
         altloc_sigmas: Dict[str, Dict[str, float]] = {}
         altloc_peptide_bond_lengths: Dict[str, float] = {}
@@ -360,6 +380,32 @@ class AltlocResidueRecord(ResidueRecord):
             altloc_sigmas = residue_altloc_sigmas(r_curr, atom_names=[BACKBONE_ATOM_CA])
             altloc_peptide_bond_lengths = residue_altloc_peptide_bond_lengths(
                 r_curr, r_next, normalize=True
+            )
+
+        # Contacts
+        altloc_contacts: Dict[str, ResidueContacts] = {}
+        if with_contacts:
+            if contacts_from is None:
+                raise ValueError(
+                    f"When {with_contacts=}, contacts_from must be provided"
+                )
+            elif isinstance(contacts_from, dict):
+                # TODO: This combo should be disallowed at the prec level
+                # if with_altlocs:
+                #     raise ValueError(
+                #         f"When {with_altlocs=}, pre-computed contacts are not supported"
+                #     )
+                altloc_contacts[NO_ALTLOC] = contacts_from.get(res_id)
+            else:
+                # TODO
+                # Compute per-altloc contacts based on NeighborSearch
+                raise NotImplementedError("TODO")
+
+        # Backbone
+        altloc_backbone_coords: Dict[str, Optional[np.ndarray]] = {}
+        if with_backbone:
+            altloc_backbone_coords = residue_backbone_coords(
+                r_curr, with_oxygen=True, with_altlocs=with_altlocs
             )
 
         return cls(
@@ -375,11 +421,8 @@ class AltlocResidueRecord(ResidueRecord):
             altloc_ca_dists=altloc_ca_dists,
             altloc_sigmas=altloc_sigmas,
             altloc_peptide_bond_lengths=altloc_peptide_bond_lengths,
-            backbone_coords=residue_backbone_coords(
-                r_curr, with_oxygen=True, with_altlocs=with_altlocs
-            )
-            if with_backbone
-            else None,
+            altloc_contacts=altloc_contacts,
+            backbone_coords=altloc_backbone_coords,
         )
 
     def as_dict(
@@ -688,6 +731,8 @@ class ProteinRecord(object):
         with_altlocs: bool = False,
         with_backbone: bool = False,
         with_contacts: bool = False,
+        contact_method: str = CONTACT_METHOD_ARPEGGIO,
+        contact_radius: float = CONTACT_DEFAULT_RADIUS,
     ):
         """
         Initialize a protein record from both Uniprot and PDB ids.
@@ -738,6 +783,8 @@ class ProteinRecord(object):
         self.with_altlocs = with_altlocs
         self.with_backbone = with_backbone
         self.with_contacts = with_contacts
+        self.contact_radius = contact_radius
+        self.contact_method = contact_method
 
         # First we must find a matching PDB structure and chain for the
         # Uniprot id. If a pdb_id is given we'll try to use that, depending
@@ -812,6 +859,31 @@ class ProteinRecord(object):
         dna_seq = str(dna_seq_record.seq)
         self.ena_id = dna_seq_record.id
 
+        # Calculate contacts if requested
+        # TODO: Remove _contacts_df from state
+        self._contacts_df: Optional[pd.DataFrame] = None
+        contacts_from: Optional[
+            Union[Dict[str, ResidueContacts], NeighborSearch]
+        ] = None
+        if with_contacts:
+            # TODO: Support both arpeggio and biopython contacts
+            arpeggio = Arpeggio(
+                **{
+                    # Override default args
+                    **DEFAULT_ARPEGGIO_ARGS,
+                    **dict(
+                        interaction_cutoff=self.contact_radius,
+                        pdb_source=self.pdb_source,
+                    ),
+                }
+            )
+            self._contacts_df = arpeggio.residue_contacts_df(pdb_id=self.pdb_id)
+            contacts_df_rows = self._contacts_df.reset_index().transpose().to_dict()
+            contacts_from = {
+                row["res_id"]: ResidueContacts(**row)
+                for row in contacts_df_rows.values()
+            }
+
         # Create a ResidueRecord holding all data we need per residue
         residue_recs = []
         for i in range(n_residues):
@@ -847,6 +919,8 @@ class ProteinRecord(object):
                 bfactor_est=bfactor_est,
                 with_backbone=with_backbone,
                 with_altlocs=with_altlocs,
+                with_contacts=with_contacts,
+                contacts_from=contacts_from,
             )
             residue_recs.append(rr)
 
@@ -855,22 +929,6 @@ class ProteinRecord(object):
         self._residue_recs: Dict[str, ResidueRecord] = {
             rr.res_id: rr for rr in residue_recs
         }
-
-        # Calculate contacts if requested
-        # TODO: Should happen before residue_recs are created, so that we can pass
-        #  the contact info to them
-        self._contacts_df: Optional[pd.DataFrame] = None
-        self._contacts: Optional[Dict[str, ResidueContacts]] = None
-        if with_contacts:
-            # TODO: Support both arpeggio and biopython contacts
-            arpeggio = Arpeggio(**DEFAULT_ARPEGGIO_ARGS, pdb_source=self.pdb_source)
-            self._contacts_df = arpeggio.residue_contacts_df(pdb_id=self.pdb_id)
-            contacts_df_rows = self._contacts_df.reset_index().transpose().to_dict()
-            self._contacts = {
-                row["res_id"]: ResidueContacts(**row)
-                for row in contacts_df_rows.values()
-                if row["res_id"] in self
-            }
 
     @property
     def unp_rec(self) -> UNPRecord:
@@ -961,7 +1019,7 @@ class ProteinRecord(object):
         """
         if not self.with_contacts:
             raise ValueError("Contacts were not calculated for this protein record")
-        return self._contacts
+        return {res_id: res.contacts for res_id, res in self._residue_recs.items()}
 
     @property
     def polypeptides(self) -> List[Polypeptide]:
