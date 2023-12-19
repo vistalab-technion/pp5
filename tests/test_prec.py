@@ -9,6 +9,7 @@ from pp5.prec import ProteinRecord, ResidueRecord
 from pp5.utils import ProteinInitError
 from pp5.codons import UNKNOWN_AA
 from pp5.arpeggio import DEFAULT_ARPEGGIO_ARGS, Arpeggio
+from pp5.backbone import BACKBONE_ATOMS_O
 from pp5.external_dbs import unp
 from pp5.external_dbs.pdb import PDB_DOWNLOAD_SOURCES
 
@@ -65,9 +66,19 @@ class TestMethods:
                 continue
             if with_backbone:
                 assert res.backbone_coords is not None
-                assert res.backbone_coords.shape == (4, 3)
+                coords = [
+                    (n, c) for n, c in res.backbone_coords.items() if c is not None
+                ]
+                assert len(coords) > 0
+                for altloc_name, coord in coords:
+                    name, *altloc = altloc_name.split("_")
+                    assert name in BACKBONE_ATOMS_O
+                    if altloc:
+                        assert altloc[0] in ("A", "B")
+                    assert coord.shape == (3,)
+
             else:
-                assert res.backbone_coords is None
+                assert res.backbone_coords == {}
 
     @pytest.mark.parametrize("with_ids", [True, False], ids=["with_ids", "no_ids"])
     def test_to_dataframe(self, prec, with_ids, with_backbone, with_contacts):
@@ -83,7 +94,8 @@ class TestMethods:
             assert "pdb_id" in df.columns
 
         if with_backbone:
-            assert "backbone" in df.columns
+            for bb_col in ("backbone_N", "backbone_CA", "backbone_C", "backbone_O"):
+                assert bb_col in df.columns
 
         if with_contacts:
             assert "contact_count" in df.columns
