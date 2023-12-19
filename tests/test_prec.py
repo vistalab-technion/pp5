@@ -33,12 +33,28 @@ def with_backbone(request):
     return request.param
 
 
+@pytest.fixture(
+    autouse=False,
+    scope="class",
+    params=[False, True],
+    ids=["no_contacts", "with_contacts"],
+)
+def with_contacts(request):
+    if not Arpeggio.can_execute(**DEFAULT_ARPEGGIO_ARGS):
+        return False
+
+    return request.param
+
+
 class TestMethods:
     @pytest.fixture(autouse=False, scope="class", params=["102L:A", "2WUR:A"])
-    def prec(self, with_altlocs, with_backbone, request):
+    def prec(self, with_altlocs, with_backbone, with_contacts, request):
         pdb_id = request.param
         prec = ProteinRecord.from_pdb(
-            pdb_id, with_altlocs=with_altlocs, with_backbone=with_backbone
+            pdb_id,
+            with_altlocs=with_altlocs,
+            with_backbone=with_backbone,
+            with_contacts=with_contacts,
         )
         return prec
 
@@ -54,17 +70,12 @@ class TestMethods:
                 assert res.backbone_coords is None
 
     @pytest.mark.parametrize("with_ids", [True, False], ids=["with_ids", "no_ids"])
-    @pytest.mark.parametrize(
-        "with_contacts",
-        [False, True],
-        ids=["no_contacts", "with_contacts"],
-    )
     def test_to_dataframe(self, prec, with_ids, with_backbone, with_contacts):
         if isinstance(with_contacts, dict):
             if not Arpeggio.can_execute(**DEFAULT_ARPEGGIO_ARGS):
                 pytest.skip()
 
-        df = prec.to_dataframe(with_ids=with_ids, with_contacts=with_contacts)
+        df = prec.to_dataframe(with_ids=with_ids)
         assert len(df) == len(prec)
 
         if with_ids:
@@ -80,7 +91,10 @@ class TestMethods:
     @pytest.mark.skipif(
         not Arpeggio.can_execute(**DEFAULT_ARPEGGIO_ARGS), reason="no arpeggio"
     )
-    def test_contacts(self, prec):
+    def test_contacts(self, prec, with_contacts):
+        if not with_contacts:
+            return
+
         assert 0 < len(prec.contacts.items()) <= len(prec)
 
         for res_id, res_contacts in prec.contacts.items():
