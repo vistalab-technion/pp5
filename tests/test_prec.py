@@ -9,7 +9,12 @@ from pp5.prec import ProteinRecord, ResidueRecord
 from pp5.utils import ProteinInitError
 from pp5.codons import UNKNOWN_AA
 from pp5.backbone import BACKBONE_ATOMS_O
-from pp5.contacts import DEFAULT_ARPEGGIO_ARGS, Arpeggio
+from pp5.contacts import (
+    DEFAULT_ARPEGGIO_ARGS,
+    CONTACT_METHOD_ARPEGGIO,
+    CONTACT_METHOD_NEIGHBOR,
+    Arpeggio,
+)
 from pp5.external_dbs import unp
 from pp5.external_dbs.pdb import PDB_DOWNLOAD_SOURCES
 
@@ -41,15 +46,12 @@ def with_backbone(request):
     ids=["no_contacts", "with_contacts"],
 )
 def with_contacts(request):
-    if not Arpeggio.can_execute(**DEFAULT_ARPEGGIO_ARGS):
-        return False
-
     return request.param
 
 
 class TestMethods:
     @pytest.fixture(autouse=False, scope="class", params=["102L:A", "2WUR:A"])
-    def pdb_id(self, with_altlocs, request):
+    def pdb_id(self, request):
         return request.param
 
     @pytest.fixture(autouse=False, scope="class")
@@ -99,10 +101,24 @@ class TestMethods:
         if with_contacts:
             assert "contact_count" in df.columns
 
-    def test_contacts(self, prec, with_contacts):
-        if not with_contacts:
-            return
+    @pytest.mark.parametrize(
+        "contact_method", [CONTACT_METHOD_ARPEGGIO, CONTACT_METHOD_NEIGHBOR]
+    )
+    def test_contacts(self, pdb_id, with_altlocs, contact_method):
+        if contact_method == CONTACT_METHOD_ARPEGGIO:
+            if not Arpeggio.can_execute(**DEFAULT_ARPEGGIO_ARGS):
+                pytest.skip("Arpeggio not available")
+            elif with_altlocs:
+                pytest.skip("Arpeggio not compatible with altlocs")
 
+        prec = ProteinRecord.from_pdb(
+            pdb_id,
+            with_altlocs=with_altlocs,
+            with_backbone=True,
+            with_contacts=True,
+            contact_radius=2.34,
+            contact_method=contact_method,
+        )
         valid_contacts = {
             res_id: contacts
             for res_id, contacts in prec.contacts.items()
