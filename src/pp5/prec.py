@@ -623,8 +623,8 @@ class ResidueContacts(object):
         seq_dists = [abs(r_seq - r.get_id()[1]) for r in res_contacts_aas]
         contact_smin, contact_smax = min(seq_dists), max(seq_dists)
 
-        def _to_str(r: Residue, with_chain: bool = False) -> str:
-            chain = f"{r.get_parent().get_id()}:" if with_chain else ""
+        def _to_str(r: Residue, no_chain: bool = False) -> str:
+            chain = f"{r.get_parent().get_id()}:" if not no_chain else ""
             resname = r.get_resname()
             resname = ACIDS_3TO1.get(resname, resname)
             resseq = r.get_id()[1]
@@ -638,7 +638,7 @@ class ResidueContacts(object):
             contact_dmax=contact_dmax,
             contact_smin=contact_smin,
             contact_smax=contact_smax,
-            contact_ooc=tuple(map(partial(_to_str, with_chain=True), res_contacts_ooc)),
+            contact_ooc=tuple(map(_to_str, res_contacts_ooc)),
             contact_non_aa=tuple(map(_to_str, res_contacts_non_aa)),
             contact_aas=tuple(map(_to_str, res_contacts_aas)),
         )
