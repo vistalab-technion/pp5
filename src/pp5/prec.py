@@ -1173,14 +1173,8 @@ class ProteinRecord(object):
         """
         return sum(r.num_altlocs > 1 for r in self._residue_recs.values())
 
-    def to_dataframe(
-        self,
-        with_ids: bool = False,
-    ):
+    def to_dataframe(self):
         """
-        :param with_ids: Whether to include pdb_id and unp_id columns. Usually this
-        is redundant since it's the same for all rows, but can be useful if this
-        dataframe is combined with others.
         :return: A Pandas dataframe where each row is a ResidueRecord from
         this ProteinRecord.
         """
@@ -1196,13 +1190,13 @@ class ProteinRecord(object):
 
         df_prec = pd.DataFrame(df_data)
 
-        if with_ids:
-            df_prec.insert(loc=0, column="unp_id", value=self.unp_id)
-            df_prec.insert(loc=0, column="pdb_id", value=self.pdb_id)
+        # Insert the Uniprot and PDB IDs as the first columns
+        df_prec.insert(loc=0, column="unp_id", value=self.unp_id)
+        df_prec.insert(loc=0, column="pdb_id", value=self.pdb_id)
 
         return df_prec
 
-    def to_csv(self, out_dir=pp5.out_subdir("prec"), tag=None, **to_dataframe_kwargs):
+    def to_csv(self, out_dir=pp5.out_subdir("prec"), tag=None):
         """
         Writes the ProteinRecord as a CSV file, by writing the dataframe produced by
         self.to_dataframe() to CSV.
@@ -1214,14 +1208,13 @@ class ProteinRecord(object):
 
         :param out_dir: Output dir.
         :param tag: Optional extra tag to add to filename.
-        :param to_dataframe_kwargs: Keyword args for self.to_dataframe.
         :return: The path to the written file.
         """
         os.makedirs(out_dir, exist_ok=True)
         filepath = pdb_tagged_filepath(
             self.pdb_id, self.pdb_source, out_dir, "csv", tag
         )
-        df = self.to_dataframe(**to_dataframe_kwargs)
+        df = self.to_dataframe()
         df.to_csv(
             filepath,
             na_rep="",

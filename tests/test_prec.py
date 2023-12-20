@@ -49,15 +49,17 @@ def with_contacts(request):
 
 class TestMethods:
     @pytest.fixture(autouse=False, scope="class", params=["102L:A", "2WUR:A"])
-    def prec(self, with_altlocs, with_backbone, with_contacts, request):
-        pdb_id = request.param
-        prec = ProteinRecord.from_pdb(
+    def pdb_id(self, with_altlocs, request):
+        return request.param
+
+    @pytest.fixture(autouse=False, scope="class")
+    def prec(self, with_altlocs, with_backbone, with_contacts, pdb_id):
+        return ProteinRecord.from_pdb(
             pdb_id,
             with_altlocs=with_altlocs,
             with_backbone=with_backbone,
             with_contacts=with_contacts,
         )
-        return prec
 
     def test_backbone(self, prec, with_backbone):
         res: ResidueRecord
@@ -80,18 +82,15 @@ class TestMethods:
             else:
                 assert res.backbone_coords == {}
 
-    @pytest.mark.parametrize("with_ids", [True, False], ids=["with_ids", "no_ids"])
-    def test_to_dataframe(self, prec, with_ids, with_backbone, with_contacts):
+    def test_to_dataframe(self, prec, with_backbone, with_contacts):
         if isinstance(with_contacts, dict):
             if not Arpeggio.can_execute(**DEFAULT_ARPEGGIO_ARGS):
                 pytest.skip()
 
-        df = prec.to_dataframe(with_ids=with_ids)
+        df = prec.to_dataframe()
         assert len(df) == len(prec)
-
-        if with_ids:
-            assert "unp_id" in df.columns
-            assert "pdb_id" in df.columns
+        assert "unp_id" in df.columns and df["unp_id"].unique()[0] == prec.unp_id
+        assert "pdb_id" in df.columns and df["pdb_id"].unique()[0] == prec.pdb_id
 
         if with_backbone:
             for bb_col in ("backbone_N", "backbone_CA", "backbone_C", "backbone_O"):

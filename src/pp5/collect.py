@@ -1114,7 +1114,7 @@ def _collect_single_structure(
 
             # Write CSV if requested
             if csv_out_dir is not None:
-                prec.to_csv(csv_out_dir, with_ids=True, tag=csv_tag)
+                prec.to_csv(csv_out_dir, tag=csv_tag)
 
         except Exception as e:
             LOGGER.warning(
@@ -1313,7 +1313,7 @@ def _load_prec_df_from_cache(
             with_contacts=with_contacts,
             cache=True,
         )
-        df = prec.to_dataframe(with_ids=True)
+        df = prec.to_dataframe()
         return df
     except ProteinInitError as e:
         LOGGER.error(f"Failed to create {pdb_id} from cache: {e}")
