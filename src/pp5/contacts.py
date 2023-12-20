@@ -6,25 +6,193 @@ import logging
 import zipfile
 import subprocess
 from time import time
-from typing import Union, Optional
+from typing import Set, Union, Optional, Sequence
 from pathlib import Path
 from functools import partial
 from itertools import chain
 
 import numpy as np
 import pandas as pd
+from Bio.PDB.Residue import Residue
 
 import pp5
 from pp5.codons import ACIDS_3TO1, UNKNOWN_AA
+from pp5.backbone import BACKBONE_ATOM_CA
 from pp5.external_dbs import pdb
 from pp5.external_dbs.pdb import PDB_RCSB
 
 LOGGER = logging.getLogger(__name__)
 
 
+CONTACT_DEFAULT_RADIUS = 5.0  # Angstroms
+CONTACT_METHOD_ARPEGGIO = "arp"
+CONTACT_METHOD_NEIGHBOR = "ns"
+CONTACT_METHODS = (CONTACT_METHOD_ARPEGGIO, CONTACT_METHOD_NEIGHBOR)
+
 DEFAULT_ARPEGGIO_ARGS = dict(
     interaction_cutoff=4.5, use_conda_env="arpeggio", cache=True
 )
+
+
+def res_to_id(res: Residue) -> str:
+    """
+    Converts a biopython residue object to a string representing its ID.
+    """
+    return str.join("", map(str, res.get_id())).strip()
+
+
+class ResidueContacts(object):
+    """
+    Represents a single residue's tertiary contacts in a protein record.
+    """
+
+    def __init__(
+        self,
+        res_id: Union[str, int],
+        contact_count: int,
+        contact_types: Union[Set[str], str],
+        contact_dmin: float,
+        contact_dmax: float,
+        contact_smin: Union[int, float],
+        contact_smax: Union[int, float],
+        contact_ooc: Union[Sequence[str], str],
+        contact_non_aa: Union[Sequence[str], str],
+        contact_aas: Union[Sequence[str], str],
+    ):
+        def _split(s: str):
+            s_split = s.split(",")
+
+            # In case of empty string input, output will be an empty set.
+            if "" in s_split:
+                s_split.remove("")
+
+            return s_split
+
+        if isinstance(contact_types, str):
+            contact_types = sorted(set(_split(contact_types)))
+        if isinstance(contact_ooc, str):
+            contact_ooc = sorted(set(_split(contact_ooc)))
+        if isinstance(contact_non_aa, str):
+            contact_non_aa = sorted(set(_split(contact_non_aa)))
+        if isinstance(contact_aas, str):
+            contact_aas = sorted(set(_split(contact_aas)))
+
+        self.res_id = str(res_id)
+        self.contact_count = int(contact_count or 0)
+        self.contact_types = tuple(contact_types)
+        self.contact_dmin = float(contact_dmin or 0)
+        self.contact_dmax = float(contact_dmax or 0)
+        self.contact_smin = int(contact_smin or 0)
+        self.contact_smax = int(contact_smax or 0)
+        self.contact_ooc = tuple(contact_ooc)
+        self.contact_non_aa = tuple(contact_non_aa)
+        self.contact_aas = tuple(contact_aas)
+
+    def as_dict(self, key_postfix: str = "", join_lists: bool = True):
+        def _join(s):
+            return str.join(",", s) if join_lists else s
+
+        d = dict(
+            contact_count=self.contact_count,
+            contact_types=_join(self.contact_types),
+            contact_dmin=self.contact_dmin,
+            contact_dmax=self.contact_dmax,
+            contact_smin=self.contact_smin,
+            contact_smax=self.contact_smax,
+            contact_ooc=_join(self.contact_ooc),
+            contact_non_aa=_join(self.contact_non_aa),
+            contact_aas=_join(self.contact_aas),
+        )
+
+        if key_postfix:
+            d = {f"{k}_{key_postfix}": v for k, v in d.items()}
+
+        return d
+
+    @classmethod
+    def from_residues(
+        cls, res: Residue, res_contacts: Sequence[Residue]
+    ) -> ResidueContacts:
+        """
+        Constructs a ResidueContacts object from a list of residues deemed to be in
+        contact with a central residue.
+
+        :param res: The central residue which is in contact with the given residues.
+        :param res_contacts: A list of residues which the given residue is in
+        contact with.
+        """
+
+        res_contacts_set = set(res_contacts)
+
+        # First, remove all water molecule contacts as we don't count these
+        res_contacts_water = [r for r in res_contacts_set if r.get_resname() == "HOH"]
+        res_contacts_set -= set(res_contacts_water)
+
+        # Remove the residue itself from the contacts
+        res_contacts_set -= {res}
+
+        # Compute min and max distances to any atom in the contacts
+        r_CA = res[BACKBONE_ATOM_CA]
+        contact_atoms = [
+            # if r has a CA atom use that, otherwise use the closest atom
+            r[BACKBONE_ATOM_CA]
+            if BACKBONE_ATOM_CA in r
+            else min(r.get_atoms(), key=lambda a: a - r_CA)
+            for r in res_contacts_set
+        ]
+
+        contact_dmin, contact_dmax = float("inf"), float("inf")
+        dists = [r_CA - a for a in contact_atoms]
+        if dists:
+            contact_dmin, contact_dmax = min(dists), max(dists)
+
+        # Separate all the non-AA contacts
+        res_contacts_non_aa = [
+            # id starts with H_ for HETATM
+            r
+            for r in res_contacts_set
+            if r.get_id()[0].startswith("H_")
+        ]
+        res_contacts_set -= set(res_contacts_non_aa)
+
+        # Separate the out-of-chain (OOC) AA contacts
+        res_contacts_ooc = [
+            # residue parent is a chain
+            r
+            for r in res_contacts_set
+            if r.get_parent() != res.get_parent()
+        ]
+        res_contacts_set -= set(res_contacts_ooc)
+
+        # Separate the in-chain AA contacts
+        res_contacts_aas = list(res_contacts_set)
+
+        # Compute min and max sequence distances, in-chain only
+        _, r_seq, _ = res.get_id()
+        seq_dists = [abs(r_seq - r.get_id()[1]) for r in res_contacts_aas]
+        contact_smin, contact_smax = -1, -1
+        if seq_dists:
+            contact_smin, contact_smax = min(seq_dists), max(seq_dists)
+
+        def _to_str(r: Residue, no_chain: bool = False) -> str:
+            chain = f"{r.get_parent().get_id()}:" if not no_chain else ""
+            resname = r.get_resname()
+            resname = ACIDS_3TO1.get(resname, resname)
+            resseq = r.get_id()[1]
+            return f"{chain}{resname}{resseq}"
+
+        return ResidueContacts(
+            res_id=res_to_id(res),
+            contact_count=len(res_contacts),
+            contact_types="proximal",  # use arpeggio name, but not meaningful here
+            contact_dmin=contact_dmin,
+            contact_dmax=contact_dmax,
+            contact_smin=contact_smin,
+            contact_smax=contact_smax,
+            contact_ooc=tuple(map(_to_str, res_contacts_ooc)),
+            contact_non_aa=tuple(map(_to_str, res_contacts_non_aa)),
+            contact_aas=tuple(map(_to_str, res_contacts_aas)),
+        )
 
 
 class Arpeggio(object):

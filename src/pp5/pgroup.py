@@ -13,12 +13,13 @@ import pandas as pd
 from Bio.Align import PairwiseAligner
 
 import pp5
-from pp5.prec import ProteinRecord, ResidueRecord, ResidueContacts
+from pp5.prec import ProteinRecord, ResidueRecord
 from pp5.align import BLOSUM80, PYMOL_ALIGN_SYMBOL
 from pp5.align import PYMOL_SA_GAP_SYMBOLS as PSA_GAP
 from pp5.align import ProteinBLAST, StructuralAlignment
 from pp5.utils import ProteinInitError
 from pp5.codons import UNKNOWN_AA, UNKNOWN_CODON, CODON_OPTS_SEP
+from pp5.contacts import ResidueContacts
 from pp5.dihedral import Dihedral
 from pp5.parallel import global_pool
 from pp5.external_dbs import pdb, pdb_api
