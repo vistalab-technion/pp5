@@ -8,8 +8,8 @@ from tests import get_tmp_path
 from pp5.prec import ProteinRecord, ResidueRecord
 from pp5.utils import ProteinInitError
 from pp5.codons import UNKNOWN_AA
-from pp5.arpeggio import DEFAULT_ARPEGGIO_ARGS, Arpeggio
 from pp5.backbone import BACKBONE_ATOMS_O
+from pp5.contacts import DEFAULT_ARPEGGIO_ARGS, Arpeggio
 from pp5.external_dbs import unp
 from pp5.external_dbs.pdb import PDB_DOWNLOAD_SOURCES
 

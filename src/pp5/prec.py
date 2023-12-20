@@ -44,7 +44,6 @@ from pp5.codons import (
     UNKNOWN_CODON,
     CODON_OPTS_SEP,
 )
-from pp5.arpeggio import DEFAULT_ARPEGGIO_ARGS, Arpeggio
 from pp5.backbone import (
     NO_ALTLOC,
     BACKBONE_ATOMS,
@@ -56,6 +55,7 @@ from pp5.backbone import (
     residue_backbone_coords,
     residue_altloc_peptide_bond_lengths,
 )
+from pp5.contacts import DEFAULT_ARPEGGIO_ARGS, Arpeggio
 from pp5.dihedral import (
     Dihedral,
     AtomLocationUncertainty,
