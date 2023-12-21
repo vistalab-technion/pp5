@@ -306,6 +306,7 @@ class AltlocResidueRecord(ResidueRecord):
         altloc ids.
         :param altloc_contacts: A mapping from an altloc id to a ResidueContacts object.
         """
+        num_altlocs = len(set(chain(*altloc_ids.values())))
         no_altloc_angle = altloc_angles.pop(NO_ALTLOC)
         no_altloc_bfactor = altloc_bfactors.pop(NO_ALTLOC)
         no_altloc_contacts = (altloc_contacts or {}).pop(NO_ALTLOC, None)
@@ -326,7 +327,7 @@ class AltlocResidueRecord(ResidueRecord):
             angles=no_altloc_angle,
             bfactor=no_altloc_bfactor,
             secondary=secondary,
-            num_altlocs=len(set(chain(*altloc_ids.values()))),
+            num_altlocs=num_altlocs,
             backbone_coords=backbone_coords,
             contacts=no_altloc_contacts,
         )
