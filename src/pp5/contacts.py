@@ -5,19 +5,27 @@ import json
 import logging
 import zipfile
 import subprocess
+from abc import ABC, abstractmethod
 from time import time
-from typing import Set, Union, Optional, Sequence
+from typing import Set, Dict, Union, Optional, Sequence
 from pathlib import Path
 from functools import partial
 from itertools import chain
 
 import numpy as np
 import pandas as pd
+from Bio.PDB import NeighborSearch
 from Bio.PDB.Residue import Residue
 
 import pp5
 from pp5.codons import ACIDS_3TO1, UNKNOWN_AA
-from pp5.backbone import BACKBONE_ATOM_CA
+from pp5.backbone import (
+    NO_ALTLOC,
+    BACKBONE_ATOM_CA,
+    BACKBONE_ATOMS_O,
+    altloc_ctx,
+    atom_altloc_ids,
+)
 from pp5.external_dbs import pdb
 from pp5.external_dbs.pdb import PDB_RCSB
 
@@ -39,6 +47,142 @@ def res_to_id(res: Residue) -> str:
     Converts a biopython residue object to a string representing its ID.
     """
     return str.join("", map(str, res.get_id())).strip()
+
+
+class ContactsAssigner(ABC):
+    """
+    Calculates tertiary contacts for a given residue.
+    """
+
+    def __init__(
+        self,
+        pdb_id: str,
+        pdb_source: str,
+        contact_radius: float = CONTACT_DEFAULT_RADIUS,
+        with_altlocs: bool = False,
+    ):
+        """
+        :param pdb_id: The PDB ID to assign contacts for.
+        :param pdb_source: The source from which to obtain the PDB file.
+        :param contact_radius: The radius (in angstroms) to use for contact detection.
+        :param with_altlocs: Whether to include altloc atoms in the contact detection.
+        """
+        self.pdb_id = pdb_id
+        self.pdb_source = pdb_source
+        self.contact_radius = contact_radius
+        self.with_altlocs = with_altlocs
+
+    @abstractmethod
+    def assign(self, res: Residue) -> Dict[str, Optional[ResidueContacts]]:
+        """
+        Assigns contacts to a given residue.
+        :param res: The residue to assign contacts for.
+        :return: A dict mapping altloc ids to ResidueContacts objects.
+        """
+        pass
+
+
+class ArpeggioContactsAssigner(ContactsAssigner):
+    """
+    Uses the arpeggio tool to assign contacts. Does not support altlocs.
+    """
+
+    def __init__(
+        self,
+        pdb_id: str,
+        pdb_source: str,
+        contact_radius: float = CONTACT_DEFAULT_RADIUS,
+        **arpeggio_kwargs,
+    ):
+        super().__init__(
+            pdb_id=pdb_id,
+            pdb_source=pdb_source,
+            contact_radius=contact_radius,
+            with_altlocs=False,
+        )
+
+        self.arpeggio = Arpeggio(
+            **{
+                **DEFAULT_ARPEGGIO_ARGS,
+                **arpeggio_kwargs,
+                **dict(
+                    interaction_cutoff=self.contact_radius,
+                    pdb_source=self.pdb_source,
+                ),
+            }
+        )
+
+        self.contacts_df = self.arpeggio.residue_contacts_df(pdb_id=self.pdb_id)
+        contacts_df_rows = self.contacts_df.reset_index().transpose().to_dict()
+        self._contacts_from = {
+            row["res_id"]: ResidueContacts(**row) for row in contacts_df_rows.values()
+        }
+
+    def assign(self, res: Residue) -> Dict[str, Optional[ResidueContacts]]:
+        res_id = res_to_id(res)
+        return {NO_ALTLOC: self._contacts_from.get(res_id, None)}
+
+
+class NeighborSearchContactsAssigner(ContactsAssigner):
+    """
+    Uses the NeighborSearch algorithm to assign contacts.
+    """
+
+    def __init__(
+        self,
+        pdb_id: str,
+        pdb_source: str,
+        contact_radius: float = CONTACT_DEFAULT_RADIUS,
+        with_altlocs: bool = False,
+        pdb_dict: Optional[dict] = None,
+    ):
+        super().__init__(
+            pdb_id=pdb_id,
+            pdb_source=pdb_source,
+            contact_radius=contact_radius,
+            with_altlocs=with_altlocs,
+        )
+
+        self._pdb_struct = pdb.pdb_struct(
+            self.pdb_id, pdb_source=self.pdb_source, struct_d=pdb_dict
+        )
+
+        # Get all atoms from within the structure, possibly including altloc atoms
+        atoms = chain(
+            *(
+                a.disordered_get_list() if a.is_disordered() and with_altlocs else (a,)
+                for a in self._pdb_struct.get_atoms()
+            )
+        )
+        self._contacts_from = NeighborSearch(list(atoms))
+
+    def assign(self, res: Residue) -> Dict[str, Optional[ResidueContacts]]:
+
+        altloc_ids: Dict[str, Sequence[str]] = {
+            atom_name: atom_altloc_ids(res[atom_name], include_none=True)
+            if self.with_altlocs
+            else [NO_ALTLOC]
+            for atom_name in BACKBONE_ATOMS_O
+            if atom_name in res
+        }
+
+        altloc_contacts = {NO_ALTLOC: None}
+
+        # Calculate contacts for each altloc by searching in a radius around
+        # the CA atom location of that altloc.
+        if BACKBONE_ATOM_CA in res:
+            for altloc_id in altloc_ids[BACKBONE_ATOM_CA]:
+                with altloc_ctx(res[BACKBONE_ATOM_CA], altloc_id) as _ca:
+                    altloc_contacts[altloc_id] = ResidueContacts.from_residues(
+                        res=res,
+                        res_contacts=self._contacts_from.search(
+                            _ca.get_coord(),
+                            radius=self.contact_radius,
+                            level="R",  # crucial to return residues here
+                        ),
+                    )
+
+        return altloc_contacts
 
 
 class ResidueContacts(object):
