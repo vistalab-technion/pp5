@@ -182,10 +182,9 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
 
                     # Sanity check: if using altlocs, the atoms we loop over should
                     # not be disordered atoms because we selected a specific altloc.
-                    if self.with_altlocs:
-                        # is_disordered()==2 means it contains other atoms, 1 means
-                        # it's a regular atom inside a disordered atom which is OK
-                        assert alt_atom.is_disordered() < 2
+                    # is_disordered()==2 means it contains other atoms, 1 means
+                    # it's a regular atom inside a disordered atom which is OK.
+                    assert alt_atom.is_disordered() < 2 or altloc_id == NO_ALTLOC
 
                     # Search in a radius around the atom location for other atoms
                     new_contacts: Sequence[Atom] = self._contacts_from.search(
@@ -250,7 +249,7 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
             src_chain = src_res.get_parent()
             tgt_chain = tgt_res.get_parent()
             tgt_chain_id = tgt_chain.get_id().strip()
-            tgt_altloc = tgt_atom.get_altloc().strip()
+            tgt_altloc = tgt_atom.get_altloc().strip() if self.with_altlocs else ""
 
             # Represent the contact target residue as a string
             rcs = _res_contact_str(tgt_chain_id, tgt_resname, tgt_seq_idx, tgt_altloc)
