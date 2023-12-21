@@ -61,8 +61,7 @@ def atom_altloc_ids(
     :param atoms: The atoms to check.
     :param allow_disjoint: Whether to return altloc ids which are not present in all
     the given atoms. If False (default) only the common altloc ids are returned.
-    :param include_none: Whether to return a sequence with the special altloc id
-    NO_ALTLOC which represents that no altlocs are defined.
+    :param include_none: Whether to include the special id NO_ALTLOC in the output.
     :return: The list of altloc ids.
     """
 
@@ -79,8 +78,8 @@ def atom_altloc_ids(
     else:
         altloc_ids = set.union(*per_atom_altloc_ids)
 
-    if include_none and not altloc_ids:
-        altloc_ids = [NO_ALTLOC]
+    if include_none:
+        altloc_ids.add(NO_ALTLOC)
 
     return tuple(sorted(altloc_ids))
 
