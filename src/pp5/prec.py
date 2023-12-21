@@ -24,7 +24,7 @@ from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
-from Bio.PDB import PPBuilder, NeighborSearch
+from Bio.PDB import PPBuilder
 from Bio.Seq import Seq
 from Bio.Align import PairwiseAligner
 from Bio.SeqRecord import SeqRecord
@@ -46,7 +46,6 @@ from pp5.backbone import (
     NO_ALTLOC,
     BACKBONE_ATOMS,
     BACKBONE_ATOM_CA,
-    altloc_ctx,
     atom_altloc_ids,
     residue_altloc_sigmas,
     residue_altloc_ca_dists,
@@ -55,12 +54,13 @@ from pp5.backbone import (
 )
 from pp5.contacts import (
     CONTACT_METHODS,
-    DEFAULT_ARPEGGIO_ARGS,
     CONTACT_DEFAULT_RADIUS,
     CONTACT_METHOD_ARPEGGIO,
     CONTACT_METHOD_NEIGHBOR,
-    Arpeggio,
     ResidueContacts,
+    ContactsAssigner,
+    ArpeggioContactsAssigner,
+    NeighborSearchContactsAssigner,
     res_to_id,
 )
 from pp5.dihedral import (
@@ -346,12 +346,7 @@ class AltlocResidueRecord(ResidueRecord):
         with_backbone: bool = False,
         with_altlocs: bool = False,
         with_contacts: bool = False,
-        contacts_from: Optional[
-            # Either a pre-computed dict of contacts (from arpeggio),
-            # or a NeighborSearch object with all atoms from the structure.
-            Union[Dict[str, ResidueContacts], NeighborSearch]
-        ] = None,
-        contacts_radius: float = CONTACT_DEFAULT_RADIUS,
+        contacts_assigner: Optional[ContactsAssigner] = None,
     ):
         res_id: str = res_to_id(r_curr)
         res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
@@ -384,25 +379,11 @@ class AltlocResidueRecord(ResidueRecord):
         # Contacts
         altloc_contacts: Dict[str, ResidueContacts] = {}
         if with_contacts:
-            if contacts_from is None:
-                raise ValueError(
-                    f"When {with_contacts=}, contacts_from must be provided"
-                )
-            elif isinstance(contacts_from, dict):
-                altloc_contacts[NO_ALTLOC] = contacts_from.get(res_id)
-            elif BACKBONE_ATOM_CA in r_curr:
-                # Calculate contacts for each altloc by searching in a radius around
-                # the CA atom location of that altloc.
-                for altloc_id in {NO_ALTLOC, *altloc_ids[BACKBONE_ATOM_CA]}:
-                    with altloc_ctx(r_curr[BACKBONE_ATOM_CA], altloc_id) as _ca:
-                        altloc_contacts[altloc_id] = ResidueContacts.from_residues(
-                            res=r_curr,
-                            res_contacts=contacts_from.search(
-                                _ca.get_coord(),
-                                radius=contacts_radius,
-                                level="R",  # crucial to return residues here
-                            ),
-                        )
+            if not contacts_assigner:
+                raise ValueError(f"Must provide ContactsAssigner when {with_contacts=}")
+            altloc_contacts = contacts_assigner.assign(r_curr)
+            if not with_altlocs:  # make sure we don't have any altloc contacts here
+                altloc_contacts = {NO_ALTLOC: altloc_contacts[NO_ALTLOC]}
 
         # Backbone
         altloc_backbone_coords: Dict[str, Optional[np.ndarray]] = {}
@@ -827,38 +808,22 @@ class ProteinRecord(object):
         self.ena_id = dna_seq_record.id
 
         # Calculate contacts if requested
-        contacts_from: Optional[
-            Union[Dict[str, ResidueContacts], NeighborSearch]
-        ] = None
+        contacts_assigner: Optional[ContactsAssigner] = None
         if with_contacts:
             if contact_method == CONTACT_METHOD_ARPEGGIO:
-                arpeggio = Arpeggio(
-                    **{
-                        # Override default args
-                        **DEFAULT_ARPEGGIO_ARGS,
-                        **dict(
-                            interaction_cutoff=self.contact_radius,
-                            pdb_source=self.pdb_source,
-                        ),
-                    }
+                contacts_assigner = ArpeggioContactsAssigner(
+                    pdb_id=self.pdb_id,
+                    pdb_source=self.pdb_source,
+                    contact_radius=self.contact_radius,
                 )
-                contacts_df = arpeggio.residue_contacts_df(pdb_id=self.pdb_id)
-                contacts_df_rows = contacts_df.reset_index().transpose().to_dict()
-                contacts_from = {
-                    row["res_id"]: ResidueContacts(**row)
-                    for row in contacts_df_rows.values()
-                }
             else:
-                # Get all atoms from within the structure, including altlocs
-                atoms = chain(
-                    *(
-                        a.disordered_get_list()
-                        if a.is_disordered() and with_altlocs
-                        else (a,)
-                        for a in self.pdb_rec.get_atoms()
-                    )
+                contacts_assigner = NeighborSearchContactsAssigner(
+                    pdb_id=self.pdb_id,
+                    pdb_source=self.pdb_source,
+                    contact_radius=self.contact_radius,
+                    with_altlocs=self.with_altlocs,
+                    pdb_dict=self._pdb_dict,
                 )
-                contacts_from = NeighborSearch(list(atoms))
 
         # Create a ResidueRecord holding all data we need per residue
         residue_recs = []
@@ -896,8 +861,7 @@ class ProteinRecord(object):
                 with_backbone=with_backbone,
                 with_altlocs=with_altlocs,
                 with_contacts=with_contacts,
-                contacts_from=contacts_from,
-                contacts_radius=contact_radius,
+                contacts_assigner=contacts_assigner,
             )
             residue_recs.append(rr)
 
