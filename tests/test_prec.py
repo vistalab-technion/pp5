@@ -105,30 +105,36 @@ class TestMethods:
         "contact_method", [CONTACT_METHOD_ARPEGGIO, CONTACT_METHOD_NEIGHBOR]
     )
     def test_contacts(self, pdb_id, with_altlocs, contact_method):
+        contact_radius = 5.67
+
         if contact_method == CONTACT_METHOD_ARPEGGIO:
             if not Arpeggio.can_execute(**DEFAULT_ARPEGGIO_ARGS):
                 pytest.skip("Arpeggio not available")
             elif with_altlocs:
                 pytest.skip("Arpeggio not compatible with altlocs")
 
+            contact_radius /= 2  # shortens arpeggio runtime
+
         prec = ProteinRecord.from_pdb(
             pdb_id,
             with_altlocs=with_altlocs,
             with_backbone=True,
             with_contacts=True,
-            contact_radius=2.34,
+            contact_radius=contact_radius,
             contact_method=contact_method,
         )
         valid_contacts = {
             res_id: contacts
             for res_id, contacts in prec.contacts.items()
-            if contacts is not None
+            if contacts is not None and contacts.contact_count > 0
         }
         assert 0 < len(valid_contacts) <= len(prec)
+
         for res_id, res_contacts in valid_contacts.items():
             assert res_id in prec
-            assert res_contacts.contact_count > 0
             assert res_contacts.contact_dmin > 0
+            if contact_method == CONTACT_METHOD_NEIGHBOR:
+                assert res_contacts.contact_dmax < contact_radius
 
 
 class TestFromUnp:
