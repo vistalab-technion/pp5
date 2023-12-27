@@ -17,7 +17,13 @@ REJECTION_ARGS="--b-max=50 --plddt-min=70 --sa-outlier-cutoff=2.5 --angle-aggreg
 MATCH_ARGS="--match-len=2 --context-len=1"
 PDB_SOURCE="re" # rc, re, af
 
-set -x
+set -eux
+
+# Clear prec CSV output dir
+rm -rf out/pgroup
+
+# Clear global pp5 cache
+rm -rf /tmp/pp5_data
 
 # No restriction on expr system
 pp5 \
