@@ -466,7 +466,7 @@ class AltlocResidueRecord(ResidueRecord):
             d[f"len_pb{_altloc_postfix(altloc_map_next[altloc_pair_ids])}"] = pb_len
 
         for altloc_id, contacts in self.altloc_contacts.items():
-            d.update(contacts.as_dict(key_postfix=altloc_id))
+            d.update(contacts.as_dict(key_postfix=altloc_map[altloc_id]))
 
         return d
 
