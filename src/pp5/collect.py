@@ -81,7 +81,7 @@ class ParallelDataCollector(abc.ABC):
         out_dir: Path = None,
         tag: str = None,
         async_timeout: Optional[float] = None,
-        async_retry_delta: float = 0.001,
+        async_retry_delta: float = 1.0,
         create_zip=True,
         pdb_source: str = PDB_RCSB,
     ):
@@ -329,7 +329,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         out_tag: Optional[str] = None,
         write_zip: bool = False,
         async_timeout: Optional[float] = 600,
-        async_retry_delta: float = 0.001,
+        async_retry_delta: float = 1.0,
     ):
         """
         Collects ProteinRecords based on a PDB query results, and saves them
@@ -690,7 +690,7 @@ class ProteinGroupCollector(ParallelDataCollector):
         ref_file: str = None,
         create_zip=True,
         async_timeout: Optional[float] = 3600,
-        async_retry_delta: float = 0.001,
+        async_retry_delta: float = 1.0,
     ):
         """
         Collects ProteinGroup reference structures based on a PDB query
