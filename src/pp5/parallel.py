@@ -7,8 +7,19 @@ import tempfile
 import contextlib
 import multiprocessing as mp
 import multiprocessing.pool
-from typing import Any, Dict, List, Tuple, Union, TypeVar, Generator, ContextManager
+from typing import (
+    Any,
+    Set,
+    Dict,
+    List,
+    Tuple,
+    Union,
+    TypeVar,
+    Generator,
+    ContextManager,
+)
 from pathlib import Path
+from collections import OrderedDict
 from multiprocessing.pool import AsyncResult
 
 import pp5
@@ -146,35 +157,67 @@ def yield_async_results(
     if len(async_results) == 0:
         raise ValueError("No async results to wait for")
 
-    # Map result to number of retries
-    retry_counts = {res_name: 0 for res_name in async_results.keys()}
+    # Total number of times we waited for each result
+    try_counts = {res_name: -1 for res_name in async_results.keys()}
 
-    while len(retry_counts) > 0:
-        retry_counts_next = {}
+    # Track which results were already processed
+    success_results: Set[_T] = set()
+    failed_results: Set[_T] = set()
 
-        for res_name, retry_count in retry_counts.items():
-            res: AsyncResult = async_results[res_name]
+    def _yield_result(_res_name: _T, _res: AsyncResult):
+        try:
+            success_results.add(_res_name)
+            yield _res_name, _res.get()
+        except Exception as e:
+            if re_raise:
+                raise e
+            LOGGER.error(
+                f"AsyncResult {_res_name} raised {type(e)}: " f"{e}", exc_info=e
+            )
+            failed_results.add(_res_name)
+            yield _res_name, None
 
-            res.wait(wait_time_sec)
-            if not res.ready():
-                retries = retry_counts[res_name] + 1
-                if max_retries is not None and retries > max_retries:
-                    LOGGER.error(f"*** MAX RETRIES FOR RESULT {res_name}")
-                else:
-                    retry_counts_next[res_name] = retries
+    while True:
+        # Split by whether the result is ready, so we can get these without waiting.
+        # Note that we maintain the order of the original dict, assuming that first
+        # results started earlier and are more likely to be ready first.
+        ready_results = {}
+        not_ready_results = OrderedDict()  # OrderedDict supports popitem(last=False)
+        for res_name, res in async_results.items():
+            if res_name in success_results or res_name in failed_results:
                 continue
+            if res.ready():
+                ready_results[res_name] = res
+            else:
+                not_ready_results[res_name] = res
 
-            try:
-                yield res_name, res.get()
-            except Exception as e:
-                if re_raise:
-                    raise e
-                LOGGER.error(
-                    f"AsyncResult {res_name} raised {type(e)}: " f"{e}", exc_info=e
-                )
-                yield res_name, None
+        # Yield all the ready results
+        for res_name, res in ready_results.items():
+            yield from _yield_result(res_name, res)
 
-        retry_counts = retry_counts_next
+        # Break if there's nothing left to do
+        if not len(not_ready_results):
+            LOGGER.info(f"Finished processing {len(async_results)} async results")
+            break
+
+        # Get next not-ready result
+        res_name, res = not_ready_results.popitem(last=False)
+
+        # Wait for it to become ready
+        res.wait(wait_time_sec)
+
+        # Result is ready: yield it (or log error if it raised an exception)
+        if res.ready():
+            yield from _yield_result(res_name, res)
+
+        # Update try counter for this result
+        try_counts[res_name] += 1
+        if try_counts[res_name] > max_retries:
+            failed_results.add(res_name)
+            LOGGER.error(f"*** MAX RETRIES REACHED FOR {res_name}")
+
+    # Sanity: Make sure we processed all AsyncResults
+    assert len(success_results) + len(failed_results) == len(async_results)
 
 
 def _cleanup():
