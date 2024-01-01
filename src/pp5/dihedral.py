@@ -792,11 +792,14 @@ class AtomLocationUncertainty(object):
         :param res: The residue.
         """
         bfactors = []
-        for atom in res:
-            atom: Atom
-            if self.bb_only and atom.get_name() not in BACKBONE_ATOMS:
-                continue
+        atoms: Sequence[Atom] = (
+            residue_backbone_atoms(res) if self.bb_only else tuple(res.get_atoms())
+        )
+        for atom in atoms:
             bfactors.append(self.atom_avg(atom))
+
+        if not bfactors:
+            return float("nan")
 
         res_mean = np.mean(bfactors).item()
         if self.scale_as_bfactor:
