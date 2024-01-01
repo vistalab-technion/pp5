@@ -17,6 +17,7 @@ dependencies:
   - clustalo
   - dask
   - dssp
+  - filelock
   - ipython
   - jupyter
   - jupyterlab
