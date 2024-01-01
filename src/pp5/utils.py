@@ -14,10 +14,12 @@ from collections.abc import Set, Mapping, Sequence
 import requests
 from IPython import get_ipython
 from urllib3 import Retry
+from filelock import FileLock
 from requests import HTTPError
 from requests.adapters import HTTPAdapter
 
 import pp5
+from pp5 import TEMP_LOCKS_DIR
 
 LOGGER = logging.getLogger(__name__)
 
@@ -69,6 +71,30 @@ def requests_retry(
     session.mount("http://", adapter)
     session.mount("https://", adapter)
     return session
+
+
+@contextlib.contextmanager
+def filelock_context(
+    path: Union[str, Path],
+    lockfile_basedir: Path = TEMP_LOCKS_DIR,
+    cleanup: bool = False,
+):
+    """
+    :param path: The path to lock.
+    :param lockfile_basedir: Base dir in which to create the lockfile.
+    :param cleanup: Whether to delete the lockfile after the context exits.
+    Can cause concurrency issues.
+    :return:
+    """
+    lockfile_path_non_absolute = str(path).strip(os.sep) + ".lock"
+    lockfile_path = lockfile_basedir / lockfile_path_non_absolute
+    lockfile_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with FileLock(lockfile_path):
+            yield
+    finally:
+        if cleanup:
+            lockfile_path.unlink(missing_ok=True)
 
 
 def remote_dl(

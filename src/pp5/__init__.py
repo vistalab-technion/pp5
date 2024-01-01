@@ -1,4 +1,5 @@
 import os
+import tempfile
 import logging.config
 from typing import Any
 from pathlib import Path
@@ -70,6 +71,7 @@ names.
 # Top-level directory for raw data and downloading files
 BASE_DATA_DIR = Path(os.getenv(ENV_PP5_DATA_DIR, PROJECT_DIR.joinpath("data")))
 BASE_DOWNLOAD_DIR = BASE_DATA_DIR
+
 
 # Directory for writing output files
 OUT_DIR = Path(os.getenv(ENV_PP5_OUT_DIR, PROJECT_DIR.joinpath("out")))
@@ -146,6 +148,10 @@ BLASTDB_DIR = Path(os.getenv(ENV_PP5_BLASTDB_DIR, data_subdir("blast")))
 
 # Directory for torustest samples from the null
 TORUSTEST_NULL_DIR = Path(data_subdir("torustest_null"))
+
+# Temp files
+BASE_TEMP_DIR = Path(tempfile.gettempdir()).joinpath("pp5_data")
+TEMP_LOCKS_DIR = BASE_TEMP_DIR.joinpath("locks")
 
 
 def get_resource_path(data_dir: Path, basename: str):
