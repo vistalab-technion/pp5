@@ -1146,10 +1146,11 @@ def _collect_single_structure(
             }
         )
 
-    LOGGER.info(
+    msg = (
         f"Collected {len(chain_data)} chains from {pdb_id} "
         f"{pdb2unp.get_chain_to_unp_ids()} ({idx[0] + 1}/{idx[1]})"
     )
+    LOGGER.log(level=logging.INFO if len(chain_data) else logging.WARNING, msg=msg)
 
     return chain_data
 
