@@ -233,7 +233,9 @@ def pdb_to_secondary_structure(
     try:
         with warnings.catch_warnings(record=True) as ws:
             warnings.simplefilter("ignore")
-            dssp_dict, keys = dssp_dict_from_pdb_file(str(path), DSSP="mkdssp")
+            dssp_dict, keys = dssp_dict_from_pdb_file(
+                str(path), DSSP="mkdssp", dssp_version="4.0.0"
+            )
             if len(ws) > 0:
                 for w in ws:
                     LOGGER.warning(f"Got DSSP warning for {pdb_id}: " f"{w.message}")

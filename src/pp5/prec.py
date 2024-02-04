@@ -33,7 +33,7 @@ from Bio.PDB.Polypeptide import Polypeptide
 
 import pp5
 from pp5.align import BLOSUM80
-from pp5.utils import ProteinInitError
+from pp5.utils import ProteinInitError, filelock_context
 from pp5.codons import (
     ACIDS_3TO1,
     UNKNOWN_AA,
@@ -509,16 +509,17 @@ class ProteinRecord(object):
         filename = path.name
         path = pp5.get_resource_path(cache_dir, filename)
         prec = None
-        if path.is_file():
-            try:
-                with open(str(path), "rb") as f:
-                    prec = pickle.load(f)
-            except Exception as e:
-                # If we can't unpickle, probably the code changed since
-                # saving this object. We'll just return None, so that a new
-                # prec will be created and stored.
-                LOGGER.warning(f"Failed to load cached ProteinRecord {path}")
-        return prec
+        with filelock_context(path):
+            if path.is_file():
+                try:
+                    with open(str(path), "rb") as f:
+                        prec = pickle.load(f)
+                except Exception as e:
+                    # If we can't unpickle, probably the code changed since
+                    # saving this object. We'll just return None, so that a new
+                    # prec will be created and stored.
+                    LOGGER.warning(f"Failed to load cached ProteinRecord {path}")
+            return prec
 
     @classmethod
     def from_pdb(
@@ -1060,8 +1061,9 @@ class ProteinRecord(object):
         filepath = pp5.get_resource_path(filepath.parent, filepath.name)
         os.makedirs(filepath.parent, exist_ok=True)
 
-        with open(str(filepath), "wb") as f:
-            pickle.dump(self, f, protocol=4)
+        with filelock_context(filepath):
+            with open(str(filepath), "wb") as f:
+                pickle.dump(self, f, protocol=4)
 
         LOGGER.info(f"Wrote {self} to {filepath}")
         return filepath

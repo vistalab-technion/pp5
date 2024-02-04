@@ -3,7 +3,6 @@ import atexit
 import shutil
 import signal
 import logging
-import tempfile
 import contextlib
 import multiprocessing as mp
 import multiprocessing.pool
@@ -23,11 +22,12 @@ from collections import OrderedDict
 from multiprocessing.pool import AsyncResult
 
 import pp5
+from pp5 import BASE_TEMP_DIR
 
 LOGGER = logging.getLogger(__name__)
 
 __GLOBAL_POOL: mp.pool.Pool = None
-BASE_WORKERS_DL_DIR = Path(tempfile.gettempdir()).joinpath("pp5_data")
+BASE_WORKERS_DL_DIR = BASE_TEMP_DIR.joinpath("workers")
 GLOBAL_WORKERS_DL_DIR = BASE_WORKERS_DL_DIR.joinpath(f"_global_{os.getpid()}")
 
 
@@ -39,32 +39,11 @@ def _worker_process_init(base_workers_dl_dir: Path, pp5_config: dict, *args):
 
     # Provide each process with a unique download folder.
     pid = os.getpid()
-    worker_dl_dir = base_workers_dl_dir.joinpath(f"{pid}")
-    os.makedirs(worker_dl_dir, exist_ok=True)
-    LOGGER.info(f"Worker process {pid} using dir {worker_dl_dir}...")
-    # Override the default with the process-specific dir to have a
-    # different download directory for each process.
-    pp5.BASE_DOWNLOAD_DIR = worker_dl_dir
+    LOGGER.info(f"Initializing process {pid} ...")
 
     # Set global config
     for key, value in pp5_config.items():
         pp5.set_config(key, value)
-
-
-def _clean_worker_downloads(base_workers_dl_dir):
-    n_moved = 0
-    downloaded_files = base_workers_dl_dir.glob("**/*/*.*")
-    for downloaded_file in downloaded_files:
-        rel_path = downloaded_file.relative_to(base_workers_dl_dir)
-        # Remove pid dir and append the relative path to the main data dir
-        data_path = pp5.BASE_DATA_DIR.joinpath(*rel_path.parts[1:])
-        shutil.move(str(downloaded_file), str(data_path))
-        n_moved += 1
-
-    LOGGER.info(
-        f"Moved {n_moved} data files from "
-        f"{base_workers_dl_dir} into {pp5.BASE_DATA_DIR}"
-    )
 
 
 def _remove_workers_dir(base_workers_dl_dir):
@@ -92,7 +71,7 @@ def global_pool() -> ContextManager[mp.pool.Pool]:
     try:
         yield __GLOBAL_POOL
     finally:
-        _clean_worker_downloads(base_workers_dl_dir)
+        pass
 
 
 @contextlib.contextmanager
@@ -110,7 +89,6 @@ def pool(name: str, processes=None, context="spawn") -> ContextManager[mp.pool.P
         ) as p:
             yield p
     finally:
-        _clean_worker_downloads(base_workers_dl_dir)
         _remove_workers_dir(base_workers_dl_dir)
 
 
@@ -226,7 +204,6 @@ def _cleanup():
         LOGGER.info(f"Closing global pool...")
         __GLOBAL_POOL.terminate()
         __GLOBAL_POOL.join()
-        _clean_worker_downloads(GLOBAL_WORKERS_DL_DIR)
         _remove_workers_dir(GLOBAL_WORKERS_DL_DIR)
 
 

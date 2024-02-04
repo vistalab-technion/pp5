@@ -14,10 +14,12 @@ from collections.abc import Set, Mapping, Sequence
 import requests
 from IPython import get_ipython
 from urllib3 import Retry
+from filelock import FileLock
 from requests import HTTPError
 from requests.adapters import HTTPAdapter
 
 import pp5
+from pp5 import TEMP_LOCKS_DIR
 
 LOGGER = logging.getLogger(__name__)
 
@@ -71,8 +73,36 @@ def requests_retry(
     return session
 
 
+@contextlib.contextmanager
+def filelock_context(
+    path: Union[str, Path],
+    lockfile_basedir: Path = TEMP_LOCKS_DIR,
+    cleanup: bool = False,
+):
+    """
+    :param path: The path to lock.
+    :param lockfile_basedir: Base dir in which to create the lockfile.
+    :param cleanup: Whether to delete the lockfile after the context exits.
+    Can cause concurrency issues.
+    :return:
+    """
+    lockfile_path_non_absolute = str(path).strip(os.sep) + ".lock"
+    lockfile_path = lockfile_basedir / lockfile_path_non_absolute
+    lockfile_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with FileLock(lockfile_path):
+            yield
+    finally:
+        if cleanup:
+            lockfile_path.unlink(missing_ok=True)
+
+
 def remote_dl(
-    url: str, save_path: str, uncompress=False, skip_existing=False, retries: int = None
+    url: str,
+    save_path: Union[Path, str],
+    uncompress=False,
+    skip_existing=False,
+    retries: int = None,
 ) -> Path:
     """
     Downloads contents of a remote file and saves it into a local file.
@@ -85,38 +115,42 @@ def remote_dl(
     default from config.
     :return: A Path object for the downloaded file.
     """
-    if skip_existing:
-        if os.path.isfile(save_path) and os.path.getsize(save_path) > 0:
-            LOGGER.debug(f"File {save_path} exists, skipping download...")
+
+    with filelock_context(save_path):
+        if skip_existing:
+            if os.path.isfile(save_path) and os.path.getsize(save_path) > 0:
+                LOGGER.debug(f"File {save_path} exists, skipping download...")
+                return Path(save_path)
+
+        req_headers = {"Accept-Encoding": "gzip, identity"}
+        with requests_retry(retries=retries).get(
+            url, stream=True, headers=req_headers
+        ) as r:
+            r.raise_for_status()
+            if 300 <= r.status_code < 400:
+                raise HTTPError(f"Redirect {r.status_code} for url{url}", response=r)
+
+            if "gzip" in r.headers.get("Content-Encoding", ""):
+                uncompress = True
+
+            save_dir = Path().joinpath(*Path(save_path).parts[:-1])
+            os.makedirs(save_dir, exist_ok=True)
+
+            with open(save_path, "wb") as out_handle:
+                try:
+                    if uncompress:
+                        in_handle = gzip.GzipFile(fileobj=r.raw)
+                    else:
+                        in_handle = r.raw
+                    out_handle.write(in_handle.read())
+                finally:
+                    in_handle.close()
+
+            size_bytes = os.path.getsize(save_path)
+            LOGGER.info(
+                f"Downloaded {save_path} ({size_bytes / 1024:.1f}kB) from {url}"
+            )
             return Path(save_path)
-
-    req_headers = {"Accept-Encoding": "gzip, identity"}
-    with requests_retry(retries=retries).get(
-        url, stream=True, headers=req_headers
-    ) as r:
-        r.raise_for_status()
-        if 300 <= r.status_code < 400:
-            raise HTTPError(f"Redirect {r.status_code} for url{url}", response=r)
-
-        if "gzip" in r.headers.get("Content-Encoding", ""):
-            uncompress = True
-
-        save_dir = Path().joinpath(*Path(save_path).parts[:-1])
-        os.makedirs(save_dir, exist_ok=True)
-
-        with open(save_path, "wb") as out_handle:
-            try:
-                if uncompress:
-                    in_handle = gzip.GzipFile(fileobj=r.raw)
-                else:
-                    in_handle = r.raw
-                out_handle.write(in_handle.read())
-            finally:
-                in_handle.close()
-
-        size_bytes = os.path.getsize(save_path)
-        LOGGER.info(f"Downloaded {save_path} ({size_bytes / 1024:.1f}kB) from {url}")
-        return Path(save_path)
 
 
 def deep_walk(obj, path=(), memo=None):
@@ -300,8 +334,9 @@ class JSONCacheableMixin(object):
         filepath = pp5.get_resource_path(cache_dir, filename)
         os.makedirs(str(filepath.parent), exist_ok=True)
 
-        with open(str(filepath), "w", encoding="utf-8") as f:
-            json.dump(self.__getstate__(), f, **json_kws)
+        with filelock_context(filepath):
+            with open(str(filepath), "w", encoding="utf-8") as f:
+                json.dump(self.__getstate__(), f, **json_kws)
 
         LOGGER.info(f"Wrote {self} to {filepath}")
         return filepath
@@ -318,15 +353,19 @@ class JSONCacheableMixin(object):
         filepath = pp5.get_resource_path(cache_dir, filename)
 
         obj = None
-        if filepath.is_file():
-            try:
-                with open(str(filepath), "r", encoding="utf-8") as f:
-                    state_dict = json.load(f)
-                    obj = cls.__new__(cls)
-                    obj.__setstate__(state_dict)
-            except Exception as e:
-                LOGGER.warning(f"Failed to load cached {cls.__name__} {filepath} {e}")
-        return obj
+
+        with filelock_context(filepath):
+            if filepath.is_file():
+                try:
+                    with open(str(filepath), "r", encoding="utf-8") as f:
+                        state_dict = json.load(f)
+                        obj = cls.__new__(cls)
+                        obj.__setstate__(state_dict)
+                except Exception as e:
+                    LOGGER.warning(
+                        f"Failed to load cached {cls.__name__} {filepath} {e}"
+                    )
+            return obj
 
 
 class ReprJSONEncoder(JSONEncoder):

@@ -3,12 +3,12 @@ channels:
   - conda-forge
   - defaults
   - schrodinger # pymol
+  - sbl         # dssp
   - bioconda    # clustal, muscle, blast
-  - salilab     # dssp
 dependencies:
   # Basic
   - pip
-  - python=3.9.*
+  - python=3.11.*
   # Development
   # Project Dependencies
   - biopython
@@ -17,6 +17,7 @@ dependencies:
   - clustalo
   - dask
   - dssp
+  - filelock
   - ipython
   - jupyter
   - jupyterlab
