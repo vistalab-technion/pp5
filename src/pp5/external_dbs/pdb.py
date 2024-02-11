@@ -713,7 +713,9 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
 
     @property
     def resolution(self) -> Optional[float]:
-        return self._resolve(self._meta_struct, "reflns.0.d_resolution_high", float)
+        return self._resolve(
+            self._meta_struct, "rcsb_entry_info.diffrn_resolution_high.value", float
+        ) or self._resolve(self._meta_struct, "reflns.0.d_resolution_high", float)
 
     @property
     def resolution_low(self) -> Optional[float]:
