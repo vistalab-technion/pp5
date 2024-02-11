@@ -466,7 +466,13 @@ class PDB2UNP(JSONCacheableMixin, object):
 
             # Get list of chains and list of Uniprot IDs for this entity
             entity_containers = entity_data["rcsb_polymer_entity_container_identifiers"]
-            entity_chains = entity_containers.get("asym_ids", [])
+            entity_chains = [
+                # The same chain can be referred to by different labels,
+                # the canonical PDB label and another label given by the
+                # structure author.
+                *entity_containers.get("asym_ids", []),
+                *entity_containers.get("auth_asym_ids", []),
+            ]
             entity_unp_ids = entity_containers.get("uniprot_ids", [])
 
             unp_alignments: Dict[str, List[Tuple[int, int]]] = {
