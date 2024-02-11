@@ -530,7 +530,7 @@ class ProteinBLAST(object):
             )
 
         # Note: no need for pdb_source, we just care about what chains exist
-        meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
+        meta = pdb.PDBMetadata(pdb_id)
 
         if chain_id not in meta.chain_entities:
             raise ValueError(f"Can't find chain {chain_id} in {pdb_id}")

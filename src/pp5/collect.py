@@ -1043,7 +1043,7 @@ def _collect_single_structure(
 
     pdb_dict = pdb.pdb_dict(pdb_id, pdb_source=pdb_source)
     pdb2unp = pdb.PDB2UNP.from_pdb(pdb_id, cache=True)
-    meta = pdb.PDBMetadata(pdb_id, pdb_source=pdb_source, struct_d=pdb_dict)
+    meta = pdb.PDBMetadata(pdb_id)
 
     # Determine all chains we need to collect from the PDB structure
     chains_to_collect: Sequence[str]

@@ -259,9 +259,7 @@ class ProteinGroup(object):
             )
 
         ref_pdb_dict = pdb.pdb_dict(self.ref_pdb_id, pdb_source=pdb_source)
-        ref_pdb_meta = pdb.PDBMetadata(
-            self.ref_pdb_base_id, pdb_source=pdb_source, struct_d=ref_pdb_dict
-        )
+        ref_pdb_meta = pdb.PDBMetadata(self.ref_pdb_base_id)
         if self.ref_pdb_chain not in ref_pdb_meta.chain_entities:
             raise ProteinInitError(f"Unknown PDB entity for {self.ref_pdb_id}")
 
