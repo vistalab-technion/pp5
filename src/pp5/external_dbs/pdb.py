@@ -7,8 +7,20 @@ import warnings
 from math import cos, sin
 from math import degrees as deg
 from math import radians as rad
-from typing import Any, Dict, List, Type, Tuple, Union, Optional, Sequence
+from typing import (
+    Any,
+    Set,
+    Dict,
+    List,
+    Tuple,
+    Union,
+    TypeVar,
+    Callable,
+    Optional,
+    Sequence,
+)
 from pathlib import Path
+from datetime import datetime
 from collections import defaultdict
 
 import numpy as np
@@ -551,132 +563,249 @@ class PDB2UNP(JSONCacheableMixin, object):
         return super(PDB2UNP, cls).from_cache(cache_dir, filename)
 
 
-class PDBMetadata(object):
+_TC = TypeVar("_TC")
+
+
+class PDBMetadata(object):  # TODO: JSONCacheableMixin
     """
-    Extracts metadata from a PDB structure.
-    Helpful metadata fields:
-    https://www.rcsb.org/pdb/results/reportField.do
+    Obtains and parses metadata from a PDB structure using PDB REST API.
     """
 
-    def __init__(self, pdb_id: str, pdb_source: str = PDB_RCSB, struct_d=None):
+    def __init__(self, pdb_id: str):
         """
-        :param pdb_id: The PDB ID of the structure.
-        :param struct_d: Optional dict which will be used if given, instead of
-        parsing the PDB file.
-        :param pdb_source: Source from which to obtain the pdb file.
+        :param pdb_id: The PDB ID of the structure. No chain.
         """
-        pdb_base_id, chain_id = split_id(pdb_id)
-        struct_d = pdb_dict(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
 
-        # For alphafold structures, default to zero resolution instead of NaN.
-        default_res = 0.0 if pdb_source == PDB_AFLD else None
+        self._pdb_id, _ = split_id(pdb_id)
 
-        def _meta(key: str, convert_to: Type = str, default=None):
-            val = struct_d.get(key, None)
-            if not val:
-                return default
-            if isinstance(val, list):
-                val = val[0]
-            if not val or val == "?":
-                return default
-            try:
-                return convert_to(val)
-            except ValueError:
-                return default
-
-        title = _meta("_struct.title")
-        description = _meta("_entity.pdbx_description")
-        deposition_date = _meta("_pdbx_database_status.recvd_initial_deposition_date")
-
-        src_org = _meta("_entity_src_nat.pdbx_organism_scientific")
-        if not src_org:
-            src_org = _meta("_entity_src_gen.pdbx_gene_src_scientific_name")
-
-        src_org_id = _meta("_entity_src_nat.pdbx_ncbi_taxonomy_id", int)
-        if not src_org_id:
-            src_org_id = _meta("_entity_src_gen.pdbx_gene_src_ncbi_taxonomy_id", int)
-
-        host_org = _meta("_entity_src_gen.pdbx_host_org_scientific_name")
-        host_org_id = _meta("_entity_src_gen.pdbx_host_org_ncbi_taxonomy_id", int)
-        resolution = _meta("_refine.ls_d_res_high", float, default=default_res)
-        resolution_low = _meta("_refine.ls_d_res_low", float, default=default_res)
-        r_free = _meta("_refine.ls_R_factor_R_free", float)
-        r_work = _meta("_refine.ls_R_factor_R_work", float)
-        space_group = _meta("_symmetry.space_group_name_H-M")
-
-        # Find ligands
-        ligands = set()
-        for i, chemical_type in enumerate(struct_d["_chem_comp.id"]):
-            if chemical_type.lower() == "hoh":
-                continue
-            if chemical_type not in STANDARD_ACID_NAMES:
-                ligands.add(chemical_type)
-        ligands = str.join(",", ligands)
-
-        # Crystal growth details
-        cg_ph = _meta("_exptl_crystal_grow.pH", float)
-        cg_temp = _meta("_exptl_crystal_grow.temp", float)
-
-        # Map each chain to entity id, and entity to 1-letter sequence.
-        chain_entities, entity_seq = {}, {}
-        for i, entity_id in enumerate(struct_d["_entity_poly.entity_id"]):
-            if not struct_d["_entity_poly.type"][i].startswith("polypeptide"):
-                continue
-
+        # Obtain structure-level metadata from the PDB API
+        self._meta_struct: dict = pdb_api.execute_raw_data_query(self.pdb_id)
+        self._meta_entities: Dict[int, dict] = {}
+        self._meta_chains: Dict[str, dict] = {}
+        entity_ids = self._meta_struct["rcsb_entry_container_identifiers"][
+            "polymer_entity_ids"
+        ]
+        for entity_id in entity_ids:
             entity_id = int(entity_id)
-            chains_str = struct_d["_entity_poly.pdbx_strand_id"][i]
-            for chain in chains_str.split(","):
-                chain_entities[chain] = entity_id
+            # Obtain entity-level metadata from the PDB API
+            self._meta_entities[entity_id] = pdb_api.execute_raw_data_query(
+                self.pdb_id, entity_id=entity_id
+            )
 
-            seq_str: str = struct_d["_entity_poly.pdbx_seq_one_letter_code_can"][i]
-            seq_str = seq_str.replace("\n", "")
-            entity_seq[entity_id] = seq_str
+            chain_ids = self._meta_entities[entity_id][
+                "rcsb_polymer_entity_container_identifiers"
+            ]["asym_ids"]
+            for chain_id in chain_ids:
+                # Obtain chain-level metadata from the PDB API
+                self._meta_chains[chain_id] = pdb_api.execute_raw_data_query(
+                    self.pdb_id, chain_id=chain_id
+                )
 
-        self.pdb_id: str = pdb_base_id
-        self.pdb_source: str = pdb_source
-        self.title: str = title
-        self.description: str = description
-        self.deposition_date: str = deposition_date
-        self.src_org: str = src_org
-        self.src_org_id: int = src_org_id
-        self.host_org: str = host_org
-        self.host_org_id: int = host_org_id
-        self.resolution: float = resolution
-        self.resolution_low: float = resolution_low
-        self.r_free: float = r_free
-        self.r_work: float = r_work
-        self.space_group: str = space_group
-        self.ligands: str = ligands
-        self.cg_ph: float = cg_ph  # crystal growth pH
-        self.cg_temp: float = cg_temp  # crystal growth temperature
-        # mapping from chain_id to  entity_id
-        self.chain_entities: Dict[str, int] = chain_entities
-        # mapping from entity_id to sequence
-        self.entity_sequence: Dict[int, str] = entity_seq
+    @staticmethod
+    def _resolve(
+        meta: dict, key: str, coerce_type: Callable[[Any], _TC]
+    ) -> Optional[_TC]:
+        for subkey in key.split("."):
+            if isinstance(meta, (list, tuple)):
+                subkey = int(subkey)
+            elif not isinstance(meta, dict):
+                raise ValueError(f"Can't resolve {key} in {meta}")
+            elif subkey not in meta:
+                return None
 
-    def get_chain(self, entity_id: int) -> Optional[str]:
-        """
-        :param entity_id: An ID of one of the entities in this structure.
-        :return: One of the chains from teh structure belonging to this entity id,
-        or None if this is not a valid entity if for the given structure.
-        """
-        chains = [c for c, e in self.chain_entities.items() if e == entity_id]
-        if not chains:
-            return None
-        return sorted(chains)[0]
+            meta = meta[subkey]
 
-    def as_dict(self) -> Dict[str, Any]:
-        return {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
+        if meta is not None:
+            try:
+                meta = coerce_type(meta)
+            except ValueError:
+                LOGGER.warning(f"Failed to coerce {meta}@{key} to {coerce_type}")
+
+        return meta
+
+    @property
+    def pdb_id(self) -> str:
+        return self._pdb_id
+
+    @property
+    def title(self) -> Optional[str]:
+        return self._resolve(self._meta_struct, "struct.title", str)
+
+    @property
+    def description(self) -> Optional[str]:
+        # api_meta_entity["rcsb_polymer_entity"]["pdbx_description"]
+        return self._resolve(self._meta_struct, "struct.pdbx_descriptor", str)
+
+    @property
+    def entity_description(self) -> Dict[int, Optional[str]]:
+        return {
+            entity_id: self._resolve(
+                meta_entity, "rcsb_polymer_entity.pdbx_description", str
+            )
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def deposition_date(self) -> Optional[datetime]:
+        return self._resolve(
+            self._meta_struct,
+            "pdbx_database_status.recvd_initial_deposition_date",
+            datetime.fromisoformat,
+        )
+
+    @property
+    def entity_source_org(self) -> Dict[int, Optional[str]]:
+        return {
+            entity_id: self._resolve(
+                meta_entity, "rcsb_entity_source_organism.0.ncbi_scientific_name", str
+            )
+            or self._resolve(
+                meta_entity, "entity_src_nat.0.pdbx_organism_scientific", str
+            )
+            or self._resolve(
+                meta_entity, "entity_src_gen.0.pdbx_gene_src_scientific_name", str
+            )
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def entity_source_org_id(self) -> Dict[int, Optional[int]]:
+        return {
+            entity_id: self._resolve(
+                meta_entity, "rcsb_entity_source_organism.0.ncbi_taxonomy_id", int
+            )
+            or self._resolve(meta_entity, "entity_src_nat.0.pdbx_ncbi_taxonomy_id", int)
+            or self._resolve(
+                meta_entity, "entity_src_gen.0.pdbx_gene_src_ncbi_taxonomy_id", int
+            )
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def entity_host_org(self) -> Dict[int, Optional[str]]:
+        return {
+            entity_id: self._resolve(
+                meta_entity, "rcsb_entity_host_organism.0.ncbi_scientific_name", str
+            )
+            or self._resolve(
+                meta_entity, "entity_src_gen.0.pdbx_host_org_scientific_name", str
+            )
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def entity_host_org_id(self) -> Dict[int, Optional[int]]:
+        return {
+            entity_id: self._resolve(
+                meta_entity, "rcsb_entity_host_organism.0.ncbi_taxonomy_id", int
+            )
+            or self._resolve(
+                meta_entity, "entity_src_gen.0.pdbx_host_org_ncbi_taxonomy_id", int
+            )
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def resolution(self) -> Optional[float]:
+        return self._resolve(self._meta_struct, "reflns.0.d_resolution_high", float)
+
+    @property
+    def resolution_low(self) -> Optional[float]:
+        return self._resolve(self._meta_struct, "reflns.0.d_resolution_low", float)
+
+    @property
+    def r_free(self) -> Optional[float]:
+        return self._resolve(self._meta_struct, "refine.0.ls_rfactor_rfree", float)
+
+    @property
+    def r_work(self) -> Optional[float]:
+        return self._resolve(self._meta_struct, "refine.0.ls_rfactor_rwork", float)
+
+    @property
+    def space_group(self) -> Optional[str]:
+        return self._resolve(
+            self._meta_struct, "symmetry.space_group_name_hm", str
+        ) or self._resolve(self._meta_struct, "symmetry.space_group_name_H_M", str)
+
+    @property
+    def cg_ph(self) -> Optional[float]:
+        return self._resolve(self._meta_struct, "exptl_crystal_grow.0.pH", float)
+
+    @property
+    def cg_temp(self) -> Optional[float]:
+        return self._resolve(self._meta_struct, "exptl_crystal_grow.0.temp", float)
+
+    @property
+    def chain_ligands(self) -> Dict[str, Set[str]]:
+        return {
+            chain_id: set(
+                [
+                    ld.get("ligand_comp_id")
+                    for ld in meta_chain.get("rcsb_ligand_neighbors", [])
+                ]
+            )
+            for chain_id, meta_chain in self._meta_chains.items()
+        }
+
+    @property
+    def ligands(self) -> str:
+        return str.join(",", sorted(set.union(*self.chain_ligands.values())))
 
     @property
     def entity_chains(self) -> Dict[int, Sequence[str]]:
         """
         :return: Mapping from entity id to a list of chains belonging to that entity.
         """
-        entity_chains = defaultdict(list)
-        for chain, entity in self.chain_entities.items():
-            entity_chains[entity].append(chain)
-        return dict(entity_chains)
+        return self._entity_chains(author=False)
+
+    @property
+    def entity_auth_chains(self) -> Dict[int, Sequence[str]]:
+        """
+        :return: Mapping from entity id to a list of chains belonging to that entity,
+        using the original author's chain ids.
+        """
+        return self._entity_chains(author=True)
+
+    def _entity_chains(self, author: bool = False) -> Dict[int, Sequence[str]]:
+        """
+        :param author: Whether to use author or canonical chain ids.
+        :return: Mapping from entity id to a list of chains belonging to that entity.
+        """
+        asym_ids_key = "auth_asym_ids" if author else "asym_ids"
+        key = f"rcsb_polymer_entity_container_identifiers.{asym_ids_key}"
+        return {
+            entity_id: self._resolve(meta_entity, key, tuple)
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def chain_entities(self) -> Dict[str, int]:
+        """
+        :return: Mapping from chain id to its entity id.
+        """
+        chain_to_entity = {}
+        for entity_id, chain_ids in self.entity_chains.items():
+            chain_to_entity = {
+                **chain_to_entity,
+                **{chain_id: entity_id for chain_id in chain_ids},
+            }
+        return chain_to_entity
+
+    @property
+    def entity_sequence(self) -> Dict[int, str]:
+        return {
+            entity_id: self._resolve(
+                meta_entity, "entity_poly.pdbx_seq_one_letter_code_can", str
+            )
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            k: getattr(self, k)
+            for k, v in self.__class__.__dict__.items()
+            if isinstance(v, property)
+        }
 
     def __repr__(self):
         return str(self.as_dict())
