@@ -1091,7 +1091,7 @@ class ProteinGroup(object):
         rr_alignments = aligner.align(prec_seq, sa_r_seq)
 
         # Take the alignment with shortest path (fewer gap openings)
-        rr_alignments = sorted(rr_alignments, key=lambda a: len(a.path))
+        rr_alignments = sorted(rr_alignments, key=lambda a: a.length)
         rr_alignment = rr_alignments[0]
         rr_idx_prec, rr_idx_pymol = rr_alignment.aligned
         assert len(rr_idx_prec) == len(rr_idx_pymol)
