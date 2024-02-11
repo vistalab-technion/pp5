@@ -713,6 +713,7 @@ class ProteinRecord(object):
         protein record. If False, only the default conformation will be used.
         :param with_backbone: Whether to include backbone atoms in the protein record.
         :param with_contacts: Whether to calculate per-residue contacts.
+        :param with_codons: Whether to assign codons to each residue.
         :param contact_method: Method for calculating contacts.
         Options are: 'ns' for neighbor search; 'arp' for arpeggio.
         :param contact_radius: Radius for calculating contacts.
