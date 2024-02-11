@@ -49,18 +49,29 @@ def with_contacts(request):
     return request.param
 
 
+@pytest.fixture(
+    autouse=False,
+    scope="class",
+    params=[False, True],
+    ids=["no_codons", "codons"],
+)
+def with_codons(request):
+    return request.param
+
+
 class TestMethods:
     @pytest.fixture(autouse=False, scope="class", params=["102L:A", "2WUR:A"])
     def pdb_id(self, request):
         return request.param
 
     @pytest.fixture(autouse=False, scope="class")
-    def prec(self, with_altlocs, with_backbone, with_contacts, pdb_id):
+    def prec(self, with_altlocs, with_backbone, with_contacts, with_codons, pdb_id):
         return ProteinRecord.from_pdb(
             pdb_id,
             with_altlocs=with_altlocs,
             with_backbone=with_backbone,
             with_contacts=with_contacts,
+            with_codons=with_codons,
         )
 
     def test_backbone(self, prec, with_backbone):
@@ -84,7 +95,7 @@ class TestMethods:
             else:
                 assert res.backbone_coords == {}
 
-    def test_to_dataframe(self, prec, with_backbone, with_contacts):
+    def test_to_dataframe(self, prec, with_backbone, with_contacts, with_codons):
         if isinstance(with_contacts, dict):
             if not Arpeggio.can_execute(**DEFAULT_ARPEGGIO_ARGS):
                 pytest.skip()
@@ -100,6 +111,9 @@ class TestMethods:
 
         if with_contacts:
             assert "contact_count" in df.columns
+
+        if with_codons:
+            assert "codon" in df.columns
 
     @pytest.mark.parametrize(
         "contact_method", [CONTACT_METHOD_ARPEGGIO, CONTACT_METHOD_NEIGHBOR]
