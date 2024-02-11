@@ -21,6 +21,7 @@ from typing import (
 )
 from pathlib import Path
 from datetime import datetime
+from itertools import zip_longest
 from collections import defaultdict
 
 import numpy as np
@@ -798,6 +799,28 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
                 **{chain_id: entity_id for chain_id in chain_ids},
             }
         return chain_to_entity
+
+    @property
+    def chain_to_auth_chain(self) -> Dict[str, str]:
+        """
+        :return: Mapping from PDB chain id to its author's chain id. If there are no
+        different names for the author chains, the PDB chain names are mapped to
+        themselves.
+        """
+        entity_auth_chains = self.entity_auth_chains
+        chain_to_auth_chain = {}
+        for entity_id, chain_ids in self.entity_chains.items():
+            auth_chain_ids = entity_auth_chains[entity_id]
+            chain_to_auth_chain = {
+                **chain_to_auth_chain,
+                **{
+                    chain_id: auth_chain_id or chain_id
+                    for chain_id, auth_chain_id in zip_longest(
+                        chain_ids, auth_chain_ids
+                    )
+                },
+            }
+        return chain_to_auth_chain
 
     @property
     def entity_sequence(self) -> Dict[int, str]:
