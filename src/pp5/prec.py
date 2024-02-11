@@ -126,13 +126,16 @@ class ResidueRecord(object):
 
         # # Get the best codon and calculate its 'score' based on how many
         # # other options there are
-        best_codon, max_count, total_count = UNKNOWN_CODON, 0, 0
-        for codon, count in codon_counts.items():
-            total_count += count
-            if count > max_count and codon != UNKNOWN_CODON:
-                best_codon, max_count = codon, count
-        codon_score = max_count / total_count if total_count else 0
-        codon_opts = codon_counts.keys()
+        best_codon, codon_score, codon_opts = None, 0, []
+        if codon_counts is not None:
+            best_codon = UNKNOWN_CODON
+            max_count, total_count = 0, 0
+            for codon, count in codon_counts.items():
+                total_count += count
+                if count > max_count and codon != UNKNOWN_CODON:
+                    best_codon, max_count = codon, count
+            codon_score = max_count / total_count if total_count else 0
+            codon_opts = codon_counts.keys()
 
         self.res_id, self.name = str(res_id), name
         self.unp_idx, self.rel_loc = unp_idx, rel_loc
@@ -157,9 +160,15 @@ class ResidueRecord(object):
             name=self.name,
             unp_idx=self.unp_idx,
             rel_loc=self.rel_loc,
-            codon=self.codon,
-            codon_score=self.codon_score,
-            codon_opts=self.codon_opts,
+            **(
+                dict(
+                    codon=self.codon,
+                    codon_score=self.codon_score,
+                    codon_opts=self.codon_opts,
+                )
+                if self.codon is not None
+                else {}
+            ),
             secondary=self.secondary,
             **self.angles.as_dict(**(dihedral_args or {})),
             bfactor=self.bfactor,
@@ -670,6 +679,7 @@ class ProteinRecord(object):
         with_altlocs: bool = False,
         with_backbone: bool = False,
         with_contacts: bool = False,
+        with_codons: bool = False,
         contact_method: str = CONTACT_METHOD_NEIGHBOR,
         contact_radius: float = CONTACT_DEFAULT_RADIUS,
     ):
@@ -805,9 +815,13 @@ class ProteinRecord(object):
 
         # Find the best matching DNA for our AA sequence via pairwise alignment
         # between the PDB AA sequence and translated DNA sequences.
-        dna_seq_record, idx_to_codons = self._find_dna_alignment(pdb_aa_seq, max_ena)
-        dna_seq = str(dna_seq_record.seq)
-        self.ena_id = dna_seq_record.id
+        self.ena_id = None
+        self._dna_seq = None
+        idx_to_codons = {}
+        if with_codons:
+            self.ena_id, self._dna_seq, idx_to_codons = self._find_dna_alignment(
+                pdb_aa_seq, max_ena
+            )
 
         # Calculate contacts if requested
         contacts_assigner: Optional[ContactsAssigner] = None
@@ -847,7 +861,9 @@ class ProteinRecord(object):
             secondary: str = ss_dict.get((self.pdb_chain_id, r_curr.get_id()), "-")
 
             # Codons options for residue
-            codon_counts: Dict[str, int] = idx_to_codons.get(i, {})
+            codon_counts: Dict[str, int] = idx_to_codons.get(
+                i, {} if with_codons else None
+            )
 
             # Instantiate a ResidueRecord
             rr = AltlocResidueRecord.from_residue(
@@ -868,7 +884,6 @@ class ProteinRecord(object):
             residue_recs.append(rr)
 
         self._protein_seq = pdb_aa_seq
-        self._dna_seq = dna_seq
         self._residue_recs: Dict[str, ResidueRecord] = {
             rr.res_id: rr for rr in residue_recs
         }
@@ -906,11 +921,13 @@ class ProteinRecord(object):
         return self._pdb_rec
 
     @property
-    def dna_seq(self) -> SeqRecord:
+    def dna_seq(self) -> Optional[SeqRecord]:
         """
         :return: DNA nucleotide sequence. This is the full DNA sequence which,
         after translation, best-matches to the PDB AA sequence.
         """
+        if self.ena_id is None or self._dna_seq is None:
+            return None
         return SeqRecord(Seq(self._dna_seq), self.ena_id, "", "")
 
     @property
@@ -1109,15 +1126,16 @@ class ProteinRecord(object):
 
     def _find_dna_alignment(
         self, pdb_aa_seq: str, max_ena: int
-    ) -> Tuple[SeqRecord, Dict[int, Dict[str, int]]]:
+    ) -> Tuple[Optional[str], Optional[str], Dict[int, Dict[str, int]]]:
         """
         Aligns between this prec's AA sequence and all known DNA (from the
         ENA database) sequences of the corresponding Uniprot ID.
         :param pdb_aa_seq: AA sequence from PDB to align.
         :param max_ena: Maximal number of DNA sequences to consider.
         :return: A tuple:
+            - The ENA id of the DNA sequence which best aligns to the provided AAs.
+            - The DNA sequence which best aligns to the provided AAs.
             - SeqRecord of the DNA sequence which best aligns to the provided AAs.
-            - A dict from the index of a residue in the given AA sequence, to a dict
             of codon counts. The second dict maps from a codon (e.g. 'CCT') to a
             count, representing the number of times this codon was found in the
             location of the corresponding AA index.
@@ -1134,7 +1152,7 @@ class ProteinRecord(object):
             except IOError as e:
                 LOGGER.warning(f"{self}: Invalid ENA id {ena_id}")
             if max_ena is not None and i > max_ena:
-                LOGGER.warning(f"{self}: Over {max_ena} ENA ids, " f"skipping")
+                LOGGER.warning(f"{self}: Over {max_ena} ENA ids, skipping")
                 break
 
         aligner = PairwiseAligner(
@@ -1155,7 +1173,8 @@ class ProteinRecord(object):
             alignments.append((seq, alignment))
 
         if len(alignments) == 0:
-            raise ProteinInitError(f"Can't find ENA id for {self.unp_id}")
+            LOGGER.warning(f"Can't find ENA id for {self.unp_id}")
+            return None, None, {}
 
         # Sort alignments by negative score (we want the highest first)
         sorted_alignments = sorted(alignments, key=lambda x: -x[1].score)
@@ -1212,7 +1231,7 @@ class ProteinRecord(object):
                     codon_dict[codon] = codon_dict.get(codon, 0) + 1
                     idx_to_codons[pdb_idx] = codon_dict
 
-        return best_ena, idx_to_codons
+        return best_ena.id, str(best_ena.seq), idx_to_codons
 
     def _find_pdb_xref(self, ref_pdb_id) -> Tuple[str, str]:
         ref_pdb_id, ref_chain_id, ent_id = pdb.split_id_with_entity(ref_pdb_id)
