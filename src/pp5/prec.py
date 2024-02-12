@@ -562,26 +562,28 @@ class ProteinRecord(object):
         try:
             # Either chain or entity or none can be provided, but not both
             pdb_base_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
-            numeric_chain = False
             if entity_id:
-                entity_id = int(entity_id)
+                entity_id = str(entity_id)
 
-                # Discover which chains belong to this entity
-                pdb_dict = pdb.pdb_dict(
-                    pdb_id, pdb_source=pdb_source, struct_d=pdb_dict
-                )
-                meta = pdb.PDBMetadata(pdb_id)
-                chain_id = meta.entity_chains[entity_id][0]
+                meta = pdb.PDBMetadata.from_pdb(pdb_id, cache=cache)
+
+                chain_id = None
+                if entity_id in meta.entity_ids:
+                    chain_id = meta.entity_chains[entity_id][0]
 
                 if not chain_id:
-                    # In rare cases the chain is a number instead of a letter,
-                    # so there's no way to distinguish between entity id and
-                    # chain except also trying to use our entity as a chain
-                    # and finding the actual entity. See e.g. 4N6V.
-                    if str(entity_id) in meta.chain_entities:
+                    # In rare cases the author chain is a number instead of a letter.
+                    # We check for this, and if it's the case, we use the
+                    # corresponding PDB chain instead. See e.g. 4N6V.
+                    if entity_id in meta.auth_chain_ids:
                         # Chain is number, but use its string representation
-                        chain_id = str(entity_id)
-                        numeric_chain = True
+                        chain_id = next(
+                            iter(
+                                c_id
+                                for c_id, ac_id in (meta.chain_to_auth_chain.items())
+                                if ac_id == entity_id
+                            )
+                        )
                     else:
                         raise ProteinInitError(
                             f"No matching chain found for entity "
@@ -600,7 +602,8 @@ class ProteinRecord(object):
                     pdb_id, pdb_source=pdb_source, struct_d=pdb_dict
                 )
 
-            unp_id = pdb.PDB2UNP.pdb_id_to_unp_id(
+            # TODO: Remove need for unp id from init
+            unp_id = pdb.PDBMetadata.pdb_id_to_unp_id(
                 pdb_id, strict=strict_pdb_xref, cache=cache
             )
 
@@ -609,7 +612,6 @@ class ProteinRecord(object):
                 pdb_id,
                 pdb_source=pdb_source,
                 pdb_dict=pdb_dict,
-                numeric_chain=numeric_chain,
                 **kw_for_init,
             )
             if cache_dir:
@@ -674,8 +676,6 @@ class ProteinRecord(object):
         dihedral_est_name: str = None,
         dihedral_est_args: dict = None,
         max_ena: int = None,
-        strict_unp_xref: bool = True,
-        numeric_chain: bool = False,
         with_altlocs: bool = True,
         with_backbone: bool = True,
         with_contacts: bool = True,
@@ -701,10 +701,6 @@ class ProteinRecord(object):
         :param max_ena: Number of maximal ENA records (containing protein
         genetic data) to align to the PDB structure of this protein. None
         means no limit (all cross-refs from Uniprot will be aligned).
-        :param strict_unp_xref: Whether to require that there exist a PDB
-        cross-ref for the given Uniprot ID.
-        :param numeric_chain: Whether the given chain id (if any) is
-        numeric. In rare cases PDB structures have numbers as chain ids.
         :param with_altlocs: Whether to include alternate conformations in the
         protein record. If False, only the default conformation will be used.
         :param with_backbone: Whether to include backbone atoms in the protein record.
@@ -735,25 +731,37 @@ class ProteinRecord(object):
         if with_altlocs and contact_method == CONTACT_METHOD_ARPEGGIO:
             raise ValueError(f"Altlocs not supported with {contact_method=}")
 
-        self.strict_unp_xref = strict_unp_xref
-        self.numeric_chain = numeric_chain
         self.with_altlocs = with_altlocs
         self.with_backbone = with_backbone
         self.with_contacts = with_contacts
         self.contact_radius = contact_radius
         self.contact_method = contact_method
 
-        # Parse the given PDB id
-        self.pdb_base_id, self.pdb_chain_id, ent_id = pdb.split_id_with_entity(pdb_id)
-        if numeric_chain:
-            self.pdb_chain_id = str(ent_id)
+        # Parse the given PDB id and obtain metadata
+        self.pdb_base_id, pdb_chain_id, ent_id = pdb.split_id_with_entity(pdb_id)
+        self.pdb_meta = pdb.PDBMetadata.from_pdb(self.pdb_base_id, cache=True)
+
+        if pdb_chain_id is None:
+            if ent_id and len(self.pdb_meta.entity_chains.get(ent_id, [])) == 1:
+                pdb_chain_id = self.pdb_meta.entity_chains[ent_id][0]
+            elif len(self.pdb_meta.chain_ids) == 1:
+                pdb_chain_id = next(iter(self.pdb_meta.chain_ids))
+            else:
+                raise ProteinInitError(
+                    f"No chain specified in {pdb_id}, and multiple chains exist."
+                )
+
+        self.pdb_chain_id = pdb_chain_id
         self.pdb_id = f"{self.pdb_base_id}:{self.pdb_chain_id}"
+
+        # TODO: Remove need for unp id from init, get it from metadata
+        if self.unp_id not in self.pdb_meta.chain_uniprot_ids[self.pdb_chain_id]:
+            raise ProteinInitError(f"Uniprot ID {self.unp_id} not found in {pdb_id}")
 
         self.pdb_source = pdb_source
         if pdb_dict:
             self._pdb_dict = pdb_dict
 
-        self.pdb_meta = pdb.PDBMetadata(self.pdb_id)
         if not self.pdb_meta.resolution and self.pdb_source != PDB_AFLD:
             raise ProteinInitError(f"Unknown resolution for {pdb_id}")
 
