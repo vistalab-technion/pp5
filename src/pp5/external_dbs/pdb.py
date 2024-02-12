@@ -831,6 +831,123 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
             for entity_id, meta_entity in self._meta_entities.items()
         }
 
+    @property
+    def uniprot_ids(self) -> Sequence[str]:
+        """
+        :return: All Uniprot IDs associated with the PDB structure.
+        """
+        all_unp_ids = set()
+        for chain_id, unp_ids in self.chain_uniprot_ids.items():
+            all_unp_ids.update(unp_ids)
+        return tuple(sorted(all_unp_ids))
+
+    @property
+    def chain_uniprot_ids(self) -> Dict[str, Sequence[str]]:
+        """
+        Retrieves all Uniprot IDs associated with a PDB structure chains.
+
+        :return: a map: chain -> [unp1, unp2, ...]
+        where unp1, unp2, ... are Uniprot IDs associated with the chain.
+        """
+
+        # entity -> chain -> unp -> [ (s1,e1), ... ]
+        entity_map = self.entity_uniprot_id_alignments
+
+        all_chain_map = {}
+        for entity_id, chain_map in entity_map.items():
+            for chain_id, unp_map in chain_map.items():
+                # chain -> [unp1, unp2, ...]
+                all_chain_map[chain_id] = tuple(unp_map.keys())
+
+        return all_chain_map
+
+    @property
+    def chain_uniprot_id_alignments(
+        self,
+    ) -> Dict[str, Dict[str, List[Tuple[int, int]]]]:
+        """
+        Retrieves all Uniprot IDs associated with a PDB structure chains.
+
+        :return: a map: chain -> unp -> [ (s1,e1), ... ]
+        where (s1,e1) are alignment start,end indices between the UNP and PDB sequences.
+        """
+        # entity -> chain -> unp -> [ (s1,e1), ... ]
+        entity_map = self.entity_uniprot_id_alignments
+
+        all_chain_map = {}
+        for entity_id, chain_map in entity_map.items():
+            for chain_id, unp_map in chain_map.items():
+                # chain -> unp -> [ (s1,e1), ... ]
+                all_chain_map[chain_id] = unp_map
+
+        return all_chain_map
+
+    @property
+    def entity_uniprot_ids(self) -> Dict[str, Dict[str, Sequence[str]]]:
+        """
+        Retrieves all Uniprot IDs associated with a PDB structure entities.
+
+        :return: a map: entity -> chain ->[unp1, unp2, ...]
+        where unp1, unp2, ... are Uniprot IDs associated with the entity.
+        """
+        # entity -> chain -> unp -> [ (s1,e1), ... ]
+        entity_map = self.entity_uniprot_id_alignments
+
+        new_entity_map = defaultdict(dict)
+        for entity_id, chain_map in entity_map.items():
+            for chain_id, unp_map in chain_map.items():
+                # entity -> chain -> [unp1, unp2, ...]
+                new_entity_map[entity_id][chain_id] = tuple(unp_map.keys())
+
+        return dict(new_entity_map)
+
+    @property
+    def entity_uniprot_id_alignments(
+        self,
+    ) -> Dict[int, Dict[str, Dict[str, List[Tuple[int, int]]]]]:
+        """
+        Retrieves all Uniprot IDs associated with a PDB structure entities.
+
+        :return: a map: entity -> chain -> unp -> [ (s1,e1), ...]
+        where (s1,e1) are alignment start,end indices between the UNP and PDB sequences.
+        """
+        map_to_unp_ids = {}
+
+        for entity_id, entity_meta in self._meta_entities.items():
+            # Get list of chains and list of Uniprot IDs for this entity
+            entity_containers = entity_meta["rcsb_polymer_entity_container_identifiers"]
+            entity_unp_ids = entity_containers.get("uniprot_ids", [])
+
+            unp_alignments: Dict[str, List[Tuple[int, int]]] = {
+                unp_id: [] for unp_id in entity_unp_ids
+            }
+            for alignment_entry in entity_meta.get("rcsb_polymer_entity_align", []):
+                if alignment_entry["reference_database_name"].lower() != "uniprot":
+                    continue
+
+                unp_id = alignment_entry["reference_database_accession"]
+                if unp_id not in unp_alignments:
+                    continue
+
+                for alignment_region in alignment_entry["aligned_regions"]:
+                    align_start = alignment_region["entity_beg_seq_id"]
+                    align_end = align_start + alignment_region["length"] - 1
+                    unp_alignments[unp_id].append((align_start, align_end))
+
+            entity_chains = [
+                # The same chain can be referred to by different labels,
+                # the canonical PDB label and another label given by the
+                # structure author.
+                *entity_containers.get("asym_ids", []),
+                *entity_containers.get("auth_asym_ids", []),
+            ]
+
+            map_to_unp_ids[entity_id] = {
+                chain_id: unp_alignments for chain_id in entity_chains
+            }
+
+        return map_to_unp_ids
+
     def as_dict(self) -> Dict[str, Any]:
         return {
             k: getattr(self, k)
@@ -840,6 +957,67 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
 
     def __repr__(self):
         return str(self.as_dict())
+
+    @classmethod
+    def from_pdb(cls, pdb_id: str, cache=False) -> PDBMetadata:
+        """
+        Create a PDBMetadata object from a given PDB ID.
+        :param pdb_id: The PDB ID to map for. Chain will be ignored if present.
+        :param cache: Whether to load a cached mapping if available.
+        :return: A PDBMetadata object.
+        """
+        pdb_base_id, _ = split_id(pdb_id)
+
+        # TODO: Implement caching
+        # if cache:
+        #     pdb_meta = cls.from_cache(pdb_base_id)
+        #     if pdb_meta is not None:
+        #         return pdb_meta
+
+        pdb_meta = cls(pdb_id)
+        # pdb_meta.save()
+        return pdb_meta
+
+    @classmethod
+    def pdb_id_to_unp_id(cls, pdb_id: str, strict=True, cache=False) -> str:
+        """
+        Given a PDB ID, returns a single Uniprot id for it.
+        :param pdb_id: PDB ID, with optional chain.
+        :param cache: Whether to use cached mapping.
+        :param strict: Whether to raise an error (True) or just warn (False)
+        if the PDB ID cannot be uniquely mapped to a single Uniprot ID.
+        This can happen if: (1) Chain wasn't specified and there are
+        different Uniprot IDs for different chains (e.g. 4HHB); (2) Chain was
+        specified but there are multiple Uniprot IDs for the chain
+        (chimeric entry, e.g. 3SG4:A).
+        :return: A Uniprot ID.
+        """
+        pdb_base_id, chain_id = split_id(pdb_id)
+        meta = cls.from_pdb(pdb_id, cache=cache)
+
+        if not meta.uniprot_ids:
+            raise ValueError(f"No Uniprot entries exist for {pdb_base_id}")
+
+        if not chain_id:
+            if len(meta.uniprot_ids) > 1:
+                msg = f"Multiple Uniprot IDs for {pdb_base_id}, no chain specified."
+                if strict:
+                    raise ValueError(msg)
+                LOGGER.warning(f"{msg} Returning first ID from the first chain.")
+
+            for chain_id, unp_ids in meta.chain_uniprot_ids.items():
+                return unp_ids[0]
+
+        if chain_id not in meta.chain_uniprot_ids:
+            raise ValueError(f"No Uniprot ID for chain {chain_id} of {pdb_base_id}")
+
+        if len(meta.chain_uniprot_ids[chain_id]) > 1:
+            msg = f"Multiple Uniprot IDs for {pdb_base_id} chain {chain_id} (chimeric)"
+            if strict:
+                raise ValueError(msg)
+            LOGGER.warning(f"{msg} Returning the first Uniprot ID.")
+
+        return meta.chain_uniprot_ids[chain_id][0]
 
 
 class PDBUnitCell(object):
