@@ -202,7 +202,7 @@ class TestFromPDB:
         pdb_id = "4N6V:9"
         prec = ProteinRecord.from_pdb(pdb_id)
         assert prec.pdb_base_id == "4N6V"
-        assert prec.pdb_chain_id == "9"
+        assert prec.pdb_chain_id == "J"  # auth chain was converted to pdb chain
 
     def test_ambiguous_numerical_entity_and_chain(self):
         # In this rare case it's impossible to know if entity or chain!
@@ -213,7 +213,7 @@ class TestFromPDB:
         pdb_id = "4N6V:1"
         prec = ProteinRecord.from_pdb(pdb_id)
         assert prec.pdb_base_id == "4N6V"
-        assert prec.pdb_chain_id == "0"
+        assert prec.pdb_chain_id == "A"
 
     def test_entity_with_invalid_entity(self):
         with pytest.raises(ProteinInitError):
@@ -268,23 +268,9 @@ class TestInit:
         with pytest.raises(ProteinInitError):
             ProteinRecord("P00720", "4GY3")
 
-    def test_no_strict_xref_with_no_xref_in_pdb(self):
-        prec = ProteinRecord("Q6LDG3", "3SG4:A", strict_unp_xref=False)
-        assert prec.unp_id == "Q6LDG3"
-        assert prec.pdb_id == "3SG4:A"
-
-    def test_no_strict_xref_with_no_xref_in_pdb_and_no_chain(self):
-        with pytest.raises(ProteinInitError, match="and no chain provided"):
-            ProteinRecord("Q6LDG3", "3SG4", strict_unp_xref=False)
-
-    def test_strict_xref_with_no_matching_xref_in_pdb(self):
+    def test_no_matching_xref_in_pdb(self):
         with pytest.raises(ProteinInitError):
             ProteinRecord("P42212", "2QLE:A")
-
-    def test_no_strict_xref_with_no_matching_xref_in_pdb(self):
-        prec = ProteinRecord("P42212", "2QLE:A", strict_unp_xref=False)
-        assert prec.unp_id == "P42212"
-        assert prec.pdb_id == "2QLE:A"
 
 
 class TestSave:
