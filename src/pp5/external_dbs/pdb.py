@@ -640,7 +640,6 @@ class PDBMetadata(JSONCacheableMixin):
 
     @property
     def description(self) -> Optional[str]:
-        # api_meta_entity["rcsb_polymer_entity"]["pdbx_description"]
         return self._resolve(self._meta_struct, "struct.pdbx_descriptor", str)
 
     @property
@@ -759,6 +758,27 @@ class PDBMetadata(JSONCacheableMixin):
     @property
     def ligands(self) -> str:
         return str.join(",", sorted(set.union(*self.chain_ligands.values())))
+
+    @property
+    def entity_ids(self) -> Sequence[str]:
+        """
+        :return: The entity ids which exist in the structure.
+        """
+        return tuple(self._meta_entities.keys())
+
+    @property
+    def chain_ids(self) -> Sequence[str]:
+        """
+        :return: The chain ids which exist in the structure.
+        """
+        return tuple(self._meta_chains.keys())
+
+    @property
+    def auth_chain_ids(self) -> Sequence[str]:
+        """
+        :return: The chain ids which exist in the structure.
+        """
+        return tuple(self.chain_to_auth_chain[chain_id] for chain_id in self.chain_ids)
 
     @property
     def entity_chains(self) -> Dict[str, Sequence[str]]:
