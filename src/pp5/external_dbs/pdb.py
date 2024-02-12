@@ -573,7 +573,7 @@ class PDB2UNP(JSONCacheableMixin, object):
 _TC = TypeVar("_TC")
 
 
-class PDBMetadata(object):  # TODO: JSONCacheableMixin
+class PDBMetadata(JSONCacheableMixin):
     """
     Obtains and parses metadata from a PDB structure using PDB REST API.
     """
@@ -587,13 +587,13 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
 
         # Obtain structure-level metadata from the PDB API
         self._meta_struct: dict = pdb_api.execute_raw_data_query(self.pdb_id)
-        self._meta_entities: Dict[int, dict] = {}
+        self._meta_entities: Dict[str, dict] = {}
         self._meta_chains: Dict[str, dict] = {}
         entity_ids = self._meta_struct["rcsb_entry_container_identifiers"][
             "polymer_entity_ids"
         ]
         for entity_id in entity_ids:
-            entity_id = int(entity_id)
+            entity_id = str(entity_id)
             # Obtain entity-level metadata from the PDB API
             self._meta_entities[entity_id] = pdb_api.execute_raw_data_query(
                 self.pdb_id, entity_id=entity_id
@@ -644,7 +644,7 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
         return self._resolve(self._meta_struct, "struct.pdbx_descriptor", str)
 
     @property
-    def entity_description(self) -> Dict[int, Optional[str]]:
+    def entity_description(self) -> Dict[str, Optional[str]]:
         return {
             entity_id: self._resolve(
                 meta_entity, "rcsb_polymer_entity.pdbx_description", str
@@ -661,7 +661,7 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
         )
 
     @property
-    def entity_source_org(self) -> Dict[int, Optional[str]]:
+    def entity_source_org(self) -> Dict[str, Optional[str]]:
         return {
             entity_id: self._resolve(
                 meta_entity, "rcsb_entity_source_organism.0.ncbi_scientific_name", str
@@ -676,7 +676,7 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
         }
 
     @property
-    def entity_source_org_id(self) -> Dict[int, Optional[int]]:
+    def entity_source_org_id(self) -> Dict[str, Optional[int]]:
         return {
             entity_id: self._resolve(
                 meta_entity, "rcsb_entity_source_organism.0.ncbi_taxonomy_id", int
@@ -689,7 +689,7 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
         }
 
     @property
-    def entity_host_org(self) -> Dict[int, Optional[str]]:
+    def entity_host_org(self) -> Dict[str, Optional[str]]:
         return {
             entity_id: self._resolve(
                 meta_entity, "rcsb_entity_host_organism.0.ncbi_scientific_name", str
@@ -701,7 +701,7 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
         }
 
     @property
-    def entity_host_org_id(self) -> Dict[int, Optional[int]]:
+    def entity_host_org_id(self) -> Dict[str, Optional[int]]:
         return {
             entity_id: self._resolve(
                 meta_entity, "rcsb_entity_host_organism.0.ncbi_taxonomy_id", int
@@ -761,21 +761,21 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
         return str.join(",", sorted(set.union(*self.chain_ligands.values())))
 
     @property
-    def entity_chains(self) -> Dict[int, Sequence[str]]:
+    def entity_chains(self) -> Dict[str, Sequence[str]]:
         """
         :return: Mapping from entity id to a list of chains belonging to that entity.
         """
         return self._entity_chains(author=False)
 
     @property
-    def entity_auth_chains(self) -> Dict[int, Sequence[str]]:
+    def entity_auth_chains(self) -> Dict[str, Sequence[str]]:
         """
         :return: Mapping from entity id to a list of chains belonging to that entity,
         using the original author's chain ids.
         """
         return self._entity_chains(author=True)
 
-    def _entity_chains(self, author: bool = False) -> Dict[int, Sequence[str]]:
+    def _entity_chains(self, author: bool = False) -> Dict[str, Sequence[str]]:
         """
         :param author: Whether to use author or canonical chain ids.
         :return: Mapping from entity id to a list of chains belonging to that entity.
@@ -788,7 +788,7 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
         }
 
     @property
-    def chain_entities(self) -> Dict[str, int]:
+    def chain_entities(self) -> Dict[str, str]:
         """
         :return: Mapping from chain id to its entity id.
         """
@@ -823,7 +823,7 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
         return chain_to_auth_chain
 
     @property
-    def entity_sequence(self) -> Dict[int, str]:
+    def entity_sequence(self) -> Dict[str, str]:
         return {
             entity_id: self._resolve(
                 meta_entity, "entity_poly.pdbx_seq_one_letter_code_can", str
@@ -904,7 +904,7 @@ class PDBMetadata(object):  # TODO: JSONCacheableMixin
     @property
     def entity_uniprot_id_alignments(
         self,
-    ) -> Dict[int, Dict[str, Dict[str, List[Tuple[int, int]]]]]:
+    ) -> Dict[str, Dict[str, Dict[str, List[Tuple[int, int]]]]]:
         """
         Retrieves all Uniprot IDs associated with a PDB structure entities.
 
