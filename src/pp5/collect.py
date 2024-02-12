@@ -1042,8 +1042,8 @@ def _collect_single_structure(
     pdb_base_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
 
     pdb_dict = pdb.pdb_dict(pdb_id, pdb_source=pdb_source)
-    pdb2unp = pdb.PDB2UNP.from_pdb(pdb_id, cache=True)
-    meta = pdb.PDBMetadata(pdb_id)
+    meta = pdb.PDBMetadata.from_pdb(pdb_id, cache=True)
+    chain_to_unp_ids = meta.chain_uniprot_ids
 
     # Determine all chains we need to collect from the PDB structure
     chains_to_collect: Sequence[str]
@@ -1079,16 +1079,16 @@ def _collect_single_structure(
         pdb_id_full = f"{pdb_base_id}:{chain_id}"
 
         # Skip chains with no Uniprot ID
-        if chain_id not in pdb2unp:
+        if chain_id not in chain_to_unp_ids:
             LOGGER.warning(f"No Uniprot ID for {pdb_id_full}")
             continue
 
         # Skip chimeric chains
-        if pdb2unp.is_chimeric(chain_id):
+        if len(chain_to_unp_ids[chain_id]) > 1:
             LOGGER.warning(f"Discarding chimeric chain {pdb_id_full}")
             continue
 
-        unp_id = pdb2unp.get_unp_id(chain_id)
+        unp_id = chain_to_unp_ids[chain_id][0]
         seq_len = len(meta.entity_sequence[meta.chain_entities[chain_id]])
 
         # Create a ProteinRecord and save it so it's cached for when we
@@ -1097,7 +1097,7 @@ def _collect_single_structure(
         try:
             nc = chain_id in string.digits
             prec = ProteinRecord(
-                unp_id,
+                unp_id,  # TODO: remove unp_ids here
                 pdb_id_full,
                 pdb_source=pdb_source,
                 pdb_dict=pdb_dict,
@@ -1148,7 +1148,7 @@ def _collect_single_structure(
 
     msg = (
         f"Collected {len(chain_data)} chains from {pdb_id} "
-        f"{pdb2unp.get_chain_to_unp_ids()} ({idx[0] + 1}/{idx[1]})"
+        f"{chain_to_unp_ids} ({idx[0] + 1}/{idx[1]})"
     )
     LOGGER.log(level=logging.INFO if len(chain_data) else logging.WARNING, msg=msg)
 
