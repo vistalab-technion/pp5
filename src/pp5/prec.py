@@ -538,7 +538,7 @@ class ProteinRecord(object):
         pdb_dict=None,
         cache=False,
         cache_dir=pp5.PREC_DIR,
-        strict_pdb_xref=True,
+        strict_pdb_unp_xref=True,
         **kw_for_init,
     ) -> ProteinRecord:
         """
@@ -554,7 +554,7 @@ class ProteinRecord(object):
         :param cache: Whether to load prec from cache if available.
         :param cache_dir: Where the cache dir is. ProteinRecords will be
         written to this folder after creation, unless it's None.
-        :param strict_pdb_xref: Whether to require that the given PDB ID
+        :param strict_pdb_unp_xref: Whether to require that the given PDB ID
         maps uniquely to only one Uniprot ID.
         :param kw_for_init: Extra kwargs for the ProteinRecord initializer.
         :return: A ProteinRecord.
@@ -602,16 +602,11 @@ class ProteinRecord(object):
                     pdb_id, pdb_source=pdb_source, struct_d=pdb_dict
                 )
 
-            # TODO: Remove need for unp id from init
-            unp_id = pdb.PDBMetadata.pdb_id_to_unp_id(
-                pdb_id, strict=strict_pdb_xref, cache=cache
-            )
-
             prec = cls(
-                unp_id,
                 pdb_id,
                 pdb_source=pdb_source,
                 pdb_dict=pdb_dict,
+                strict_pdb_unp_xref=strict_pdb_unp_xref,
                 **kw_for_init,
             )
             if cache_dir:
@@ -657,19 +652,18 @@ class ProteinRecord(object):
                 if prec is not None:
                     return prec
 
-            prec = cls(unp_id, pdb_id, **kw_for_init)
+            prec = cls(pdb_id, **kw_for_init)
             if cache_dir:
                 prec.save(out_dir=cache_dir)
 
             return prec
         except Exception as e:
             raise ProteinInitError(
-                f"Failed to create protein record for " f"unp_id={unp_id}"
+                f"Failed to create protein record for unp_id={unp_id}"
             ) from e
 
     def __init__(
         self,
-        unp_id: str,  # TODO: Get this from metadata
         pdb_id: str,
         pdb_source: str = PDB_RCSB,
         pdb_dict: dict = None,
@@ -680,15 +674,15 @@ class ProteinRecord(object):
         with_backbone: bool = True,
         with_contacts: bool = True,
         with_codons: bool = True,
+        strict_pdb_unp_xref: bool = True,
         contact_method: str = CONTACT_METHOD_NEIGHBOR,
         contact_radius: float = CONTACT_DEFAULT_RADIUS,
     ):
         """
         Don't call this directly. Use class methods from_pdb or from_unp instead.
 
-        Initialize a protein record from both Uniprot and PDB ids.
+        Initialize a protein record from PDB id.
 
-        :param unp_id: Uniprot id which uniquely identifies the protein.
         :param pdb_id: PDB id with chain (e.g. '1ABC:D') of the specific structure chain
         desired.
         :param pdb_source: Source from which to obtain the pdb file.
@@ -706,39 +700,21 @@ class ProteinRecord(object):
         :param with_backbone: Whether to include backbone atoms in the protein record.
         :param with_contacts: Whether to calculate per-residue contacts.
         :param with_codons: Whether to assign codons to each residue.
+        :param strict_pdb_unp_xref: Whether to require that the given PDB ID
+        maps uniquely to only one Uniprot ID.
         :param contact_method: Method for calculating contacts.
         Options are: 'ns' for neighbor search; 'arp' for arpeggio.
         :param contact_radius: Radius for calculating contacts.
         """
-        if not (unp_id and pdb_id):
-            raise ProteinInitError("Must provide both Uniprot and PDB IDs")
+        if not pdb_id:
+            raise ProteinInitError("Must provide PDB ID")
 
-        unp_id = unp_id.upper()
-        LOGGER.info(f"{unp_id}: Initializing protein record...")
         self.__setstate__({})
-
-        self.unp_id = unp_id
-        rec_unp_id = self.unp_rec.accessions[0]
-        if rec_unp_id != unp_id:
-            LOGGER.warning(f"Replacing outdated UNP ID: {unp_id} -> {rec_unp_id}")
-            self.unp_id = rec_unp_id
-
-        if contact_method not in CONTACT_METHODS:
-            raise ValueError(
-                f"Unknown {contact_method=}, must be one of {CONTACT_METHODS}"
-            )
-
-        if with_altlocs and contact_method == CONTACT_METHOD_ARPEGGIO:
-            raise ValueError(f"Altlocs not supported with {contact_method=}")
-
-        self.with_altlocs = with_altlocs
-        self.with_backbone = with_backbone
-        self.with_contacts = with_contacts
-        self.contact_radius = contact_radius
-        self.contact_method = contact_method
 
         # Parse the given PDB id and obtain metadata
         self.pdb_base_id, pdb_chain_id, ent_id = pdb.split_id_with_entity(pdb_id)
+
+        LOGGER.info(f"{self.pdb_base_id}: Obtaining metadata...")
         self.pdb_meta = pdb.PDBMetadata.from_pdb(self.pdb_base_id, cache=True)
 
         if pdb_chain_id is None:
@@ -754,9 +730,38 @@ class ProteinRecord(object):
         self.pdb_chain_id = pdb_chain_id
         self.pdb_id = f"{self.pdb_base_id}:{self.pdb_chain_id}"
 
-        # TODO: Remove need for unp id from init, get it from metadata
-        if self.unp_id not in self.pdb_meta.chain_uniprot_ids[self.pdb_chain_id]:
-            raise ProteinInitError(f"Uniprot ID {self.unp_id} not found in {pdb_id}")
+        LOGGER.info(f"{self.pdb_id}: Constructing protein record...")
+
+        # Obtain UniProt ID for the given PDB chain
+        chain_unp_ids = self.pdb_meta.chain_uniprot_ids[self.pdb_chain_id]
+        if not chain_unp_ids:
+            raise ProteinInitError(f"No Uniprot ID found for chain {self.pdb_chain_id}")
+        if len(chain_unp_ids) > 1:
+            msg = f"Multiple UNP IDs for chain {self.pdb_chain_id}: {chain_unp_ids}"
+            if strict_pdb_unp_xref:
+                raise ProteinInitError(msg)
+            else:
+                LOGGER.warning(msg)
+
+        self.unp_id = chain_unp_ids[0]
+        rec_unp_id = self.unp_rec.accessions[0]
+        if rec_unp_id != self.unp_id:
+            LOGGER.warning(f"Replacing outdated UNP ID: {self.unp_id} -> {rec_unp_id}")
+            self.unp_id = rec_unp_id
+
+        if contact_method not in CONTACT_METHODS:
+            raise ValueError(
+                f"Unknown {contact_method=}, must be one of {CONTACT_METHODS}"
+            )
+
+        if with_altlocs and contact_method == CONTACT_METHOD_ARPEGGIO:
+            raise ValueError(f"Altlocs not supported with {contact_method=}")
+
+        self.with_altlocs = with_altlocs
+        self.with_backbone = with_backbone
+        self.with_contacts = with_contacts
+        self.contact_radius = contact_radius
+        self.contact_method = contact_method
 
         self.pdb_source = pdb_source
         if pdb_dict:
