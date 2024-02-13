@@ -640,27 +640,15 @@ class ProteinGroup(object):
                 {
                     "unp_id": q_prec.unp_id,
                     "pdb_id": q_prec.pdb_id,
-                    "resolution": q_prec.pdb_meta.resolution,
                     "struct_rmse": q_alignment.rmse,
                     "n_stars": q_alignment.n_stars,
                     "seq_len": len(q_alignment.ungapped_seq_2),  # seq2 is query
-                    "description": q_prec.pdb_meta.description,
-                    "src_org": q_prec.pdb_meta.src_org,
-                    "src_org_id": q_prec.pdb_meta.src_org_id,
-                    "host_org": q_prec.pdb_meta.host_org,
-                    "host_org_id": q_prec.pdb_meta.host_org_id,
-                    "ligands": q_prec.pdb_meta.ligands,
-                    "space_group": q_prec.pdb_meta.space_group,
-                    "r_free": q_prec.pdb_meta.r_free,
-                    "r_work": q_prec.pdb_meta.r_work,
-                    "cg_ph": q_prec.pdb_meta.cg_ph,
-                    "cg_temp": q_prec.pdb_meta.cg_temp,
+                    "ref_group": q_prec.unp_id == self.ref_prec.unp_id,
+                    **q_prec.pdb_meta.as_dict(chain_id=q_prec.pdb_chain_id),
                 }
             )
 
         df = pd.DataFrame(data)
-        df["ref_group"] = df["unp_id"] == self.ref_prec.unp_id
-        df = df.astype({"src_org_id": "Int32", "host_org_id": "Int32"})
         df.sort_values(
             by=["ref_group", "unp_id", "struct_rmse"],
             ascending=[False, True, True],
