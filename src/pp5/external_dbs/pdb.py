@@ -332,12 +332,17 @@ class PDBMetadata(JSONCacheableMixin):
         }
 
     @property
-    def deposition_date(self) -> Optional[datetime]:
-        return self._resolve(
+    def deposition_date(self) -> Optional[str]:
+        dt = self._resolve(
             self._meta_struct,
             "pdbx_database_status.recvd_initial_deposition_date",
             datetime.fromisoformat,
         )
+        if not dt:
+            return None
+
+        # Keep only date
+        return dt.strftime("%Y-%m-%d")
 
     @property
     def entity_source_org(self) -> Dict[str, Optional[str]]:
@@ -424,20 +429,24 @@ class PDBMetadata(JSONCacheableMixin):
         return self._resolve(self._meta_struct, "exptl_crystal_grow.0.temp", float)
 
     @property
-    def chain_ligands(self) -> Dict[str, Set[str]]:
+    def chain_ligands(self) -> Dict[str, Sequence[str]]:
         return {
-            chain_id: set(
-                [
-                    ld.get("ligand_comp_id")
-                    for ld in meta_chain.get("rcsb_ligand_neighbors", [])
-                ]
+            chain_id: tuple(
+                sorted(
+                    set(
+                        [
+                            ld.get("ligand_comp_id")
+                            for ld in meta_chain.get("rcsb_ligand_neighbors", [])
+                        ]
+                    )
+                )
             )
             for chain_id, meta_chain in self._meta_chains.items()
         }
 
     @property
     def ligands(self) -> str:
-        return str.join(",", sorted(set.union(*self.chain_ligands.values())))
+        return str.join(",", sorted(set.union(set(), *self.chain_ligands.values())))
 
     @property
     def entity_ids(self) -> Sequence[str]:
@@ -648,12 +657,55 @@ class PDBMetadata(JSONCacheableMixin):
 
         return map_to_unp_ids
 
-    def as_dict(self) -> Dict[str, Any]:
-        return {
+    def as_dict(self, chain_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Returns a dictionary containing all the metadata properties.
+
+        :param chain_id: Optional chain id to filter the metadata for. If provided,
+        only the metadata relevant to the chain will be returned.
+        :return: A dictionary containing all the metadata properties.
+        """
+        result_dict = {
             k: getattr(self, k)
             for k, v in self.__class__.__dict__.items()
             if isinstance(v, property)
         }
+        if not chain_id:
+            return result_dict
+
+        if chain_id not in self.chain_ids:
+            raise ValueError(f"Chain {chain_id} not found in {self.pdb_id}")
+
+        entity_id = self.chain_entities[chain_id]
+        filtered_result_dict = {}
+
+        for key, value in result_dict.items():
+            new_value = None
+
+            # If it's a dict, take value corresponding to the chain
+            if isinstance(value, dict):
+                if entity_id in value:
+                    new_value = value[entity_id]
+                elif chain_id in value:
+                    new_value = value[chain_id]
+                else:
+                    continue
+
+            # If it's a sequence, drop it
+            elif isinstance(value, (list, tuple)):
+                continue
+
+            # Append chain to pdb_id
+            elif value == self.pdb_id:
+                new_value = f"{self.pdb_id}:{chain_id}"
+
+            # If it's an internal dict, drop it
+            if isinstance(new_value, dict):
+                continue
+
+            filtered_result_dict[key] = value if new_value is None else new_value
+
+        return filtered_result_dict
 
     def __repr__(self):
         return str(self.as_dict())
