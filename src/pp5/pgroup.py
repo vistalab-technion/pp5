@@ -644,7 +644,9 @@ class ProteinGroup(object):
                     "n_stars": q_alignment.n_stars,
                     "seq_len": len(q_alignment.ungapped_seq_2),  # seq2 is query
                     "ref_group": q_prec.unp_id == self.ref_prec.unp_id,
-                    **q_prec.pdb_meta.as_dict(chain_id=q_prec.pdb_chain_id),
+                    **q_prec.pdb_meta.as_dict(
+                        chain_id=q_prec.pdb_chain_id, seq_to_str=True
+                    ),
                 }
             )
 
