@@ -657,12 +657,16 @@ class PDBMetadata(JSONCacheableMixin):
 
         return map_to_unp_ids
 
-    def as_dict(self, chain_id: Optional[str] = None) -> Dict[str, Any]:
+    def as_dict(
+        self, chain_id: Optional[str] = None, seq_to_str: bool = False
+    ) -> Dict[str, Any]:
         """
         Returns a dictionary containing all the metadata properties.
 
         :param chain_id: Optional chain id to filter the metadata for. If provided,
         only the metadata relevant to the chain will be returned.
+        :param seq_to_str: Whether to convert sequences to a string, joined by ','.
+        Useful for writing metadata.
         :return: A dictionary containing all the metadata properties.
         """
         result_dict = {
@@ -680,9 +684,9 @@ class PDBMetadata(JSONCacheableMixin):
         filtered_result_dict = {}
 
         for key, value in result_dict.items():
-            new_value = None
+            new_value = value
 
-            # If it's a dict, take value corresponding to the chain
+            # If original value is a dict, take value corresponding to the chain
             if isinstance(value, dict):
                 if entity_id in value:
                     new_value = value[entity_id]
@@ -691,7 +695,7 @@ class PDBMetadata(JSONCacheableMixin):
                 else:
                     continue
 
-            # If it's a sequence, drop it
+            # If original value is a sequence, drop it
             elif isinstance(value, (list, tuple)):
                 continue
 
@@ -699,11 +703,15 @@ class PDBMetadata(JSONCacheableMixin):
             elif value == self.pdb_id:
                 new_value = f"{self.pdb_id}:{chain_id}"
 
-            # If it's an internal dict, drop it
+            # If internal value is a dict, drop it
             if isinstance(new_value, dict):
                 continue
 
-            filtered_result_dict[key] = value if new_value is None else new_value
+            # If internal value is a sequence, maybe convert it to a string
+            elif isinstance(new_value, (list, tuple)) and seq_to_str:
+                new_value = str.join(",", new_value)
+
+            filtered_result_dict[key] = new_value
 
         return filtered_result_dict
 
