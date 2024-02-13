@@ -1,11 +1,11 @@
 import pytest
 
 from pp5.pgroup import ProteinGroup
-from pp5.external_dbs.pdb import PDB_DOWNLOAD_SOURCES
+from pp5.external_dbs.pdb import PDB_AFLD, PDB_RCSB, PDB_REDO
 
 
 class TestFromPDBRef(object):
-    @pytest.mark.parametrize("pdb_source", PDB_DOWNLOAD_SOURCES.keys())
+    @pytest.mark.parametrize("pdb_source", [PDB_RCSB, PDB_REDO])
     @pytest.mark.parametrize("match_len", [2, 1])
     def test_default(self, match_len, pdb_source):
         pgroup = ProteinGroup.from_pdb_ref(

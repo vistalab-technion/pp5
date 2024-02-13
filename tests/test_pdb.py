@@ -141,7 +141,7 @@ class TestSplitIDWithEntity:
                 pdb.split_id(invalid_id)
 
 
-@pytest.fixture(params=["1MWC:A", "2WUR:A", "4N6V:1", "1DWI:A"])
+@pytest.fixture(scope="class", params=["1MWC:A", "2WUR:A", "4N6V:1", "1DWI:A"])
 def pdb_id(request):
     return request.param
 
@@ -180,14 +180,26 @@ class TestPDBDownload:
 
 @pytest.mark.skipif(NO_INTERNET, reason="Needs internet")
 class TestPDBMetadata:
-    def test_metadata_properties(self, pdb_id):
-        meta = pdb.PDBMetadata(pdb_id)
+    @pytest.fixture(scope="class")
+    def metadata(self, pdb_id):
+        return pdb.PDBMetadata(pdb_id)
 
+    def test_metadata_properties(self, metadata, pdb_id):
         pdb_base_id, pdb_chain = pdb.split_id(pdb_id)
-        assert meta.pdb_id == pdb_base_id
+        assert metadata.pdb_id == pdb_base_id
 
-        d = meta.as_dict()  # evaluates all metadata properties
+    def test_as_dict(self, metadata):
+        d = metadata.as_dict()  # evaluates all metadata properties
         pprint(d)
+
+    @pytest.mark.parametrize(
+        "seq_to_str", [False, True], ids=["seq_to_str=False", "seq_to_str=True"]
+    )
+    def test_as_dict_chain(self, metadata, seq_to_str):
+        for chain_id in metadata.chain_ids:
+            d = metadata.as_dict(chain_id=chain_id, seq_to_str=seq_to_str)
+            print(f" === {chain_id=} === ")
+            pprint(d)
 
     @staticmethod
     def _check_unp(pdb_id, expected_unp_id):
