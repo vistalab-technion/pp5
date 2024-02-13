@@ -1050,9 +1050,8 @@ def _collect_single_structure(
     if chain_id is not None:
         # If we got a single chain, use only that
         chains_to_collect = (chain_id,)
-    elif entity_id is not None:
-        entity_id = int(entity_id)
 
+    elif entity_id is not None:
         # If we got an entity id, discover all corresponding chains
         chains_to_collect = tuple(
             chain_id
@@ -1077,9 +1076,11 @@ def _collect_single_structure(
     chain_data = []
     for chain_id in chains_to_collect:
         pdb_id_full = f"{pdb_base_id}:{chain_id}"
+        entity_id = meta.chain_entities[chain_id]
+        seq_len = len(meta.entity_sequence[entity_id])
 
         # Skip chains with no Uniprot ID
-        if chain_id not in chain_to_unp_ids:
+        if chain_id not in chain_to_unp_ids or not chain_to_unp_ids[chain_id]:
             LOGGER.warning(f"No Uniprot ID for {pdb_id_full}")
             continue
 
@@ -1089,20 +1090,15 @@ def _collect_single_structure(
             continue
 
         unp_id = chain_to_unp_ids[chain_id][0]
-        seq_len = len(meta.entity_sequence[meta.chain_entities[chain_id]])
 
         # Create a ProteinRecord and save it so it's cached for when we
         # create the pgroups. Only collect structures for which we can
         # create a prec (e.g. they must have a DNA sequence).
         try:
-            nc = chain_id in string.digits
             prec = ProteinRecord(
-                unp_id,  # TODO: remove unp_ids here
                 pdb_id_full,
                 pdb_source=pdb_source,
                 pdb_dict=pdb_dict,
-                strict_unp_xref=False,
-                numeric_chain=nc,
                 with_altlocs=with_altlocs,
                 with_backbone=with_backbone,
                 with_contacts=with_contacts,
@@ -1118,8 +1114,8 @@ def _collect_single_structure(
 
         except Exception as e:
             LOGGER.warning(
-                f"Failed to create ProteinRecord for "
-                f"({unp_id}, {pdb_id}), will not collect: {e}"
+                f"Failed to create ProteinRecord for {pdb_id} ({unp_id=}), "
+                f"will not collect: {e}"
             )
             continue
 
@@ -1128,21 +1124,11 @@ def _collect_single_structure(
                 COL_UNP_ID: prec.unp_id,
                 COL_PDB_ID: prec.pdb_id,
                 COL_ENA_ID: prec.ena_id,
-                COL_RESOLUTION: meta.resolution,
                 COL_SEQ_LEN: seq_len,
                 COL_SEQ_GAPS: str.join(";", [f"{s}-{e}" for (s, e) in prec.seq_gaps]),
-                COL_DESCRIPTION: meta.description,
-                COL_DEPOSITION_DATE: meta.deposition_date,
-                COL_SRC_ORG: meta.src_org,
-                COL_HOST_ORG: meta.host_org,
                 COL_NUM_ALTLOCS: prec.num_altlocs,
-                COL_LIGANDS: meta.ligands,
-                COL_R_FREE: meta.r_free,
-                COL_R_WORK: meta.r_work,
-                COL_SPACE_GROUP: meta.space_group,
-                COL_CG_PH: meta.cg_ph,
-                COL_CG_TEMP: meta.cg_temp,
                 COL_PDB_SOURCE: pdb_source,
+                **meta.as_dict(chain_id=chain_id, seq_to_str=True),
             }
         )
 
