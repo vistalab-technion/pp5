@@ -201,15 +201,32 @@ class ResidueRecord(object):
             return True
         if not isinstance(other, ResidueRecord):
             return False
+
+        def _compare(a, b):
+            eq = True
+            if isinstance(a, (float, np.ndarray)):
+                eq = np.allclose(a, b, equal_nan=True)
+
+            elif isinstance(a, dict):
+                for key, val in a.items():
+                    # to handle dict that contains ndarrays
+                    eq = _compare(val, b.get(key))
+                    if not eq:
+                        break
+            else:
+                eq = a == b
+
+            return eq
+
         for k, v in self.__dict__.items():
             other_v = other.__dict__.get(k, math.inf)
-            if isinstance(v, (float, np.ndarray)):
-                equal = np.allclose(v, other_v, equal_nan=True)
-            else:
-                equal = v == other_v
+            equal = _compare(v, other_v)
             if not equal:
                 return False
         return True
+
+    def __hash__(self):
+        return hash(tuple(self.as_dict().items()))
 
 
 class AltlocNameMap(dict):
