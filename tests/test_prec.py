@@ -226,14 +226,14 @@ class TestFromPDB:
     def test_multiple_unp_ids_for_same_pdb_chain_no_strict_pdb_xref(self):
         prec = ProteinRecord.from_pdb(
             "3SG4:A",
-            strict_pdb_xref=False,
+            strict_pdb_unp_xref=False,
         )
         assert prec.unp_id == "P42212"
         assert prec.pdb_id == "3SG4:A"
 
         prec = ProteinRecord.from_pdb(
             "3SG4",
-            strict_pdb_xref=False,
+            strict_pdb_unp_xref=False,
         )
         assert prec.unp_id == "P42212"
         assert prec.pdb_id == "3SG4:A"
@@ -250,27 +250,26 @@ class TestInit:
     def test_init_no_chain(self):
         unp_id = "P00720"
         pdb_id = "102L"
-        prec = ProteinRecord(unp_id, pdb_id)
-        assert prec.unp_id == "P00720"
+        prec = ProteinRecord(pdb_id)
+        assert prec.unp_id == unp_id
         assert prec.pdb_id == f"{pdb_id}:A"
+
+    def test_init_no_chain_ambiguous(self):
+        pdb_id = "4HHB"
+        with pytest.raises(ProteinInitError, match="multiple chains"):
+            _ = ProteinRecord(pdb_id)
 
     def test_init_with_chain(self):
         unp_id = "P00720"
         pdb_id = "102L:A"
-        prec = ProteinRecord(unp_id, pdb_id)
-        assert prec.unp_id == "P00720"
+        prec = ProteinRecord(pdb_id)
+        assert prec.unp_id == unp_id
         assert prec.pdb_id == pdb_id
 
-    def test_init_with_mismatching_pdb_id(self):
-        with pytest.raises(ProteinInitError):
-            ProteinRecord("P00720", "2WUR:A")
-
-        with pytest.raises(ProteinInitError):
-            ProteinRecord("P00720", "4GY3")
-
-    def test_no_matching_xref_in_pdb(self):
-        with pytest.raises(ProteinInitError):
-            ProteinRecord("P42212", "2QLE:A")
+    def test_init_with_no_pdb_id(self):
+        for invalid_pdb_id in ["", None]:
+            with pytest.raises(ProteinInitError, match="provide PDB ID"):
+                ProteinRecord(pdb_id=invalid_pdb_id)
 
 
 class TestSave:
@@ -296,15 +295,13 @@ class TestCache:
 
     @pytest.mark.parametrize("pdb_id", ["1MWC:A", "4N6V:1"])
     @pytest.mark.parametrize("pdb_source", tuple(PDB_DOWNLOAD_SOURCES))
-    def test_from_pdb_with_cache(self, pdb_id, pdb_source, cache_dir, with_altlocs):
+    def test_from_pdb_with_cache(self, pdb_id, pdb_source, cache_dir):
         cache_dir = cache_dir / f"{pdb_source}"
         prec = ProteinRecord.from_pdb(
             pdb_id,
             pdb_source=pdb_source,
             cache=True,
             cache_dir=cache_dir,
-            strict_unp_xref=False,
-            with_altlocs=with_altlocs,
         )
 
         filename = f"{prec.pdb_id.replace(':', '_')}-{pdb_source}.prec"
