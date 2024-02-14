@@ -58,6 +58,13 @@ COL_PDB_SOURCE = "pdb_source"
 COL_REJECTED_BY = "rejected_by"
 COL_NUM_ALTLOCS = "num_altlocs"
 
+COLLECTION_METADATA_FILENAME = "meta.json"
+ALL_STRUCTS_FILENAME = "meta-structs_all"
+FILTERED_STRUCTS_FILENAME = "meta-structs_filtered"
+REJECTED_STRUCTS_FILENAME = "meta-structs_rejected"
+BLAST_SCORES_FILENAME = "meta-blast_scores"
+DATASET_DIRNAME = "data-precs"
+
 
 @dataclass(repr=False)
 class CollectorStep:
@@ -189,7 +196,7 @@ class ParallelDataCollector(abc.ABC):
             return
 
         # Create a metadata file in the output dir based on the step results
-        meta_filepath = self.out_dir.joinpath("meta.json")
+        meta_filepath = self.out_dir.joinpath(COLLECTION_METADATA_FILENAME)
         meta = self._collection_meta
         meta["steps"] = [str(s) for s in self._collection_steps]
         with open(str(meta_filepath), "w", encoding="utf-8") as f:
@@ -304,11 +311,6 @@ class ParallelDataCollector(abc.ABC):
 
 class ProteinRecordCollector(ParallelDataCollector):
     DEFAULT_PREC_INIT_ARGS = dict()
-    ALL_STRUCTS_FILENAME = "meta-structs_all"
-    FILTERED_STRUCTS_FILENAME = "meta-structs_filtered"
-    REJECTED_STRUCTS_FILENAME = "meta-structs_rejected"
-    BLAST_SCORES_FILENAME = "meta-blast_scores"
-    DATASET_DIRNAME = "data-precs"
 
     def __init__(
         self,
@@ -425,7 +427,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         self.entity_single_chain = entity_single_chain
 
         # Unique output dir for this collection run
-        self.prec_csv_out_dir = self.out_dir / self.DATASET_DIRNAME
+        self.prec_csv_out_dir = self.out_dir / DATASET_DIRNAME
         self.prec_csv_out_dir.mkdir(parents=True, exist_ok=True)
 
     def __repr__(self):
@@ -470,7 +472,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         n_collected = len(df_all)
 
         self._out_filepaths.append(
-            _write_df_csv(df_all, self.out_dir, self.ALL_STRUCTS_FILENAME)
+            _write_df_csv(df_all, self.out_dir, ALL_STRUCTS_FILENAME)
         )
 
         meta["n_collected"] = n_collected
@@ -486,7 +488,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         Filters collected structures according to conditions on their metadata.
         """
 
-        df_all: pd.DataFrame = _read_df_csv(self.out_dir, self.ALL_STRUCTS_FILENAME)
+        df_all: pd.DataFrame = _read_df_csv(self.out_dir, ALL_STRUCTS_FILENAME)
         # A boolean series representing which structures to keep.
         filter_idx = pd.Series(data=[True] * len(df_all), index=df_all.index)
         rejected_counts = {"total": 0}
@@ -516,7 +518,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         # Write the filtered structures
         df_filtered = df_all[filter_idx]
         self._out_filepaths.append(
-            _write_df_csv(df_filtered, self.out_dir, self.FILTERED_STRUCTS_FILENAME)
+            _write_df_csv(df_filtered, self.out_dir, FILTERED_STRUCTS_FILENAME)
         )
 
         # Write the rejected structures and specify which filter rejected them
@@ -526,7 +528,7 @@ class ProteinRecordCollector(ParallelDataCollector):
             df_rejected.loc[rejected_idx, COL_REJECTED_BY] = filter_name
         df_rejected = df_rejected[~filter_idx]
         self._out_filepaths.append(
-            _write_df_csv(df_rejected, self.out_dir, self.REJECTED_STRUCTS_FILENAME)
+            _write_df_csv(df_rejected, self.out_dir, REJECTED_STRUCTS_FILENAME)
         )
 
         return {
@@ -582,7 +584,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         )
         self._out_filepaths.append(
             _write_df_csv(
-                df_blast_scores, self.out_dir, self.BLAST_SCORES_FILENAME, index=True
+                df_blast_scores, self.out_dir, BLAST_SCORES_FILENAME, index=True
             )
         )
 
