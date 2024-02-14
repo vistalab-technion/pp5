@@ -366,6 +366,14 @@ class ResidueContacts(object):
 
         return d
 
+    def __eq__(self, other):
+        if not isinstance(other, ResidueContacts):
+            return False
+        return self.as_dict() == other.as_dict()
+
+    def __hash__(self):
+        return hash(tuple(self.as_dict().values()))
+
 
 class Arpeggio(object):
     """
