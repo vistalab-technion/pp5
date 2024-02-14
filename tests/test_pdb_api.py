@@ -151,9 +151,14 @@ class TestPDBUnstructuredQuery(object):
             query_value=pdb_base_id, return_type=pdb_api.PDBQuery.ReturnType.CHAIN
         )
         results = query.execute()
+
+        # Some additional related structures will be returned
+        assert len(results) >= 4
+        filtered_results = [r for r in results if r.startswith(pdb_base_id)]
+
         # This structure has 4 chains
-        assert len(results) == 4
-        for result in results:
+        assert len(filtered_results) == 4
+        for result in filtered_results:
             pdb_id, chain_id, entity_id = split_id_with_entity(result)
             assert pdb_id == pdb_base_id
             assert chain_id
