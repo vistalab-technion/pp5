@@ -610,7 +610,9 @@ class ProteinRecord(object):
                 pdb_id = f"{pdb_base_id}:{chain_id}"
 
             if cache and chain_id:
-                prec = cls.from_cache(pdb_id, cache_dir=cache_dir)
+                prec = cls.from_cache(
+                    pdb_id, cache_dir=cache_dir, pdb_source=pdb_source
+                )
                 if prec is not None:
                     return prec
 
@@ -640,6 +642,7 @@ class ProteinRecord(object):
         cls,
         unp_id: str,
         cache=False,
+        pdb_source: str = PDB_RCSB,
         cache_dir=pp5.PREC_DIR,
         xref_selector: Callable[[unp.UNPPDBXRef], Any] = None,
         **kw_for_init,
@@ -651,6 +654,7 @@ class ProteinRecord(object):
         :param xref_selector: Sort key for PDB cross refs. If None,
         resolution will be used.
         :param cache: Whether to load prec from cache if available.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param cache_dir: Where the cache dir is. ProteinRecords will be
         written to this folder after creation, unless it's None.
         :param kw_for_init: Extra args for the ProteinRecord initializer.
@@ -665,7 +669,9 @@ class ProteinRecord(object):
             pdb_id = f"{xrefs[0].pdb_id}:{xrefs[0].chain_id}"
 
             if cache:
-                prec = cls.from_cache(pdb_id, cache_dir=cache_dir)
+                prec = cls.from_cache(
+                    pdb_id, cache_dir=cache_dir, pdb_source=pdb_source
+                )
                 if prec is not None:
                     return prec
 
