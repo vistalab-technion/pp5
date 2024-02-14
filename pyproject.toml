@@ -28,7 +28,9 @@ addopts = [
     # Show durations of slowest tests.
     "--durations=10",
     # Force colored output even on CI
-    "--color=yes"
+    "--color=yes",
+    # Traceback verbosity
+    "--tb=short"
 ]
 
 testpaths = [
