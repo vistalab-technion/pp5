@@ -192,6 +192,21 @@ class TestPDBMetadata:
         d = metadata.as_dict()  # evaluates all metadata properties
         pprint(d)
 
+    def test_cache(self, metadata):
+        path = metadata.to_cache()
+        cache_attrs = metadata.cache_attribs()
+        assert path.exists()
+        assert path.is_file()
+        metadata_ = pdb.PDBMetadata.from_cache(cache_attribs=cache_attrs)
+
+        assert metadata == metadata_
+
+    @pytest.mark.parametrize("cache", [True, False], ids=["cache=True", "cache=False"])
+    def test_from_pdb(self, pdb_id, cache):
+        pdb_base_id, chain_id = pdb.split_id(pdb_id)
+        metadata = pdb.PDBMetadata.from_pdb(pdb_id, cache=cache)
+        assert metadata.pdb_id == pdb_base_id
+
     @pytest.mark.parametrize(
         "seq_to_str", [False, True], ids=["seq_to_str=False", "seq_to_str=True"]
     )
