@@ -2,11 +2,14 @@ import os
 import sys
 import gzip
 import json
+import pickle
 import random
+import hashlib
 import logging
 import contextlib
+from abc import abstractmethod
 from json import JSONEncoder
-from typing import Any, Union, Callable
+from typing import Any, Dict, Union, Callable, Optional
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections.abc import Set, Mapping, Sequence
@@ -310,6 +313,28 @@ def sort_dict(d: dict, by_value=True, selector: Callable[[Any], Any] = None):
     return {k: v for k, v in sorted(d.items(), key=sort_key)}
 
 
+def stable_hash(obj: Any, hash_len: int = 8) -> str:
+    """
+    Generates a stable hash for general python objects, as a hexadecimal string. Stable
+    means that the exact-same input will produce exactly the same output, even across
+    machines and processes. The provided object must be pickleable.
+
+    :param obj: A python object. Must be pickle-able.
+    :param hash_len: Desired length of hash string.
+    :return: A string of the requested length comprised of hexadecimal digits,
+        representing a number which is the hash value.
+    """
+    if hash_len < 2:
+        raise ValueError(f"Invalid {hash_len=}, must be > 1")
+
+    def _hash(bytelike: bytes) -> str:
+        return hashlib.blake2b(bytelike, digest_size=hash_len // 2).hexdigest()
+
+    obj_bytes: bytes = pickle.dumps(obj)
+
+    return _hash(obj_bytes)
+
+
 class JSONCacheableMixin(object):
     """
     Makes a class cacheable to JSON.
@@ -321,8 +346,48 @@ class JSONCacheableMixin(object):
     def __setstate__(self, state):
         self.__dict__.update(state)
 
+    @classmethod
+    @abstractmethod
+    def cache_dir(cls) -> Path:
+        """
+        :return: The directory to which files will be cached.
+        """
+        pass
+
+    @abstractmethod
+    def cache_attribs(self) -> Dict[str, Any]:
+        """
+        :return: The attributes which determine the cache filename.
+        """
+        pass
+
+    @classmethod
+    def _cache_filename_prefix(cls, cache_attribs: Dict[str, Any]) -> str:
+        """
+        Generates the prefix of the cache filename.
+        :param cache_attribs: Attributes which determine the cache filename.
+        :return: The prefix of the cache filename.
+        """
+        return cls.__name__.lower()
+
+    @classmethod
+    def _cache_filename(cls, cache_attribs: Dict[str, Any]) -> str:
+        """
+        Generates the cache filename.
+        :param cache_attribs: The attributes which determine the cache filename.
+        :return: The cache filename.
+        """
+        return (
+            f"{cls._cache_filename_prefix(cache_attribs=cache_attribs)}"
+            "-"
+            f"{stable_hash(sort_dict(cache_attribs,by_value=False))}.json"
+        )
+
     def to_cache(
-        self, cache_dir: Union[str, Path], filename: Union[str, Path], **json_kws
+        self,
+        cache_dir: Optional[Union[str, Path]] = None,
+        filename: Optional[Union[str, Path]] = None,
+        **json_kws,
     ) -> Path:
         """
         Write the object to a human-readable text file (json) which
@@ -331,24 +396,50 @@ class JSONCacheableMixin(object):
         :param filename: Cached file name (without directory).
         :return: The path of the written file.
         """
+        if cache_dir is None:
+            cache_dir = self.cache_dir()
+        if filename is None:
+            filename = self._cache_filename(self.cache_attribs())
+
         filepath = pp5.get_resource_path(cache_dir, filename)
         os.makedirs(str(filepath.parent), exist_ok=True)
 
         with filelock_context(filepath):
             with open(str(filepath), "w", encoding="utf-8") as f:
-                json.dump(self.__getstate__(), f, **json_kws)
+                json.dump(self.__getstate__(), f, indent=2, **json_kws)
 
-        LOGGER.info(f"Wrote {self} to {filepath}")
+        file_size = os.path.getsize(filepath)
+        file_size_str = (
+            f"{file_size / 1024:.1f}kB"
+            if file_size < 1024 * 1024
+            else f"{file_size / 1024 / 1024:.1f}MB"
+        )
+        LOGGER.info(f"Wrote cache file: {filepath} ({file_size_str})")
         return filepath
 
     @classmethod
-    def from_cache(cls, cache_dir: Union[str, Path], filename: Union[str, Path]):
+    def from_cache(
+        cls,
+        cache_dir: Optional[Union[str, Path]] = None,
+        cache_attribs: Optional[Dict[str, Any]] = None,
+        filename: Optional[Union[str, Path]] = None,
+    ):
         """
         Load the object from a cached file.
         :param cache_dir: Directory of cached file.
-        :param filename: Cached file name (without directory).
+        :param cache_attribs: Attributes which determine the cache filename.
+        :param filename: Cached filename (without directory). Won't be used if
+        cache_attribs is given.
         :return: The loaded object, or None if the file doesn't exist.
         """
+        if not (cache_attribs or filename):
+            raise ValueError("cache_attribs or filename must be given")
+
+        if cache_dir is None:
+            cache_dir = cls.cache_dir()
+
+        if filename is None:
+            filename = cls._cache_filename(cache_attribs)
 
         filepath = pp5.get_resource_path(cache_dir, filename)
 
