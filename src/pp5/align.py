@@ -32,7 +32,8 @@ from Bio.SeqRecord import SeqRecord
 from Bio.Align.Applications import ClustalOmegaCommandline
 
 import pp5
-from pp5.utils import JSONCacheableMixin, out_redirected
+from pp5.cache import Cacheable, CacheSettings
+from pp5.utils import out_redirected
 from pp5.external_dbs import pdb
 
 # Suppress messages from pymol upon import
@@ -151,10 +152,12 @@ def multiseq_align(
     return msa_result
 
 
-class StructuralAlignment(JSONCacheableMixin, object):
+class StructuralAlignment(Cacheable, object):
     """
     Represents a Structural Alignment between two protein structures.
     """
+
+    _CACHE_SETTINGS = CacheSettings(cache_dir=pp5.ALIGNMENT_DIR)
 
     def __init__(
         self,
@@ -237,10 +240,6 @@ class StructuralAlignment(JSONCacheableMixin, object):
         if not isinstance(other, StructuralAlignment):
             return False
         return self.__dict__ == other.__dict__
-
-    @classmethod
-    def cache_dir(cls) -> Path:
-        return pp5.ALIGNMENT_DIR
 
     def cache_attribs(self) -> Dict[str, Any]:
         return dict(

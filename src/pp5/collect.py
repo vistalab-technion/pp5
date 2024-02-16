@@ -24,7 +24,8 @@ import pp5
 import pp5.parallel
 from pp5.prec import ProteinRecord
 from pp5.align import ProteinBLAST
-from pp5.utils import ReprJSONEncoder, ProteinInitError, elapsed_seconds_to_dhms
+from pp5.cache import ReprJSONEncoder
+from pp5.utils import ProteinInitError, elapsed_seconds_to_dhms
 from pp5.pgroup import ProteinGroup
 from pp5.external_dbs import pdb, unp, pdb_api
 from pp5.external_dbs.pdb import PDB_RCSB

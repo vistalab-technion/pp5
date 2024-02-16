@@ -22,7 +22,8 @@ from Bio.PDB.Polypeptide import standard_aa_names
 from Bio.PDB.PDBExceptions import PDBConstructionWarning, PDBConstructionException
 
 from pp5 import PDB_DIR, PDB_METADATA_DIR, get_resource_path
-from pp5.utils import JSONCacheableMixin, remote_dl
+from pp5.cache import Cacheable, CacheSettings
+from pp5.utils import remote_dl
 from pp5.external_dbs import pdb_api
 
 PDB_ID_PATTERN = re.compile(
@@ -253,10 +254,12 @@ def pdb_to_secondary_structure(
 _TC = TypeVar("_TC")
 
 
-class PDBMetadata(JSONCacheableMixin):
+class PDBMetadata(Cacheable):
     """
     Obtains and parses metadata from a PDB structure using PDB REST API.
     """
+
+    _CACHE_SETTINGS = CacheSettings(cache_dir=PDB_METADATA_DIR)
 
     def __init__(self, pdb_id: str):
         """
@@ -309,10 +312,6 @@ class PDBMetadata(JSONCacheableMixin):
                 LOGGER.warning(f"Failed to coerce {meta}@{key} to {coerce_type}")
 
         return meta
-
-    @classmethod
-    def cache_dir(cls) -> Path:
-        return PDB_METADATA_DIR
 
     @classmethod
     def _cache_filename_prefix(cls, cache_attribs: Dict[str, Any]) -> str:

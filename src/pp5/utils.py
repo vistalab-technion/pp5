@@ -1,15 +1,12 @@
 import os
 import sys
 import gzip
-import json
 import pickle
 import random
 import hashlib
 import logging
 import contextlib
-from abc import abstractmethod
-from json import JSONEncoder
-from typing import Any, Dict, Union, Callable, Optional
+from typing import Any, Union, Callable
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections.abc import Set, Mapping, Sequence
@@ -333,145 +330,6 @@ def stable_hash(obj: Any, hash_len: int = 8) -> str:
     obj_bytes: bytes = pickle.dumps(obj)
 
     return _hash(obj_bytes)
-
-
-class JSONCacheableMixin(object):
-    """
-    Makes a class cacheable to JSON.
-    """
-
-    def __getstate__(self):
-        return self.__dict__.copy()
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-
-    @classmethod
-    @abstractmethod
-    def cache_dir(cls) -> Path:
-        """
-        :return: The directory to which files will be cached.
-        """
-        pass
-
-    @abstractmethod
-    def cache_attribs(self) -> Dict[str, Any]:
-        """
-        :return: The attributes which determine the cache filename.
-        """
-        pass
-
-    @classmethod
-    def _cache_filename_prefix(cls, cache_attribs: Dict[str, Any]) -> str:
-        """
-        Generates the prefix of the cache filename.
-        :param cache_attribs: Attributes which determine the cache filename.
-        :return: The prefix of the cache filename.
-        """
-        return cls.__name__.lower()
-
-    @classmethod
-    def _cache_filename(cls, cache_attribs: Dict[str, Any]) -> str:
-        """
-        Generates the cache filename.
-        :param cache_attribs: The attributes which determine the cache filename.
-        :return: The cache filename.
-        """
-        return (
-            f"{cls._cache_filename_prefix(cache_attribs=cache_attribs)}"
-            "-"
-            f"{stable_hash(sort_dict(cache_attribs,by_value=False))}.json"
-        )
-
-    def to_cache(
-        self,
-        cache_dir: Optional[Union[str, Path]] = None,
-        filename: Optional[Union[str, Path]] = None,
-        **json_kws,
-    ) -> Path:
-        """
-        Write the object to a human-readable text file (json) which
-        can also be loaded later using from_cache.
-        :param cache_dir: Directory of cached files.
-        :param filename: Cached file name (without directory).
-        :return: The path of the written file.
-        """
-        if cache_dir is None:
-            cache_dir = self.cache_dir()
-        if filename is None:
-            filename = self._cache_filename(self.cache_attribs())
-
-        filepath = pp5.get_resource_path(cache_dir, filename)
-        os.makedirs(str(filepath.parent), exist_ok=True)
-
-        with filelock_context(filepath):
-            with open(str(filepath), "w", encoding="utf-8") as f:
-                json.dump(self.__getstate__(), f, indent=2, **json_kws)
-
-        file_size = os.path.getsize(filepath)
-        file_size_str = (
-            f"{file_size / 1024:.1f}kB"
-            if file_size < 1024 * 1024
-            else f"{file_size / 1024 / 1024:.1f}MB"
-        )
-        LOGGER.info(f"Wrote cache file: {filepath} ({file_size_str})")
-        return filepath
-
-    @classmethod
-    def from_cache(
-        cls,
-        cache_dir: Optional[Union[str, Path]] = None,
-        cache_attribs: Optional[Dict[str, Any]] = None,
-        filename: Optional[Union[str, Path]] = None,
-    ):
-        """
-        Load the object from a cached file.
-        :param cache_dir: Directory of cached file.
-        :param cache_attribs: Attributes which determine the cache filename.
-        :param filename: Cached filename (without directory). Won't be used if
-        cache_attribs is given.
-        :return: The loaded object, or None if the file doesn't exist.
-        """
-        if not (cache_attribs or filename):
-            raise ValueError("cache_attribs or filename must be given")
-
-        if cache_dir is None:
-            cache_dir = cls.cache_dir()
-
-        if filename is None:
-            filename = cls._cache_filename(cache_attribs)
-
-        filepath = pp5.get_resource_path(cache_dir, filename)
-
-        obj = None
-
-        with filelock_context(filepath):
-            if filepath.is_file():
-                try:
-                    with open(str(filepath), "r", encoding="utf-8") as f:
-                        state_dict = json.load(f)
-                        obj = cls.__new__(cls)
-                        obj.__setstate__(state_dict)
-                except Exception as e:
-                    LOGGER.warning(
-                        f"Failed to load cached {cls.__name__} {filepath} {e}"
-                    )
-            return obj
-
-
-class ReprJSONEncoder(JSONEncoder):
-    """
-    A JSONEncoder that converts an object to it's representation string in
-    case it's not serializable.
-    """
-
-    def default(self, o: Any) -> Any:
-        try:
-            return repr(o)
-        except Exception as e:
-            pass
-        # Let the base class default method raise the TypeError
-        return JSONEncoder.default(self, o)
 
 
 class ProteinInitError(ValueError):
