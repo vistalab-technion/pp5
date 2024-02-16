@@ -27,7 +27,7 @@ ENV_PP5_PDB_DIR = "PDB_DIR"
 ENV_PP5_UNP_DIR = "UNP_DIR"
 ENV_PP5_ENA_DIR = "ENA_DIR"
 ENV_PP5_PREC_DIR = "PREC_DIR"
-ENV_PP5_PDB2UNP_DIR = "PDB2UNP_DIR"
+ENV_PP5_PDB_METADATA_DIR = "PDB_METADATA_DIR"
 ENV_PP5_ALIGNMENT_DIR = "ALIGNMENT_DIR"
 ENV_PP5_BLASTDB_DIR = "BLASTDB_DIR"
 
@@ -137,8 +137,8 @@ ENA_DIR = Path(os.getenv(ENV_PP5_ENA_DIR, data_subdir("ena")))
 # Directory for ProteinRecords
 PREC_DIR = Path(os.getenv(ENV_PP5_PREC_DIR, data_subdir("prec")))
 
-# Directory for PDB to UNP mappings
-PDB2UNP_DIR = Path(os.getenv(ENV_PP5_PDB2UNP_DIR, data_subdir("pdb2unp")))
+# Directory for PDB metadata
+PDB_METADATA_DIR = Path(os.getenv(ENV_PP5_PDB_METADATA_DIR, data_subdir("pdb_meta")))
 
 # Directory for Structural Alignments
 ALIGNMENT_DIR = Path(os.getenv(ENV_PP5_ALIGNMENT_DIR, data_subdir("align")))

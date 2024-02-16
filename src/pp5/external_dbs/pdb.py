@@ -21,7 +21,7 @@ from Bio.PDB.DSSP import dssp_dict_from_pdb_file
 from Bio.PDB.Polypeptide import standard_aa_names
 from Bio.PDB.PDBExceptions import PDBConstructionWarning, PDBConstructionException
 
-from pp5 import PDB_DIR, get_resource_path
+from pp5 import PDB_DIR, PDB_METADATA_DIR, get_resource_path
 from pp5.utils import JSONCacheableMixin, remote_dl
 from pp5.external_dbs import pdb_api
 
@@ -309,6 +309,24 @@ class PDBMetadata(JSONCacheableMixin):
                 LOGGER.warning(f"Failed to coerce {meta}@{key} to {coerce_type}")
 
         return meta
+
+    @classmethod
+    def cache_dir(cls) -> Path:
+        return PDB_METADATA_DIR
+
+    @classmethod
+    def _cache_filename_prefix(cls, cache_attribs: Dict[str, Any]) -> str:
+        pdb_id = cache_attribs["pdb_id"]
+        return f"{super()._cache_filename_prefix(cache_attribs)}-{pdb_id}"
+
+    def cache_attribs(self) -> Dict[str, Any]:
+        return {"pdb_id": self.pdb_id}
+
+    def __eq__(self, other):
+        return self.pdb_id == other.pdb_id
+
+    def __hash__(self):
+        return hash(self.pdb_id)
 
     @property
     def pdb_id(self) -> str:
@@ -728,14 +746,14 @@ class PDBMetadata(JSONCacheableMixin):
         """
         pdb_base_id, _ = split_id(pdb_id)
 
-        # TODO: Implement caching
-        # if cache:
-        #     pdb_meta = cls.from_cache(pdb_base_id)
-        #     if pdb_meta is not None:
-        #         return pdb_meta
+        if cache:
+            pdb_meta = cls.from_cache(cache_attribs={"pdb_id": pdb_base_id})
+            if pdb_meta is not None:
+                return pdb_meta
 
         pdb_meta = cls(pdb_id)
-        # pdb_meta.save()
+        if cache:
+            pdb_meta.to_cache()
         return pdb_meta
 
     @classmethod
