@@ -5,6 +5,7 @@ from abc import abstractmethod
 from json import JSONEncoder
 from typing import Any, Dict, Union, Optional
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 from dataclasses import dataclass
 
 import pp5
@@ -104,6 +105,16 @@ class Cacheable(object):
             with open(str(filepath), "w", encoding="utf-8") as f:
                 json.dump(self.__getstate__(), f, indent=2, **json_kws)
 
+            if self._CACHE_SETTINGS.cache_compression:
+                zip_filepath = filepath.with_suffix(".zip")
+                with ZipFile(
+                    zip_filepath, "w", compression=ZIP_DEFLATED, compresslevel=6
+                ) as fzip:
+                    fzip.write(str(filepath), arcname=filename)
+
+                filepath.unlink()
+                filepath = zip_filepath
+
         file_size = os.path.getsize(filepath)
         file_size_str = (
             f"{file_size / 1024:.1f}kB"
@@ -142,6 +153,11 @@ class Cacheable(object):
         obj = None
 
         with filelock_context(filepath):
+            zip_filepath = filepath.with_suffix(".zip")
+            if cls._CACHE_SETTINGS.cache_compression and zip_filepath.is_file():
+                with ZipFile(zip_filepath, "r") as fzip:
+                    fzip.extractall(path=zip_filepath.parent)
+
             if filepath.is_file():
                 try:
                     with open(str(filepath), "r", encoding="utf-8") as f:
@@ -152,6 +168,9 @@ class Cacheable(object):
                     LOGGER.warning(
                         f"Failed to load cached {cls.__name__} {filepath} {e}"
                     )
+                finally:
+                    if cls._CACHE_SETTINGS.cache_compression:
+                        filepath.unlink()
             return obj
 
 
