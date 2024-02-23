@@ -44,6 +44,37 @@ def res_to_id(res: Residue) -> str:
     return str.join("", map(str, res.get_id())).strip()
 
 
+def format_residue_contact(
+    tgt_chain_id: str,
+    tgt_resname: str,
+    tgt_seq_idx: int,
+    tgt_altloc: str,
+    contact_dist: float,
+) -> str:
+    """
+    Formats a residue contact as a string.
+
+    :param tgt_chain_id: The chain ID of the target residue.
+    :param tgt_resname: The residue name of the target residue.
+    :param tgt_seq_idx: The sequence index of the target residue.
+    :param tgt_altloc: The altloc of the target residue.
+    :param contact_dist: The distance to the contact residue.
+    :return: A string representing the contact.
+    Format is:
+        chain:resname:seq_idx[-altloc]:contact_dist
+    Where the [-altloc] part is only included if the altloc exists.
+    """
+    tgt_resname = ACIDS_3TO1.get(tgt_resname, tgt_resname)
+    tgt_altloc = f"-{tgt_altloc}" if tgt_altloc else ""
+    _contact_dist_str = f"{contact_dist:.2f}"
+    return (
+        f"{tgt_chain_id}"
+        f":{tgt_resname}"
+        f":{tgt_seq_idx}{tgt_altloc}"
+        f":{_contact_dist_str}"
+    )
+
+
 class ContactsAssigner(ABC):
     """
     Calculates tertiary contacts for a given residue.
@@ -220,16 +251,10 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
         contact_dists: List[float] = []
         sequence_dists: List[int] = []
 
-        res_contacts_non_aa: Set[str] = set()
-        res_contacts_ooc: Set[str] = set()
-        res_contacts_aas: Set[str] = set()
-
-        def _res_contact_str(
-            _tgt_chain_id: str, _tgt_resname: str, _tgt_seq_idx: int, _tgt_altloc: str
-        ) -> str:
-            _tgt_resname = ACIDS_3TO1.get(_tgt_resname, _tgt_resname)
-            _tgt_altloc = f":{_tgt_altloc}" if _tgt_altloc else ""
-            return f"{_tgt_chain_id}:{_tgt_resname}{_tgt_seq_idx}{_tgt_altloc}"
+        # TODO: Define a AtomContacts dataclass to store the contact ids and distances
+        res_contacts_non_aa: Dict[tuple, List[float]] = {}
+        res_contacts_ooc: Dict[tuple, List[float]] = {}
+        res_contacts_aas: Dict[tuple, List[float]] = {}
 
         for src_atom, tgt_atom in atom_contacts:
             assert src_res == src_atom.get_parent()
@@ -251,56 +276,93 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
             tgt_chain_id = tgt_chain.get_id().strip()
             tgt_altloc = tgt_atom.get_altloc().strip() if self.with_altlocs else ""
 
-            # Represent the contact target residue as a string
-            rcs = _res_contact_str(tgt_chain_id, tgt_resname, tgt_seq_idx, tgt_altloc)
+            # Calculate contact distance in Angstroms
+            contact_dist = src_atom - tgt_atom
+            contact_dists.append(contact_dist)
+
+            # Key uniquely identifying the contact
+            contact_key = (tgt_chain_id, tgt_resname, tgt_seq_idx, tgt_altloc)
 
             # Check if contact is a ligand (check hetero flag)
             if tgt_hetflag.startswith("H_"):
-                res_contacts_non_aa.add(rcs)
+                res_contacts_non_aa.setdefault(contact_key, [])
+                res_contacts_non_aa[contact_key].append(contact_dist)
 
             # Check if contact is out of chain
             elif src_chain != tgt_chain:
-                res_contacts_ooc.add(rcs)
+                res_contacts_ooc.setdefault(contact_key, [])
+                res_contacts_ooc[contact_key].append(contact_dist)
 
             # Regular AA contact in current chain
             else:
-                res_contacts_aas.add(rcs)
+                res_contacts_aas.setdefault(contact_key, [])
+                res_contacts_aas[contact_key].append(contact_dist)
 
                 # Calculate sequence distance (only in-chain)
                 sequence_dists.append(abs(tgt_seq_idx - src_seq_idx))
-
-            # Calculate contact distance in Angstroms
-            contact_dists.append(src_atom - tgt_atom)
 
         contact_count = (
             len(res_contacts_ooc) + len(res_contacts_non_aa) + len(res_contacts_aas)
         )
 
-        contact_dmin, contact_dmax = float("inf"), float("inf")
-        if contact_dists:
-            contact_dmin, contact_dmax = min(contact_dists), max(contact_dists)
-
         contact_smin, contact_smax = -1, -1
         if sequence_dists:
             contact_smin, contact_smax = min(sequence_dists), max(sequence_dists)
+
+        def _format_unique_contacts(
+            _contacts: Dict[tuple, List[float]]
+        ) -> Sequence[str]:
+            """
+            Formats multiple contacts as a list of strings, by merging the contacts
+            which have a unique key. For each unique contact key, calculates the
+            average distance, and uses that to format the contact.
+            :param _contacts: The contacts to format.
+            :return: A list of formatted contacts.
+            """
+            _contacts_to_dist: Dict[tuple, float] = {}
+            _formatted_contacts = []
+
+            # Aggregate distances
+            for _key, _dists in _contacts.items():
+                _mean_dist = np.mean(_dists)
+                _contacts_to_dist[_key] = _mean_dist
+
+            # Sort by distance
+            _contacts_to_dist = dict(
+                sorted(_contacts_to_dist.items(), key=lambda x: x[1])
+            )
+
+            for _key, _dist in _contacts_to_dist.items():
+                _tgt_chain_id, _tgt_resname, _tgt_seq_idx, _tgt_altloc = _key
+                _formatted_contacts.append(
+                    format_residue_contact(
+                        _tgt_chain_id, _tgt_resname, _tgt_seq_idx, _tgt_altloc, _dist
+                    )
+                )
+
+            return tuple(_formatted_contacts)
 
         return ResidueContacts(
             res_id=res_to_id(src_res),
             contact_count=contact_count,
             contact_types="proximal",  # use arpeggio name, but not meaningful here
-            contact_dmin=contact_dmin,
-            contact_dmax=contact_dmax,
-            contact_smin=contact_smin,
             contact_smax=contact_smax,
-            contact_ooc=tuple(sorted(res_contacts_ooc)),
-            contact_non_aa=tuple(sorted(res_contacts_non_aa)),
-            contact_aas=tuple(sorted(res_contacts_aas)),
+            contact_ooc=_format_unique_contacts(res_contacts_ooc),
+            contact_non_aa=_format_unique_contacts(res_contacts_non_aa),
+            contact_aas=_format_unique_contacts(res_contacts_aas),
         )
 
 
 class ResidueContacts(object):
     """
     Represents a single residue's tertiary contacts in a protein record.
+
+    # TODO:
+    #  This string-based ResidueContacts should be only for Arpeggio contacts
+    #  (legacy), and a separate ResidueContacts class should be created based on
+    #  a sequence of AtomContacts. Conversely, we can refactor the
+    #  ArpeggioContactsAssigned to generate AtomContacts, and then we'd only need one
+    #  type of ResidueContacts.
     """
 
     def __init__(
@@ -308,13 +370,11 @@ class ResidueContacts(object):
         res_id: Union[str, int],
         contact_count: int,
         contact_types: Union[Set[str], str],
-        contact_dmin: float,
-        contact_dmax: float,
-        contact_smin: Union[int, float],
         contact_smax: Union[int, float],
         contact_ooc: Union[Sequence[str], str],
         contact_non_aa: Union[Sequence[str], str],
         contact_aas: Union[Sequence[str], str],
+        **kwargs_ignored,  # ignore any other args (passed in from Arpeggio)
     ):
         def _split(s: str):
             s_split = s.split(",")
@@ -337,9 +397,6 @@ class ResidueContacts(object):
         self.res_id = str(res_id)
         self.contact_count = int(contact_count or 0)
         self.contact_types = tuple(contact_types)
-        self.contact_dmin = float(contact_dmin or 0)
-        self.contact_dmax = float(contact_dmax or 0)
-        self.contact_smin = int(contact_smin or 0)
         self.contact_smax = int(contact_smax or 0)
         self.contact_ooc = tuple(contact_ooc)
         self.contact_non_aa = tuple(contact_non_aa)
@@ -352,9 +409,6 @@ class ResidueContacts(object):
         d = dict(
             contact_count=self.contact_count,
             contact_types=_join(self.contact_types),
-            contact_dmin=self.contact_dmin,
-            contact_dmax=self.contact_dmax,
-            contact_smin=self.contact_smin,
             contact_smax=self.contact_smax,
             contact_ooc=_join(self.contact_ooc),
             contact_non_aa=_join(self.contact_non_aa),
