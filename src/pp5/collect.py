@@ -316,11 +316,16 @@ class ProteinRecordCollector(ParallelDataCollector):
     def __init__(
         self,
         pdb_source: str = PDB_RCSB,
-        resolution: float = pp5.get_config("DEFAULT_RES"),
-        r_free: Optional[float] = pp5.get_config("DEFAULT_RFREE"),
-        expr_sys: Optional[str] = pp5.get_config("DEFAULT_EXPR_SYS"),
-        source_taxid: Optional[int] = pp5.get_config("DEFAULT_SOURCE_TAXID"),
-        seq_similarity_thresh: float = pp5.get_config("DEFAULT_SEQ_SIMILARITY_THRESH"),
+        resolution: float = pp5.get_config(pp5.CONFIG_DEFAULT_RES),
+        r_free: Optional[float] = pp5.get_config(pp5.CONFIG_DEFAULT_RFREE),
+        expr_sys: Optional[str] = pp5.get_config(pp5.CONFIG_DEFAULT_EXPR_SYS),
+        source_taxid: Optional[int] = pp5.get_config(pp5.CONFIG_DEFAULT_SOURCE_TAXID),
+        query_max_chains: Optional[int] = pp5.get_config(
+            pp5.CONFIG_DEFAULT_QUERY_MAX_CHAINS
+        ),
+        seq_similarity_thresh: float = pp5.get_config(
+            pp5.CONFIG_DEFAULT_SEQ_SIMILARITY_THRESH
+        ),
         deposition_min_date: Optional[str] = None,
         deposition_max_date: Optional[str] = None,
         prec_init_args=None,
@@ -342,6 +347,8 @@ class ProteinRecordCollector(ParallelDataCollector):
         :param resolution: Resolution cutoff value in Angstroms.
         :param expr_sys: Expression system name.
         :param source_taxid: Taxonomy ID of source organism.
+        :param query_max_chains: Limits collected structures only to those with no more than
+        this number of chains.
         :param seq_similarity_thresh: PDB sequence similarity threshold. This is a
         fraction between 0 and 1.0 which represents the maximal percentage of
         similarity allowed between two collected structures. Use 1.0 to set no
@@ -380,6 +387,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         self.source_taxid = (
             int(source_taxid) if (source_taxid not in (None, "")) else None
         )
+        self.query_max_chains = int(query_max_chains) if query_max_chains else None
         self.deposition_min_date: Optional[datetime] = None
         self.deposition_max_date: Optional[datetime] = None
 
@@ -401,6 +409,12 @@ class ProteinRecordCollector(ParallelDataCollector):
         if self.source_taxid:
             queries.append(
                 pdb_api.PDBSourceTaxonomyIdQuery(taxonomy_id=self.source_taxid)
+            )
+        if self.query_max_chains:
+            queries.append(
+                pdb_api.PDBNumberOfChainsQuery(
+                    n_chains=self.query_max_chains, comparison_operator="less_or_equal"
+                )
             )
         if self.deposition_min_date or self.deposition_max_date:
             queries.append(
