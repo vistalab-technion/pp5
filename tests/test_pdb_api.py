@@ -279,22 +279,19 @@ class TestPDBNumberOfChainsQuery:
             pdb_api.PDBNumberOfChainsQuery(
                 n_chains=16,
                 comparison_operator="greater",
-                # return_type=pdb_api.PDBQuery.ReturnType.ENTITY,
             ),
             pdb_api.PDBNumberOfChainsQuery(
                 n_chains=20,
                 comparison_operator="less_or_equal",
-                # return_type=pdb_api.PDBQuery.ReturnType.ENTITY,
             ),
             pdb_api.PDBXRayResolutionQuery(
-                resolution=2.0,
-                comparison_operator="less_or_equal",
-                # return_type=pdb_api.PDBQuery.ReturnType.ENTITY,
+                resolution=1.7,
+                comparison_operator="less",
             ),
             return_type=pdb_api.PDBQuery.ReturnType.ENTRY,
         )
         results = query.execute()
-        assert len(results) >= 27
+        assert len(results) >= 5
 
 
 class TestPDBDepositionDateQuery:
