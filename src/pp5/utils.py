@@ -1,11 +1,11 @@
 import os
 import sys
 import gzip
-import json
+import pickle
 import random
+import hashlib
 import logging
 import contextlib
-from json import JSONEncoder
 from typing import Any, Union, Callable
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -310,77 +310,26 @@ def sort_dict(d: dict, by_value=True, selector: Callable[[Any], Any] = None):
     return {k: v for k, v in sorted(d.items(), key=sort_key)}
 
 
-class JSONCacheableMixin(object):
+def stable_hash(obj: Any, hash_len: int = 8) -> str:
     """
-    Makes a class cacheable to JSON.
+    Generates a stable hash for general python objects, as a hexadecimal string. Stable
+    means that the exact-same input will produce exactly the same output, even across
+    machines and processes. The provided object must be pickleable.
+
+    :param obj: A python object. Must be pickle-able.
+    :param hash_len: Desired length of hash string.
+    :return: A string of the requested length comprised of hexadecimal digits,
+        representing a number which is the hash value.
     """
+    if hash_len < 2:
+        raise ValueError(f"Invalid {hash_len=}, must be > 1")
 
-    def __getstate__(self):
-        return self.__dict__.copy()
+    def _hash(bytelike: bytes) -> str:
+        return hashlib.blake2b(bytelike, digest_size=hash_len // 2).hexdigest()
 
-    def __setstate__(self, state):
-        self.__dict__.update(state)
+    obj_bytes: bytes = pickle.dumps(obj)
 
-    def to_cache(
-        self, cache_dir: Union[str, Path], filename: Union[str, Path], **json_kws
-    ) -> Path:
-        """
-        Write the object to a human-readable text file (json) which
-        can also be loaded later using from_cache.
-        :param cache_dir: Directory of cached files.
-        :param filename: Cached file name (without directory).
-        :return: The path of the written file.
-        """
-        filepath = pp5.get_resource_path(cache_dir, filename)
-        os.makedirs(str(filepath.parent), exist_ok=True)
-
-        with filelock_context(filepath):
-            with open(str(filepath), "w", encoding="utf-8") as f:
-                json.dump(self.__getstate__(), f, **json_kws)
-
-        LOGGER.info(f"Wrote {self} to {filepath}")
-        return filepath
-
-    @classmethod
-    def from_cache(cls, cache_dir: Union[str, Path], filename: Union[str, Path]):
-        """
-        Load the object from a cached file.
-        :param cache_dir: Directory of cached file.
-        :param filename: Cached file name (without directory).
-        :return: The loaded object, or None if the file doesn't exist.
-        """
-
-        filepath = pp5.get_resource_path(cache_dir, filename)
-
-        obj = None
-
-        with filelock_context(filepath):
-            if filepath.is_file():
-                try:
-                    with open(str(filepath), "r", encoding="utf-8") as f:
-                        state_dict = json.load(f)
-                        obj = cls.__new__(cls)
-                        obj.__setstate__(state_dict)
-                except Exception as e:
-                    LOGGER.warning(
-                        f"Failed to load cached {cls.__name__} {filepath} {e}"
-                    )
-            return obj
-
-
-class ReprJSONEncoder(JSONEncoder):
-    """
-    A JSONEncoder that converts an object to it's representation string in
-    case it's not serializable.
-    """
-
-    def default(self, o: Any) -> Any:
-        try:
-            return repr(o)
-        except Exception as e:
-            pass
-        # Let the base class default method raise the TypeError
-        return JSONEncoder.default(self, o)
+    return _hash(obj_bytes)
 
 
 class ProteinInitError(ValueError):

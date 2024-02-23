@@ -201,15 +201,32 @@ class ResidueRecord(object):
             return True
         if not isinstance(other, ResidueRecord):
             return False
+
+        def _compare(a, b):
+            eq = True
+            if isinstance(a, (float, np.ndarray)):
+                eq = np.allclose(a, b, equal_nan=True)
+
+            elif isinstance(a, dict):
+                for key, val in a.items():
+                    # to handle dict that contains ndarrays
+                    eq = _compare(val, b.get(key))
+                    if not eq:
+                        break
+            else:
+                eq = a == b
+
+            return eq
+
         for k, v in self.__dict__.items():
             other_v = other.__dict__.get(k, math.inf)
-            if isinstance(v, (float, np.ndarray)):
-                equal = np.allclose(v, other_v, equal_nan=True)
-            else:
-                equal = v == other_v
+            equal = _compare(v, other_v)
             if not equal:
                 return False
         return True
+
+    def __hash__(self):
+        return hash(tuple(self.as_dict().items()))
 
 
 class AltlocNameMap(dict):
@@ -511,6 +528,8 @@ class ProteinRecord(object):
         :return: Loaded ProteinRecord, or None if the cached prec does not
         exist.
         """
+        # TODO: Prec should use Cacheable base class instead of this custom approach.
+
         if not isinstance(cache_dir, (str, Path)):
             cache_dir = pp5.PREC_DIR
 
@@ -538,7 +557,7 @@ class ProteinRecord(object):
         pdb_dict=None,
         cache=False,
         cache_dir=pp5.PREC_DIR,
-        strict_pdb_xref=True,
+        strict_pdb_unp_xref=True,
         **kw_for_init,
     ) -> ProteinRecord:
         """
@@ -554,7 +573,7 @@ class ProteinRecord(object):
         :param cache: Whether to load prec from cache if available.
         :param cache_dir: Where the cache dir is. ProteinRecords will be
         written to this folder after creation, unless it's None.
-        :param strict_pdb_xref: Whether to require that the given PDB ID
+        :param strict_pdb_unp_xref: Whether to require that the given PDB ID
         maps uniquely to only one Uniprot ID.
         :param kw_for_init: Extra kwargs for the ProteinRecord initializer.
         :return: A ProteinRecord.
@@ -562,26 +581,28 @@ class ProteinRecord(object):
         try:
             # Either chain or entity or none can be provided, but not both
             pdb_base_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
-            numeric_chain = False
             if entity_id:
-                entity_id = int(entity_id)
+                entity_id = str(entity_id)
 
-                # Discover which chains belong to this entity
-                pdb_dict = pdb.pdb_dict(
-                    pdb_id, pdb_source=pdb_source, struct_d=pdb_dict
-                )
-                meta = pdb.PDBMetadata(pdb_id, pdb_source=pdb_source, struct_d=pdb_dict)
-                chain_id = meta.get_chain(entity_id)
+                meta = pdb.PDBMetadata.from_pdb(pdb_id, cache=cache)
+
+                chain_id = None
+                if entity_id in meta.entity_ids:
+                    chain_id = meta.entity_chains[entity_id][0]
 
                 if not chain_id:
-                    # In rare cases the chain is a number instead of a letter,
-                    # so there's no way to distinguish between entity id and
-                    # chain except also trying to use our entity as a chain
-                    # and finding the actual entity. See e.g. 4N6V.
-                    if str(entity_id) in meta.chain_entities:
+                    # In rare cases the author chain is a number instead of a letter.
+                    # We check for this, and if it's the case, we use the
+                    # corresponding PDB chain instead. See e.g. 4N6V.
+                    if entity_id in meta.auth_chain_ids:
                         # Chain is number, but use its string representation
-                        chain_id = str(entity_id)
-                        numeric_chain = True
+                        chain_id = next(
+                            iter(
+                                c_id
+                                for c_id, ac_id in (meta.chain_to_auth_chain.items())
+                                if ac_id == entity_id
+                            )
+                        )
                     else:
                         raise ProteinInitError(
                             f"No matching chain found for entity "
@@ -591,7 +612,9 @@ class ProteinRecord(object):
                 pdb_id = f"{pdb_base_id}:{chain_id}"
 
             if cache and chain_id:
-                prec = cls.from_cache(pdb_id, cache_dir=cache_dir)
+                prec = cls.from_cache(
+                    pdb_id, cache_dir=cache_dir, pdb_source=pdb_source
+                )
                 if prec is not None:
                     return prec
 
@@ -600,16 +623,11 @@ class ProteinRecord(object):
                     pdb_id, pdb_source=pdb_source, struct_d=pdb_dict
                 )
 
-            unp_id = pdb.PDB2UNP.pdb_id_to_unp_id(
-                pdb_id, strict=strict_pdb_xref, cache=cache
-            )
-
             prec = cls(
-                unp_id,
                 pdb_id,
                 pdb_source=pdb_source,
                 pdb_dict=pdb_dict,
-                numeric_chain=numeric_chain,
+                strict_pdb_unp_xref=strict_pdb_unp_xref,
                 **kw_for_init,
             )
             if cache_dir:
@@ -626,6 +644,7 @@ class ProteinRecord(object):
         cls,
         unp_id: str,
         cache=False,
+        pdb_source: str = PDB_RCSB,
         cache_dir=pp5.PREC_DIR,
         xref_selector: Callable[[unp.UNPPDBXRef], Any] = None,
         **kw_for_init,
@@ -637,6 +656,7 @@ class ProteinRecord(object):
         :param xref_selector: Sort key for PDB cross refs. If None,
         resolution will be used.
         :param cache: Whether to load prec from cache if available.
+        :param pdb_source: Source from which to obtain the pdb file.
         :param cache_dir: Where the cache dir is. ProteinRecords will be
         written to this folder after creation, unless it's None.
         :param kw_for_init: Extra args for the ProteinRecord initializer.
@@ -651,50 +671,45 @@ class ProteinRecord(object):
             pdb_id = f"{xrefs[0].pdb_id}:{xrefs[0].chain_id}"
 
             if cache:
-                prec = cls.from_cache(pdb_id, cache_dir=cache_dir)
+                prec = cls.from_cache(
+                    pdb_id, cache_dir=cache_dir, pdb_source=pdb_source
+                )
                 if prec is not None:
                     return prec
 
-            prec = cls(unp_id, pdb_id, **kw_for_init)
+            prec = cls(pdb_id, **kw_for_init)
             if cache_dir:
                 prec.save(out_dir=cache_dir)
 
             return prec
         except Exception as e:
             raise ProteinInitError(
-                f"Failed to create protein record for " f"unp_id={unp_id}"
+                f"Failed to create protein record for unp_id={unp_id}"
             ) from e
 
     def __init__(
         self,
-        unp_id: str,
         pdb_id: str,
         pdb_source: str = PDB_RCSB,
         pdb_dict: dict = None,
         dihedral_est_name: str = None,
         dihedral_est_args: dict = None,
         max_ena: int = None,
-        strict_unp_xref: bool = True,
-        numeric_chain: bool = False,
         with_altlocs: bool = True,
         with_backbone: bool = True,
         with_contacts: bool = True,
         with_codons: bool = True,
+        strict_pdb_unp_xref: bool = True,
         contact_method: str = CONTACT_METHOD_NEIGHBOR,
         contact_radius: float = CONTACT_DEFAULT_RADIUS,
     ):
         """
-        Initialize a protein record from both Uniprot and PDB ids.
-        To initialize a protein from Uniprot id or PDB id only, use the
-        class methods provided for this purpose.
+        Don't call this directly. Use class methods from_pdb or from_unp instead.
 
-        :param unp_id: Uniprot id which uniquely identifies the protein.
-        :param pdb_id: PDB id with or without chain (e.g. '1ABC' or '1ABC:D')
-        of the specific structure desired. Note that this structure must match
-        the unp_id, i.e. it must exist in the cross-refs of the given unp_id.
-        Otherwise an error will be raised (unless strict_unp_xref=False). If no
-        chain is specified, a chain matching the unp_id will be used,
-        if it exists.
+        Initialize a protein record from PDB id.
+
+        :param pdb_id: PDB id with chain (e.g. '1ABC:D') of the specific structure chain
+        desired.
         :param pdb_source: Source from which to obtain the pdb file.
         :param dihedral_est_name: Method of dihedral angle estimation.
         Options are:
@@ -705,30 +720,58 @@ class ProteinRecord(object):
         :param max_ena: Number of maximal ENA records (containing protein
         genetic data) to align to the PDB structure of this protein. None
         means no limit (all cross-refs from Uniprot will be aligned).
-        :param strict_unp_xref: Whether to require that there exist a PDB
-        cross-ref for the given Uniprot ID.
-        :param numeric_chain: Whether the given chain id (if any) is
-        numeric. In rare cases PDB structures have numbers as chain ids.
         :param with_altlocs: Whether to include alternate conformations in the
         protein record. If False, only the default conformation will be used.
         :param with_backbone: Whether to include backbone atoms in the protein record.
         :param with_contacts: Whether to calculate per-residue contacts.
         :param with_codons: Whether to assign codons to each residue.
+        :param strict_pdb_unp_xref: Whether to require that the given PDB ID
+        maps uniquely to only one Uniprot ID.
         :param contact_method: Method for calculating contacts.
         Options are: 'ns' for neighbor search; 'arp' for arpeggio.
         :param contact_radius: Radius for calculating contacts.
         """
-        if not (unp_id and pdb_id):
-            raise ProteinInitError("Must provide both Uniprot and PDB IDs")
+        if not pdb_id:
+            raise ProteinInitError("Must provide PDB ID")
 
-        unp_id = unp_id.upper()
-        LOGGER.info(f"{unp_id}: Initializing protein record...")
         self.__setstate__({})
 
-        self.unp_id = unp_id
+        # Parse the given PDB id and obtain metadata
+        self.pdb_base_id, pdb_chain_id, ent_id = pdb.split_id_with_entity(pdb_id)
+
+        LOGGER.info(f"{self.pdb_base_id}: Obtaining metadata...")
+        self.pdb_meta = pdb.PDBMetadata.from_pdb(self.pdb_base_id, cache=True)
+
+        if pdb_chain_id is None:
+            if ent_id and len(self.pdb_meta.entity_chains.get(ent_id, [])) == 1:
+                pdb_chain_id = self.pdb_meta.entity_chains[ent_id][0]
+            elif len(self.pdb_meta.chain_ids) == 1:
+                pdb_chain_id = next(iter(self.pdb_meta.chain_ids))
+            else:
+                raise ProteinInitError(
+                    f"No chain specified in {pdb_id}, and multiple chains exist."
+                )
+
+        self.pdb_chain_id = pdb_chain_id
+        self.pdb_id = f"{self.pdb_base_id}:{self.pdb_chain_id}"
+
+        LOGGER.info(f"{self.pdb_id}: Constructing protein record...")
+
+        # Obtain UniProt ID for the given PDB chain
+        chain_unp_ids = self.pdb_meta.chain_uniprot_ids[self.pdb_chain_id]
+        if not chain_unp_ids:
+            raise ProteinInitError(f"No Uniprot ID found for chain {self.pdb_chain_id}")
+        if len(chain_unp_ids) > 1:
+            msg = f"Multiple UNP IDs for chain {self.pdb_chain_id}: {chain_unp_ids}"
+            if strict_pdb_unp_xref:
+                raise ProteinInitError(msg)
+            else:
+                LOGGER.warning(msg)
+
+        self.unp_id = chain_unp_ids[0]
         rec_unp_id = self.unp_rec.accessions[0]
-        if rec_unp_id != unp_id:
-            LOGGER.warning(f"Replacing outdated UNP ID: {unp_id} -> {rec_unp_id}")
+        if rec_unp_id != self.unp_id:
+            LOGGER.warning(f"Replacing outdated UNP ID: {self.unp_id} -> {rec_unp_id}")
             self.unp_id = rec_unp_id
 
         if contact_method not in CONTACT_METHODS:
@@ -739,35 +782,36 @@ class ProteinRecord(object):
         if with_altlocs and contact_method == CONTACT_METHOD_ARPEGGIO:
             raise ValueError(f"Altlocs not supported with {contact_method=}")
 
-        self.strict_unp_xref = strict_unp_xref
-        self.numeric_chain = numeric_chain
         self.with_altlocs = with_altlocs
         self.with_backbone = with_backbone
         self.with_contacts = with_contacts
         self.contact_radius = contact_radius
         self.contact_method = contact_method
 
-        # First we must find a matching PDB structure and chain for the
-        # Uniprot id. If a pdb_id is given we'll try to use that, depending
-        # on whether there's a Uniprot xref for it and on strict_unp_xref.
-        self.pdb_base_id, self.pdb_chain_id = self._find_pdb_xref(pdb_id)
-        self.pdb_id = f"{self.pdb_base_id}:{self.pdb_chain_id}"
         self.pdb_source = pdb_source
         if pdb_dict:
             self._pdb_dict = pdb_dict
 
-        self.pdb_meta = pdb.PDBMetadata(
-            self.pdb_id, pdb_source=self.pdb_source, struct_d=self.pdb_dict
-        )
         if not self.pdb_meta.resolution and self.pdb_source != PDB_AFLD:
             raise ProteinInitError(f"Unknown resolution for {pdb_id}")
 
+        self.pdb_entity_id = self.pdb_meta.chain_entities[self.pdb_chain_id]
+        self.pdb_auth_chain_id = self.pdb_meta.chain_to_auth_chain[self.pdb_chain_id]
+
+        chain_str = (
+            self.pdb_chain_id
+            if self.pdb_auth_chain_id == self.pdb_chain_id
+            else f"{self.pdb_chain_id}({self.pdb_auth_chain_id})"
+        )
         LOGGER.info(
-            f"{self}: {self.pdb_meta.description}, "
-            f"org={self.pdb_meta.src_org} ({self.pdb_meta.src_org_id}), "
-            f"expr={self.pdb_meta.host_org} ({self.pdb_meta.host_org_id}), "
+            f"pdb_id={self.pdb_base_id}, chain={chain_str}, unp_id={self.unp_id}, "
+            f"entity_id={self.pdb_entity_id}, "
             f"res={self.pdb_meta.resolution:.2f}Å, "
-            f"entity_id={self.pdb_meta.chain_entities[self.pdb_chain_id]}"
+            f"desc={self.pdb_meta.entity_description[self.pdb_entity_id]}, "
+            f"org={self.pdb_meta.entity_source_org[self.pdb_entity_id]} "
+            f"({self.pdb_meta.entity_source_org_id[self.pdb_entity_id]}), "
+            f"expr={self.pdb_meta.entity_host_org[self.pdb_entity_id]} "
+            f"({self.pdb_meta.entity_host_org_id[self.pdb_entity_id]})"
         )
 
         # Make sure the structure is sane. See e.g. 1FFK.
@@ -994,7 +1038,9 @@ class ProteinRecord(object):
         https://proteopedia.org/wiki/index.php/HETATM
         """
         if not self._pp:
-            chain = self.pdb_rec[0][self.pdb_chain_id]
+            # Use author chain id to get the polypeptides, as the author chain is
+            # what's associated with the coordinates in the mmCIF file.
+            chain = self.pdb_rec[0][self.pdb_auth_chain_id]
             pp_chains = PPBuilder().build_peptides(chain, aa_only=True)
 
             # Sort chain by sequence ID of first residue in the chain,
@@ -1234,78 +1280,6 @@ class ProteinRecord(object):
 
         return best_ena.id, str(best_ena.seq), idx_to_codons
 
-    def _find_pdb_xref(self, ref_pdb_id) -> Tuple[str, str]:
-        ref_pdb_id, ref_chain_id, ent_id = pdb.split_id_with_entity(ref_pdb_id)
-        if not ref_chain_id:
-            if ent_id is not None and self.numeric_chain:
-                # In rare cases the chain is a number and indistinguishable
-                # from entity. Handle this case only if explicitly
-                # requested.
-                ref_chain_id = ent_id
-            else:
-                ref_chain_id = ""
-
-        ref_pdb_id, ref_chain_id = ref_pdb_id.upper(), ref_chain_id.upper()
-
-        xrefs = unp.find_pdb_xrefs(self.unp_rec, method="x-ray")
-
-        # We'll sort the PDB entries according to multiple criteria based on
-        # the resolution, number of chains and sequence length.
-        def sort_key(xref: unp.UNPPDBXRef):
-            id_cmp = xref.pdb_id.upper() != ref_pdb_id
-            chain_cmp = xref.chain_id.upper() != ref_chain_id
-            seq_len_diff = abs(xref.seq_len - self.unp_rec.sequence_length)
-            # The sort key for PDB entries
-            # First, if we have a matching id to the reference PDB id we take
-            # it. Otherwise, we take the best match according to seq len and
-            # resolution.
-            return id_cmp, chain_cmp, seq_len_diff, xref.resolution
-
-        xrefs = sorted(xrefs, key=sort_key)
-        if not xrefs:
-            msg = f"No PDB cross-refs for {self.unp_id}"
-            if self.strict_unp_xref:
-                raise ProteinInitError(msg)
-            elif not ref_chain_id:
-                raise ProteinInitError(f"{msg} and no chain provided in ref")
-            else:
-                LOGGER.warning(f"{msg}, using ref {ref_pdb_id}:{ref_chain_id}")
-                return ref_pdb_id, ref_chain_id
-
-        # Get best match according to sort key and return its id.
-        xref = xrefs[0]
-        LOGGER.info(f"{self.unp_id}: PDB XREF = {xref}")
-
-        pdb_id = xref.pdb_id.upper()
-        chain_id = xref.chain_id.upper()
-
-        # Make sure we have a match with the Uniprot id. Id chain wasn't
-        # specified, match only PDB ID, otherwise, both must match.
-        if pdb_id != ref_pdb_id:
-            msg = (
-                f"Reference PDB ID {ref_pdb_id} not found as "
-                f"cross-reference for protein {self.unp_id}"
-            )
-            if self.strict_unp_xref:
-                raise ProteinInitError(msg)
-            else:
-                LOGGER.warning(msg)
-                pdb_id = ref_pdb_id
-
-        if ref_chain_id and chain_id != ref_chain_id:
-            msg = (
-                f"Reference chain {ref_chain_id} of PDB ID {ref_pdb_id} not"
-                f"found as cross-reference for protein {self.unp_id}. "
-                f"Did you mean chain {chain_id}?"
-            )
-            if self.strict_unp_xref:
-                raise ProteinInitError(msg)
-            else:
-                LOGGER.warning(msg)
-                chain_id = ref_chain_id
-
-        return pdb_id.upper(), chain_id.upper()
-
     def _get_dihedral_estimators(self, est_name: str, est_args: dict):
         est_name = est_name.lower() if est_name else est_name
         est_args = {} if est_args is None else est_args
@@ -1349,7 +1323,7 @@ class ProteinRecord(object):
         return self._residue_recs.items()
 
     def __repr__(self):
-        return f"({self.unp_id}, {self.pdb_id})"
+        return f"{self.pdb_id}"
 
     def __getstate__(self):
         # Prevent serializing Bio objects

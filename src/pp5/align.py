@@ -12,7 +12,7 @@ import tempfile
 import warnings
 import contextlib
 import subprocess
-from typing import Tuple, Union, Iterable, Optional
+from typing import Any, Dict, Tuple, Union, Iterable, Optional
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -32,7 +32,8 @@ from Bio.SeqRecord import SeqRecord
 from Bio.Align.Applications import ClustalOmegaCommandline
 
 import pp5
-from pp5.utils import JSONCacheableMixin, out_redirected
+from pp5.cache import Cacheable, CacheSettings
+from pp5.utils import out_redirected
 from pp5.external_dbs import pdb
 
 # Suppress messages from pymol upon import
@@ -151,10 +152,12 @@ def multiseq_align(
     return msa_result
 
 
-class StructuralAlignment(JSONCacheableMixin, object):
+class StructuralAlignment(Cacheable, object):
     """
     Represents a Structural Alignment between two protein structures.
     """
+
+    _CACHE_SETTINGS = CacheSettings(cache_dir=pp5.ALIGNMENT_DIR)
 
     def __init__(
         self,
@@ -213,36 +216,6 @@ class StructuralAlignment(JSONCacheableMixin, object):
         """
         return self.ungap(self.aligned_seq_2)
 
-    def save(self, out_dir=pp5.ALIGNMENT_DIR) -> Path:
-        """
-        Write the alignment to a human-readable text file (json) which
-        can also be loaded later using from_cache.
-        :param out_dir: Output directory.
-        :return: The path of the written file.
-        """
-        filename = self._cache_filename(
-            self.pdb_id_1,
-            self.pdb_id_2,
-            self.pdb_source,
-            self.outlier_rejection_cutoff,
-            self.backbone_only,
-        )
-        return self.to_cache(out_dir, filename, indent=2)
-
-    @staticmethod
-    def _cache_filename(
-        pdb_id_1: str,
-        pdb_id_2: str,
-        pdb_source: str,
-        outlier_rejection_cutoff: float,
-        backbone_only,
-    ) -> str:
-        pdb_ids = f"{pdb_id_1}-{pdb_id_2}".replace(":", "_").upper()
-        config = f"cutoff={int(outlier_rejection_cutoff*10)}_bb={backbone_only}"
-        basename = f"{pdb_ids}_{config}"
-        filename = f"{basename}-{pdb_source}.json"
-        return filename
-
     @staticmethod
     def ungap(seq: str) -> str:
         """
@@ -268,34 +241,47 @@ class StructuralAlignment(JSONCacheableMixin, object):
             return False
         return self.__dict__ == other.__dict__
 
+    def cache_attribs(self) -> Dict[str, Any]:
+        return dict(
+            pdb_id_1=self.pdb_id_1,
+            pdb_id_2=self.pdb_id_2,
+            pdb_source=self.pdb_source,
+            outlier_rejection_cutoff=self.outlier_rejection_cutoff,
+            backbone_only=self.backbone_only,
+        )
+
     @classmethod
-    def from_cache(
-        cls,
-        pdb_id_1: str,
-        pdb_id_2: str,
-        pdb_source: str = PDB_RCSB,
-        cache_dir: Union[str, Path] = pp5.ALIGNMENT_DIR,
-        **kw_for_init,
-    ) -> Optional[StructuralAlignment]:
-        filename = cls._cache_filename(pdb_id_1, pdb_id_2, pdb_source, **kw_for_init)
-        return super(StructuralAlignment, cls).from_cache(cache_dir, filename)
+    def _cache_filename_prefix(cls, cache_attribs: Dict[str, Any]) -> str:
+        pdb_id_1 = cache_attribs["pdb_id_1"]
+        pdb_id_2 = cache_attribs["pdb_id_2"]
+        pdb_ids = f"{pdb_id_1}-{pdb_id_2}".replace(":", "_").upper()
+        return f"{super()._cache_filename_prefix(cache_attribs)}-{pdb_ids}"
 
     @classmethod
     def from_pdb(
         cls,
-        pdb_id1: str,
-        pdb_id2: str,
+        pdb_id_1: str,
+        pdb_id_2: str,
         pdb_source: str = PDB_RCSB,
+        outlier_rejection_cutoff: float = 2.0,
+        backbone_only=False,
         cache=False,
-        **kw_for_init,
     ):
+        kws = dict(
+            pdb_id_1=pdb_id_1,
+            pdb_id_2=pdb_id_2,
+            pdb_source=pdb_source,
+            outlier_rejection_cutoff=outlier_rejection_cutoff,
+            backbone_only=backbone_only,
+        )
         if cache:
-            sa = cls.from_cache(pdb_id1, pdb_id2, pdb_source, **kw_for_init)
+            sa = cls.from_cache(cache_attribs=kws)
             if sa is not None:
                 return sa
 
-        sa = cls(pdb_id1, pdb_id2, pdb_source, **kw_for_init)
-        sa.save()
+        sa = cls(**kws)
+        if cache:
+            sa.to_cache()
         return sa
 
 
@@ -530,7 +516,7 @@ class ProteinBLAST(object):
             )
 
         # Note: no need for pdb_source, we just care about what chains exist
-        meta = pdb.PDBMetadata(pdb_id, struct_d=pdb_dict)
+        meta = pdb.PDBMetadata(pdb_id)
 
         if chain_id not in meta.chain_entities:
             raise ValueError(f"Can't find chain {chain_id} in {pdb_id}")

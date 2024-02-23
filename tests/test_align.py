@@ -47,34 +47,23 @@ class TestStructuralAlign(object):
     def test_cache(self, backbone_only, outlier_rejection_cutoff, pdb_source):
         pdb1, pdb2 = "4NE4:A", "5TEU:A"
 
-        # Should not exist in cache
-        sa_cached = StructuralAlignment.from_cache(
-            pdb1,
-            pdb2,
+        kws = dict(
+            pdb_id_1=pdb1,
+            pdb_id_2=pdb2,
             pdb_source=pdb_source,
             backbone_only=backbone_only,
             outlier_rejection_cutoff=outlier_rejection_cutoff,
         )
+
+        # Should not exist in cache
+        sa_cached = StructuralAlignment.from_cache(cache_attribs=kws)
         assert sa_cached is None
 
         # Should be created and saved to cache
-        sa = StructuralAlignment.from_pdb(
-            pdb1,
-            pdb2,
-            cache=True,
-            pdb_source=pdb_source,
-            backbone_only=backbone_only,
-            outlier_rejection_cutoff=outlier_rejection_cutoff,
-        )
+        sa = StructuralAlignment.from_pdb(**kws, cache=True)
 
         # Should exist in cache
-        sa_cached = StructuralAlignment.from_cache(
-            pdb1,
-            pdb2,
-            pdb_source=pdb_source,
-            backbone_only=backbone_only,
-            outlier_rejection_cutoff=outlier_rejection_cutoff,
-        )
+        sa_cached = StructuralAlignment.from_cache(cache_attribs=kws)
         assert sa_cached is not None
 
         # Cached version should be the same

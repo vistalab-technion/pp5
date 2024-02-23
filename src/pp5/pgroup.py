@@ -190,8 +190,7 @@ class ProteinGroup(object):
         angle_aggregation="circ",
         compare_contacts: bool = False,
         strict_codons: bool = True,
-        strict_pdb_xref: bool = True,
-        strict_unp_xref: bool = False,
+        strict_pdb_unp_xref: bool = True,
         parallel: bool = True,
     ):
         """
@@ -213,7 +212,7 @@ class ProteinGroup(object):
 
         Where A, B are matching residues and X, Y are context residues.
 
-        :param ref_pdb_id: Reference structure PDB ID.
+        :param ref_pdb_id: Reference structure PDB ID with chain.
         :param query_pdb_ids: List of PDB IDs of query structures.
         :param pdb_source: Source from which to obtain the pdb file.
         :param match_len: Number of residues to include in a match. Can be either 1
@@ -243,10 +242,8 @@ class ProteinGroup(object):
         potential matches.
         :param strict_codons: Whether to require that a codon assignment for each
         AA exists and is un-ambiguous.
-        :param strict_pdb_xref: Whether to require that the given PDB ID
+        :param strict_pdb_unp_xref: Whether to require that the given PDB ID and chain
         maps uniquely to only one Uniprot ID.
-        :param strict_unp_xref: Whether to require that there exist a PDB
-        cross-ref for the given Uniprot ID.
         :param parallel: Whether to process query structures in parallel using
         the global worker process pool.
         """
@@ -259,9 +256,7 @@ class ProteinGroup(object):
             )
 
         ref_pdb_dict = pdb.pdb_dict(self.ref_pdb_id, pdb_source=pdb_source)
-        ref_pdb_meta = pdb.PDBMetadata(
-            self.ref_pdb_base_id, pdb_source=pdb_source, struct_d=ref_pdb_dict
-        )
+        ref_pdb_meta = pdb.PDBMetadata.from_pdb(self.ref_pdb_base_id, cache=True)
         if self.ref_pdb_chain not in ref_pdb_meta.chain_entities:
             raise ProteinInitError(f"Unknown PDB entity for {self.ref_pdb_id}")
 
@@ -283,8 +278,7 @@ class ProteinGroup(object):
         self.prec_cache = prec_cache
         self.compare_contacts = compare_contacts
         self.strict_codons = strict_codons
-        self.strict_pdb_xref = strict_pdb_xref
-        self.strict_unp_xref = strict_unp_xref
+        self.strict_pdb_unp_xref = strict_pdb_unp_xref
 
         # Only one of these is relevant
         if pdb_source == PDB_AFLD:
@@ -354,8 +348,7 @@ class ProteinGroup(object):
             self.ref_pdb_id,
             pdb_source=self.pdb_source,
             cache=self.prec_cache,
-            strict_pdb_xref=self.strict_pdb_xref,
-            strict_unp_xref=self.strict_unp_xref,
+            strict_pdb_unp_xref=strict_pdb_unp_xref,
             pdb_dict=ref_pdb_dict,
             with_contacts=self.compare_contacts,
         )
@@ -647,27 +640,17 @@ class ProteinGroup(object):
                 {
                     "unp_id": q_prec.unp_id,
                     "pdb_id": q_prec.pdb_id,
-                    "resolution": q_prec.pdb_meta.resolution,
                     "struct_rmse": q_alignment.rmse,
                     "n_stars": q_alignment.n_stars,
                     "seq_len": len(q_alignment.ungapped_seq_2),  # seq2 is query
-                    "description": q_prec.pdb_meta.description,
-                    "src_org": q_prec.pdb_meta.src_org,
-                    "src_org_id": q_prec.pdb_meta.src_org_id,
-                    "host_org": q_prec.pdb_meta.host_org,
-                    "host_org_id": q_prec.pdb_meta.host_org_id,
-                    "ligands": q_prec.pdb_meta.ligands,
-                    "space_group": q_prec.pdb_meta.space_group,
-                    "r_free": q_prec.pdb_meta.r_free,
-                    "r_work": q_prec.pdb_meta.r_work,
-                    "cg_ph": q_prec.pdb_meta.cg_ph,
-                    "cg_temp": q_prec.pdb_meta.cg_temp,
+                    "ref_group": q_prec.unp_id == self.ref_prec.unp_id,
+                    **q_prec.pdb_meta.as_dict(
+                        chain_id=q_prec.pdb_chain_id, seq_to_str=True
+                    ),
                 }
             )
 
         df = pd.DataFrame(data)
-        df["ref_group"] = df["unp_id"] == self.ref_prec.unp_id
-        df = df.astype({"src_org_id": "Int32", "host_org_id": "Int32"})
         df.sort_values(
             by=["ref_group", "unp_id", "struct_rmse"],
             ascending=[False, True, True],
@@ -768,8 +751,7 @@ class ProteinGroup(object):
                 q_pdb_id,
                 pdb_source=self.pdb_source,
                 cache=self.prec_cache,
-                strict_pdb_xref=self.strict_pdb_xref,
-                strict_unp_xref=self.strict_unp_xref,
+                strict_pdb_unp_xref=self.strict_pdb_unp_xref,
                 with_contacts=self.compare_contacts,
             )
         except ProteinInitError as e:

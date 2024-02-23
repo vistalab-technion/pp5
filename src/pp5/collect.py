@@ -24,7 +24,8 @@ import pp5
 import pp5.parallel
 from pp5.prec import ProteinRecord
 from pp5.align import ProteinBLAST
-from pp5.utils import ReprJSONEncoder, ProteinInitError, elapsed_seconds_to_dhms
+from pp5.cache import ReprJSONEncoder
+from pp5.utils import ProteinInitError, elapsed_seconds_to_dhms
 from pp5.pgroup import ProteinGroup
 from pp5.external_dbs import pdb, unp, pdb_api
 from pp5.external_dbs.pdb import PDB_RCSB
@@ -57,6 +58,13 @@ COL_CG_TEMP = "cg_temp"
 COL_PDB_SOURCE = "pdb_source"
 COL_REJECTED_BY = "rejected_by"
 COL_NUM_ALTLOCS = "num_altlocs"
+
+COLLECTION_METADATA_FILENAME = "meta.json"
+ALL_STRUCTS_FILENAME = "meta-structs_all"
+FILTERED_STRUCTS_FILENAME = "meta-structs_filtered"
+REJECTED_STRUCTS_FILENAME = "meta-structs_rejected"
+BLAST_SCORES_FILENAME = "meta-blast_scores"
+DATASET_DIRNAME = "data-precs"
 
 
 @dataclass(repr=False)
@@ -189,7 +197,7 @@ class ParallelDataCollector(abc.ABC):
             return
 
         # Create a metadata file in the output dir based on the step results
-        meta_filepath = self.out_dir.joinpath("meta.json")
+        meta_filepath = self.out_dir.joinpath(COLLECTION_METADATA_FILENAME)
         meta = self._collection_meta
         meta["steps"] = [str(s) for s in self._collection_steps]
         with open(str(meta_filepath), "w", encoding="utf-8") as f:
@@ -304,11 +312,6 @@ class ParallelDataCollector(abc.ABC):
 
 class ProteinRecordCollector(ParallelDataCollector):
     DEFAULT_PREC_INIT_ARGS = dict()
-    ALL_STRUCTS_FILENAME = "meta-structs_all"
-    FILTERED_STRUCTS_FILENAME = "meta-structs_filtered"
-    REJECTED_STRUCTS_FILENAME = "meta-structs_rejected"
-    BLAST_SCORES_FILENAME = "meta-blast_scores"
-    DATASET_DIRNAME = "data-precs"
 
     def __init__(
         self,
@@ -425,7 +428,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         self.entity_single_chain = entity_single_chain
 
         # Unique output dir for this collection run
-        self.prec_csv_out_dir = self.out_dir / self.DATASET_DIRNAME
+        self.prec_csv_out_dir = self.out_dir / DATASET_DIRNAME
         self.prec_csv_out_dir.mkdir(parents=True, exist_ok=True)
 
     def __repr__(self):
@@ -470,7 +473,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         n_collected = len(df_all)
 
         self._out_filepaths.append(
-            _write_df_csv(df_all, self.out_dir, self.ALL_STRUCTS_FILENAME)
+            _write_df_csv(df_all, self.out_dir, ALL_STRUCTS_FILENAME)
         )
 
         meta["n_collected"] = n_collected
@@ -486,7 +489,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         Filters collected structures according to conditions on their metadata.
         """
 
-        df_all: pd.DataFrame = _read_df_csv(self.out_dir, self.ALL_STRUCTS_FILENAME)
+        df_all: pd.DataFrame = _read_df_csv(self.out_dir, ALL_STRUCTS_FILENAME)
         # A boolean series representing which structures to keep.
         filter_idx = pd.Series(data=[True] * len(df_all), index=df_all.index)
         rejected_counts = {"total": 0}
@@ -516,7 +519,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         # Write the filtered structures
         df_filtered = df_all[filter_idx]
         self._out_filepaths.append(
-            _write_df_csv(df_filtered, self.out_dir, self.FILTERED_STRUCTS_FILENAME)
+            _write_df_csv(df_filtered, self.out_dir, FILTERED_STRUCTS_FILENAME)
         )
 
         # Write the rejected structures and specify which filter rejected them
@@ -526,7 +529,7 @@ class ProteinRecordCollector(ParallelDataCollector):
             df_rejected.loc[rejected_idx, COL_REJECTED_BY] = filter_name
         df_rejected = df_rejected[~filter_idx]
         self._out_filepaths.append(
-            _write_df_csv(df_rejected, self.out_dir, self.REJECTED_STRUCTS_FILENAME)
+            _write_df_csv(df_rejected, self.out_dir, REJECTED_STRUCTS_FILENAME)
         )
 
         return {
@@ -582,7 +585,7 @@ class ProteinRecordCollector(ParallelDataCollector):
         )
         self._out_filepaths.append(
             _write_df_csv(
-                df_blast_scores, self.out_dir, self.BLAST_SCORES_FILENAME, index=True
+                df_blast_scores, self.out_dir, BLAST_SCORES_FILENAME, index=True
             )
         )
 
@@ -1042,17 +1045,16 @@ def _collect_single_structure(
     pdb_base_id, chain_id, entity_id = pdb.split_id_with_entity(pdb_id)
 
     pdb_dict = pdb.pdb_dict(pdb_id, pdb_source=pdb_source)
-    pdb2unp = pdb.PDB2UNP.from_pdb(pdb_id, cache=True)
-    meta = pdb.PDBMetadata(pdb_id, pdb_source=pdb_source, struct_d=pdb_dict)
+    meta = pdb.PDBMetadata.from_pdb(pdb_id, cache=True)
+    chain_to_unp_ids = meta.chain_uniprot_ids
 
     # Determine all chains we need to collect from the PDB structure
     chains_to_collect: Sequence[str]
     if chain_id is not None:
         # If we got a single chain, use only that
         chains_to_collect = (chain_id,)
-    elif entity_id is not None:
-        entity_id = int(entity_id)
 
+    elif entity_id is not None:
         # If we got an entity id, discover all corresponding chains
         chains_to_collect = tuple(
             chain_id
@@ -1077,32 +1079,29 @@ def _collect_single_structure(
     chain_data = []
     for chain_id in chains_to_collect:
         pdb_id_full = f"{pdb_base_id}:{chain_id}"
+        entity_id = meta.chain_entities[chain_id]
+        seq_len = len(meta.entity_sequence[entity_id])
 
         # Skip chains with no Uniprot ID
-        if chain_id not in pdb2unp:
+        if chain_id not in chain_to_unp_ids or not chain_to_unp_ids[chain_id]:
             LOGGER.warning(f"No Uniprot ID for {pdb_id_full}")
             continue
 
         # Skip chimeric chains
-        if pdb2unp.is_chimeric(chain_id):
+        if len(chain_to_unp_ids[chain_id]) > 1:
             LOGGER.warning(f"Discarding chimeric chain {pdb_id_full}")
             continue
 
-        unp_id = pdb2unp.get_unp_id(chain_id)
-        seq_len = len(meta.entity_sequence[meta.chain_entities[chain_id]])
+        unp_id = chain_to_unp_ids[chain_id][0]
 
         # Create a ProteinRecord and save it so it's cached for when we
         # create the pgroups. Only collect structures for which we can
         # create a prec (e.g. they must have a DNA sequence).
         try:
-            nc = chain_id in string.digits
             prec = ProteinRecord(
-                unp_id,
                 pdb_id_full,
                 pdb_source=pdb_source,
                 pdb_dict=pdb_dict,
-                strict_unp_xref=False,
-                numeric_chain=nc,
                 with_altlocs=with_altlocs,
                 with_backbone=with_backbone,
                 with_contacts=with_contacts,
@@ -1118,8 +1117,8 @@ def _collect_single_structure(
 
         except Exception as e:
             LOGGER.warning(
-                f"Failed to create ProteinRecord for "
-                f"({unp_id}, {pdb_id}), will not collect: {e}"
+                f"Failed to create ProteinRecord for {pdb_id} ({unp_id=}), "
+                f"will not collect: {e}"
             )
             continue
 
@@ -1128,27 +1127,17 @@ def _collect_single_structure(
                 COL_UNP_ID: prec.unp_id,
                 COL_PDB_ID: prec.pdb_id,
                 COL_ENA_ID: prec.ena_id,
-                COL_RESOLUTION: meta.resolution,
                 COL_SEQ_LEN: seq_len,
                 COL_SEQ_GAPS: str.join(";", [f"{s}-{e}" for (s, e) in prec.seq_gaps]),
-                COL_DESCRIPTION: meta.description,
-                COL_DEPOSITION_DATE: meta.deposition_date,
-                COL_SRC_ORG: meta.src_org,
-                COL_HOST_ORG: meta.host_org,
                 COL_NUM_ALTLOCS: prec.num_altlocs,
-                COL_LIGANDS: meta.ligands,
-                COL_R_FREE: meta.r_free,
-                COL_R_WORK: meta.r_work,
-                COL_SPACE_GROUP: meta.space_group,
-                COL_CG_PH: meta.cg_ph,
-                COL_CG_TEMP: meta.cg_temp,
                 COL_PDB_SOURCE: pdb_source,
+                **meta.as_dict(chain_id=chain_id, seq_to_str=True),
             }
         )
 
     msg = (
         f"Collected {len(chain_data)} chains from {pdb_id} "
-        f"{pdb2unp.get_chain_to_unp_ids()} ({idx[0] + 1}/{idx[1]})"
+        f"{chain_to_unp_ids} ({idx[0] + 1}/{idx[1]})"
     )
     LOGGER.log(level=logging.INFO if len(chain_data) else logging.WARNING, msg=msg)
 

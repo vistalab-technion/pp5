@@ -7,8 +7,10 @@ import warnings
 from math import cos, sin
 from math import degrees as deg
 from math import radians as rad
-from typing import Any, Dict, List, Type, Tuple, Union, Optional, Sequence
+from typing import Any, Set, Dict, List, Tuple, TypeVar, Callable, Optional, Sequence
 from pathlib import Path
+from datetime import datetime
+from itertools import zip_longest
 from collections import defaultdict
 
 import numpy as np
@@ -19,9 +21,9 @@ from Bio.PDB.DSSP import dssp_dict_from_pdb_file
 from Bio.PDB.Polypeptide import standard_aa_names
 from Bio.PDB.PDBExceptions import PDBConstructionWarning, PDBConstructionException
 
-import pp5
-from pp5 import PDB_DIR, get_resource_path
-from pp5.utils import JSONCacheableMixin, remote_dl
+from pp5 import PDB_DIR, PDB_METADATA_DIR, get_resource_path
+from pp5.cache import Cacheable, CacheSettings
+from pp5.utils import remote_dl
 from pp5.external_dbs import pdb_api
 
 PDB_ID_PATTERN = re.compile(
@@ -103,6 +105,8 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB) -> Pa
 
     download_url_template = PDB_DOWNLOAD_SOURCES[pdb_source]
     if "unp_id" in download_url_template:
+        pdb_meta = PDBMetadata.from_pdb(pdb_id, cache=True)
+
         # The alphafold source requires downloading the data based on the uniprot id
         unp_ids = None
         if not chain_id:
@@ -110,9 +114,7 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB) -> Pa
                 raise ValueError(f"Chain or entity must be specified for {pdb_source=}")
 
             # Obtain uniprot ids from entity (entity -> chain -> unp ids)
-            entity_chains: dict = PDB2UNP.query_entity_uniprot_ids(pdb_id).get(
-                entity_id, {}
-            )
+            entity_chains: dict = pdb_meta.entity_uniprot_ids.get(entity_id, {})
             if not entity_chains:
                 raise ValueError(f"Failed to obtain chain for {pdb_id}:{entity_id}")
             chain_id = [*entity_chains.keys()][0]  # arbitrary chain from the entity
@@ -125,7 +127,7 @@ def pdb_download(pdb_id: str, pdb_dir=PDB_DIR, pdb_source: str = PDB_RCSB) -> Pa
             return filename
 
         # Get uniprot id for this chain (only if we didn't get them from entity)
-        unp_ids = unp_ids or PDB2UNP.query_chain_uniprot_ids(pdb_id).get(chain_id, [])
+        unp_ids = unp_ids or pdb_meta.chain_uniprot_ids.get(chain_id, [])
         if len(unp_ids) != 1:
             raise ValueError(
                 f"Can't determine unique uniprot id for {pdb_id}:{chain_id}, "
@@ -249,122 +251,333 @@ def pdb_to_secondary_structure(
     return ss_dict, keys
 
 
-class PDB2UNP(JSONCacheableMixin, object):
+_TC = TypeVar("_TC")
+
+
+class PDBMetadata(Cacheable):
     """
-    Maps PDB IDs (in each chain) to one or more Uniprot IDs which correspond
-    to that chain, and their locations in the PDB sequence.
+    Obtains and parses metadata from a PDB structure using PDB REST API.
     """
+
+    _CACHE_SETTINGS = CacheSettings(cache_dir=PDB_METADATA_DIR, cache_compression=True)
 
     def __init__(self, pdb_id: str):
         """
-        Initialize a PDB to Uniprot mapping.
-        :param pdb_id: PDB ID, without chain. Chain will be ignored if specified.
+        :param pdb_id: The PDB ID of the structure. No chain.
         """
-        pdb_base_id, _ = split_id(pdb_id)
 
-        # Get all chain Uniprot IDs by querying PDB. This gives us the most
-        # up-to-date IDs and provides the alignment info between the
-        # PDB structure's sequence and the Uniprot xref sequence.
-        # Map is chain -> unp -> [ (s1,e1), (s2, e2), ... ]
-        self.chain_to_unp_xrefs = self.query_chain_uniprot_id_alignments(pdb_id)
-        self.pdb_id = pdb_base_id
+        self._pdb_id, _ = split_id(pdb_id)
 
-    def get_unp_id(self, chain_id: str, strict=True) -> str:
-        """
-        :param chain_id: A chain in the PDB structure.
-        :param strict: Whether to raise an error (True) or just warn (False)
-        if the chain cannot be uniquely mapped to a single Uniprot ID.
-        :return: the first unp id matching the given chain. Usually there's
-        only one unless the entry is chimeric.
-        """
-        if not chain_id or chain_id.upper() not in self.chain_to_unp_xrefs:
-            raise ValueError(f"No Uniprot ID for chain {chain_id} of" f" {self.pdb_id}")
-
-        if self.is_chimeric(chain_id):
-            msg = (
-                f"{self.pdb_id} is chimeric at chain {chain_id}, "
-                f"possible Uniprot IDs: "
-                f"{self.get_all_chain_unp_ids(chain_id)}."
+        # Obtain structure-level metadata from the PDB API
+        self._meta_struct: dict = pdb_api.execute_raw_data_query(self.pdb_id)
+        self._meta_entities: Dict[str, dict] = {}
+        self._meta_chains: Dict[str, dict] = {}
+        entity_ids = self._meta_struct["rcsb_entry_container_identifiers"][
+            "polymer_entity_ids"
+        ]
+        for entity_id in entity_ids:
+            entity_id = str(entity_id)
+            # Obtain entity-level metadata from the PDB API
+            self._meta_entities[entity_id] = pdb_api.execute_raw_data_query(
+                self.pdb_id, entity_id=entity_id
             )
-            if strict:
-                raise ValueError(msg)
-            LOGGER.warning(f"{msg} Returning first ID.")
 
-        for unp_id in self.chain_to_unp_xrefs[chain_id.upper()]:
-            return unp_id
+            chain_ids = self._meta_entities[entity_id][
+                "rcsb_polymer_entity_container_identifiers"
+            ]["asym_ids"]
+            for chain_id in chain_ids:
+                # Obtain chain-level metadata from the PDB API
+                self._meta_chains[chain_id] = pdb_api.execute_raw_data_query(
+                    self.pdb_id, chain_id=chain_id
+                )
 
-    def is_chimeric(self, chain_id: str) -> bool:
-        """
-        :param chain_id: A chain in the PDB structure.
-        :return: Whether the sequence in the given chain is chimeric,
-        i.e. is composed of regions from different proteins.
-        """
-        return len(self.chain_to_unp_xrefs[chain_id.upper()]) > 1
+    @staticmethod
+    def _resolve(
+        meta: dict, key: str, coerce_type: Callable[[Any], _TC]
+    ) -> Optional[_TC]:
+        for subkey in key.split("."):
+            if isinstance(meta, (list, tuple)):
+                subkey = int(subkey)
+            elif not isinstance(meta, dict):
+                raise ValueError(f"Can't resolve {key} in {meta}")
+            elif subkey not in meta:
+                return None
 
-    def get_all_chain_unp_ids(self, chain_id) -> tuple:
-        """
-        :param chain_id: A chain in the PDB structure.
-        :return: All unp ids matching the given chain.
-        """
-        return tuple(self.chain_to_unp_xrefs[chain_id.upper()].keys())
+            meta = meta[subkey]
 
-    def get_all_unp_ids(self) -> set:
-        """
-        :return: All Uniprot IDs for all chains in the PDB structure.
-        """
-        all_unp_ids = set()
-        for chain in self.chain_to_unp_xrefs:
-            all_unp_ids.update(self.get_all_chain_unp_ids(chain))
-        return all_unp_ids
+        if meta is not None:
+            try:
+                meta = coerce_type(meta)
+            except ValueError:
+                LOGGER.warning(f"Failed to coerce {meta}@{key} to {coerce_type}")
 
-    def get_chain_to_unp_ids(self) -> Dict[str, Tuple[str]]:
-        """
-        :return: A mapping from chain it to a sequence of uniprot ids for
-        that chain.
-        """
-        return {c: tuple(u.keys()) for c, u in self.chain_to_unp_xrefs.items()}
-
-    def save(self, out_dir=pp5.PDB2UNP_DIR) -> Path:
-        """
-        Write the current mapping to a human-readable text file (json) which
-        can also be loaded later using from_cache.
-        :param out_dir: Output directory.
-        :return: The path of the written file.
-        """
-        filename = f"{self.pdb_id}.json"
-        return self.to_cache(out_dir, filename, indent=None)
-
-    def __getitem__(self, chain_id: str):
-        """
-        :param chain_id: The chain.
-        :return: Uniprot xrefs for a given chain
-        """
-        return self.chain_to_unp_xrefs[chain_id.upper()]
-
-    def __contains__(self, chain_id: str):
-        """
-        :param chain_id: The chain.
-        :return: Whether this mapping contains the given chain.
-        """
-        return chain_id.upper() in self.chain_to_unp_xrefs
-
-    def __repr__(self):
-        return f"PDB2UNP({self.pdb_id})={self.get_chain_to_unp_ids()}"
+        return meta
 
     @classmethod
-    def query_chain_uniprot_ids(cls, pdb_id: str) -> Dict[str, Sequence[str]]:
-        """
-        Retrieves all Uniprot IDs associated with a PDB structure chains by querying
-        the PDB database.
+    def _cache_filename_prefix(cls, cache_attribs: Dict[str, Any]) -> str:
+        pdb_id = cache_attribs["pdb_id"]
+        return f"{super()._cache_filename_prefix(cache_attribs)}-{pdb_id}"
 
-        :param pdb_id: The PDB ID to search for. Chain or entity will be ignored.
+    def cache_attribs(self) -> Dict[str, Any]:
+        return {"pdb_id": self.pdb_id}
+
+    def __eq__(self, other):
+        return self.pdb_id == other.pdb_id
+
+    def __hash__(self):
+        return hash(self.pdb_id)
+
+    @property
+    def pdb_id(self) -> str:
+        return self._pdb_id
+
+    @property
+    def title(self) -> Optional[str]:
+        return self._resolve(self._meta_struct, "struct.title", str)
+
+    @property
+    def description(self) -> Optional[str]:
+        return self._resolve(self._meta_struct, "struct.pdbx_descriptor", str)
+
+    @property
+    def entity_description(self) -> Dict[str, Optional[str]]:
+        return {
+            entity_id: self._resolve(
+                meta_entity, "rcsb_polymer_entity.pdbx_description", str
+            )
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def deposition_date(self) -> Optional[str]:
+        dt = self._resolve(
+            self._meta_struct,
+            "pdbx_database_status.recvd_initial_deposition_date",
+            datetime.fromisoformat,
+        )
+        if not dt:
+            return None
+
+        # Keep only date
+        return dt.strftime("%Y-%m-%d")
+
+    @property
+    def entity_source_org(self) -> Dict[str, Optional[str]]:
+        return {
+            entity_id: self._resolve(
+                meta_entity, "rcsb_entity_source_organism.0.ncbi_scientific_name", str
+            )
+            or self._resolve(
+                meta_entity, "entity_src_nat.0.pdbx_organism_scientific", str
+            )
+            or self._resolve(
+                meta_entity, "entity_src_gen.0.pdbx_gene_src_scientific_name", str
+            )
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def entity_source_org_id(self) -> Dict[str, Optional[int]]:
+        return {
+            entity_id: self._resolve(
+                meta_entity, "rcsb_entity_source_organism.0.ncbi_taxonomy_id", int
+            )
+            or self._resolve(meta_entity, "entity_src_nat.0.pdbx_ncbi_taxonomy_id", int)
+            or self._resolve(
+                meta_entity, "entity_src_gen.0.pdbx_gene_src_ncbi_taxonomy_id", int
+            )
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def entity_host_org(self) -> Dict[str, Optional[str]]:
+        return {
+            entity_id: self._resolve(
+                meta_entity, "rcsb_entity_host_organism.0.ncbi_scientific_name", str
+            )
+            or self._resolve(
+                meta_entity, "entity_src_gen.0.pdbx_host_org_scientific_name", str
+            )
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def entity_host_org_id(self) -> Dict[str, Optional[int]]:
+        return {
+            entity_id: self._resolve(
+                meta_entity, "rcsb_entity_host_organism.0.ncbi_taxonomy_id", int
+            )
+            or self._resolve(
+                meta_entity, "entity_src_gen.0.pdbx_host_org_ncbi_taxonomy_id", int
+            )
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def resolution(self) -> Optional[float]:
+        return self._resolve(
+            self._meta_struct, "rcsb_entry_info.diffrn_resolution_high.value", float
+        ) or self._resolve(self._meta_struct, "reflns.0.d_resolution_high", float)
+
+    @property
+    def resolution_low(self) -> Optional[float]:
+        return self._resolve(self._meta_struct, "reflns.0.d_resolution_low", float)
+
+    @property
+    def r_free(self) -> Optional[float]:
+        return self._resolve(self._meta_struct, "refine.0.ls_rfactor_rfree", float)
+
+    @property
+    def r_work(self) -> Optional[float]:
+        return self._resolve(self._meta_struct, "refine.0.ls_rfactor_rwork", float)
+
+    @property
+    def space_group(self) -> Optional[str]:
+        return self._resolve(
+            self._meta_struct, "symmetry.space_group_name_hm", str
+        ) or self._resolve(self._meta_struct, "symmetry.space_group_name_H_M", str)
+
+    @property
+    def cg_ph(self) -> Optional[float]:
+        return self._resolve(self._meta_struct, "exptl_crystal_grow.0.pH", float)
+
+    @property
+    def cg_temp(self) -> Optional[float]:
+        return self._resolve(self._meta_struct, "exptl_crystal_grow.0.temp", float)
+
+    @property
+    def chain_ligands(self) -> Dict[str, Sequence[str]]:
+        return {
+            chain_id: tuple(
+                sorted(
+                    set(
+                        [
+                            ld.get("ligand_comp_id")
+                            for ld in meta_chain.get("rcsb_ligand_neighbors", [])
+                        ]
+                    )
+                )
+            )
+            for chain_id, meta_chain in self._meta_chains.items()
+        }
+
+    @property
+    def ligands(self) -> str:
+        return str.join(",", sorted(set.union(set(), *self.chain_ligands.values())))
+
+    @property
+    def entity_ids(self) -> Sequence[str]:
+        """
+        :return: The entity ids which exist in the structure.
+        """
+        return tuple(self._meta_entities.keys())
+
+    @property
+    def chain_ids(self) -> Sequence[str]:
+        """
+        :return: The chain ids which exist in the structure.
+        """
+        return tuple(self._meta_chains.keys())
+
+    @property
+    def auth_chain_ids(self) -> Sequence[str]:
+        """
+        :return: The chain ids which exist in the structure.
+        """
+        return tuple(self.chain_to_auth_chain[chain_id] for chain_id in self.chain_ids)
+
+    @property
+    def entity_chains(self) -> Dict[str, Sequence[str]]:
+        """
+        :return: Mapping from entity id to a list of chains belonging to that entity.
+        """
+        return self._entity_chains(author=False)
+
+    @property
+    def entity_auth_chains(self) -> Dict[str, Sequence[str]]:
+        """
+        :return: Mapping from entity id to a list of chains belonging to that entity,
+        using the original author's chain ids.
+        """
+        return self._entity_chains(author=True)
+
+    def _entity_chains(self, author: bool = False) -> Dict[str, Sequence[str]]:
+        """
+        :param author: Whether to use author or canonical chain ids.
+        :return: Mapping from entity id to a list of chains belonging to that entity.
+        """
+        asym_ids_key = "auth_asym_ids" if author else "asym_ids"
+        key = f"rcsb_polymer_entity_container_identifiers.{asym_ids_key}"
+        return {
+            entity_id: self._resolve(meta_entity, key, tuple)
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def chain_entities(self) -> Dict[str, str]:
+        """
+        :return: Mapping from chain id to its entity id.
+        """
+        chain_to_entity = {}
+        for entity_id, chain_ids in self.entity_chains.items():
+            chain_to_entity = {
+                **chain_to_entity,
+                **{chain_id: entity_id for chain_id in chain_ids},
+            }
+        return chain_to_entity
+
+    @property
+    def chain_to_auth_chain(self) -> Dict[str, str]:
+        """
+        :return: Mapping from PDB chain id to its author's chain id. If there are no
+        different names for the author chains, the PDB chain names are mapped to
+        themselves.
+        """
+        entity_auth_chains = self.entity_auth_chains
+        chain_to_auth_chain = {}
+        for entity_id, chain_ids in self.entity_chains.items():
+            auth_chain_ids = entity_auth_chains[entity_id]
+            chain_to_auth_chain = {
+                **chain_to_auth_chain,
+                **{
+                    chain_id: auth_chain_id or chain_id
+                    for chain_id, auth_chain_id in zip_longest(
+                        chain_ids, auth_chain_ids
+                    )
+                },
+            }
+        return chain_to_auth_chain
+
+    @property
+    def entity_sequence(self) -> Dict[str, str]:
+        return {
+            entity_id: self._resolve(
+                meta_entity, "entity_poly.pdbx_seq_one_letter_code_can", str
+            )
+            for entity_id, meta_entity in self._meta_entities.items()
+        }
+
+    @property
+    def uniprot_ids(self) -> Sequence[str]:
+        """
+        :return: All Uniprot IDs associated with the PDB structure.
+        """
+        all_unp_ids = set()
+        for chain_id, unp_ids in self.chain_uniprot_ids.items():
+            all_unp_ids.update(unp_ids)
+        return tuple(sorted(all_unp_ids))
+
+    @property
+    def chain_uniprot_ids(self) -> Dict[str, Sequence[str]]:
+        """
+        Retrieves all Uniprot IDs associated with a PDB structure chains.
+
         :return: a map: chain -> [unp1, unp2, ...]
         where unp1, unp2, ... are Uniprot IDs associated with the chain.
-        :raises pdb_api.PDBAPIException: If there's a problem obtaining the data.
         """
 
         # entity -> chain -> unp -> [ (s1,e1), ... ]
-        entity_map = cls.query_entity_uniprot_id_alignments(pdb_id)
+        entity_map = self.entity_uniprot_id_alignments
 
         all_chain_map = {}
         for entity_id, chain_map in entity_map.items():
@@ -374,21 +587,18 @@ class PDB2UNP(JSONCacheableMixin, object):
 
         return all_chain_map
 
-    @classmethod
-    def query_chain_uniprot_id_alignments(
-        cls, pdb_id: str
+    @property
+    def chain_uniprot_id_alignments(
+        self,
     ) -> Dict[str, Dict[str, List[Tuple[int, int]]]]:
         """
-        Retrieves all Uniprot IDs associated with a PDB structure chains by querying
-        the PDB database.
+        Retrieves all Uniprot IDs associated with a PDB structure chains.
 
-        :param pdb_id: The PDB ID to search for. Chain or entity will be ignored.
         :return: a map: chain -> unp -> [ (s1,e1), ... ]
         where (s1,e1) are alignment start,end indices between the UNP and PDB sequences.
-        :raises pdb_api.PDBAPIException: If there's a problem obtaining the data.
         """
         # entity -> chain -> unp -> [ (s1,e1), ... ]
-        entity_map = cls.query_entity_uniprot_id_alignments(pdb_id)
+        entity_map = self.entity_uniprot_id_alignments
 
         all_chain_map = {}
         for entity_id, chain_map in entity_map.items():
@@ -398,22 +608,16 @@ class PDB2UNP(JSONCacheableMixin, object):
 
         return all_chain_map
 
-    @classmethod
-    def query_entity_uniprot_ids(
-        cls, pdb_id: str
-    ) -> Dict[str, Dict[str, Sequence[str]]]:
+    @property
+    def entity_uniprot_ids(self) -> Dict[str, Dict[str, Sequence[str]]]:
         """
-        Retrieves all Uniprot IDs associated with a PDB structure entities by querying
-        the PDB database.
+        Retrieves all Uniprot IDs associated with a PDB structure entities.
 
-        :param pdb_id: The PDB ID to search for. Chain or entity will be ignored.
         :return: a map: entity -> chain ->[unp1, unp2, ...]
         where unp1, unp2, ... are Uniprot IDs associated with the entity.
-        :raises pdb_api.PDBAPIException: If there's a problem obtaining the data.
         """
-
         # entity -> chain -> unp -> [ (s1,e1), ... ]
-        entity_map = cls.query_entity_uniprot_id_alignments(pdb_id)
+        entity_map = self.entity_uniprot_id_alignments
 
         new_entity_map = defaultdict(dict)
         for entity_id, chain_map in entity_map.items():
@@ -423,44 +627,27 @@ class PDB2UNP(JSONCacheableMixin, object):
 
         return dict(new_entity_map)
 
-    @classmethod
-    def query_entity_uniprot_id_alignments(
-        cls, pdb_id: str
+    @property
+    def entity_uniprot_id_alignments(
+        self,
     ) -> Dict[str, Dict[str, Dict[str, List[Tuple[int, int]]]]]:
         """
-        Retrieves all Uniprot IDs associated with a PDB structure entities by querying
-        the PDB database.
+        Retrieves all Uniprot IDs associated with a PDB structure entities.
 
-        :param pdb_id: The PDB ID to search for. Chain or entity will be ignored.
         :return: a map: entity -> chain -> unp -> [ (s1,e1), ...]
         where (s1,e1) are alignment start,end indices between the UNP and PDB sequences.
-        :raises pdb_api.PDBAPIException: If there's a problem obtaining the data.
         """
         map_to_unp_ids = {}
 
-        # Make sure we have a base id
-        pdb_id, _, _ = split_id_with_entity(pdb_id)
-
-        # Get all data for the PDB structure
-        entry_data = pdb_api.execute_raw_data_query(pdb_id)
-        entry_containers = entry_data["rcsb_entry_container_identifiers"]
-
-        # Find all polymer entities
-        entity_ids = entry_containers.get("polymer_entity_ids", [])
-        for entity_id in entity_ids:
-            entity_id = str(entity_id)
-            # Get all data about this entity
-            entity_data = pdb_api.execute_raw_data_query(pdb_id, entity_id=entity_id)
-
+        for entity_id, entity_meta in self._meta_entities.items():
             # Get list of chains and list of Uniprot IDs for this entity
-            entity_containers = entity_data["rcsb_polymer_entity_container_identifiers"]
-            entity_chains = entity_containers.get("asym_ids", [])
+            entity_containers = entity_meta["rcsb_polymer_entity_container_identifiers"]
             entity_unp_ids = entity_containers.get("uniprot_ids", [])
 
             unp_alignments: Dict[str, List[Tuple[int, int]]] = {
                 unp_id: [] for unp_id in entity_unp_ids
             }
-            for alignment_entry in entity_data.get("rcsb_polymer_entity_align", []):
+            for alignment_entry in entity_meta.get("rcsb_polymer_entity_align", []):
                 if alignment_entry["reference_database_name"].lower() != "uniprot":
                     continue
 
@@ -473,23 +660,106 @@ class PDB2UNP(JSONCacheableMixin, object):
                     align_end = align_start + alignment_region["length"] - 1
                     unp_alignments[unp_id].append((align_start, align_end))
 
+            entity_chains = [
+                # The same chain can be referred to by different labels,
+                # the canonical PDB label and another label given by the
+                # structure author.
+                *entity_containers.get("asym_ids", []),
+                *entity_containers.get("auth_asym_ids", []),
+            ]
+
             map_to_unp_ids[entity_id] = {
                 chain_id: unp_alignments for chain_id in entity_chains
             }
 
         return map_to_unp_ids
 
+    def as_dict(
+        self, chain_id: Optional[str] = None, seq_to_str: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Returns a dictionary containing all the metadata properties.
+
+        :param chain_id: Optional chain id to filter the metadata for. If provided,
+        only the metadata relevant to the chain will be returned.
+        :param seq_to_str: Whether to convert sequences to a string, joined by ','.
+        Useful for writing metadata.
+        :return: A dictionary containing all the metadata properties.
+        """
+        result_dict = {
+            k: getattr(self, k)
+            for k, v in self.__class__.__dict__.items()
+            if isinstance(v, property)
+        }
+        if not chain_id:
+            return result_dict
+
+        if chain_id not in self.chain_ids:
+            raise ValueError(f"Chain {chain_id} not found in {self.pdb_id}")
+
+        entity_id = self.chain_entities[chain_id]
+        filtered_result_dict = {}
+
+        for key, value in result_dict.items():
+            new_value = value
+
+            # If original value is a dict, take value corresponding to the chain
+            if isinstance(value, dict):
+                if entity_id in value:
+                    new_value = value[entity_id]
+                elif chain_id in value:
+                    new_value = value[chain_id]
+                else:
+                    continue
+
+            # If original value is a sequence, drop it
+            elif isinstance(value, (list, tuple)):
+                continue
+
+            # Append chain to pdb_id
+            elif value == self.pdb_id:
+                new_value = f"{self.pdb_id}:{chain_id}"
+
+            # If internal value is a dict, drop it
+            if isinstance(new_value, dict):
+                continue
+
+            # If internal value is a sequence, maybe convert it to a string
+            elif isinstance(new_value, (list, tuple)) and seq_to_str:
+                new_value = str.join(",", new_value)
+
+            filtered_result_dict[key] = new_value
+
+        return filtered_result_dict
+
+    def __repr__(self):
+        return str(self.as_dict())
+
     @classmethod
-    def pdb_id_to_unp_id(
-        cls,
-        pdb_id: str,
-        strict=True,
-        cache=False,
-    ) -> str:
+    def from_pdb(cls, pdb_id: str, cache=False) -> PDBMetadata:
+        """
+        Create a PDBMetadata object from a given PDB ID.
+        :param pdb_id: The PDB ID to map for. Chain will be ignored if present.
+        :param cache: Whether to load a cached mapping if available.
+        :return: A PDBMetadata object.
+        """
+        pdb_base_id, _ = split_id(pdb_id)
+
+        if cache:
+            pdb_meta = cls.from_cache(cache_attribs={"pdb_id": pdb_base_id})
+            if pdb_meta is not None:
+                return pdb_meta
+
+        pdb_meta = cls(pdb_id)
+        if cache:
+            pdb_meta.to_cache()
+        return pdb_meta
+
+    @classmethod
+    def pdb_id_to_unp_id(cls, pdb_id: str, strict=True, cache=False) -> str:
         """
         Given a PDB ID, returns a single Uniprot id for it.
-        :param pdb_id: PDB ID, with optional chain. If provided chain will
-        be used.
+        :param pdb_id: PDB ID, with optional chain.
         :param cache: Whether to use cached mapping.
         :param strict: Whether to raise an error (True) or just warn (False)
         if the PDB ID cannot be uniquely mapped to a single Uniprot ID.
@@ -500,186 +770,31 @@ class PDB2UNP(JSONCacheableMixin, object):
         :return: A Uniprot ID.
         """
         pdb_base_id, chain_id = split_id(pdb_id)
-        pdb2unp = cls.from_pdb(pdb_id, cache=cache)
+        meta = cls.from_pdb(pdb_id, cache=cache)
 
-        all_unp_ids = pdb2unp.get_all_unp_ids()
-        if not all_unp_ids:
+        if not meta.uniprot_ids:
             raise ValueError(f"No Uniprot entries exist for {pdb_base_id}")
 
         if not chain_id:
-            if len(all_unp_ids) > 1:
-                msg = (
-                    f"Multiple Uniprot IDs exists for {pdb_base_id}, and no "
-                    f"chain specified."
-                )
+            if len(meta.uniprot_ids) > 1:
+                msg = f"Multiple Uniprot IDs for {pdb_base_id}, no chain specified."
                 if strict:
                     raise ValueError(msg)
-                LOGGER.warning(
-                    f"{msg} Returning the first Uniprot ID " f"from the first chain."
-                )
+                LOGGER.warning(f"{msg} Returning first ID from the first chain.")
 
-            for chain_id, unp_ids in pdb2unp.get_chain_to_unp_ids().items():
+            for chain_id, unp_ids in meta.chain_uniprot_ids.items():
                 return unp_ids[0]
 
-        return pdb2unp.get_unp_id(chain_id, strict=strict)
+        if chain_id not in meta.chain_uniprot_ids:
+            raise ValueError(f"No Uniprot ID for chain {chain_id} of {pdb_base_id}")
 
-    @classmethod
-    def from_pdb(cls, pdb_id: str, cache=False) -> PDB2UNP:
-        """
-        Create a PDB2UNP mapping from a given PDB ID.
-        :param pdb_id: The PDB ID to map for. Chain will be ignored if present.
-        :param cache: Whether to load a cached mapping if available.
-        :return: A PDB2UNP mapping object.
-        """
-        pdb_base_id, _ = split_id(pdb_id)
+        if len(meta.chain_uniprot_ids[chain_id]) > 1:
+            msg = f"Multiple Uniprot IDs for {pdb_base_id} chain {chain_id} (chimeric)"
+            if strict:
+                raise ValueError(msg)
+            LOGGER.warning(f"{msg} Returning the first Uniprot ID.")
 
-        if cache:
-            pdb2unp = cls.from_cache(pdb_base_id)
-            if pdb2unp is not None:
-                return pdb2unp
-
-        pdb2unp = cls(pdb_id)
-        pdb2unp.save()
-        return pdb2unp
-
-    @classmethod
-    def from_cache(
-        cls, pdb_id, cache_dir: Union[str, Path] = pp5.PDB2UNP_DIR
-    ) -> Optional[PDB2UNP]:
-        pdb_id, _ = split_id(pdb_id)
-        filename = f"{pdb_id}.json"
-        return super(PDB2UNP, cls).from_cache(cache_dir, filename)
-
-
-class PDBMetadata(object):
-    """
-    Extracts metadata from a PDB structure.
-    Helpful metadata fields:
-    https://www.rcsb.org/pdb/results/reportField.do
-    """
-
-    def __init__(self, pdb_id: str, pdb_source: str = PDB_RCSB, struct_d=None):
-        """
-        :param pdb_id: The PDB ID of the structure.
-        :param struct_d: Optional dict which will be used if given, instead of
-        parsing the PDB file.
-        :param pdb_source: Source from which to obtain the pdb file.
-        """
-        pdb_base_id, chain_id = split_id(pdb_id)
-        struct_d = pdb_dict(pdb_id, pdb_source=pdb_source, struct_d=struct_d)
-
-        # For alphafold structures, default to zero resolution instead of NaN.
-        default_res = 0.0 if pdb_source == PDB_AFLD else None
-
-        def _meta(key: str, convert_to: Type = str, default=None):
-            val = struct_d.get(key, None)
-            if not val:
-                return default
-            if isinstance(val, list):
-                val = val[0]
-            if not val or val == "?":
-                return default
-            try:
-                return convert_to(val)
-            except ValueError:
-                return default
-
-        title = _meta("_struct.title")
-        description = _meta("_entity.pdbx_description")
-        deposition_date = _meta("_pdbx_database_status.recvd_initial_deposition_date")
-
-        src_org = _meta("_entity_src_nat.pdbx_organism_scientific")
-        if not src_org:
-            src_org = _meta("_entity_src_gen.pdbx_gene_src_scientific_name")
-
-        src_org_id = _meta("_entity_src_nat.pdbx_ncbi_taxonomy_id", int)
-        if not src_org_id:
-            src_org_id = _meta("_entity_src_gen.pdbx_gene_src_ncbi_taxonomy_id", int)
-
-        host_org = _meta("_entity_src_gen.pdbx_host_org_scientific_name")
-        host_org_id = _meta("_entity_src_gen.pdbx_host_org_ncbi_taxonomy_id", int)
-        resolution = _meta("_refine.ls_d_res_high", float, default=default_res)
-        resolution_low = _meta("_refine.ls_d_res_low", float, default=default_res)
-        r_free = _meta("_refine.ls_R_factor_R_free", float)
-        r_work = _meta("_refine.ls_R_factor_R_work", float)
-        space_group = _meta("_symmetry.space_group_name_H-M")
-
-        # Find ligands
-        ligands = set()
-        for i, chemical_type in enumerate(struct_d["_chem_comp.id"]):
-            if chemical_type.lower() == "hoh":
-                continue
-            if chemical_type not in STANDARD_ACID_NAMES:
-                ligands.add(chemical_type)
-        ligands = str.join(",", ligands)
-
-        # Crystal growth details
-        cg_ph = _meta("_exptl_crystal_grow.pH", float)
-        cg_temp = _meta("_exptl_crystal_grow.temp", float)
-
-        # Map each chain to entity id, and entity to 1-letter sequence.
-        chain_entities, entity_seq = {}, {}
-        for i, entity_id in enumerate(struct_d["_entity_poly.entity_id"]):
-            if not struct_d["_entity_poly.type"][i].startswith("polypeptide"):
-                continue
-
-            entity_id = int(entity_id)
-            chains_str = struct_d["_entity_poly.pdbx_strand_id"][i]
-            for chain in chains_str.split(","):
-                chain_entities[chain] = entity_id
-
-            seq_str: str = struct_d["_entity_poly.pdbx_seq_one_letter_code_can"][i]
-            seq_str = seq_str.replace("\n", "")
-            entity_seq[entity_id] = seq_str
-
-        self.pdb_id: str = pdb_base_id
-        self.pdb_source: str = pdb_source
-        self.title: str = title
-        self.description: str = description
-        self.deposition_date: str = deposition_date
-        self.src_org: str = src_org
-        self.src_org_id: int = src_org_id
-        self.host_org: str = host_org
-        self.host_org_id: int = host_org_id
-        self.resolution: float = resolution
-        self.resolution_low: float = resolution_low
-        self.r_free: float = r_free
-        self.r_work: float = r_work
-        self.space_group: str = space_group
-        self.ligands: str = ligands
-        self.cg_ph: float = cg_ph  # crystal growth pH
-        self.cg_temp: float = cg_temp  # crystal growth temperature
-        # mapping from chain_id to  entity_id
-        self.chain_entities: Dict[str, int] = chain_entities
-        # mapping from entity_id to sequence
-        self.entity_sequence: Dict[int, str] = entity_seq
-
-    def get_chain(self, entity_id: int) -> Optional[str]:
-        """
-        :param entity_id: An ID of one of the entities in this structure.
-        :return: One of the chains from teh structure belonging to this entity id,
-        or None if this is not a valid entity if for the given structure.
-        """
-        chains = [c for c, e in self.chain_entities.items() if e == entity_id]
-        if not chains:
-            return None
-        return sorted(chains)[0]
-
-    def as_dict(self) -> Dict[str, Any]:
-        return {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
-
-    @property
-    def entity_chains(self) -> Dict[int, Sequence[str]]:
-        """
-        :return: Mapping from entity id to a list of chains belonging to that entity.
-        """
-        entity_chains = defaultdict(list)
-        for chain, entity in self.chain_entities.items():
-            entity_chains[entity].append(chain)
-        return dict(entity_chains)
-
-    def __repr__(self):
-        return str(self.as_dict())
+        return meta.chain_uniprot_ids[chain_id][0]
 
 
 class PDBUnitCell(object):
