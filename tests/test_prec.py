@@ -146,9 +146,7 @@ class TestMethods:
 
         for res_id, res_contacts in valid_contacts.items():
             assert res_id in prec
-            assert res_contacts.contact_dmin > 0
-            if contact_method == CONTACT_METHOD_NEIGHBOR:
-                assert res_contacts.contact_dmax < contact_radius
+            assert res_contacts.contact_smax > 0
 
 
 class TestFromUnp:
