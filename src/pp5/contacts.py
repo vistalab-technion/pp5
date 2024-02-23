@@ -305,10 +305,6 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
             len(res_contacts_ooc) + len(res_contacts_non_aa) + len(res_contacts_aas)
         )
 
-        contact_dmin, contact_dmax = float("inf"), float("inf")
-        if contact_dists:
-            contact_dmin, contact_dmax = min(contact_dists), max(contact_dists)
-
         contact_smin, contact_smax = -1, -1
         if sequence_dists:
             contact_smin, contact_smax = min(sequence_dists), max(sequence_dists)
@@ -350,9 +346,6 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
             res_id=res_to_id(src_res),
             contact_count=contact_count,
             contact_types="proximal",  # use arpeggio name, but not meaningful here
-            contact_dmin=contact_dmin,
-            contact_dmax=contact_dmax,
-            contact_smin=contact_smin,
             contact_smax=contact_smax,
             contact_ooc=_format_unique_contacts(res_contacts_ooc),
             contact_non_aa=_format_unique_contacts(res_contacts_non_aa),
@@ -363,6 +356,13 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
 class ResidueContacts(object):
     """
     Represents a single residue's tertiary contacts in a protein record.
+
+    # TODO:
+    #  This string-based ResidueContacts should be only for Arpeggio contacts
+    #  (legacy), and a separate ResidueContacts class should be created based on
+    #  a sequence of AtomContacts. Conversely, we can refactor the
+    #  ArpeggioContactsAssigned to generate AtomContacts, and then we'd only need one
+    #  type of ResidueContacts.
     """
 
     def __init__(
@@ -370,13 +370,11 @@ class ResidueContacts(object):
         res_id: Union[str, int],
         contact_count: int,
         contact_types: Union[Set[str], str],
-        contact_dmin: float,
-        contact_dmax: float,
-        contact_smin: Union[int, float],
         contact_smax: Union[int, float],
         contact_ooc: Union[Sequence[str], str],
         contact_non_aa: Union[Sequence[str], str],
         contact_aas: Union[Sequence[str], str],
+        **kwargs_ignored,  # ignore any other args (passed in from Arpeggio)
     ):
         def _split(s: str):
             s_split = s.split(",")
@@ -399,9 +397,6 @@ class ResidueContacts(object):
         self.res_id = str(res_id)
         self.contact_count = int(contact_count or 0)
         self.contact_types = tuple(contact_types)
-        self.contact_dmin = float(contact_dmin or 0)
-        self.contact_dmax = float(contact_dmax or 0)
-        self.contact_smin = int(contact_smin or 0)
         self.contact_smax = int(contact_smax or 0)
         self.contact_ooc = tuple(contact_ooc)
         self.contact_non_aa = tuple(contact_non_aa)
@@ -414,9 +409,6 @@ class ResidueContacts(object):
         d = dict(
             contact_count=self.contact_count,
             contact_types=_join(self.contact_types),
-            contact_dmin=self.contact_dmin,
-            contact_dmax=self.contact_dmax,
-            contact_smin=self.contact_smin,
             contact_smax=self.contact_smax,
             contact_ooc=_join(self.contact_ooc),
             contact_non_aa=_join(self.contact_non_aa),
