@@ -229,7 +229,7 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
         ) -> str:
             _tgt_resname = ACIDS_3TO1.get(_tgt_resname, _tgt_resname)
             _tgt_altloc = f":{_tgt_altloc}" if _tgt_altloc else ""
-            return f"{_tgt_chain_id}:{_tgt_resname}{_tgt_seq_idx}{_tgt_altloc}"
+            return f"{_tgt_chain_id}:{_tgt_resname}:{_tgt_seq_idx}{_tgt_altloc}"
 
         for src_atom, tgt_atom in atom_contacts:
             assert src_res == src_atom.get_parent()
