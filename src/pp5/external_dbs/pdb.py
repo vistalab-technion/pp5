@@ -259,7 +259,7 @@ class PDBMetadata(Cacheable):
     Obtains and parses metadata from a PDB structure using PDB REST API.
     """
 
-    _CACHE_SETTINGS = CacheSettings(cache_dir=PDB_METADATA_DIR)
+    _CACHE_SETTINGS = CacheSettings(cache_dir=PDB_METADATA_DIR, cache_compression=True)
 
     def __init__(self, pdb_id: str):
         """
