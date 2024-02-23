@@ -559,6 +559,28 @@ class PDBRFreeQuery(PDBAttributeSearchQuery):
         )
 
 
+class PDBNumberOfChainsQuery(PDBAttributeSearchQuery):
+    """
+    Queries for structures by their number of chains.
+    """
+
+    def __init__(
+        self, n_chains: int, comparison_operator: str = "less_or_equal", **base_kwargs
+    ):
+        """
+        :param n_chains: The number of chains argument for the query.
+        :param comparison_operator: How to compare.
+        :param base_kwargs: Args for PDBQuery.
+        """
+        super().__init__(
+            attribute_name="rcsb_entry_info.deposited_polymer_entity_instance_count",
+            attribute_value=int(n_chains),
+            comparison_type=comparison_operator,
+            attribute_display_name="Number of Chains",
+            **base_kwargs,
+        )
+
+
 class PDBDepositionDateQuery(PDBCompositeQuery):
     """
     Queries for structures by their deposition date.
