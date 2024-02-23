@@ -273,6 +273,30 @@ class TestPDBRFreeQuery:
         assert len(results) >= 63
 
 
+class TestPDBNumberOfChainsQuery:
+    def test_1(self):
+        query = pdb_api.PDBCompositeQuery(
+            pdb_api.PDBNumberOfChainsQuery(
+                n_chains=16,
+                comparison_operator="greater",
+                # return_type=pdb_api.PDBQuery.ReturnType.ENTITY,
+            ),
+            pdb_api.PDBNumberOfChainsQuery(
+                n_chains=20,
+                comparison_operator="less_or_equal",
+                # return_type=pdb_api.PDBQuery.ReturnType.ENTITY,
+            ),
+            pdb_api.PDBXRayResolutionQuery(
+                resolution=2.0,
+                comparison_operator="less_or_equal",
+                # return_type=pdb_api.PDBQuery.ReturnType.ENTITY,
+            ),
+            return_type=pdb_api.PDBQuery.ReturnType.ENTRY,
+        )
+        results = query.execute()
+        assert len(results) >= 27
+
+
 class TestPDBDepositionDateQuery:
     @pytest.mark.parametrize(
         "min_date", ["2022-01-31", datetime.fromisoformat("2022-01-31")]
