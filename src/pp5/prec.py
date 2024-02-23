@@ -528,6 +528,8 @@ class ProteinRecord(object):
         :return: Loaded ProteinRecord, or None if the cached prec does not
         exist.
         """
+        # TODO: Prec should use Cacheable base class instead of this custom approach.
+
         if not isinstance(cache_dir, (str, Path)):
             cache_dir = pp5.PREC_DIR
 
