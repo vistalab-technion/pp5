@@ -835,7 +835,7 @@ class ProteinRecord(object):
         pdb_aa_seq, residues = "", []
         # Extract the residues from the PDB structure
         curr_res: Residue
-        chain: Chain = self.pdb_rec[0][self.pdb_chain_id]
+        chain: Chain = self.pdb_rec[0][self.pdb_auth_chain_id]
         for curr_res in chain.get_residues():
             # Skip water molecules
             if curr_res.resname == "HOH":
