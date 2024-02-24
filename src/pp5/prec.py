@@ -98,7 +98,7 @@ class ResidueRecord(object):
 
     def __init__(
         self,
-        res_id: Union[str, int],
+        res_seq_idx: int,
         unp_idx: int,
         rel_loc: float,
         name: str,
@@ -109,12 +109,14 @@ class ResidueRecord(object):
         num_altlocs: int,
         backbone_coords: Optional[Dict[str, Optional[np.ndarray]]] = None,
         contacts: Optional[ResidueContacts] = None,
+        res_icode: str = "",
+        res_hflag: str = "",
     ):
         """
-
-        :param res_id: identifier of this residue in the sequence, usually an
-            integer + insertion code if present, which indicates some alteration
-            compared to the wild-type.
+        :param res_seq_idx: index of this residue in the sequence.
+        :param res_icode: insertion code, if present, which indicates some alteration
+            or a missing residue in the structure if equal to ICODE_MISSING_RESIDUE.
+        :param res_hflag: hetero flag, if present, which indicates a non-standard AA.
         :param unp_idx: index of this residue in the corresponding UNP record.
         :param rel_loc: relative location of this residue in the protein sequence,
             a number between 0 and 1.
@@ -142,7 +144,12 @@ class ResidueRecord(object):
             codon_score = max_count / total_count if total_count else 0
             codon_opts = codon_counts.keys()
 
-        self.res_id, self.name = str(res_id), name
+        self.res_seq_idx, self.res_icode, self.res_hflag = (
+            res_seq_idx,
+            res_icode,
+            res_hflag,
+        )
+        self.name = name
         self.unp_idx, self.rel_loc = unp_idx, rel_loc
         self.codon, self.codon_score = best_codon, codon_score
         self.codon_opts = str.join(CODON_OPTS_SEP, codon_opts)
@@ -151,6 +158,14 @@ class ResidueRecord(object):
         self.num_altlocs = num_altlocs
         self.backbone_coords = backbone_coords or {}
         self.contacts = contacts
+
+    @property
+    def res_id(self) -> str:
+        """
+        :return: The residue id, including insertion code and hetero flag.
+        Similar to biopython's id.
+        """
+        return f"{self.res_hflag}{self.res_seq_idx}{self.res_icode}"
 
     def as_dict(self, dihedral_args: Dict[str, Any] = None):
         """
@@ -161,9 +176,11 @@ class ResidueRecord(object):
         :return: A dict representation of this residue.
         """
         return dict(
-            res_id=self.res_id,
-            name=self.name,
+            pdb_idx=self.res_seq_idx,
             unp_idx=self.unp_idx,
+            res_name=self.name,
+            res_icode=self.res_icode,
+            res_hflag=self.res_hflag,
             rel_loc=self.rel_loc,
             **(
                 dict(
@@ -303,7 +320,9 @@ class AltlocNameMap(dict):
 class AltlocResidueRecord(ResidueRecord):
     def __init__(
         self,
-        res_id: Union[str, int],
+        res_seq_idx: int,
+        res_icode: str,
+        res_hflag: str,
         unp_idx: int,
         rel_loc: float,
         name: str,
@@ -350,7 +369,9 @@ class AltlocResidueRecord(ResidueRecord):
         self.altloc_contacts = altloc_contacts or {}
 
         super().__init__(
-            res_id=res_id,
+            res_seq_idx=res_seq_idx,
+            res_icode=res_icode,
+            res_hflag=res_hflag,
             unp_idx=unp_idx,
             rel_loc=rel_loc,
             name=name,
@@ -380,8 +401,16 @@ class AltlocResidueRecord(ResidueRecord):
         with_contacts: bool = False,
         contacts_assigner: Optional[ContactsAssigner] = None,
     ):
-        res_id: str = res_to_id(r_curr)
-        res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
+        # Parse residue id
+        res_seq_idx: int
+        res_hflag: str
+        res_icode: str
+        res_hflag, res_seq_idx, res_icode = r_curr.get_id()
+        res_seq_idx = int(res_seq_idx)
+        res_hflag = res_hflag.strip()
+        res_icode = res_icode.strip()
+        res_name: str = r_curr.get_resname()
+        res_name = ACIDS_3TO1.get(res_name, res_name)  # keep name for non-standard AAs
 
         # mapping atom_name -> [altloc_id1, altloc_id2, ...]
         altloc_ids: Dict[str, Sequence[str]] = {
@@ -425,7 +454,9 @@ class AltlocResidueRecord(ResidueRecord):
             )
 
         return cls(
-            res_id=res_id,
+            res_seq_idx=res_seq_idx,
+            res_icode=res_icode,
+            res_hflag=res_hflag,
             unp_idx=unp_idx,
             rel_loc=rel_loc,
             name=res_name,
