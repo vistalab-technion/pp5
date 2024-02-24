@@ -1331,7 +1331,7 @@ class ResidueMatch(ResidueRecord):
         )
 
         query_res = ResidueRecord(
-            res_id=_join(q.res_id for q in query_residues),
+            res_seq_idx=query_residues[0].res_seq_idx,
             unp_idx=query_residues[0].unp_idx,
             rel_loc=query_residues[0].rel_loc,
             name=_join(q.name for q in query_residues),
