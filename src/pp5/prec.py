@@ -27,6 +27,7 @@ import pandas as pd
 from Bio.PDB import PPBuilder
 from Bio.Seq import Seq
 from Bio.Align import PairwiseAligner
+from Bio.PDB.Chain import Chain
 from Bio.SeqRecord import SeqRecord
 from Bio.PDB.Residue import Residue
 from Bio.PDB.Polypeptide import Polypeptide
@@ -35,6 +36,7 @@ import pp5
 from pp5.align import BLOSUM80
 from pp5.utils import ProteinInitError, filelock_context
 from pp5.codons import (
+    ACIDS_1TO3,
     ACIDS_3TO1,
     UNKNOWN_AA,
     CODON_TABLE,
@@ -84,6 +86,9 @@ DEFAULT_ANGLE_CALC = DihedralAngleCalculator()
 DEFAULT_BFACTOR_CALC = AtomLocationUncertainty(
     backbone_only=True, unit_cell=None, isotropic=True, scale_as_bfactor=True
 )
+
+# Special insertion code to mark a residue that was missing from the structure.
+ICODE_MISSING_RESIDUE = "M"
 
 
 class ResidueRecord(object):
@@ -827,36 +832,73 @@ class ProteinRecord(object):
             dihedral_est_name, dihedral_est_args
         )
 
-        # Extract the residues from the PDB structure
         pdb_aa_seq, residues = "", []
-        for i, pp in enumerate(self.polypeptides):
-            first_res: Residue = pp[0]
-            _, curr_start_idx, _ = first_res.get_id()
+        # Extract the residues from the PDB structure
+        curr_res: Residue
+        chain: Chain = self.pdb_rec[0][self.pdb_chain_id]
+        for curr_res in chain.get_residues():
+            # Skip water molecules
+            if curr_res.resname == "HOH":
+                continue
 
-            # More than one pp means there are gaps due to non-standard AAs
-            if i > 0:
-                # Calculate index gap between this polypeptide and previous
-                prev_pp_last_res: Residue = self.polypeptides[i - 1][-1]
-                _, prev_end_idx, _ = prev_pp_last_res.get_id()
-                gap_len = curr_start_idx - prev_end_idx - 1
-
-                # fill in the gaps
-                pdb_aa_seq += UNKNOWN_AA * gap_len
-                residues.extend(
-                    [
-                        Residue(("", j, ""), UNKNOWN_AA, i)
-                        for j in range(prev_end_idx + 1, curr_start_idx)
-                    ]
-                )
-
-            pdb_aa_seq += str(pp.get_sequence())
-            residues.extend(pp)
+            # For non-standard AAs, we place an 'X' in the sequence, but we still
+            # keep these residues.
+            res_name_single = ACIDS_3TO1.get(curr_res.get_resname(), UNKNOWN_AA)
+            pdb_aa_seq += res_name_single
+            residues.append(curr_res)
 
         assert len(pdb_aa_seq) == len(residues)
-        n_residues = len(pdb_aa_seq)
 
+        # Add un-modelled residues by aligning to UNP:
+        # In case of non-modelled residues in the structure, they will be missing
+        # from the pdb_aa_seq and residues list, since they don't appear in
+        # biopython's structure. We will add them back using alignment to Uniprot.
         # Find the alignment between the PDB AA sequence and the Uniprot AA sequence.
         pdb_to_unp_idx = self._find_unp_alignment(pdb_aa_seq, self.unp_rec.sequence)
+
+        for curr_pdb_idx in pdb_to_unp_idx.keys():
+            next_pdb_idx = curr_pdb_idx + 1
+            if next_pdb_idx not in pdb_to_unp_idx:
+                # Either this is the last one, or the next one is not in the
+                # alignment (can happen if it's a non-standard AA)
+                continue
+
+            curr_unp_idx = pdb_to_unp_idx[curr_pdb_idx]
+            next_unp_idx = pdb_to_unp_idx[next_pdb_idx]
+
+            # Detect a gap in the alignment to UNP
+            gap_len = next_unp_idx - curr_unp_idx - 1
+            if gap_len == 0:
+                continue
+
+            # Here, we have two adjacent residues in the pdb structure are aligned to
+            # non-adjacent residues in the unp sequence. It means that there are
+            # missing residues in the structure, i.e. the pdb sequence we created is
+            # not complete.
+            curr_residue = residues[curr_pdb_idx]
+            curr_residue_seq_idx = curr_residue.get_id()[1]
+            for j, gap_unp_idx in enumerate(range(curr_unp_idx + 1, next_unp_idx)):
+                missing_res_name_single = self.unp_rec.sequence[gap_unp_idx]
+                missing_res_name = ACIDS_1TO3[missing_res_name_single]
+
+                gap_pdb_idx = next_pdb_idx + j
+                gap_pdb_seq_idx = curr_residue_seq_idx + j + 1
+
+                residues.insert(  # inserts BEFORE the given index
+                    gap_pdb_idx,
+                    Residue(
+                        (" ", gap_pdb_seq_idx, ICODE_MISSING_RESIDUE),
+                        missing_res_name,
+                        0,
+                    ),
+                )
+
+        # Update PDB sequence to include any missing residues we added
+        pdb_aa_seq = str.join(
+            "", [ACIDS_3TO1.get(r.resname, UNKNOWN_AA) for r in residues]
+        )
+        assert len(pdb_aa_seq) == len(residues)
+        n_residues = len(pdb_aa_seq)
 
         # Find the best matching DNA for our AA sequence via pairwise alignment
         # between the PDB AA sequence and translated DNA sequences.
