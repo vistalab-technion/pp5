@@ -27,6 +27,7 @@ import pandas as pd
 from Bio.PDB import PPBuilder
 from Bio.Seq import Seq
 from Bio.Align import PairwiseAligner
+from Bio.PDB.Chain import Chain
 from Bio.SeqRecord import SeqRecord
 from Bio.PDB.Residue import Residue
 from Bio.PDB.Polypeptide import Polypeptide
@@ -35,6 +36,7 @@ import pp5
 from pp5.align import BLOSUM80
 from pp5.utils import ProteinInitError, filelock_context
 from pp5.codons import (
+    ACIDS_1TO3,
     ACIDS_3TO1,
     UNKNOWN_AA,
     CODON_TABLE,
@@ -85,6 +87,9 @@ DEFAULT_BFACTOR_CALC = AtomLocationUncertainty(
     backbone_only=True, unit_cell=None, isotropic=True, scale_as_bfactor=True
 )
 
+# Special insertion code to mark a residue that was missing from the structure.
+ICODE_MISSING_RESIDUE = "M"
+
 
 class ResidueRecord(object):
     """
@@ -93,7 +98,7 @@ class ResidueRecord(object):
 
     def __init__(
         self,
-        res_id: Union[str, int],
+        res_seq_idx: int,
         unp_idx: int,
         rel_loc: float,
         name: str,
@@ -104,12 +109,14 @@ class ResidueRecord(object):
         num_altlocs: int,
         backbone_coords: Optional[Dict[str, Optional[np.ndarray]]] = None,
         contacts: Optional[ResidueContacts] = None,
+        res_icode: str = "",
+        res_hflag: str = "",
     ):
         """
-
-        :param res_id: identifier of this residue in the sequence, usually an
-            integer + insertion code if present, which indicates some alteration
-            compared to the wild-type.
+        :param res_seq_idx: index of this residue in the sequence.
+        :param res_icode: insertion code, if present, which indicates some alteration
+            or a missing residue in the structure if equal to ICODE_MISSING_RESIDUE.
+        :param res_hflag: hetero flag, if present, which indicates a non-standard AA.
         :param unp_idx: index of this residue in the corresponding UNP record.
         :param rel_loc: relative location of this residue in the protein sequence,
             a number between 0 and 1.
@@ -137,7 +144,12 @@ class ResidueRecord(object):
             codon_score = max_count / total_count if total_count else 0
             codon_opts = codon_counts.keys()
 
-        self.res_id, self.name = str(res_id), name
+        self.res_seq_idx, self.res_icode, self.res_hflag = (
+            res_seq_idx,
+            res_icode,
+            res_hflag,
+        )
+        self.name = name
         self.unp_idx, self.rel_loc = unp_idx, rel_loc
         self.codon, self.codon_score = best_codon, codon_score
         self.codon_opts = str.join(CODON_OPTS_SEP, codon_opts)
@@ -146,6 +158,14 @@ class ResidueRecord(object):
         self.num_altlocs = num_altlocs
         self.backbone_coords = backbone_coords or {}
         self.contacts = contacts
+
+    @property
+    def res_id(self) -> str:
+        """
+        :return: The residue id, including insertion code and hetero flag.
+        Similar to biopython's id.
+        """
+        return f"{self.res_hflag}{self.res_seq_idx}{self.res_icode}"
 
     def as_dict(self, dihedral_args: Dict[str, Any] = None):
         """
@@ -156,9 +176,11 @@ class ResidueRecord(object):
         :return: A dict representation of this residue.
         """
         return dict(
-            res_id=self.res_id,
-            name=self.name,
+            pdb_idx=self.res_seq_idx,
             unp_idx=self.unp_idx,
+            res_name=self.name,
+            res_icode=self.res_icode,
+            res_hflag=self.res_hflag,
             rel_loc=self.rel_loc,
             **(
                 dict(
@@ -298,7 +320,9 @@ class AltlocNameMap(dict):
 class AltlocResidueRecord(ResidueRecord):
     def __init__(
         self,
-        res_id: Union[str, int],
+        res_seq_idx: int,
+        res_icode: str,
+        res_hflag: str,
         unp_idx: int,
         rel_loc: float,
         name: str,
@@ -345,7 +369,9 @@ class AltlocResidueRecord(ResidueRecord):
         self.altloc_contacts = altloc_contacts or {}
 
         super().__init__(
-            res_id=res_id,
+            res_seq_idx=res_seq_idx,
+            res_icode=res_icode,
+            res_hflag=res_hflag,
             unp_idx=unp_idx,
             rel_loc=rel_loc,
             name=name,
@@ -375,8 +401,16 @@ class AltlocResidueRecord(ResidueRecord):
         with_contacts: bool = False,
         contacts_assigner: Optional[ContactsAssigner] = None,
     ):
-        res_id: str = res_to_id(r_curr)
-        res_name: str = ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
+        # Parse residue id
+        res_seq_idx: int
+        res_hflag: str
+        res_icode: str
+        res_hflag, res_seq_idx, res_icode = r_curr.get_id()
+        res_seq_idx = int(res_seq_idx)
+        res_hflag = res_hflag.strip()
+        res_icode = res_icode.strip()
+        res_name: str = r_curr.get_resname()
+        res_name = ACIDS_3TO1.get(res_name, res_name)  # keep name for non-standard AAs
 
         # mapping atom_name -> [altloc_id1, altloc_id2, ...]
         altloc_ids: Dict[str, Sequence[str]] = {
@@ -420,7 +454,9 @@ class AltlocResidueRecord(ResidueRecord):
             )
 
         return cls(
-            res_id=res_id,
+            res_seq_idx=res_seq_idx,
+            res_icode=res_icode,
+            res_hflag=res_hflag,
             unp_idx=unp_idx,
             rel_loc=rel_loc,
             name=res_name,
@@ -827,36 +863,73 @@ class ProteinRecord(object):
             dihedral_est_name, dihedral_est_args
         )
 
-        # Extract the residues from the PDB structure
         pdb_aa_seq, residues = "", []
-        for i, pp in enumerate(self.polypeptides):
-            first_res: Residue = pp[0]
-            _, curr_start_idx, _ = first_res.get_id()
+        # Extract the residues from the PDB structure
+        curr_res: Residue
+        chain: Chain = self.pdb_rec[0][self.pdb_auth_chain_id]
+        for curr_res in chain.get_residues():
+            # Skip water molecules
+            if curr_res.resname == "HOH":
+                continue
 
-            # More than one pp means there are gaps due to non-standard AAs
-            if i > 0:
-                # Calculate index gap between this polypeptide and previous
-                prev_pp_last_res: Residue = self.polypeptides[i - 1][-1]
-                _, prev_end_idx, _ = prev_pp_last_res.get_id()
-                gap_len = curr_start_idx - prev_end_idx - 1
-
-                # fill in the gaps
-                pdb_aa_seq += UNKNOWN_AA * gap_len
-                residues.extend(
-                    [
-                        Residue(("", j, ""), UNKNOWN_AA, i)
-                        for j in range(prev_end_idx + 1, curr_start_idx)
-                    ]
-                )
-
-            pdb_aa_seq += str(pp.get_sequence())
-            residues.extend(pp)
+            # For non-standard AAs, we place an 'X' in the sequence, but we still
+            # keep these residues.
+            res_name_single = ACIDS_3TO1.get(curr_res.get_resname(), UNKNOWN_AA)
+            pdb_aa_seq += res_name_single
+            residues.append(curr_res)
 
         assert len(pdb_aa_seq) == len(residues)
-        n_residues = len(pdb_aa_seq)
 
+        # Add un-modelled residues by aligning to UNP:
+        # In case of non-modelled residues in the structure, they will be missing
+        # from the pdb_aa_seq and residues list, since they don't appear in
+        # biopython's structure. We will add them back using alignment to Uniprot.
         # Find the alignment between the PDB AA sequence and the Uniprot AA sequence.
         pdb_to_unp_idx = self._find_unp_alignment(pdb_aa_seq, self.unp_rec.sequence)
+
+        for curr_pdb_idx in pdb_to_unp_idx.keys():
+            next_pdb_idx = curr_pdb_idx + 1
+            if next_pdb_idx not in pdb_to_unp_idx:
+                # Either this is the last one, or the next one is not in the
+                # alignment (can happen if it's a non-standard AA)
+                continue
+
+            curr_unp_idx = pdb_to_unp_idx[curr_pdb_idx]
+            next_unp_idx = pdb_to_unp_idx[next_pdb_idx]
+
+            # Detect a gap in the alignment to UNP
+            gap_len = next_unp_idx - curr_unp_idx - 1
+            if gap_len == 0:
+                continue
+
+            # Here, we have two adjacent residues in the pdb structure are aligned to
+            # non-adjacent residues in the unp sequence. It means that there are
+            # missing residues in the structure, i.e. the pdb sequence we created is
+            # not complete.
+            curr_residue = residues[curr_pdb_idx]
+            curr_residue_seq_idx = curr_residue.get_id()[1]
+            for j, gap_unp_idx in enumerate(range(curr_unp_idx + 1, next_unp_idx)):
+                missing_res_name_single = self.unp_rec.sequence[gap_unp_idx]
+                missing_res_name = ACIDS_1TO3[missing_res_name_single]
+
+                gap_pdb_idx = next_pdb_idx + j
+                gap_pdb_seq_idx = curr_residue_seq_idx + j + 1
+
+                residues.insert(  # inserts BEFORE the given index
+                    gap_pdb_idx,
+                    Residue(
+                        (" ", gap_pdb_seq_idx, ICODE_MISSING_RESIDUE),
+                        missing_res_name,
+                        0,
+                    ),
+                )
+
+        # Update PDB sequence to include any missing residues we added
+        pdb_aa_seq = str.join(
+            "", [ACIDS_3TO1.get(r.resname, UNKNOWN_AA) for r in residues]
+        )
+        assert len(pdb_aa_seq) == len(residues)
+        n_residues = len(pdb_aa_seq)
 
         # Find the best matching DNA for our AA sequence via pairwise alignment
         # between the PDB AA sequence and translated DNA sequences.
