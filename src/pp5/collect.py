@@ -167,9 +167,10 @@ class ParallelDataCollector(abc.ABC):
                     step_status, step_message = "SUCCESS", None
                 except Exception as e:
                     LOGGER.error(
-                        f"Unexpected exception in top-level " f"collect", exc_info=e
+                        f"Unexpected exception in top-level collect", exc_info=e
                     )
                     step_status, step_message = "FAIL", f"{e}"
+                    break  # don't move on to the next step
                 finally:
                     step_elapsed = time.time() - step_start_time
                     step_elapsed = elapsed_seconds_to_dhms(step_elapsed)

@@ -143,17 +143,16 @@ def yield_async_results(
     failed_results: Set[_T] = set()
 
     def _yield_result(_res_name: _T, _res: AsyncResult):
+        result = None
         try:
+            result = _res.get()
             success_results.add(_res_name)
-            yield _res_name, _res.get()
         except Exception as e:
             if re_raise:
                 raise e
-            LOGGER.error(
-                f"AsyncResult {_res_name} raised {type(e)}: " f"{e}", exc_info=e
-            )
+            LOGGER.error(f"AsyncResult {_res_name} raised {type(e)}: {e}", exc_info=e)
             failed_results.add(_res_name)
-            yield _res_name, None
+        yield _res_name, result
 
     while True:
         # Split by whether the result is ready, so we can get these without waiting.
@@ -175,7 +174,10 @@ def yield_async_results(
 
         # Break if there's nothing left to do
         if not len(not_ready_results):
-            LOGGER.info(f"Finished processing {len(async_results)} async results")
+            LOGGER.info(
+                f"Finished processing {len(async_results)} async results "
+                f"(#success={len(success_results)}, #failed={len(failed_results)})"
+            )
             break
 
         # Get next not-ready result
@@ -194,8 +196,9 @@ def yield_async_results(
             failed_results.add(res_name)
             LOGGER.error(f"*** MAX RETRIES REACHED FOR {res_name}")
 
-    # Sanity: Make sure we processed all AsyncResults
-    assert len(success_results) + len(failed_results) == len(async_results)
+    # Sanity: Make sure we processed all AsyncResults (should never happen)
+    if len(success_results) + len(failed_results) != len(async_results):
+        LOGGER.warning("AsyncResult mismatch: not all async results were processed")
 
 
 def _cleanup():
