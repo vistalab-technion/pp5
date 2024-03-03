@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from Bio.PDB import NeighborSearch
 from Bio.PDB.Atom import Atom
-from Bio.PDB.Residue import Residue
+from Bio.PDB.Residue import Residue, DisorderedResidue
 
 import pp5
 from pp5.codons import ACIDS_3TO1, UNKNOWN_AA
@@ -183,6 +183,12 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
         self._contacts_from = NeighborSearch(list(atoms))
 
     def assign(self, res: Residue) -> Dict[str, Optional[ResidueContacts]]:
+
+        # In rare cases, a residue may be disordered and contain other residues.
+        # This means there's a point mutation and both original and mutated residues
+        # are present in the crystal. We ignore this and just use the selected residue.
+        if isinstance(res, DisorderedResidue):
+            res = res.disordered_get()
 
         # Get all atoms from within the residue, including side chain atoms
         all_atoms = tuple(res.get_atoms())
