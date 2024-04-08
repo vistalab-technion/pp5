@@ -37,7 +37,12 @@ def atom_location_sigma(atom: Atom) -> float:
     :param atom: The atom to calculate the sigma for.
     :return: The sigma in Angstroms.
     """
-    return math.sqrt(atom.get_bfactor() / CONST_8PI2)
+    bfactor = atom.get_bfactor()
+    if bfactor < 0:
+        # In very rare cases, the B-factor of some atom in a PDB file is negative,
+        # which doesn't make sense (e.g. 1D9U:B).
+        return float("nan")
+    return math.sqrt(bfactor / CONST_8PI2)
 
 
 def residue_backbone_atoms(res: Residue) -> Sequence[Atom]:

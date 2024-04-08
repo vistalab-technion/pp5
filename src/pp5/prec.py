@@ -1217,6 +1217,14 @@ class ProteinRecord(object):
         aligner = PairwiseAligner(
             substitution_matrix=BLOSUM80, open_gap_score=-10, extend_gap_score=-0.5
         )
+
+        # In rare cases, there could be unknown letters in the sequences. This causes
+        # the alignment to break. Replace with "X" which the aligner can handle.
+        unknown_aas = set(pdb_aa_seq).union(set(unp_aa_seq)) - set(ACIDS_1TO3)
+        for unk_aa in unknown_aas:  # usually there are none
+            unp_aa_seq = unp_aa_seq.replace(unk_aa, UNKNOWN_AA)
+            pdb_aa_seq = pdb_aa_seq.replace(unk_aa, UNKNOWN_AA)
+
         multi_alignments = aligner.align(pdb_aa_seq, unp_aa_seq)
         alignment = sorted(multi_alignments, key=lambda a: a.score)[-1]
         LOGGER.info(f"{self}: PDB to UNP sequence alignment score={alignment.score}")
