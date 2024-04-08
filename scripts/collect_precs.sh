@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PROCESSES=72
+PROCESSES=84
 
 EXPR_HUMAN="Homo sapiens"
 EXPR_ECOLI="Escherichia Coli"
@@ -12,7 +12,8 @@ SRC_ECOLI="562"
 SRC_BACTERIA="2"
 SRC_ALL=""
 
-TIMEOUT="600"
+ASYNC_TIMEOUT="3600"
+ASYNC_RETRY_DELTA="5"
 
 
 set -eux
@@ -28,14 +29,17 @@ RESOLUTION="3.5"
 RFREE="0.33"
 SIMILARITY="1.0"
 PDB_SOURCE="rc" # rc, re, af
+MAX_CHAINS="20"
 TAG="r${RESOLUTION}-${PDB_SOURCE}"
 pp5 \
   -p="$PROCESSES" collect-prec \
-  --async-timeout="$TIMEOUT" \
+  --async-timeout="$ASYNC_TIMEOUT" \
+  --async-retry-delta="$ASYNC_RETRY_DELTA" \
   --expr-sys="$EXPR_ALL" \
   --source-taxid="$SRC_ALL" \
   --resolution="$RESOLUTION" \
   --r-free="$RFREE" \
+  --query-max-chains="$MAX_CHAINS" \
   --seq-similarity-thresh="$SIMILARITY" \
   --pdb-source="$PDB_SOURCE" \
   --out-tag="altlocs-$TAG" \
@@ -58,7 +62,7 @@ pp5 \
 #   --seq-similarity-thresh="$SIMILARITY" \
 #   --pdb-source="$PDB_SOURCE" \
 #   --out-tag="ex_EC-src_ALL-$TAG" \
-#   --async-timeout="$TIMEOUT" \
+#   --async-timeout="$ASYNC_TIMEOUT" \
 #   --with-backbone \
 #   --with-contacts \
 #   --no-write-csv
@@ -73,6 +77,6 @@ pp5 \
 #     --seq-similarity-thresh=0.7 \
 #     --pdb-source=rc \
 #     --out-tag="ex_EC-src_EC-natcom" \
-#     --async-timeout="$TIMEOUT" \
+#     --async-timeout="$ASYNC_TIMEOUT" \
 #     --no-write-csv
 
