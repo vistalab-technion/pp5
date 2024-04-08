@@ -4,10 +4,15 @@ This repo contains an implementation of a toolkit for analysis of protein backbo
 structure, specifically for: (i) estimating the distribution of dihedral angles and
 quantifying the differences between such distributions; (ii) finding matched pairs
 of proteins with regions of identical sequence and contacts but different backbone
-structure.
+structure; (iii) collection of protein datasets from the PDB which contain codon and
+altloc information.
 
 It contains the code required to collect the data and reproduce the results of
 these papers:
+
+    Aviv A. Rosenberg, Ailie Marx, Alex Bronstein.
+    "A catalogue of alternately located segments in protein crystal structures."
+    Unpublished (2024).
 
     Aviv A. Rosenberg, Alex M. Bronstein, Ailie Marx.
     "Does one sequence always translate to one structure?"
@@ -16,7 +21,7 @@ these papers:
     Aviv A. Rosenberg, Nitsan Yehishalom, Ailie Marx, Alex Bronstein.
     "An amino domino model described by a cross peptide bond Ramachandran plot
     defines amino acid pairs as local structural units"
-    Unpublished (2023).
+    PNAS (2023).
 
     Aviv A. Rosenberg, Ailie Marx and Alex M. Bronstein.
     "Codon-specific Ramachandran plots show amino acid backbone conformation depends on
@@ -86,6 +91,50 @@ and structure to query structures and the potential-contact environments are com
 pp5 pgroup --ref-pdb-id 2WUR:A --match-len 2 --context-len 1 --compare-contacts
 ```
 This will generate output CSV files in the `out/prgroup` directory.
+
+## Re-collecting the altloc dataset
+
+To re-collect the dataset described in our paper "A catalogue of alternately located
+segments in protein crystal structures", use the following bash script.
+Note that due to updates on the PDB servers over time, re-collecting the data will not
+produce exactly the same dataset as was analyzed in the paper.
+
+```shell
+#!/bin/bash
+set -eux
+
+# Clear prec CSV output dir and global pp5 cache
+rm -rf out/prec
+rm -rf /tmp/pp5_data
+
+PROCESSES=84
+ASYNC_TIMEOUT="3600"
+ASYNC_RETRY_DELTA="5"
+RESOLUTION="3.5"
+RFREE="0.33"
+SIMILARITY="1.0"
+MAX_CHAINS="20"
+TAG="r${RESOLUTION}-${PDB_SOURCE}"
+pp5 \
+  -p="$PROCESSES" collect-prec \
+  --async-timeout="$ASYNC_TIMEOUT" \
+  --async-retry-delta="$ASYNC_RETRY_DELTA" \
+  --expr-sys="" \
+  --source-taxid="" \
+  --resolution="$RESOLUTION" \
+  --r-free="$RFREE" \
+  --query-max-chains="$MAX_CHAINS" \
+  --seq-similarity-thresh="$SIMILARITY" \
+  --pdb-source="rc" \
+  --out-tag="altlocs-$TAG" \
+  --with-altlocs \
+  --with-backbone \
+  --with-contacts \
+  --write-zip
+```
+
+The data will be collected to a subfolder with a name containing the `out-tag`,
+within the `out/` folder (which will be created in the `pwd`).
 
 ## Reproducing "Does one sequence always translate to one structure?"
 
