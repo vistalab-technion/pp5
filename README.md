@@ -44,18 +44,17 @@ It might work on Windows, however this was not tested and is not supported.
    `mamba` in addition by running `conda install mamba -n base -c conda-forge`.
 2. If on Apple slicon hardware (M1/M2 mac) run `export CONDA_SUBDIR=osx-64`.
    before installing the environments.
-2. Install the `arpeggio` environment by running
+2. Optional: install the `arpeggio` environment by running
    ```shell
    mamba env create -n arpeggio -f environment-arpeggio.yml
    ```
-   This is only required for tertiary contact analysis. Note that arpeggio is
-   installed into a separate environment because it requires packages which are
-   incompatible with the main pp5 environment.
-3. Install the `pp5` environment by running
+   Note that arpeggio is installed into a separate environment because it
+   requires packages which are incompatible with the main `pp5` environment.
+4. Install the `pp5` environment by running
    ```shell
    mamba env create -n pp5 -f environment.yml
    ```
-4. Test the arpeggio installation by running
+5. Optional: test the arpeggio installation by running
    ```shell
    mamba run -n arpeggio arpeggio --help
    ```
