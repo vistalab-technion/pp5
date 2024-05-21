@@ -12,7 +12,7 @@ import tempfile
 import warnings
 import contextlib
 import subprocess
-from typing import Any, Dict, Tuple, Union, Iterable, Optional
+from typing import Any, Dict, List, Tuple, Union, Iterable, Optional
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -21,11 +21,12 @@ from Bio import SeqIO, AlignIO, BiopythonExperimentalWarning
 from tqdm import tqdm
 from Bio.Seq import Seq
 
+from pp5.codons import ACIDS_1TO3, UNKNOWN_AA
 from pp5.external_dbs.pdb import PDB_RCSB
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", BiopythonExperimentalWarning)
-    from Bio.Align import substitution_matrices
+    from Bio.Align import substitution_matrices, PairwiseAligner
 
 from Bio.AlignIO import MultipleSeqAlignment as MSA
 from Bio.SeqRecord import SeqRecord
@@ -55,6 +56,68 @@ PYMOL_SA_GAP_SYMBOLS = {"-", "?"}
 BLOSUM62 = substitution_matrices.load("BLOSUM62")
 BLOSUM80 = substitution_matrices.load("BLOSUM80")
 BLOSUM90 = substitution_matrices.load("BLOSUM90")
+
+
+def pairwise_alignment_map(
+    src_seq: str,
+    tgt_seq: str,
+    open_gap_score: float = -10,
+    extend_gap_score: float = -0.5,
+) -> Tuple[float, Dict[int, int]]:
+    """
+    Aligns between two AA sequences and produces a map from the indices of
+    the source sequence to the indices of the target sequence.
+    Uses biopython's PairwiseAligner with BLOSUM80 matrix.
+
+    :param src_seq: Source AA sequence to align.
+    :param tgt_seq: Target AA sequence to align.
+    :param open_gap_score: Penalty for opening a gap in the alignment.
+    :param extend_gap_score: Penalty for extending a gap by one residue.
+    :return: A tuple with two elements:
+    -  The alignment score, higher is better.
+    -  A dict mapping from an index in the source sequence to the corresponding
+       index in the target sequence.
+    """
+    aligner = PairwiseAligner(
+        substitution_matrix=BLOSUM80,
+        open_gap_score=open_gap_score,
+        extend_gap_score=extend_gap_score,
+    )
+
+    # In rare cases, there could be unknown letters in the sequences. This causes
+    # the alignment to break. Replace with "X" which the aligner can handle.
+    unknown_aas = set(src_seq).union(set(tgt_seq)) - set(ACIDS_1TO3)
+    for unk_aa in unknown_aas:  # usually there are none
+        tgt_seq = tgt_seq.replace(unk_aa, UNKNOWN_AA)
+        src_seq = src_seq.replace(unk_aa, UNKNOWN_AA)
+
+    multi_alignments = aligner.align(src_seq, tgt_seq)
+    alignment = sorted(multi_alignments, key=lambda a: a.score)[-1]
+    score = alignment.score
+    # LOGGER.info(f"{self}: PDB to UNP sequence alignment score={alignment.score}")
+
+    # Alignment contains two tuples each of length N (for N matching sub-sequences)
+    # (
+    #   ((t_start1, t_end1), (t_start2, t_end2), ..., (t_startN, t_endN)),
+    #   ((q_start1, q_end1), (q_start2, q_end2), ..., (q_startN, q_endN))
+    # )
+    src_to_tgt: List[Tuple[int, int]] = []
+    src_subseqs, tgt_subseqs = alignment.aligned
+    assert len(src_subseqs) == len(tgt_subseqs)
+    for i in range(len(src_subseqs)):
+        src_start, src_end = src_subseqs[i]
+        tgt_start, tgt_end = tgt_subseqs[i]
+        assert src_end - src_start == tgt_end - tgt_start
+
+        for j in range(src_end - src_start):
+            if src_seq[src_start + j] != tgt_seq[tgt_start + j]:
+                # There are mismatches included in the match sequence (cases
+                # where a similar AA is not considered a complete mismatch).
+                # We are stricter: require exact match.
+                continue
+            src_to_tgt.append((src_start + j, tgt_start + j))
+
+    return score, dict(src_to_tgt)
 
 
 def multiseq_align(
