@@ -868,11 +868,11 @@ class ProteinRecord(object):
             dihedral_est_name, dihedral_est_args
         )
 
-        pdb_aa_seq, residues = "", []
-        # Extract the residues from the PDB structure
+        # Extract the residues from the PDB structure: these are the modelled residues
         curr_res: Residue
-        chain: Chain = self.pdb_rec[0][self.pdb_auth_chain_id]
-        for curr_res in chain.get_residues():
+        modelled_residues: List[Residue] = []
+        struct_chain: Chain = self.pdb_rec[0][self.pdb_auth_chain_id]
+        for curr_res in struct_chain.get_residues():
             # Skip water molecules
             if curr_res.resname == "HOH":
                 continue
@@ -880,57 +880,104 @@ class ProteinRecord(object):
             # For non-standard AAs, we place an 'X' in the sequence, but we still
             # keep these residues.
             res_name_single = ACIDS_3TO1.get(curr_res.get_resname(), UNKNOWN_AA)
-            pdb_aa_seq += res_name_single
-            residues.append(curr_res)
+            modelled_residues.append(curr_res)
 
-        assert len(pdb_aa_seq) == len(residues)
+        # Sequence of modelled residues from the PDB structure
+        pdb_modelled_aa_seq: str = str.join(
+            "",
+            [ACIDS_3TO1.get(r.get_resname(), UNKNOWN_AA) for r in modelled_residues],
+        )
+        assert len(pdb_modelled_aa_seq) == len(modelled_residues)
+
+        # The canonical AA sequence from the structure metadata
+        pdb_meta_aa_seq = self.pdb_meta.entity_sequence[
+            self.pdb_meta.chain_entities[self.pdb_chain_id]
+        ]
 
         # Add un-modelled residues by aligning to canonical PDB sequence (from
         # structure metadata). Un-modelled residues will be missing from the pdb_aa_seq
         # and residues list, as they don't appear in biopython's structure.
         # We will add them back using alignment to the canonical sequence.
-        pdb_aa_seq_meta = self.pdb_meta.entity_sequence[
-            self.pdb_meta.chain_entities[self.pdb_chain_id]
-        ]
-        _, pdb_to_meta_idx = pairwise_alignment_map(pdb_aa_seq, pdb_aa_seq_meta)
+        # _, pdb_to_meta_idx = pairwise_alignment_map(pdb_aa_seq, pdb_aa_seq_meta)
+        #
+        # # Find gaps in the alignment, and add missing residues within each gap
+        # for curr_pdb_idx in pdb_to_meta_idx.keys():
+        #     next_pdb_idx = curr_pdb_idx + 1
+        #     if next_pdb_idx not in pdb_to_meta_idx:
+        #         # Either this is the last one, or the next one is not in the
+        #         # alignment (can happen if it's a non-standard AA)
+        #         continue
+        #
+        #     curr_meta_idx = pdb_to_meta_idx[curr_pdb_idx]
+        #     next_meta_idx = pdb_to_meta_idx[next_pdb_idx]
+        #
+        #     # Detect a gap in the alignment to the canonical sequence
+        #     gap_len = next_meta_idx - curr_meta_idx - 1
+        #     if gap_len == 0:
+        #         continue
+        #
+        #     # Here, we have two adjacent residues in the pdb structure are aligned to
+        #     # non-adjacent residues in the canonical sequence. It means that there are
+        #     # missing (un-modelled) residues in the structure.
+        #     curr_residue = residues[curr_pdb_idx]
+        #     curr_residue_seq_idx = curr_residue.get_id()[1]
+        #     for j, gap_meta_idx in enumerate(range(curr_meta_idx + 1, next_meta_idx)):
+        #         missing_res_name_single = pdb_aa_seq_meta[gap_meta_idx]
+        #         missing_res_name = ACIDS_1TO3[missing_res_name_single]
+        #         gap_pdb_idx = next_pdb_idx + j
+        #         gap_pdb_seq_idx = curr_residue_seq_idx + j + 1
+        #         missing_residue = Residue(
+        #             (" ", gap_pdb_seq_idx, ICODE_MISSING_RESIDUE), missing_res_name, 0
+        #         )
+        #         residues.insert(gap_pdb_idx, missing_residue)  # inserts BEFORE index
 
-        # Find gaps in the alignment, and add missing residues within each gap
-        for curr_pdb_idx in pdb_to_meta_idx.keys():
-            next_pdb_idx = curr_pdb_idx + 1
-            if next_pdb_idx not in pdb_to_meta_idx:
-                # Either this is the last one, or the next one is not in the
-                # alignment (can happen if it's a non-standard AA)
-                continue
+        # Add unmodelled residues: new approach
+        _, meta_to_struct_idx = pairwise_alignment_map(
+            pdb_meta_aa_seq, pdb_modelled_aa_seq
+        )
+        matching_residues: List[Residue] = []  # residues in modelled and in meta
+        missing_residues: List[Residue] = []  # residues only in meta
+        for curr_meta_seq_idx in range(len(pdb_meta_aa_seq)):
 
-            curr_meta_idx = pdb_to_meta_idx[curr_pdb_idx]
-            next_meta_idx = pdb_to_meta_idx[next_pdb_idx]
-
-            # Detect a gap in the alignment to the canonical sequence
-            gap_len = next_meta_idx - curr_meta_idx - 1
-            if gap_len == 0:
-                continue
-
-            # Here, we have two adjacent residues in the pdb structure are aligned to
-            # non-adjacent residues in the canonical sequence. It means that there are
-            # missing (un-modelled) residues in the structure.
-            curr_residue = residues[curr_pdb_idx]
-            curr_residue_seq_idx = curr_residue.get_id()[1]
-            for j, gap_meta_idx in enumerate(range(curr_meta_idx + 1, next_meta_idx)):
-                missing_res_name_single = pdb_aa_seq_meta[gap_meta_idx]
+            if curr_meta_seq_idx in meta_to_struct_idx:
+                # This residue is one of the modelled residues in the structure
+                modelled_seq_idx = meta_to_struct_idx[curr_meta_seq_idx]
+                curr_residue = modelled_residues[modelled_seq_idx]
+            else:
+                # This residue is not modelled (missing from the structure), need to add
+                missing_res_name_single = pdb_meta_aa_seq[curr_meta_seq_idx]
                 missing_res_name = ACIDS_1TO3[missing_res_name_single]
-                gap_pdb_idx = next_pdb_idx + j
-                gap_pdb_seq_idx = curr_residue_seq_idx + j + 1
-                missing_residue = Residue(
-                    (" ", gap_pdb_seq_idx, ICODE_MISSING_RESIDUE), missing_res_name, 0
+                curr_residue = Residue(
+                    (" ", curr_meta_seq_idx, ICODE_MISSING_RESIDUE), missing_res_name, 0
                 )
-                residues.insert(gap_pdb_idx, missing_residue)  # inserts BEFORE index
+                missing_residues.append(curr_residue)
+            matching_residues.append(curr_residue)
+
+        # Sanity check
+        matching_aa_seq = str.join(
+            "", [ACIDS_3TO1[r.get_resname()] for r in matching_residues]
+        )
+        assert pdb_meta_aa_seq == matching_aa_seq
+
+        # Detect any residues that are modelled but not in the canonical sequence,
+        # these would usually be ligands and non-standard AAs.
+        matching_modelled_residues = set(matching_residues) - set(missing_residues)
+        extra_modelled_residues = set(modelled_residues) - matching_modelled_residues
+
+        # Sort all residues by their sequence index, first matching, then others
+        all_residues = sorted(
+            [*matching_residues, *extra_modelled_residues], key=lambda r: r.get_id()[1]
+        )
+        all_aa_seq = str.join(
+            "", [ACIDS_3TO1.get(r.get_resname(), UNKNOWN_AA) for r in all_residues]
+        )
 
         # Update PDB sequence to include any missing residues we added
-        pdb_aa_seq = str.join(
-            "", [ACIDS_3TO1.get(r.resname, UNKNOWN_AA) for r in residues]
-        )
-        assert len(pdb_aa_seq) == len(residues)
-        n_residues = len(pdb_aa_seq)
+        # pdb_modelled_aa_seq = str.join(
+        #     "", [ACIDS_3TO1.get(r.resname, UNKNOWN_AA) for r in modelled_residues]
+        # )
+        # assert len(pdb_modelled_aa_seq) == len(modelled_residues)
+        n_residues = len(all_residues)
 
         # Find the best matching DNA for our AA sequence via pairwise alignment
         # between the PDB AA sequence and translated DNA sequences.
@@ -939,7 +986,7 @@ class ProteinRecord(object):
         idx_to_codons = {}
         if with_codons:
             self.ena_id, self._dna_seq, idx_to_codons = self._find_dna_alignment(
-                pdb_aa_seq, max_ena
+                all_aa_seq, max_ena
             )
 
         # Calculate contacts if requested
@@ -963,22 +1010,24 @@ class ProteinRecord(object):
 
         # Align PDB sequence to UNP
         unp_alignment_score, pdb_to_unp_idx = pairwise_alignment_map(
-            pdb_aa_seq, self.unp_rec.sequence
+            all_aa_seq, self.unp_rec.sequence
         )
         LOGGER.info(f"{self}: PDB to UNP alignment score={unp_alignment_score}")
 
         # Create a ResidueRecord holding all data we need per residue
         residue_recs = []
         for i in range(n_residues):
-            r_curr: Residue = residues[i]
+            r_curr: Residue = all_residues[i]
             relative_location = (i + 1) / n_residues
 
             # Sanity check
-            assert pdb_aa_seq[i] == ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
+            assert all_aa_seq[i] == ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
 
             # Get the residues before and after this one
-            r_prev: Optional[Residue] = residues[i - 1] if i > 0 else None
-            r_next: Optional[Residue] = residues[i + 1] if i < n_residues - 1 else None
+            r_prev: Optional[Residue] = all_residues[i - 1] if i > 0 else None
+            r_next: Optional[Residue] = (
+                all_residues[i + 1] if i < n_residues - 1 else None
+            )
 
             # Get corresponding UNP index
             unp_idx: Optional[int] = pdb_to_unp_idx.get(i, None)
@@ -1009,7 +1058,7 @@ class ProteinRecord(object):
             )
             residue_recs.append(rr)
 
-        self._protein_seq = pdb_aa_seq
+        self._protein_seq = all_aa_seq
         self._residue_recs: Dict[str, ResidueRecord] = {
             rr.res_id: rr for rr in residue_recs
         }
