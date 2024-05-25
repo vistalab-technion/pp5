@@ -868,19 +868,12 @@ class ProteinRecord(object):
             dihedral_est_name, dihedral_est_args
         )
 
-        # Extract the residues from the PDB structure: these are the modelled residues
-        curr_res: Residue
-        modelled_residues: List[Residue] = []
+        # Extract the residues from the PDB structure: these are the modelled
+        # residues. We ignore water molecules.
         struct_chain: Chain = self.pdb_rec[0][self.pdb_auth_chain_id]
-        for curr_res in struct_chain.get_residues():
-            # Skip water molecules
-            if curr_res.resname == "HOH":
-                continue
-
-            # For non-standard AAs, we place an 'X' in the sequence, but we still
-            # keep these residues.
-            res_name_single = ACIDS_3TO1.get(curr_res.get_resname(), UNKNOWN_AA)
-            modelled_residues.append(curr_res)
+        modelled_residues: List[Residue] = [
+            res for res in struct_chain.get_residues() if res.resname != "HOH"
+        ]
 
         # Sequence of modelled residues from the PDB structure
         pdb_modelled_aa_seq: str = str.join(
@@ -894,48 +887,11 @@ class ProteinRecord(object):
             self.pdb_meta.chain_entities[self.pdb_chain_id]
         ]
 
-        # Add un-modelled residues by aligning to canonical PDB sequence (from
-        # structure metadata). Un-modelled residues will be missing from the pdb_aa_seq
-        # and residues list, as they don't appear in biopython's structure.
-        # We will add them back using alignment to the canonical sequence.
-        # _, pdb_to_meta_idx = pairwise_alignment_map(pdb_aa_seq, pdb_aa_seq_meta)
-        #
-        # # Find gaps in the alignment, and add missing residues within each gap
-        # for curr_pdb_idx in pdb_to_meta_idx.keys():
-        #     next_pdb_idx = curr_pdb_idx + 1
-        #     if next_pdb_idx not in pdb_to_meta_idx:
-        #         # Either this is the last one, or the next one is not in the
-        #         # alignment (can happen if it's a non-standard AA)
-        #         continue
-        #
-        #     curr_meta_idx = pdb_to_meta_idx[curr_pdb_idx]
-        #     next_meta_idx = pdb_to_meta_idx[next_pdb_idx]
-        #
-        #     # Detect a gap in the alignment to the canonical sequence
-        #     gap_len = next_meta_idx - curr_meta_idx - 1
-        #     if gap_len == 0:
-        #         continue
-        #
-        #     # Here, we have two adjacent residues in the pdb structure are aligned to
-        #     # non-adjacent residues in the canonical sequence. It means that there are
-        #     # missing (un-modelled) residues in the structure.
-        #     curr_residue = residues[curr_pdb_idx]
-        #     curr_residue_seq_idx = curr_residue.get_id()[1]
-        #     for j, gap_meta_idx in enumerate(range(curr_meta_idx + 1, next_meta_idx)):
-        #         missing_res_name_single = pdb_aa_seq_meta[gap_meta_idx]
-        #         missing_res_name = ACIDS_1TO3[missing_res_name_single]
-        #         gap_pdb_idx = next_pdb_idx + j
-        #         gap_pdb_seq_idx = curr_residue_seq_idx + j + 1
-        #         missing_residue = Residue(
-        #             (" ", gap_pdb_seq_idx, ICODE_MISSING_RESIDUE), missing_res_name, 0
-        #         )
-        #         residues.insert(gap_pdb_idx, missing_residue)  # inserts BEFORE index
-
-        # Add unmodelled residues: new approach
+        # Add un-modelled residues by aligning to the canonical PDB sequence.
         _, meta_to_struct_idx = pairwise_alignment_map(
             pdb_meta_aa_seq, pdb_modelled_aa_seq
         )
-        matching_residues: List[Residue] = []  # residues in modelled and in meta
+        matching_residues: List[Residue] = []  # residues both in modelled and in meta
         missing_residues: List[Residue] = []  # residues only in meta
         for curr_meta_seq_idx in range(len(pdb_meta_aa_seq)):
 
@@ -951,6 +907,7 @@ class ProteinRecord(object):
                     (" ", curr_meta_seq_idx, ICODE_MISSING_RESIDUE), missing_res_name, 0
                 )
                 missing_residues.append(curr_residue)
+
             matching_residues.append(curr_residue)
 
         # Sanity check
@@ -971,12 +928,6 @@ class ProteinRecord(object):
         all_aa_seq = str.join(
             "", [ACIDS_3TO1.get(r.get_resname(), UNKNOWN_AA) for r in all_residues]
         )
-
-        # Update PDB sequence to include any missing residues we added
-        # pdb_modelled_aa_seq = str.join(
-        #     "", [ACIDS_3TO1.get(r.resname, UNKNOWN_AA) for r in modelled_residues]
-        # )
-        # assert len(pdb_modelled_aa_seq) == len(modelled_residues)
         n_residues = len(all_residues)
 
         # Find the best matching DNA for our AA sequence via pairwise alignment
