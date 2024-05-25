@@ -21,6 +21,8 @@ PDB_DATA_API_URL = "https://data.rcsb.org/rest/v1/core"
 # https://search.rcsb.org/#search-api
 PDB_SEARCH_API_URL = "https://search.rcsb.org/rcsbsearch/v2/query"
 
+PDB_API_HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}
+
 PDB_ID_SEPARATORS = re.compile(r"[:._-]")
 
 
@@ -90,7 +92,7 @@ def execute_raw_data_query(
     query_url = f"{PDB_DATA_API_URL}/{query_path}"
     try:
         # Use many retries as this is an unreliable API
-        with requests_retry().get(query_url) as response:
+        with requests_retry().get(url=query_url, headers=PDB_API_HEADERS) as response:
             # Responses status codes in these APIs are either 200 or 404
             # 404 means one of the IDs was invalid.
             response.raise_for_status()
@@ -134,7 +136,9 @@ def execute_raw_pdb_search_query(
     """
     try:
         # Use many retries as this is an unreliable API
-        with requests_retry().post(PDB_SEARCH_API_URL, data=query_json) as response:
+        with requests_retry().post(
+            url=PDB_SEARCH_API_URL, headers=PDB_API_HEADERS, data=query_json
+        ) as response:
             response.raise_for_status()
             if response.status_code == 204:
                 # 204 means no results, not an error

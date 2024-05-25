@@ -113,6 +113,7 @@ class TestPDBQuery(object):
         results = query.execute()
         assert count > 170500
         assert len(results) == count
+        print(f"Count: {count}")
 
     @pytest.mark.parametrize(
         "return_type",
