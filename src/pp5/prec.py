@@ -88,8 +88,8 @@ DEFAULT_BFACTOR_CALC = AtomLocationUncertainty(
     backbone_only=True, unit_cell=None, isotropic=True, scale_as_bfactor=True
 )
 
-# Special insertion code to mark a residue that was missing from the structure.
-ICODE_MISSING_RESIDUE = "M"
+# Special insertion code to mark a residue that is unmodeled the structure.
+ICODE_UNMODELED_RES = "UNMODELED"
 
 
 class ResidueRecord(object):
@@ -904,7 +904,7 @@ class ProteinRecord(object):
                 missing_res_name_single = pdb_meta_aa_seq[curr_meta_seq_idx]
                 missing_res_name = ACIDS_1TO3[missing_res_name_single]
                 curr_residue = Residue(
-                    (" ", curr_meta_seq_idx, ICODE_MISSING_RESIDUE), missing_res_name, 0
+                    (" ", curr_meta_seq_idx, ICODE_UNMODELED_RES), missing_res_name, 0
                 )
                 missing_residues.append(curr_residue)
 
