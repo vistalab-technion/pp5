@@ -59,6 +59,7 @@ from pp5.contacts import (
     CONTACT_DEFAULT_RADIUS,
     CONTACT_METHOD_ARPEGGIO,
     CONTACT_METHOD_NEIGHBOR,
+    AtomContact,
     ResidueContacts,
     ContactsAssigner,
     ArpeggioContactsAssigner,
@@ -734,6 +735,7 @@ class ProteinRecord(object):
         with_altlocs: bool = True,
         with_backbone: bool = True,
         with_contacts: bool = True,
+        with_atom_contacts: bool = False,
         with_codons: bool = True,
         strict_pdb_unp_xref: bool = True,
         contact_method: str = CONTACT_METHOD_NEIGHBOR,
@@ -760,6 +762,8 @@ class ProteinRecord(object):
         protein record. If False, only the default conformation will be used.
         :param with_backbone: Whether to include backbone atoms in the protein record.
         :param with_contacts: Whether to calculate per-residue contacts.
+        :param with_atom_contacts: If true, a separate output file will be created
+        containing all atom level contacts.
         :param with_codons: Whether to assign codons to each residue.
         :param strict_pdb_unp_xref: Whether to require that the given PDB ID
         maps uniquely to only one Uniprot ID.
@@ -821,6 +825,7 @@ class ProteinRecord(object):
         self.with_altlocs = with_altlocs
         self.with_backbone = with_backbone
         self.with_contacts = with_contacts
+        self.with_atom_contacts = with_atom_contacts
         self.contact_radius = contact_radius
         self.contact_method = contact_method
 
@@ -956,6 +961,7 @@ class ProteinRecord(object):
                     pdb_source=self.pdb_source,
                     contact_radius=self.contact_radius,
                     with_altlocs=self.with_altlocs,
+                    with_atom_contacts=with_atom_contacts,
                     pdb_dict=self._pdb_dict,
                 )
 
@@ -1153,6 +1159,17 @@ class ProteinRecord(object):
 
         return df_prec
 
+    def _atom_contacts_dataframe(self) -> Optional[pd.DataFrame]:
+        if not self.with_atom_contacts:
+            return None
+
+        df_data = []
+        for res_id, res_rec in self.items():
+            res_atom_contacts: Sequence[AtomContact] = res_rec.contacts.atom_contacts
+            df_data.extend(ac.as_dict() for ac in res_atom_contacts)
+
+        return pd.DataFrame(df_data)
+
     def to_csv(self, out_dir=pp5.out_subdir("prec"), tag=None):
         """
         Writes the ProteinRecord as a CSV file, by writing the dataframe produced by
@@ -1180,8 +1197,27 @@ class ProteinRecord(object):
             encoding="utf-8",
             float_format="%.4f",
         )
-
         LOGGER.info(f"Wrote {self} to {filepath}")
+
+        if self.with_atom_contacts:
+            df_atom_contacts = self._atom_contacts_dataframe()
+            filepath = pdb_tagged_filepath(
+                self.pdb_id,
+                self.pdb_source,
+                out_dir,
+                suffix="csv",
+                tag=f"{tag}-atom-contacts" if tag else "atom-contacts",
+            )
+            df_atom_contacts.to_csv(
+                filepath,
+                na_rep="",
+                header=True,
+                index=False,
+                encoding="utf-8",
+                float_format="%.4f",
+            )
+            LOGGER.info(f"Wrote {self} atom contacts to {filepath}")
+
         return filepath
 
     def save(self, out_dir=pp5.data_subdir("prec"), tag=None):
