@@ -12,6 +12,7 @@ from pathlib import Path
 from functools import partial
 from itertools import chain
 
+import attrs
 import numpy as np
 import pandas as pd
 from Bio.PDB import NeighborSearch
@@ -50,6 +51,7 @@ def format_residue_contact(
     tgt_seq_idx: int,
     tgt_altloc: str,
     contact_dist: float,
+    tgt_atom: str = None,
 ) -> str:
     """
     Formats a residue contact as a string.
@@ -58,21 +60,57 @@ def format_residue_contact(
     :param tgt_resname: The residue name of the target residue.
     :param tgt_seq_idx: The sequence index of the target residue.
     :param tgt_altloc: The altloc of the target residue.
+    :param tgt_atom: The atom name of the target residue.
     :param contact_dist: The distance to the contact residue.
     :return: A string representing the contact.
     Format is:
-        chain:resname:seq_idx[-altloc]:contact_dist
-    Where the [-altloc] part is only included if the altloc exists.
+        chain:resname:seq_idx[-altloc][@atom]:contact_dist
+    Where the [-altloc] part is only included if the altloc exists, and the [@atom]
+    is only included if the atom was specified.
     """
     tgt_resname = ACIDS_3TO1.get(tgt_resname, tgt_resname)
     tgt_altloc = f"-{tgt_altloc}" if tgt_altloc else ""
+    tgt_atom = f"@{tgt_atom}" if tgt_atom else ""
     _contact_dist_str = f"{contact_dist:.2f}"
     return (
         f"{tgt_chain_id}"
         f":{tgt_resname}"
-        f":{tgt_seq_idx}{tgt_altloc}"
+        f":{tgt_seq_idx}{tgt_altloc}{tgt_atom}"
         f":{_contact_dist_str}"
     )
+
+
+@attrs.define(repr=True, eq=True, hash=True)
+class ResidueContactKey:
+    """Unique key for a contact between two residues (source or target)."""
+
+    chain: str = attrs.field()
+    resname: str = attrs.field()
+    seq_idx: int = attrs.field()
+    altloc: str = attrs.field()
+
+
+@attrs.define(repr=True, eq=True, hash=True)
+class ResidueContact:
+    src_key: ResidueContactKey = attrs.field()
+    tgt_key: ResidueContactKey = attrs.field()
+    min_dist: float = attrs.field()
+    type: str = attrs.field()  # OOC, non-AA, AA
+
+
+@attrs.define(repr=True, eq=True, hash=True)
+class AtomContactKey(ResidueContactKey):
+    atom: str = attrs.field()
+
+
+@attrs.define(repr=True, eq=True, hash=True)
+class AtomContact:
+    """Represents a contact between two atoms."""
+
+    src_key: AtomContactKey = attrs.field()
+    tgt_key: AtomContactKey = attrs.field()
+    dist: float = attrs.field()
+    type: str = attrs.field(default="proximal")
 
 
 class ContactsAssigner(ABC):
@@ -286,7 +324,7 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
             contact_dist = src_atom - tgt_atom
             contact_dists.append(contact_dist)
 
-            # Key uniquely identifying the contact target
+            # Key uniquely identifying the contact target residue
             contact_tgt_key = (tgt_chain_id, tgt_resname, tgt_seq_idx, tgt_altloc)
 
             # Check if contact is a ligand (check hetero flag)
@@ -356,6 +394,7 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
             contact_ooc=_format(_aggregate(res_contacts_ooc)),
             contact_non_aa=_format(_aggregate(res_contacts_non_aa)),
             contact_aas=_format(_aggregate(res_contacts_aas)),
+            atom_contacts=atom_contacts,
         )
 
 
