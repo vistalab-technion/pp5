@@ -888,8 +888,12 @@ class ProteinRecord(object):
         ]
 
         # Add un-modelled residues by aligning to the canonical PDB sequence.
-        _, meta_to_struct_idx = pairwise_alignment_map(
+        meta_to_struct_seq_alignment, meta_to_struct_idx = pairwise_alignment_map(
             pdb_meta_aa_seq, pdb_modelled_aa_seq
+        )
+        LOGGER.info(
+            f"{self}: Canonical to structure seq alignment:\n"
+            f"{str(meta_to_struct_seq_alignment).strip()}"
         )
         matching_residues: List[Residue] = []  # residues both in modelled and in meta
         missing_residues: List[Residue] = []  # residues only in meta
@@ -903,8 +907,33 @@ class ProteinRecord(object):
                 # This residue is not modelled (missing from the structure), need to add
                 missing_res_name_single = pdb_meta_aa_seq[curr_meta_seq_idx]
                 missing_res_name = ACIDS_1TO3[missing_res_name_single]
+
+                # We need to determine the residue sequence index for the missing
+                # residue. It needs to be consistent with the sequence index of the
+                # modelled residues.
+                if len(matching_residues) > 0:
+                    # We have previous matching residues, so we can infer the index
+                    # based on the last matching residue.
+                    missing_idx = matching_residues[-1].get_id()[1] + 1
+                else:
+                    # We have no matching residues yet. We need to determine how far
+                    # we are from the first one, take its index and subtract the
+                    # distance.
+                    first_matching_meta_idx = next(iter(meta_to_struct_idx))
+                    dist_to_first_matching = first_matching_meta_idx - curr_meta_seq_idx
+                    assert dist_to_first_matching >= 0
+                    first_matching_struct_idx = meta_to_struct_idx[
+                        first_matching_meta_idx
+                    ]
+                    first_matching_modelled_res = modelled_residues[
+                        first_matching_struct_idx
+                    ]
+                    missing_idx = (
+                        first_matching_modelled_res.get_id()[1] - dist_to_first_matching
+                    )
+
                 curr_residue = Residue(
-                    (" ", curr_meta_seq_idx, ICODE_UNMODELED_RES), missing_res_name, 0
+                    (" ", missing_idx, ICODE_UNMODELED_RES), missing_res_name, 0
                 )
                 missing_residues.append(curr_residue)
 
@@ -960,10 +989,10 @@ class ProteinRecord(object):
                 )
 
         # Align PDB sequence to UNP
-        unp_alignment_score, pdb_to_unp_idx = pairwise_alignment_map(
+        unp_alignment, pdb_to_unp_idx = pairwise_alignment_map(
             all_aa_seq, self.unp_rec.sequence
         )
-        LOGGER.info(f"{self}: PDB to UNP alignment score={unp_alignment_score}")
+        LOGGER.info(f"{self}: PDB to UNP alignment score={unp_alignment.score}")
 
         # Create a ResidueRecord holding all data we need per residue
         residue_recs = []
@@ -1306,8 +1335,7 @@ class ProteinRecord(object):
             f"{self}: Translated DNA to PDB alignment "
             f"(norm_score="
             f"{best_alignments.score / len(pdb_aa_seq):.2f}, "
-            f"num={len(best_alignments)})\n"
-            f"{str(best_alignment).strip()}"
+            f"num={len(best_alignments)})"
         )
 
         # Map each AA to a dict of (codon->count)

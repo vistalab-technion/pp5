@@ -26,7 +26,7 @@ from pp5.external_dbs.pdb import PDB_RCSB
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", BiopythonExperimentalWarning)
-    from Bio.Align import substitution_matrices, PairwiseAligner
+    from Bio.Align import substitution_matrices, PairwiseAligner, Alignment
 
 from Bio.AlignIO import MultipleSeqAlignment as MSA
 from Bio.SeqRecord import SeqRecord
@@ -63,7 +63,7 @@ def pairwise_alignment_map(
     tgt_seq: str,
     open_gap_score: float = -10,
     extend_gap_score: float = -0.5,
-) -> Tuple[float, Dict[int, int]]:
+) -> Tuple[Alignment, Dict[int, int]]:
     """
     Aligns between two AA sequences and produces a map from the indices of
     the source sequence to the indices of the target sequence.
@@ -74,7 +74,7 @@ def pairwise_alignment_map(
     :param open_gap_score: Penalty for opening a gap in the alignment.
     :param extend_gap_score: Penalty for extending a gap by one residue.
     :return: A tuple with two elements:
-    -  The alignment score, higher is better.
+    -  The alignment object produced by the aligner.
     -  A dict mapping from an index in the source sequence to the corresponding
        index in the target sequence.
     """
@@ -93,8 +93,6 @@ def pairwise_alignment_map(
 
     multi_alignments = aligner.align(src_seq, tgt_seq)
     alignment = sorted(multi_alignments, key=lambda a: a.score)[-1]
-    score = alignment.score
-    # LOGGER.info(f"{self}: PDB to UNP sequence alignment score={alignment.score}")
 
     # Alignment contains two tuples each of length N (for N matching sub-sequences)
     # (
@@ -117,7 +115,7 @@ def pairwise_alignment_map(
                 continue
             src_to_tgt.append((src_start + j, tgt_start + j))
 
-    return score, dict(src_to_tgt)
+    return alignment, dict(src_to_tgt)
 
 
 def multiseq_align(
