@@ -37,6 +37,11 @@ DEFAULT_ARPEGGIO_ARGS = dict(
     interaction_cutoff=4.5, use_conda_env="arpeggio", cache=True
 )
 
+CONTACT_TYPE_AAA = "AA"
+CONTACT_TYPE_OOC = "OOC"
+CONTACT_TYPE_LIG = "LIG"
+CONTACT_TYPES = (CONTACT_TYPE_AAA, CONTACT_TYPE_OOC, CONTACT_TYPE_LIG)
+
 
 def res_to_id(res: Residue) -> str:
     """
@@ -69,7 +74,7 @@ def format_residue_contact(
     is only included if the atom was specified.
     """
     tgt_resname = ACIDS_3TO1.get(tgt_resname, tgt_resname)
-    tgt_altloc = f"-{tgt_altloc}" if tgt_altloc else ""
+    tgt_altloc = f":{tgt_altloc}" if tgt_altloc else ""
     tgt_atom = f"@{tgt_atom}" if tgt_atom else ""
     _contact_dist_str = f"{contact_dist:.2f}"
     return (
@@ -82,25 +87,40 @@ def format_residue_contact(
 
 @attrs.define(repr=True, eq=True, hash=True)
 class ResidueContactKey:
-    """Unique key for a contact between two residues (source or target)."""
+    """Unique key for a contact between two Residues (source or target)."""
 
     chain: str = attrs.field()
     resname: str = attrs.field()
     seq_idx: int = attrs.field()
     altloc: str = attrs.field()
 
-
-@attrs.define(repr=True, eq=True, hash=True)
-class ResidueContact:
-    src_key: ResidueContactKey = attrs.field()
-    tgt_key: ResidueContactKey = attrs.field()
-    min_dist: float = attrs.field()
-    type: str = attrs.field()  # OOC, non-AA, AA
+    def __str__(self):
+        return f"{self.chain}:{self.resname}:{self.seq_idx}:{self.altloc}"
 
 
 @attrs.define(repr=True, eq=True, hash=True)
 class AtomContactKey(ResidueContactKey):
+    """Unique key for a contact between two atoms (source or target)."""
+
     atom: str = attrs.field()
+
+    @classmethod
+    def from_atom(cls, atom: Atom, with_altlocs: bool = True) -> AtomContactKey:
+        """Creates an AtomContactKey from a biopython Atom object."""
+        parent_res = atom.get_parent()
+        parent_res_name = parent_res.get_resname().strip()
+        return cls(
+            chain=parent_res.get_parent().get_id().strip(),
+            resname=ACIDS_3TO1.get(parent_res_name, parent_res_name),
+            seq_idx=parent_res.get_id()[1],
+            altloc=(atom.get_altloc().strip() or NO_ALTLOC)
+            if with_altlocs
+            else NO_ALTLOC,
+            atom=atom.get_name().strip(),
+        )
+
+    def __str__(self):
+        return f"{super().__str__()}@{self.atom}"
 
 
 @attrs.define(repr=True, eq=True, hash=True)
@@ -109,8 +129,57 @@ class AtomContact:
 
     src_key: AtomContactKey = attrs.field()
     tgt_key: AtomContactKey = attrs.field()
-    dist: float = attrs.field()
-    type: str = attrs.field(default="proximal")
+    dist: float = attrs.field(hash=False)
+    seq_dist: Optional[int] = attrs.field(hash=False)
+    type: str = attrs.field(hash=False, validator=attrs.validators.in_(CONTACT_TYPES))
+
+    @classmethod
+    def from_atoms(cls, src: Atom, tgt: Atom, with_altlocs: bool = True) -> AtomContact:
+        """Creates an AtomContact from two biopython Atom objects."""
+
+        src_key = AtomContactKey.from_atom(src, with_altlocs=with_altlocs)
+        tgt_key = AtomContactKey.from_atom(tgt, with_altlocs=with_altlocs)
+        seq_dist = (
+            abs(src_key.seq_idx - tgt_key.seq_idx)
+            if src_key.chain == tgt_key.chain
+            else None
+        )
+
+        # Assign type
+        tgt_hetflag = tgt.get_parent().get_id()[0]
+        if tgt_hetflag.startswith("H_"):
+            contact_type = CONTACT_TYPE_LIG
+        elif src_key.chain != tgt_key.chain:
+            contact_type = CONTACT_TYPE_OOC
+        else:
+            contact_type = CONTACT_TYPE_AAA
+
+        return cls(
+            src_key=src_key,
+            tgt_key=tgt_key,
+            dist=src - tgt,
+            seq_dist=seq_dist,
+            type=contact_type,
+        )
+
+    def __str__(self):
+        return f"{self.src_key!s} -> {self.tgt_key!s} ({self.type}): {self.dist:.2f}"
+
+
+@attrs.define(repr=True, eq=True, hash=True)
+class ResidueContact:
+    """Represents a contact between two residues."""
+
+    src_key: ResidueContactKey = attrs.field()
+    tgt_key: ResidueContactKey = attrs.field()
+    min_dist: float = attrs.field(hash=False)
+    seq_dist: Optional[int] = attrs.field(hash=False)
+    type: str = attrs.field(hash=False, validator=attrs.validators.in_(CONTACT_TYPES))
+
+    def __str__(self):
+        return (
+            f"{self.src_key!s} -> {self.tgt_key!s} ({self.type}): {self.min_dist:.2f}A"
+        )
 
 
 class ContactsAssigner(ABC):
@@ -228,8 +297,14 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
         if isinstance(res, DisorderedResidue):
             res = res.disordered_get()
 
-        # Get all atoms from within the residue, including side chain atoms
-        all_atoms = tuple(res.get_atoms())
+        # Get source residue info
+        src_hetflag, src_seq_idx, src_icode = res.get_id()
+        src_chain = res.get_parent().get_id().strip()
+        src_resname = ACIDS_3TO1.get(res.get_resname(), res.get_resname())
+
+        # Get all atoms from within the residue, including side chain atoms,
+        # but ignore hydrogen atoms.
+        all_atoms = tuple(a for a in res.get_atoms() if a.element != "H")
 
         altloc_ids: Sequence[str] = (NO_ALTLOC,)
         if self.with_altlocs:
@@ -240,13 +315,24 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
             )
 
         contacts = {NO_ALTLOC: None}
+        contacts2 = {NO_ALTLOC: None}
 
         # For each altloc, we want to move all the atoms to it (if it exists for a
         # particular atom) and then calculate the contacts from all the moved atoms.
         # We then join the contacts from all the atoms.
         for altloc_id in altloc_ids:
+
+            # Create a contact key for this residue at the current altloc
+            src_res_contact_key = ResidueContactKey(
+                chain=src_chain,
+                resname=src_resname,
+                seq_idx=src_seq_idx,
+                altloc=altloc_id,
+            )
+
             with altloc_ctx_all(all_atoms, altloc_id) as all_atoms_alt:
                 curr_altloc_contacts: Set[Tuple[Atom, Atom]] = set()
+                curr_altloc_contacts2: Set[AtomContact] = set()
 
                 # Loop over the atoms in the residue, after they've been moved to the
                 # current altloc, and calculate contacts from each of them.
@@ -268,15 +354,101 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
                         level="A",
                     )
 
-                    # Store each contact as (source_atom, target_atom)
-                    curr_altloc_contacts.update((alt_atom, a) for a in new_contacts)
+                    # Filter the contacts:
+                    # - Ignore contacts with the same residue
+                    # - Ignore contacts with water (H and O atoms in a HOH residue)
+                    # - Ignore contacts with hydrogen atoms (H atoms in any residue)
+                    new_contacts_filtered = []
+                    for a in new_contacts:
+                        if a.element == "H":
+                            continue
+                        parent_res: Residue = a.get_parent()
+                        if parent_res == res:
+                            continue
+                        if parent_res.get_resname() == "HOH":
+                            continue
+                        new_contacts_filtered.append(a)
+
+                    for a in new_contacts_filtered:
+                        # Store each contact as (source_atom, target_atom)
+                        curr_altloc_contacts.add((alt_atom, a))
+
+                        atom_contact = AtomContact.from_atoms(
+                            alt_atom, a, with_altlocs=self.with_altlocs
+                        )
+                        print(f"found contact: {atom_contact!s}")
+                        curr_altloc_contacts2.add(atom_contact)
 
                 # Convert the atom contacts to residue contacts
+                residue_contacts = self._aggregate_atom_contacts(
+                    src_res_contact_key, tuple(curr_altloc_contacts2)
+                )
+
                 contacts[altloc_id] = self._resolve_atom_contacts(
                     res, tuple(curr_altloc_contacts)
                 )
 
-        return contacts
+                contacts2[altloc_id] = ResidueContacts.from_contacts(
+                    res, residue_contacts
+                )
+
+                # DEBUG
+                sanity = contacts2[altloc_id].as_dict() == contacts[altloc_id].as_dict()
+                if not sanity:
+                    pass
+                assert sanity
+
+        return contacts2
+
+    def _aggregate_atom_contacts(
+        self, src_key: ResidueContactKey, atom_contacts: Sequence[AtomContact]
+    ) -> Sequence[ResidueContact]:
+        """
+        Aggregates a list of atom contacts between a source residue and the atoms
+        of other residues, into to a list of residue contacts.
+
+        :param src_key: The key of the source residue.
+        :param atom_contacts: The list of atom contacts.
+        :return: The list of residue contacts, sorted by minimum distance.
+        """
+
+        # Group contacts by their target residue
+        target_res_to_contacts: Dict[ResidueContactKey, List[AtomContact]] = {}
+        for atom_contact in atom_contacts:
+            tgt_atom_key = atom_contact.tgt_key
+            tgt_res_key = ResidueContactKey(
+                chain=tgt_atom_key.chain,
+                resname=tgt_atom_key.resname,
+                seq_idx=tgt_atom_key.seq_idx,
+                altloc=tgt_atom_key.altloc,
+            )
+            target_res_to_contacts.setdefault(tgt_res_key, [])
+            target_res_to_contacts[tgt_res_key].append(atom_contact)
+
+        # Aggregate all contacts ending at the same target residue by taking the
+        # minimum distance
+        res_contacts: List[ResidueContact] = []
+        for tgt_res_key, tgt_contacts in target_res_to_contacts.items():
+            min_dist = min(c.dist for c in tgt_contacts)
+            res_contact_type = tgt_contacts[0].type
+            res_contact_seq_dist = tgt_contacts[0].seq_dist
+
+            # Sanity: all contacts should have the same type and sequence distance
+            assert all(c.type == res_contact_type for c in tgt_contacts)
+            assert all(c.seq_dist == res_contact_seq_dist for c in tgt_contacts)
+
+            res_contacts.append(
+                ResidueContact(
+                    src_key=src_key,
+                    tgt_key=tgt_res_key,
+                    min_dist=min_dist,
+                    seq_dist=res_contact_seq_dist,
+                    type=res_contact_type,
+                )
+            )
+
+        # Sort by min distance
+        return tuple(sorted(res_contacts, key=lambda c: (c.min_dist, str(c.tgt_key))))
 
     def _resolve_atom_contacts(
         self, src_res: Residue, atom_contacts: Sequence[Tuple[Atom, Atom]]
@@ -318,7 +490,11 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
             src_chain = src_res.get_parent()
             tgt_chain = tgt_res.get_parent()
             tgt_chain_id = tgt_chain.get_id().strip()
-            tgt_altloc = tgt_atom.get_altloc().strip() if self.with_altlocs else ""
+            tgt_altloc = (
+                (tgt_atom.get_altloc().strip() or NO_ALTLOC)
+                if self.with_altlocs
+                else NO_ALTLOC
+            )
 
             # Calculate contact distance in Angstroms
             contact_dist = src_atom - tgt_atom
@@ -375,13 +551,17 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
             :return: A list of formatted contacts.
             """
             # Sort by distance
-            _contacts = dict(sorted(_contacts.items(), key=lambda x: x[1]))
+            _contacts = dict(sorted(_contacts.items(), key=lambda x: (x[1], x[0])))
             _formatted_contacts = []
             for _tgt_key, _dist in _contacts.items():
                 _tgt_chain_id, _tgt_resname, _tgt_seq_idx, _tgt_altloc = _tgt_key
                 _formatted_contacts.append(
                     format_residue_contact(
-                        _tgt_chain_id, _tgt_resname, _tgt_seq_idx, _tgt_altloc, _dist
+                        _tgt_chain_id,
+                        _tgt_resname,
+                        _tgt_seq_idx,
+                        _tgt_altloc,
+                        _dist,
                     )
                 )
             return tuple(_formatted_contacts)
@@ -405,7 +585,7 @@ class ResidueContacts(object):
     # TODO:
     #  This string-based ResidueContacts should be only for Arpeggio contacts
     #  (legacy), and a separate ResidueContacts class should be created based on
-    #  a sequence of AtomContacts. Conversely, we can refactor the
+    #  a sequence of ResidueContacts. Conversely, we can refactor the
     #  ArpeggioContactsAssigned to generate AtomContacts, and then we'd only need one
     #  type of ResidueContacts.
     """
@@ -472,6 +652,41 @@ class ResidueContacts(object):
 
     def __hash__(self):
         return hash(tuple(self.as_dict().values()))
+
+    @classmethod
+    def from_contacts(cls, src_res: Residue, contacts: Sequence[ResidueContact]):
+        def _format(_contacts: Sequence[ResidueContact]) -> Sequence[str]:
+            return tuple(
+                format_residue_contact(
+                    tgt_chain_id=_contact.tgt_key.chain,
+                    tgt_resname=_contact.tgt_key.resname,
+                    tgt_seq_idx=_contact.tgt_key.seq_idx,
+                    tgt_altloc=_contact.tgt_key.altloc,
+                    contact_dist=_contact.min_dist,
+                )
+                for _contact in _contacts
+            )
+
+        contact_smax = max(
+            [
+                c.seq_dist
+                for c in contacts
+                if (c.seq_dist is not None and c.type == CONTACT_TYPE_AAA)
+            ]
+        )
+        contact_ooc = _format([c for c in contacts if c.type == CONTACT_TYPE_OOC])
+        contact_non_aa = _format([c for c in contacts if c.type == CONTACT_TYPE_LIG])
+        contact_aas = _format([c for c in contacts if c.type == CONTACT_TYPE_AAA])
+        return cls(
+            res_id=res_to_id(src_res),
+            contact_count=len(contacts),
+            contact_types="proximal",  # use arpeggio name, but not meaningful here
+            contact_smax=contact_smax,
+            contact_ooc=contact_ooc,
+            contact_non_aa=contact_non_aa,
+            contact_aas=contact_aas,
+            # atom_contacts=atom_contacts,
+        )
 
 
 class Arpeggio(object):
