@@ -1,0 +1,3 @@
+- `download_atlas_db` downloads the atlas db (>600Gb)
+- `make_pickle_files` pickles the downloaded atlas MD simulations into a flattened dihedral angle structure, that is later used for analysis.
+- please set the paths appropriately
