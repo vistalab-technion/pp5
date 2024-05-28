@@ -308,20 +308,30 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
 
     def assign(self, res: Residue) -> Dict[str, Optional[ResidueContacts]]:
 
+        atom_contacts: List[AtomContact] = []
+        altloc_to_residue_contacts: Dict[str, Optional[ResidueContacts]] = {
+            NO_ALTLOC: None
+        }
+
         # In rare cases, a residue may be disordered and contain other residues.
         # This means there's a point mutation and both original and mutated residues
         # are present in the crystal. We ignore this and just use the selected residue.
         if isinstance(res, DisorderedResidue):
             res = res.disordered_get()
 
+        # Get all atoms from within the residue, including side chain atoms,
+        # but ignore hydrogen atoms.
+        all_atoms = tuple(a for a in res.get_atoms() if a.element != "H")
+
+        # Make sure this residue has structure information (it might be an unmodelled
+        # placeholder residue)
+        if not res.get_parent() or not len(all_atoms):
+            return altloc_to_residue_contacts
+
         # Get source residue info
         src_hetflag, src_seq_idx, src_icode = res.get_id()
         src_chain = res.get_parent().get_id().strip()
         src_resname = ACIDS_3TO1.get(res.get_resname(), res.get_resname())
-
-        # Get all atoms from within the residue, including side chain atoms,
-        # but ignore hydrogen atoms.
-        all_atoms = tuple(a for a in res.get_atoms() if a.element != "H")
 
         altloc_ids: Sequence[str] = (NO_ALTLOC,)
         if self.with_altlocs:
@@ -330,11 +340,6 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
             altloc_ids = atom_altloc_ids(
                 *all_atoms, allow_disjoint=True, include_none=True
             )
-
-        atom_contacts: List[AtomContact] = []
-        altloc_to_residue_contacts: Dict[str, Optional[ResidueContacts]] = {
-            NO_ALTLOC: None
-        }
 
         # For each altloc, we want to move all the atoms to it (if it exists for a
         # particular atom) and then calculate the contacts from all the moved atoms.
