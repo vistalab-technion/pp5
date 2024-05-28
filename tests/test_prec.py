@@ -60,7 +60,7 @@ def with_codons(request):
 
 
 class TestMethods:
-    @pytest.fixture(autouse=False, scope="class", params=["102L:A", "2WUR:A"])
+    @pytest.fixture(autouse=False, scope="class", params=["102L:A", "2WUR:A", "1914:A"])
     def pdb_id(self, request):
         return request.param
 
