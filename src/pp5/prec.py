@@ -1055,7 +1055,7 @@ class ProteinRecord(object):
             )
             residue_recs.append(rr)
 
-        self._protein_seq = all_aa_seq
+        self._aa_seq = all_aa_seq
         self._residue_recs: Dict[str, ResidueRecord] = {
             rr.res_id: rr for rr in residue_recs
         }
@@ -1103,15 +1103,15 @@ class ProteinRecord(object):
         return SeqRecord(Seq(self._dna_seq), self.ena_id, "", "")
 
     @property
-    def protein_seq(self) -> SeqRecord:
+    def aa_seq(self) -> str:
         """
-        :return: Protein sequence as 1-letter AA names. Based on the
-        residues found in the associated PDB structure.
-        Note that the sequence might contain the letter 'X' denoting an
-        unknown AA. This happens if the PDB entry contains non-standard AAs
-        and we chose to ignore such AAs.
+        :return: Protein sequence as 1-letter AA names.
+        Based on the residues found in the associated PDB structure, including those
+        which are not modelled.
+        Note that the sequence might contain the letter 'X' denoting a non-standard
+        AA or a ligand.
         """
-        return SeqRecord(Seq(self._protein_seq), self.pdb_id, "", "")
+        return self._aa_seq
 
     @property
     def seq_gaps(self) -> Sequence[Tuple[str, str]]:
