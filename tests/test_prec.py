@@ -161,6 +161,14 @@ class TestMethods:
         aa_seq_no_ligands = prec.aa_seq.replace(UNKNOWN_AA, "")
         assert aa_seq_no_ligands == canonical_seq
 
+        # Make sure UNP alignment is correct and includes both modelled and
+        # unmodelled residues
+        unp_seq = prec.unp_rec.sequence
+        assert not all(r.unp_idx is None for r in prec)
+        assert all(
+            [unp_seq[r.unp_idx] == r.name for r in prec if r.unp_idx is not None]
+        )
+
 
 class TestFromUnp:
     def test_from_unp_default_selector(self):
