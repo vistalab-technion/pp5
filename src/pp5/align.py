@@ -68,6 +68,8 @@ def pairwise_alignment_map(
     Aligns between two AA sequences and produces a map from the indices of
     the source sequence to the indices of the target sequence.
     Uses biopython's PairwiseAligner with BLOSUM80 matrix.
+    In case there is more than one alignment option, the one with the highest score
+    and smallest number of gaps will be chosen.
 
     :param src_seq: Source AA sequence to align.
     :param tgt_seq: Target AA sequence to align.
@@ -91,8 +93,15 @@ def pairwise_alignment_map(
         tgt_seq = tgt_seq.replace(unk_aa, UNKNOWN_AA)
         src_seq = src_seq.replace(unk_aa, UNKNOWN_AA)
 
+    # The aligner returns multiple alignment options
     multi_alignments = aligner.align(src_seq, tgt_seq)
-    alignment = sorted(multi_alignments, key=lambda a: a.score)[-1]
+
+    # Choose alignment with maximal score and minimum number of gaps
+    def _align_sort_key(a: Alignment) -> Tuple[int, int]:
+        _n_gaps = a.coordinates.shape[1]
+        return -a.score, _n_gaps
+
+    alignment = sorted(multi_alignments, key=_align_sort_key)[0]
 
     # Alignment contains two tuples each of length N (for N matching sub-sequences)
     # (
