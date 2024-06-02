@@ -49,7 +49,8 @@ def _random_pdb_id(id_type="plain", min_chain_len=1, max_chain_len=3) -> str:
 
 
 class TestSplitID:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup_fixture(self):
         self.n = 100
 
     def test_split_no_chain(self):
@@ -77,7 +78,8 @@ class TestSplitID:
 
 
 class TestSplitIDWithEntity:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup_fixture(self):
         self.n = 100
 
     def test_split_base_only(self):
