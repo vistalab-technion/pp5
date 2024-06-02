@@ -89,7 +89,7 @@ DEFAULT_BFACTOR_CALC = AtomLocationUncertainty(
 )
 
 # Special insertion code to mark a residue that is unmodeled the structure.
-ICODE_UNMODELED_RES = "UNMODELED"
+ICODE_UNMODELED_RES = "U"
 
 
 class ResidueRecord(object):
@@ -892,7 +892,7 @@ class ProteinRecord(object):
             pdb_meta_aa_seq, pdb_modelled_aa_seq
         )
         LOGGER.info(
-            f"{self}: Canonical to structure seq alignment:\n"
+            f"{self}: Canonical (target) to structure (query) sequence alignment:\n"
             f"{str(meta_to_struct_seq_alignment).strip()}"
         )
         matching_residues: List[Residue] = []  # residues both in modelled and in meta
@@ -905,36 +905,41 @@ class ProteinRecord(object):
                 curr_residue = modelled_residues[modelled_seq_idx]
             else:
                 # This residue is not modelled (missing from the structure), need to add
-                missing_res_name_single = pdb_meta_aa_seq[curr_meta_seq_idx]
-                missing_res_name = ACIDS_1TO3[missing_res_name_single]
+                unmodelled_res_name_single = pdb_meta_aa_seq[curr_meta_seq_idx]
+                unmodelled_res_name = ACIDS_1TO3[unmodelled_res_name_single]
+                unmodelled_count = 0  # number of consecutive unmodelled residues
 
                 # We need to determine the residue sequence index for the missing
                 # residue. It needs to be consistent with the sequence index of the
                 # modelled residues.
                 if len(matching_residues) > 0:
                     # We have previous matching residues, so we can infer the index
-                    # based on the last matching residue.
-                    missing_idx = matching_residues[-1].get_id()[1] + 1
-                else:
-                    # We have no matching residues yet. We need to determine how far
-                    # we are from the first one, take its index and subtract the
-                    # distance.
-                    first_matching_meta_idx = next(iter(meta_to_struct_idx))
-                    dist_to_first_matching = first_matching_meta_idx - curr_meta_seq_idx
-                    assert dist_to_first_matching >= 0
-                    first_matching_struct_idx = meta_to_struct_idx[
-                        first_matching_meta_idx
-                    ]
-                    first_matching_modelled_res = modelled_residues[
-                        first_matching_struct_idx
-                    ]
-                    missing_idx = (
-                        first_matching_modelled_res.get_id()[1] - dist_to_first_matching
-                    )
+                    # based on the last matching residue (LMR).
+                    _, lmr_seq_idx, lmr_icode = matching_residues[-1].get_id()
 
-                curr_residue = Residue(
-                    (" ", missing_idx, ICODE_UNMODELED_RES), missing_res_name, 0
-                )
+                    # One or more unmodelled residues will be inserted after the
+                    # previous matching residue using the same sequence index. We use
+                    # the icode to disambiguate them. Each consecutive unmodelled
+                    # residue will have an icode of the form U_i, where i is a counter.
+                    unmodelled_seq_idx = lmr_seq_idx
+                    if lmr_icode.strip().startswith(ICODE_UNMODELED_RES):
+                        unmodelled_count = int(lmr_icode.split("_")[1]) + 1
+                else:
+                    # We have no matching residues yet. We'll insert the unmodelled
+                    # residue(s) before the first matching residue (FMR), using a
+                    # smaller sequence index.
+                    fmr_meta_idx: int = next(iter(meta_to_struct_idx))
+                    fmr_struct_idx: int = meta_to_struct_idx[fmr_meta_idx]
+                    fmr_modelled: Residue = modelled_residues[fmr_struct_idx]
+                    _, fmr_seq_idx, fmr_icode = fmr_modelled.get_id()
+                    unmodelled_seq_idx = fmr_seq_idx - 1
+                    # Sanity check: the first unmodelled residue should be inserted
+                    # before a modelled one. We should only be in this 'else' once.
+                    assert not fmr_icode.startswith(ICODE_UNMODELED_RES)
+
+                unmodelled_res_icode = f"{ICODE_UNMODELED_RES}_{unmodelled_count:04d}"
+                missing_residue_id = (" ", unmodelled_seq_idx, unmodelled_res_icode)
+                curr_residue = Residue(missing_residue_id, unmodelled_res_name, 0)
                 missing_residues.append(curr_residue)
 
             matching_residues.append(curr_residue)
@@ -950,14 +955,26 @@ class ProteinRecord(object):
         matching_modelled_residues = set(matching_residues) - set(missing_residues)
         extra_modelled_residues = set(modelled_residues) - matching_modelled_residues
 
-        # Sort all residues by their sequence index, first matching, then others
+        # Sort all residues by their sequence index, then icode. Include the extra
+        # residues at the end.
+        def _residue_sort_key(r: Residue) -> Tuple[int, str, str]:
+            _het_flag, _seq_idx, _icode = r.get_id()
+            # Ensure everything has the expected type
+            _het_flag = str(_het_flag or "").strip()
+            _icode = str(_icode or "").strip()
+            _seq_idx = int(_seq_idx)
+            return _seq_idx, _icode, _het_flag
+
         all_residues = sorted(
-            [*matching_residues, *extra_modelled_residues], key=lambda r: r.get_id()[1]
+            [*matching_residues, *extra_modelled_residues], key=_residue_sort_key
         )
+        n_residues = len(all_residues)
+
+        # Obtain single-letter AA sequence with all residues (including unmodelled),
+        # and with non-standard AAs or ligands represented by 'X'.
         all_aa_seq = str.join(
             "", [ACIDS_3TO1.get(r.get_resname(), UNKNOWN_AA) for r in all_residues]
         )
-        n_residues = len(all_residues)
 
         # Find the best matching DNA for our AA sequence via pairwise alignment
         # between the PDB AA sequence and translated DNA sequences.
