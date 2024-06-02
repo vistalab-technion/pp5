@@ -10,32 +10,33 @@ NO_INTERNET = not tests.utils.has_internet()
 @pytest.mark.skipif(NO_INTERNET, reason="Needs internet")
 class TestUNPDownload:
     @classmethod
-    def setup_class(cls):
-        cls.TEMP_PATH = tests.get_tmp_path("data/unp")
+    @pytest.fixture(scope="class")
+    def unp_dir(cls):
+        return tests.get_tmp_path("data/unp")
 
-    def test_unp_record(self):
+    def test_unp_record(self, unp_dir):
         test_id = "P00720"
-        unp_rec = unp.unp_record(test_id, unp_dir=self.TEMP_PATH)
+        unp_rec = unp.unp_record(test_id, unp_dir=unp_dir)
         assert unp_rec.sequence_length == 164
 
-    def test_unp_download(self):
+    def test_unp_download(self, unp_dir):
         test_id = "P42212"
-        path = unp.unp_download(test_id, unp_dir=self.TEMP_PATH)
-        assert path == self.TEMP_PATH.joinpath(f"{test_id}.txt")
+        path = unp.unp_download(test_id, unp_dir=unp_dir)
+        assert path == unp_dir.joinpath(f"{test_id}.txt")
 
-    def test_unp_download_with_redirect(self):
+    def test_unp_download_with_redirect(self, unp_dir):
         # This UNP id causes a redirect to a few replacement ids.
         test_id = "P31217"
         replacement_id = unp.unp_replacement_ids(test_id)[0]
         assert replacement_id in ["P62707", "P62708", "P62709", "P62710"]
 
-        path = unp.unp_download(test_id, unp_dir=self.TEMP_PATH)
+        path = unp.unp_download(test_id, unp_dir=unp_dir)
 
-        assert path == self.TEMP_PATH.joinpath(f"{replacement_id}.txt")
+        assert path == unp_dir.joinpath(f"{replacement_id}.txt")
 
-    def test_unp_download_with_invalid_id(self):
+    def test_unp_download_with_invalid_id(self, unp_dir):
         with pytest.raises(IOError, match="400"):
-            path = unp.unp_download("P000000", unp_dir=self.TEMP_PATH)
+            path = unp.unp_download("P000000", unp_dir=unp_dir)
 
 
 class TestUNPRecord:
@@ -86,7 +87,8 @@ class TestENAXRefs:
 
 @pytest.mark.skipif(NO_INTERNET, reason="Needs internet")
 class TestPDBXRefs:
-    def setup(self):
+    @pytest.fixture(autouse=True)
+    def setup_fixture(self):
         self.xrefs = unp.find_pdb_xrefs("P00720", method="x-ray")
 
     def test_single_chain(self):
