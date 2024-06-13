@@ -58,6 +58,7 @@ COL_CG_TEMP = "cg_temp"
 COL_PDB_SOURCE = "pdb_source"
 COL_REJECTED_BY = "rejected_by"
 COL_NUM_ALTLOCS = "num_altlocs"
+COL_NUM_UNMODELLED = "num_unmodelled"
 
 COLLECTION_METADATA_FILENAME = "meta.json"
 ALL_STRUCTS_FILENAME = "meta-structs_all"
@@ -1145,6 +1146,12 @@ def _collect_single_structure(
                 COL_SEQ_LEN: seq_len,
                 COL_SEQ_GAPS: str.join(";", [f"{s}-{e}" for (s, e) in prec.seq_gaps]),
                 COL_NUM_ALTLOCS: prec.num_altlocs,
+                **{
+                    f"{COL_NUM_UNMODELLED}_{suffix}": n
+                    for n, suffix in zip(
+                        prec.num_unmodelled, ["nterm", "inter", "cterm"]
+                    )
+                },
                 COL_PDB_SOURCE: pdb_source,
                 **meta.as_dict(chain_id=chain_id, seq_to_str=True),
             }

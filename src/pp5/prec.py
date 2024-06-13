@@ -33,7 +33,7 @@ from Bio.PDB.Residue import Residue
 from Bio.PDB.Polypeptide import Polypeptide
 
 import pp5
-from pp5.align import BLOSUM80
+from pp5.align import BLOSUM80, pairwise_alignment_map
 from pp5.utils import ProteinInitError, filelock_context
 from pp5.codons import (
     ACIDS_1TO3,
@@ -88,8 +88,8 @@ DEFAULT_BFACTOR_CALC = AtomLocationUncertainty(
     backbone_only=True, unit_cell=None, isotropic=True, scale_as_bfactor=True
 )
 
-# Special insertion code to mark a residue that was missing from the structure.
-ICODE_MISSING_RESIDUE = "M"
+# Special insertion code to mark a residue that is unmodeled the structure.
+ICODE_UNMODELED_RES = "U"
 
 
 class ResidueRecord(object):
@@ -868,73 +868,113 @@ class ProteinRecord(object):
             dihedral_est_name, dihedral_est_args
         )
 
-        pdb_aa_seq, residues = "", []
-        # Extract the residues from the PDB structure
-        curr_res: Residue
-        chain: Chain = self.pdb_rec[0][self.pdb_auth_chain_id]
-        for curr_res in chain.get_residues():
-            # Skip water molecules
-            if curr_res.resname == "HOH":
-                continue
+        # Extract the residues from the PDB structure: these are the modelled
+        # residues. We ignore water molecules.
+        struct_chain: Chain = self.pdb_rec[0][self.pdb_auth_chain_id]
+        modelled_residues: List[Residue] = [
+            res for res in struct_chain.get_residues() if res.resname != "HOH"
+        ]
 
-            # For non-standard AAs, we place an 'X' in the sequence, but we still
-            # keep these residues.
-            res_name_single = ACIDS_3TO1.get(curr_res.get_resname(), UNKNOWN_AA)
-            pdb_aa_seq += res_name_single
-            residues.append(curr_res)
-
-        assert len(pdb_aa_seq) == len(residues)
-
-        # Add un-modelled residues by aligning to UNP:
-        # In case of non-modelled residues in the structure, they will be missing
-        # from the pdb_aa_seq and residues list, since they don't appear in
-        # biopython's structure. We will add them back using alignment to Uniprot.
-        # Find the alignment between the PDB AA sequence and the Uniprot AA sequence.
-        pdb_to_unp_idx = self._find_unp_alignment(pdb_aa_seq, self.unp_rec.sequence)
-
-        for curr_pdb_idx in pdb_to_unp_idx.keys():
-            next_pdb_idx = curr_pdb_idx + 1
-            if next_pdb_idx not in pdb_to_unp_idx:
-                # Either this is the last one, or the next one is not in the
-                # alignment (can happen if it's a non-standard AA)
-                continue
-
-            curr_unp_idx = pdb_to_unp_idx[curr_pdb_idx]
-            next_unp_idx = pdb_to_unp_idx[next_pdb_idx]
-
-            # Detect a gap in the alignment to UNP
-            gap_len = next_unp_idx - curr_unp_idx - 1
-            if gap_len == 0:
-                continue
-
-            # Here, we have two adjacent residues in the pdb structure are aligned to
-            # non-adjacent residues in the unp sequence. It means that there are
-            # missing residues in the structure, i.e. the pdb sequence we created is
-            # not complete.
-            curr_residue = residues[curr_pdb_idx]
-            curr_residue_seq_idx = curr_residue.get_id()[1]
-            for j, gap_unp_idx in enumerate(range(curr_unp_idx + 1, next_unp_idx)):
-                missing_res_name_single = self.unp_rec.sequence[gap_unp_idx]
-                missing_res_name = ACIDS_1TO3[missing_res_name_single]
-
-                gap_pdb_idx = next_pdb_idx + j
-                gap_pdb_seq_idx = curr_residue_seq_idx + j + 1
-
-                residues.insert(  # inserts BEFORE the given index
-                    gap_pdb_idx,
-                    Residue(
-                        (" ", gap_pdb_seq_idx, ICODE_MISSING_RESIDUE),
-                        missing_res_name,
-                        0,
-                    ),
-                )
-
-        # Update PDB sequence to include any missing residues we added
-        pdb_aa_seq = str.join(
-            "", [ACIDS_3TO1.get(r.resname, UNKNOWN_AA) for r in residues]
+        # Sequence of modelled residues from the PDB structure
+        pdb_modelled_aa_seq: str = str.join(
+            "",
+            [ACIDS_3TO1.get(r.get_resname(), UNKNOWN_AA) for r in modelled_residues],
         )
-        assert len(pdb_aa_seq) == len(residues)
-        n_residues = len(pdb_aa_seq)
+        assert len(pdb_modelled_aa_seq) == len(modelled_residues)
+
+        # The canonical AA sequence from the structure metadata
+        pdb_meta_aa_seq = self.pdb_meta.entity_sequence[
+            self.pdb_meta.chain_entities[self.pdb_chain_id]
+        ]
+
+        # Add un-modelled residues by aligning to the canonical PDB sequence.
+        meta_to_struct_seq_alignment, meta_to_struct_idx = pairwise_alignment_map(
+            pdb_meta_aa_seq, pdb_modelled_aa_seq
+        )
+        LOGGER.info(
+            f"{self}: Canonical (target) to structure (query) sequence alignment:\n"
+            f"{str(meta_to_struct_seq_alignment).strip()}"
+        )
+        matching_residues: List[Residue] = []  # residues both in modelled and in meta
+        missing_residues: List[Residue] = []  # residues only in meta
+        for curr_meta_seq_idx in range(len(pdb_meta_aa_seq)):
+
+            if curr_meta_seq_idx in meta_to_struct_idx:
+                # This residue is one of the modelled residues in the structure
+                modelled_seq_idx = meta_to_struct_idx[curr_meta_seq_idx]
+                curr_residue = modelled_residues[modelled_seq_idx]
+            else:
+                # This residue is not modelled (missing from the structure), need to add
+                unmodelled_res_name_single = pdb_meta_aa_seq[curr_meta_seq_idx]
+                unmodelled_res_name = ACIDS_1TO3[unmodelled_res_name_single]
+                unmodelled_count = 0  # number of consecutive unmodelled residues
+
+                # We need to determine the residue sequence index for the missing
+                # residue. It needs to be consistent with the sequence index of the
+                # modelled residues.
+                if len(matching_residues) > 0:
+                    # We have previous matching residues, so we can infer the index
+                    # based on the last matching residue (LMR).
+                    _, lmr_seq_idx, lmr_icode = matching_residues[-1].get_id()
+
+                    # One or more unmodelled residues will be inserted after the
+                    # previous matching residue using the same sequence index. We use
+                    # the icode to disambiguate them. Each consecutive unmodelled
+                    # residue will have an icode of the form U_i, where i is a counter.
+                    unmodelled_seq_idx = lmr_seq_idx
+                    if lmr_icode.strip().startswith(ICODE_UNMODELED_RES):
+                        unmodelled_count = int(lmr_icode.split("_")[1]) + 1
+                else:
+                    # We have no matching residues yet. We'll insert the unmodelled
+                    # residue(s) before the first matching residue (FMR), using a
+                    # smaller sequence index.
+                    fmr_meta_idx: int = next(iter(meta_to_struct_idx))
+                    fmr_struct_idx: int = meta_to_struct_idx[fmr_meta_idx]
+                    fmr_modelled: Residue = modelled_residues[fmr_struct_idx]
+                    _, fmr_seq_idx, fmr_icode = fmr_modelled.get_id()
+                    unmodelled_seq_idx = fmr_seq_idx - 1
+                    # Sanity check: the first unmodelled residue should be inserted
+                    # before a modelled one. We should only be in this 'else' once.
+                    assert not fmr_icode.startswith(ICODE_UNMODELED_RES)
+
+                unmodelled_res_icode = f"{ICODE_UNMODELED_RES}_{unmodelled_count:04d}"
+                missing_residue_id = (" ", unmodelled_seq_idx, unmodelled_res_icode)
+                curr_residue = Residue(missing_residue_id, unmodelled_res_name, 0)
+                missing_residues.append(curr_residue)
+
+            matching_residues.append(curr_residue)
+
+        # Sanity check
+        matching_aa_seq = str.join(
+            "", [ACIDS_3TO1[r.get_resname()] for r in matching_residues]
+        )
+        assert pdb_meta_aa_seq == matching_aa_seq
+
+        # Detect any residues that are modelled but not in the canonical sequence,
+        # these would usually be ligands and non-standard AAs.
+        matching_modelled_residues = set(matching_residues) - set(missing_residues)
+        extra_modelled_residues = set(modelled_residues) - matching_modelled_residues
+
+        # Sort all residues by their sequence index, then icode. Include the extra
+        # residues at the end.
+        def _residue_sort_key(r: Residue) -> Tuple[int, str, str]:
+            _het_flag, _seq_idx, _icode = r.get_id()
+            # Ensure everything has the expected type
+            _het_flag = str(_het_flag or "").strip()
+            _icode = str(_icode or "").strip()
+            _seq_idx = int(_seq_idx)
+            return _seq_idx, _icode, _het_flag
+
+        all_residues = sorted(
+            [*matching_residues, *extra_modelled_residues], key=_residue_sort_key
+        )
+        n_residues = len(all_residues)
+
+        # Obtain single-letter AA sequence with all residues (including unmodelled),
+        # and with non-standard AAs or ligands represented by 'X'.
+        all_aa_seq = str.join(
+            "", [ACIDS_3TO1.get(r.get_resname(), UNKNOWN_AA) for r in all_residues]
+        )
 
         # Find the best matching DNA for our AA sequence via pairwise alignment
         # between the PDB AA sequence and translated DNA sequences.
@@ -943,7 +983,7 @@ class ProteinRecord(object):
         idx_to_codons = {}
         if with_codons:
             self.ena_id, self._dna_seq, idx_to_codons = self._find_dna_alignment(
-                pdb_aa_seq, max_ena
+                all_aa_seq, max_ena
             )
 
         # Calculate contacts if requested
@@ -965,20 +1005,28 @@ class ProteinRecord(object):
                     pdb_dict=self._pdb_dict,
                 )
 
+        # Align PDB sequence to UNP
+        unp_alignment, pdb_to_unp_idx = pairwise_alignment_map(
+            all_aa_seq, self.unp_rec.sequence
+        )
+        LOGGER.info(f"{self}: PDB to UNP alignment score={unp_alignment.score}")
+
         # Create a ResidueRecord holding all data we need per residue
         residue_recs = []
         for i in range(n_residues):
-            r_curr: Residue = residues[i]
+            r_curr: Residue = all_residues[i]
             relative_location = (i + 1) / n_residues
 
             # Sanity check
-            assert pdb_aa_seq[i] == ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
+            assert all_aa_seq[i] == ACIDS_3TO1.get(r_curr.get_resname(), UNKNOWN_AA)
 
             # Get the residues before and after this one
-            r_prev: Optional[Residue] = residues[i - 1] if i > 0 else None
-            r_next: Optional[Residue] = residues[i + 1] if i < n_residues - 1 else None
+            r_prev: Optional[Residue] = all_residues[i - 1] if i > 0 else None
+            r_next: Optional[Residue] = (
+                all_residues[i + 1] if i < n_residues - 1 else None
+            )
 
-            # Alignment to UNP
+            # Get corresponding UNP index
             unp_idx: Optional[int] = pdb_to_unp_idx.get(i, None)
 
             # Secondary structure annotation
@@ -1007,7 +1055,7 @@ class ProteinRecord(object):
             )
             residue_recs.append(rr)
 
-        self._protein_seq = pdb_aa_seq
+        self._aa_seq = all_aa_seq
         self._residue_recs: Dict[str, ResidueRecord] = {
             rr.res_id: rr for rr in residue_recs
         }
@@ -1055,15 +1103,15 @@ class ProteinRecord(object):
         return SeqRecord(Seq(self._dna_seq), self.ena_id, "", "")
 
     @property
-    def protein_seq(self) -> SeqRecord:
+    def aa_seq(self) -> str:
         """
-        :return: Protein sequence as 1-letter AA names. Based on the
-        residues found in the associated PDB structure.
-        Note that the sequence might contain the letter 'X' denoting an
-        unknown AA. This happens if the PDB entry contains non-standard AAs
-        and we chose to ignore such AAs.
+        :return: Protein sequence as 1-letter AA names.
+        Based on the residues found in the associated PDB structure, including those
+        which are not modelled.
+        Note that the sequence might contain the letter 'X' denoting a non-standard
+        AA or a ligand.
         """
-        return SeqRecord(Seq(self._protein_seq), self.pdb_id, "", "")
+        return self._aa_seq
 
     @property
     def seq_gaps(self) -> Sequence[Tuple[str, str]]:
@@ -1135,6 +1183,40 @@ class ProteinRecord(object):
         :return: Number of positions with alternate locations (altlocs) in this chain.
         """
         return sum(r.num_altlocs > 1 for r in self._residue_recs.values())
+
+    @property
+    def num_unmodelled(self) -> Tuple[int, int, int]:
+        """
+        Counts number of unmodelled residues in this chain.
+
+        :return: A tuple of three integers:
+        - Number of unmodelled residues before the first modelled residue (N-terminus).
+        - Number of unmodelled residues between modelled residues.
+        - Number of unmodelled residues after the last modelled residue (C-terminus).
+        """
+        count_pre, count_mid, count_post = 0, 0, 0
+        modelled_idx = [
+            i
+            for i, res in enumerate(self)
+            if not res.res_icode.startswith(ICODE_UNMODELED_RES)
+            and res.name in ACIDS_1TO3
+        ]
+
+        if len(modelled_idx) > 1:
+            first_modelled_idx, *_, last_modelled_idx = modelled_idx
+            count_pre, count_mid, count_post = 0, 0, 0
+
+            res: ResidueRecord
+            for i, res in enumerate(self):
+                if res.res_icode.startswith(ICODE_UNMODELED_RES):
+                    if i < first_modelled_idx:
+                        count_pre += 1
+                    elif i > last_modelled_idx:
+                        count_post += 1
+                    else:
+                        count_mid += 1
+
+        return count_pre, count_mid, count_post
 
     def to_dataframe(self):
         """
@@ -1241,53 +1323,6 @@ class ProteinRecord(object):
         LOGGER.info(f"Wrote {self} to {filepath}")
         return filepath
 
-    def _find_unp_alignment(self, pdb_aa_seq: str, unp_aa_seq: str) -> Dict[int, int]:
-        """
-        Aligns between this prec's AA sequence (based on the PDB structure) and the
-        Uniprot sequence.
-        :param pdb_aa_seq: AA sequence from PDB to align.
-        :param unp_aa_seq: AA sequence from UNP to align.
-        :return: A dict mapping from an index in the PDB sequence to the
-            corresponding index in the UNP sequence.
-        """
-        aligner = PairwiseAligner(
-            substitution_matrix=BLOSUM80, open_gap_score=-10, extend_gap_score=-0.5
-        )
-
-        # In rare cases, there could be unknown letters in the sequences. This causes
-        # the alignment to break. Replace with "X" which the aligner can handle.
-        unknown_aas = set(pdb_aa_seq).union(set(unp_aa_seq)) - set(ACIDS_1TO3)
-        for unk_aa in unknown_aas:  # usually there are none
-            unp_aa_seq = unp_aa_seq.replace(unk_aa, UNKNOWN_AA)
-            pdb_aa_seq = pdb_aa_seq.replace(unk_aa, UNKNOWN_AA)
-
-        multi_alignments = aligner.align(pdb_aa_seq, unp_aa_seq)
-        alignment = sorted(multi_alignments, key=lambda a: a.score)[-1]
-        LOGGER.info(f"{self}: PDB to UNP sequence alignment score={alignment.score}")
-
-        # Alignment contains two tuples each of length N (for N matching sub-sequences)
-        # (
-        #   ((t_start1, t_end1), (t_start2, t_end2), ..., (t_startN, t_endN)),
-        #   ((q_start1, q_end1), (q_start2, q_end2), ..., (q_startN, q_endN))
-        # )
-        pdb_to_unp: List[Tuple[int, int]] = []
-        pdb_subseqs, unp_subseqs = alignment.aligned
-        assert len(pdb_subseqs) == len(unp_subseqs)
-        for i in range(len(pdb_subseqs)):
-            pdb_start, pdb_end = pdb_subseqs[i]
-            unp_start, unp_end = unp_subseqs[i]
-            assert pdb_end - pdb_start == unp_end - unp_start
-
-            for j in range(pdb_end - pdb_start):
-                if pdb_aa_seq[pdb_start + j] != unp_aa_seq[unp_start + j]:
-                    # There are mismatches included in the match sequence (cases
-                    # where a similar AA is not considered a complete mismatch).
-                    # We are more strict: require exact match.
-                    continue
-                pdb_to_unp.append((pdb_start + j, unp_start + j))
-
-        return dict(pdb_to_unp)
-
     def _find_dna_alignment(
         self, pdb_aa_seq: str, max_ena: int
     ) -> Tuple[Optional[str], Optional[str], Dict[int, Dict[str, int]]]:
@@ -1351,8 +1386,7 @@ class ProteinRecord(object):
             f"{self}: Translated DNA to PDB alignment "
             f"(norm_score="
             f"{best_alignments.score / len(pdb_aa_seq):.2f}, "
-            f"num={len(best_alignments)})\n"
-            f"{str(best_alignment).strip()}"
+            f"num={len(best_alignments)})"
         )
 
         # Map each AA to a dict of (codon->count)

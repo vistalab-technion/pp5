@@ -16,7 +16,7 @@ from pp5.contacts import (
     Arpeggio,
 )
 from pp5.external_dbs import unp
-from pp5.external_dbs.pdb import PDB_DOWNLOAD_SOURCES
+from pp5.external_dbs.pdb import PDB_DOWNLOAD_SOURCES, split_id
 
 
 @pytest.fixture(
@@ -147,6 +147,27 @@ class TestMethods:
         for res_id, res_contacts in valid_contacts.items():
             assert res_id in prec
             assert res_contacts.contact_smax > 0
+
+    @pytest.mark.parametrize("pdb_id", ["1914:A", "2B3P:A", "4M2Q:A", "3P8D:A"])
+    def test_unmodelled_residues(self, pdb_id):
+        _, chain_id = split_id(pdb_id)
+        prec = ProteinRecord.from_pdb(pdb_id)
+
+        pdb_meta = prec.pdb_meta
+        canonical_seq = pdb_meta.entity_sequence[pdb_meta.chain_entities[chain_id]]
+
+        # The sequence in our prec structure should be identical to the canonical
+        # sequence in the PDB file, except where there are ligands.
+        aa_seq_no_ligands = prec.aa_seq.replace(UNKNOWN_AA, "")
+        assert aa_seq_no_ligands == canonical_seq
+
+        # Make sure UNP alignment is correct and includes both modelled and
+        # unmodelled residues
+        unp_seq = prec.unp_rec.sequence
+        assert not all(r.unp_idx is None for r in prec)
+        assert all(
+            [unp_seq[r.unp_idx] == r.name for r in prec if r.unp_idx is not None]
+        )
 
 
 class TestFromUnp:
