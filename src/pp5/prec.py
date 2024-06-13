@@ -1184,6 +1184,40 @@ class ProteinRecord(object):
         """
         return sum(r.num_altlocs > 1 for r in self._residue_recs.values())
 
+    @property
+    def num_unmodelled(self) -> Tuple[int, int, int]:
+        """
+        Counts number of unmodelled residues in this chain.
+
+        :return: A tuple of three integers:
+        - Number of unmodelled residues before the first modelled residue (N-terminus).
+        - Number of unmodelled residues between modelled residues.
+        - Number of unmodelled residues after the last modelled residue (C-terminus).
+        """
+        count_pre, count_mid, count_post = 0, 0, 0
+        modelled_idx = [
+            i
+            for i, res in enumerate(self)
+            if not res.res_icode.startswith(ICODE_UNMODELED_RES)
+            and res.name in ACIDS_1TO3
+        ]
+
+        if len(modelled_idx) > 1:
+            first_modelled_idx, *_, last_modelled_idx = modelled_idx
+            count_pre, count_mid, count_post = 0, 0, 0
+
+            res: ResidueRecord
+            for i, res in enumerate(self):
+                if res.res_icode.startswith(ICODE_UNMODELED_RES):
+                    if i < first_modelled_idx:
+                        count_pre += 1
+                    elif i > last_modelled_idx:
+                        count_post += 1
+                    else:
+                        count_mid += 1
+
+        return count_pre, count_mid, count_post
+
     def to_dataframe(self):
         """
         :return: A Pandas dataframe where each row is a ResidueRecord from
