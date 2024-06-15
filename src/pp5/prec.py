@@ -906,7 +906,9 @@ class ProteinRecord(object):
             else:
                 # This residue is not modelled (missing from the structure), need to add
                 unmodelled_res_name_single = pdb_meta_aa_seq[curr_meta_seq_idx]
-                unmodelled_res_name = ACIDS_1TO3[unmodelled_res_name_single]
+                unmodelled_res_name = ACIDS_1TO3.get(
+                    unmodelled_res_name_single, UNKNOWN_AA
+                )
                 unmodelled_count = 0  # number of consecutive unmodelled residues
 
                 # We need to determine the residue sequence index for the missing
@@ -946,7 +948,7 @@ class ProteinRecord(object):
 
         # Sanity check
         matching_aa_seq = str.join(
-            "", [ACIDS_3TO1[r.get_resname()] for r in matching_residues]
+            "", [ACIDS_3TO1.get(r.get_resname(), UNKNOWN_AA) for r in matching_residues]
         )
         assert pdb_meta_aa_seq == matching_aa_seq
 
