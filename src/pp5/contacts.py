@@ -570,13 +570,12 @@ class ResidueContacts(object):
                 for _contact in _contacts
             )
 
-        contact_smax = max(
-            [
-                c.seq_dist
-                for c in contacts
-                if (c.seq_dist is not None and c.type == CONTACT_TYPE_AAA)
-            ]
-        )
+        seq_dists = [
+            c.seq_dist
+            for c in contacts
+            if (c.seq_dist is not None and c.type == CONTACT_TYPE_AAA)
+        ]
+        contact_smax = max(seq_dists) if seq_dists else 0
         contact_ooc = _format([c for c in contacts if c.type == CONTACT_TYPE_OOC])
         contact_non_aa = _format([c for c in contacts if c.type == CONTACT_TYPE_LIG])
         contact_aas = _format([c for c in contacts if c.type == CONTACT_TYPE_AAA])
