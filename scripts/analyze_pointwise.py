@@ -61,7 +61,6 @@ DATASETS = {
 OUT_DIR = Path("out")
 
 for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
-
     ddist_statistic_tag = f"{DDIST_STATISTIC}_{DDIST_KERNEL_SIZE}"
 
     codon_grouping_tag = ""
@@ -98,7 +97,6 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
     out_file_path = OUT_DIR.joinpath(f"analyze-pointwise_{dataset_name}-{tag}.log")
 
     with open(out_file_path, "w") as out_file:
-
         # Write to output file and console
         for f in [out_file, sys.stdout]:
             print(f"### EXECUTING COMMAND:\n{str.join(' ', command_line)}", file=f)

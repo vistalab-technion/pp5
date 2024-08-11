@@ -307,7 +307,6 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
         self._with_atom_contacts = with_atom_contacts
 
     def assign(self, res: Residue) -> Dict[str, Optional[ResidueContacts]]:
-
         atom_contacts: List[AtomContact] = []
         altloc_to_residue_contacts: Dict[str, Optional[ResidueContacts]] = {
             NO_ALTLOC: None
@@ -345,7 +344,6 @@ class NeighborSearchContactsAssigner(ContactsAssigner):
         # particular atom) and then calculate the contacts from all the moved atoms.
         # We then join the contacts from all the atoms.
         for altloc_id in altloc_ids:
-
             # Create a contact key for this residue at the current altloc
             src_res_contact_key = ResidueContactKey(
                 chain=src_chain,

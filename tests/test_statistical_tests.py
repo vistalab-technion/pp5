@@ -72,7 +72,6 @@ class TestMHTBH(object):
 
 
 class TestTorusW2:
-
     STAT_TEST_FNS = {
         "projection": torus_projection_test,
         "projection_fixed_geodesics": partial(
@@ -136,7 +135,6 @@ class TestTorusW2:
         assert pval_xz < 0.1
 
     def test_uniformity(self, bvm_dist1, stat_test_fn, stat_test_name):
-
         Ns = [10, 100, 200]
         M = 10
         pvals = np.empty((M,), dtype=float)

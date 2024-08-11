@@ -232,7 +232,6 @@ class TestDihedralAnglesEstimators(object):
 
         estimator = dihedral.DihedralAngleCalculator()
         for i_pp, pp in enumerate(pp_chains):
-
             # To make sure all altlocs are set back to default, we will calculate all
             # dihedrals with and without altlocs, before and after they are changed,
             # and compare the results.

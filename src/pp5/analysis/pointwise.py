@@ -753,7 +753,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_group: pd.DataFrame,
         tuple_len: int,
     ) -> Optional[pd.DataFrame]:
-
         # Sort rows using the order of residues in each protein
         df_group = df_group.sort_values(by=[UNP_ID_COL, UNP_IDX_COL])
 
@@ -793,7 +792,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Function to map rows in the merged dataframe to the final rows we'll use.
         def _row_mapper(row: pd.Series):
-
             aa_codons, sss, group_sizes, group_stds = [], [], [], []
             for i, p in enumerate(prefixes):
                 aa_codons.append(row[f"{p}{CODON_COL}"])
@@ -1043,7 +1041,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             comp_type,
             (subgroup1_col, subgroup2_col, pair_filter_fn, pair_nmax_fn),
         ) in comp_types_to_subgroup_pairs.items():
-
             # Only run the requested comparison types
             if comp_type not in self.comparison_types:
                 LOGGER.info(f"Skipping {comp_type=} in pairwise analysis")
@@ -1135,7 +1132,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Group by the conditioning criteria, e.g. SS
         for group_idx, (group, df_group) in enumerate(df_groups):
-
             # Group by subgroup1 (e.g. AA  or codon)
             df_sub1_groups = df_group.groupby(subgroup1_col)
             for i, (sub1, df_sub1) in enumerate(df_sub1_groups):
@@ -1252,7 +1248,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             comp_type,
             (subgroup_col, sub_names_to_idx),
         ) in comp_types_to_subgroup_pairs.items():
-
             # Only run the requested comparison types
             if comp_type not in self.comparison_types:
                 LOGGER.info(f"Skipping {comp_type=} in dihedral distributions")
@@ -1266,11 +1261,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             # Group by the conditioning criteria, e.g. SS
             for group_idx, (group, df_group) in enumerate(df_groups):
-
                 # Group by subgroup (e.g. AA or codon tuple)
                 df_sub_groups = df_group.groupby(subgroup_col)
                 for i, (sub, df_sub) in enumerate(df_sub_groups):
-
                     args = (
                         group_idx,
                         df_sub,
@@ -1285,7 +1278,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             collected_kdes: Dict[str, Dict[str, np.ndarray]] = {
                 g: {} for g in self.ss_group_names
             }
-            for ((group, sub), result) in yield_async_results(async_results):
+            for (group, sub), result in yield_async_results(async_results):
                 i = sub_names_to_idx[sub]
                 _, kde = result
                 collected_kdes[group][sub] = kde
@@ -1336,7 +1329,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_data = {}
         async_results = {}
 
-        for (comp_type, i_col, j_col, i_tuples, j_tuples) in comp_types:
+        for comp_type, i_col, j_col, i_tuples, j_tuples in comp_types:
             if comp_type not in self.comparison_types:
                 continue
 
@@ -1407,7 +1400,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         group_pvals: np.ndarray,
         group_ddists: np.ndarray,
     ):
-
         # Get all indices of non-null pvals
         idx_valid = np.argwhere(~np.isnan(group_pvals))
 
@@ -1552,7 +1544,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             return sorted(set(aac_globs))
 
         for aa_codon in [COMP_TYPE_AA, COMP_TYPE_CC]:
-
             avg_dkdes: dict = self._load_intermediate(f"{aa_codon}-dihedral-kdes", True)
             if avg_dkdes is None:
                 continue
@@ -1952,7 +1943,6 @@ def _plot_dkdes(
 
     fig_filenames = []
     for subgroup_glob in split_subgroups_glob:
-
         filtered_dkdes = {
             sub: dkde for sub, dkde in dkdes.items() if fnmatchcase(sub, subgroup_glob)
         }
@@ -2176,9 +2166,7 @@ def _plot_pvals_hist(
     out_files = []
 
     with mpl.style.context(PP5_MPL_STYLE):
-
         for comp_type, group_to_pvals in pvals.items():
-
             hist_fig_filename = out_dir.joinpath(f"pvals_hist-{comp_type}.pdf")
             pvals_fig_filename = out_dir.joinpath(f"pvals-{comp_type}.pdf")
 

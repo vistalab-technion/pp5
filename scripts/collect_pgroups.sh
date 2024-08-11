@@ -36,4 +36,3 @@ pp5 \
     --no-strict-codons \
     --pdb-source=$PDB_SOURCE \
     --out-tag "ex_EC-src_ALL-${RESOLUTION/./}-$PDB_SOURCE"
-

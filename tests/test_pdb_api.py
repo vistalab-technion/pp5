@@ -82,7 +82,6 @@ class TestRawDataAPI:
     def test_invalid_pdb_ids(
         self, pdb_base_id, chain_id, entity_id, raise_on_error, ex_regex
     ):
-
         if raise_on_error:
             expected_behaviour = pytest.raises(pdb_api.PDBAPIException, match=ex_regex)
             expected_result = None
