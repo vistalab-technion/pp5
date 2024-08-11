@@ -10,7 +10,18 @@ import warnings
 import itertools
 import multiprocessing as mp
 from pprint import pformat
-from typing import Set, Dict, List, Tuple, Union, Callable, Iterable, Optional, Sequence
+from typing import (
+    Any,
+    Set,
+    Dict,
+    List,
+    Tuple,
+    Union,
+    Callable,
+    Iterable,
+    Optional,
+    Sequence,
+)
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass
@@ -561,7 +572,6 @@ class ProteinRecordCollector(ParallelDataCollector):
         return idx_filter
 
     def _filter_redundant_unps(self, pool: Pool, df_all: pd.DataFrame) -> pd.Series:
-
         if self.seq_similarity_thresh == 1.0:
             LOGGER.info("Skipping sequence similarity filter...")
             return pd.Series(data=[True] * len(df_all), index=df_all.index)
@@ -1385,3 +1395,83 @@ def _normalize_csv(
     seq_str = f"({_seq[0]+1}/{_seq[1]})" if _seq else ""
     LOGGER.info(f"Normalized {csv_path!s} {seq_str}")
     return len(df)
+
+
+class ZipDataset:
+    """
+    A class for loading a collected dataset from a zip file.
+    """
+
+    def __init__(
+        self, dataset_zipfile_path: Union[Path, str], dataset_name: str = None
+    ):
+        """
+        :param dataset_zipfile_path: The path to the zip file containing the dataset.
+        :param dataset_name: Optional name for the dataset, in case the zipfile was
+        renamed. This should be the name of the top-level directory inside the zipfile
+        which contains the dataset.
+        """
+        self.zipfile_path = Path(dataset_zipfile_path)
+
+        if not self.zipfile_path.is_file():
+            raise FileNotFoundError(f"File not found: {self.zipfile_path}")
+
+        if not dataset_name:
+            dataset_name = self.zipfile_path.stem
+
+        self.name: str = dataset_name
+        self._collection_metadata_path: str = (
+            f"{dataset_name}/{COLLECTION_METADATA_FILENAME}"
+        )
+        self._struct_metadata_path: str = f"{dataset_name}/{ALL_STRUCTS_FILENAME}.csv"
+        self._prec_dir: str = f"{dataset_name}/{DATASET_DIRNAME}"
+
+        self._collection_metadata: Dict[str, Any] = {}
+        self._prec_paths: Dict[str, str] = {}  # pdb_id -> path in zip file
+        with zipfile.ZipFile(self.zipfile_path, "r") as zip_file:
+            # Load collection metadata
+            with zip_file.open(self._collection_metadata_path, "r") as fileobj:
+                self._collection_metadata.update(json.load(fileobj))
+
+            # Load prec file names
+            for file_path in zip_file.namelist():
+                if file_path.startswith(self._prec_dir) and file_path.endswith(".csv"):
+                    pdb_id = Path(file_path).stem.split("-")[0].replace("_", ":")
+                    self._prec_paths[pdb_id] = file_path
+
+    def _read_csv(self, file_path: Union[Path, str], **read_csv_kwargs):
+        with zipfile.ZipFile(self.zipfile_path, "r") as zip_file:
+            with zip_file.open(str(file_path), "r") as fileobj:
+                return pd.read_csv(fileobj, **read_csv_kwargs)
+
+    @property
+    def collection_metadata(self) -> Dict[str, Any]:
+        """
+        :return: The collection metadata.
+        """
+        return self._collection_metadata.copy()
+
+    @property
+    def pdb_ids(self):
+        """
+        :return: The PDB IDs of all structures in the dataset.
+        """
+        return tuple(self._prec_paths.keys())
+
+    def load_metadata(self) -> pd.DataFrame:
+        """
+        Load the metadata for all structures in the dataset.
+
+        :return: The metadata as a DataFrame.
+        """
+        return self._read_csv(self._struct_metadata_path, header=0, index_col=None)
+
+    def load_prec(self, pdb_id: str) -> pd.DataFrame:
+        """
+        Load the metadata for all structures in the dataset.
+
+        :return: The metadata as a DataFrame.
+        """
+        if pdb_id not in self._prec_paths:
+            raise ValueError(f"Structure {pdb_id} not found in dataset")
+        return self._read_csv(self._prec_paths[pdb_id], header=0, index_col=None)
