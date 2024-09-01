@@ -3,11 +3,16 @@ import abc
 import json
 import logging
 import zipfile
+import itertools as it
 import contextlib
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, Callable
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing.context import SpawnContext
 
 import pandas as pd
+from pandas import DataFrame
+from tqdm.auto import tqdm
 
 from pp5.collect.base import (
     DATASET_DIRNAME,
@@ -90,6 +95,47 @@ class CollectedDataset(abc.ABC):
         }
         return self._read_csv(self.prec_paths[pdb_id], **read_csv_kwargs)
 
+    def apply_parallel(
+        self,
+        apply_fn: Callable[[DataFrame], Any],
+        workers: int = 1,
+        chunksize: int = 100,
+        limit: int = None,
+    ) -> Dict[str, Any]:
+        """
+        Apply a function to each prec in the dataset in parallel, and collect results.
+
+        :param apply_fn: The function to apply to each prec. Should accept a DataFrame
+        representing the prec file as input. Can return any serializable type.
+        :param workers: Number of worker processes to use.
+        :param chunksize: The number of structures to process in each chunk. Chunks
+        are sent to the workers processes.
+        :param limit: Limit the number of structures to process. If not None,
+        only the first `limit` structures will be processed.
+        :return: A dictionary mapping pdb_id to the result of apply_fn.
+        """
+        pdb_id_to_result = {}
+        pdb_ids = self.pdb_ids
+        if limit:
+            pdb_ids = pdb_ids[:limit]
+
+        with ProcessPoolExecutor(
+            max_workers=workers, mp_context=SpawnContext()
+        ) as pool:
+            map_results = pool.map(
+                self._apply_fn_wrapper,
+                pdb_ids,
+                it.repeat(apply_fn, times=len(pdb_ids)),
+                chunksize=chunksize,
+            )
+            with tqdm(total=len(pdb_ids), desc="applying") as pbar:
+                for pdb_id, result in map_results:
+                    pbar.set_postfix_str(pdb_id, refresh=False)
+                    pbar.update()
+                    pdb_id_to_result[pdb_id] = result
+
+            return pdb_id_to_result
+
     @contextlib.contextmanager
     @abc.abstractmethod
     def _open(self, path: Union[Path, str], mode: str) -> io.IOBase:
@@ -98,6 +144,21 @@ class CollectedDataset(abc.ABC):
     def _read_csv(self, file_path: Union[Path, str], **read_csv_kwargs):
         with self._open(file_path, "r") as fileobj:
             return pd.read_csv(fileobj, **read_csv_kwargs)
+
+    def _apply_fn_wrapper(
+        self, pdb_id: str, apply_fn: Callable[[DataFrame], Any]
+    ) -> Any:
+        """
+        Wrapper for an apply function that loads the prec file for a given pdb_id and
+        passes the resulting DataFrame to the apply function.
+        This is needed so that the loading of the prec file can also be done in
+        parallel.
+        :param pdb_id: The pdb_id of the prec to load and process.
+        :param apply_fn: The function to apply to the prec's dataframe.
+        :return: A tuple (pdb_id, result of apply_fn).
+        """
+        df_prec = self.load_prec(pdb_id)
+        return pdb_id, apply_fn(df_prec)
 
 
 class FolderDataset(CollectedDataset):
