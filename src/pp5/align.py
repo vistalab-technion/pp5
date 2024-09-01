@@ -17,7 +17,12 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 import pandas as pd
-from Bio import SeqIO, AlignIO, BiopythonExperimentalWarning
+from Bio import (
+    SeqIO,
+    AlignIO,
+    BiopythonDeprecationWarning,
+    BiopythonExperimentalWarning,
+)
 from tqdm import tqdm
 from Bio.Seq import Seq
 
@@ -26,11 +31,12 @@ from pp5.external_dbs.pdb import PDB_RCSB
 
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", BiopythonExperimentalWarning)
+    warnings.simplefilter("ignore", BiopythonDeprecationWarning)
     from Bio.Align import substitution_matrices, PairwiseAligner, Alignment
+    from Bio.Align.Applications import ClustalOmegaCommandline
 
 from Bio.AlignIO import MultipleSeqAlignment as MSA
 from Bio.SeqRecord import SeqRecord
-from Bio.Align.Applications import ClustalOmegaCommandline
 
 import pp5
 from pp5.cache import Cacheable, CacheSettings
