@@ -1,9 +1,12 @@
 from typing import Tuple, Optional, Sequence
 
 import numpy as np
+from numpy import ndarray
 from pandas import DataFrame
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
+
+from pp5.stats.cdf import quantile_level
 
 
 def extract_unmodelled_segments(
@@ -53,6 +56,61 @@ def extract_unmodelled_segments(
         )
         for start_idx, end_idx in zip(start_idxs, end_idxs)
     )
+
+
+def extract_unmodelled_bfactor_context(
+    df_prec, context_len: int = 5, quantiles: bool = True
+) -> DataFrame:
+    """
+    Extracts bfactors in a context window around unmodelled segments.
+
+    :param df_prec: The prec dataframe.
+    :param context_len: The number of residues to include on each side of the unmodelled
+    segment.
+    :param quantiles: If True, the output contain the quantile levels of the bfactors
+    relative to the entire structure. Otherwise, the raw bfactors will be used.
+    :return: A dataframe array of n_segments rows, with 2*context_len columns,
+    where each row represents a different unmodelled segment, and columns represent
+    the bfactors of residues context_len residues before and after the segment.
+    In case there are no residues before/after, the corresponding columns will be NaN.
+    Additional columns will be added for the pdb_id and segment index.
+    """
+    if context_len < 1:
+        raise ValueError("context_len must be at least 1")
+
+    unmodelled_segs = extract_unmodelled_segments(df_prec)
+    n_unmodelled = len(unmodelled_segs)
+
+    bfactors = np.array(df_prec["bfactor"])
+    if quantiles:
+        bfactors = quantile_level(bfactors)
+
+    # Create empty array to store the b-factors
+    bfactors_ctx = np.full((n_unmodelled, 2 * context_len), np.nan)
+
+    for idx_seg, (seg_start_idx, seg_len, _) in enumerate(unmodelled_segs):
+        for j in range(context_len):
+            # Pre-segment context
+            pre_idx = seg_start_idx - context_len + j
+            if pre_idx >= 0:
+                bfactors_ctx[idx_seg, j] = bfactors[pre_idx]
+
+            # Post-segment context
+            post_idx = seg_start_idx + seg_len + j
+            if post_idx < len(bfactors):
+                bfactors_ctx[idx_seg, context_len + j] = bfactors[post_idx]
+
+    # Create dataframe
+    offsets = [
+        *[-(i + 1) for i in reversed(range(context_len))],
+        *[(i + 1) for i in range(context_len)],
+    ]
+    offset_cols = [str(o) for o in offsets]
+    df_bfactors_ctx = DataFrame(bfactors_ctx, columns=offset_cols)
+    df_bfactors_ctx["pdb_id"] = df_prec["pdb_id"].iloc[0]
+    df_bfactors_ctx["seg_idx"] = np.arange(n_unmodelled)
+    df_bfactors_ctx = df_bfactors_ctx[["pdb_id", "seg_idx", *offset_cols]]
+    return df_bfactors_ctx
 
 
 def plot_with_unmodelled(
