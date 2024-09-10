@@ -4,30 +4,32 @@ import numpy as np
 from numpy import ndarray
 
 
-def quantile_level(
+def empirical_cdf(
     x_samples: ndarray, x_values: Optional[ndarray | float] = None
 ) -> ndarray:
     """
-    Calculate the quantile level corresponding to each value in x_values, given
-    samples in x_samples from some distribution.
+    Evaluates the empirical CDF of a some distribution from which x_samples were
+    sampled. The empirical CDF will be evaluated at each value in x_values.
+    Handles NaNs in both x_samples and x_values.
 
-    The quantile level of a value can be estimated from the samples as the fraction of
-    samples smaller than the value. For a single value v, we can compute
-    np.nanmean(x_samples < v) to get the quantile level.
-    This function just extends that notion to multiple values and handles NaNs.
+    The CDF value is estimated as the fraction of samples smaller than a value.
+    For a single value x, we can compute np.nanmean(x_samples <= x) to get an
+    empirical estimate of the true probability P(X <= x).
+
+    This function just computes the above on multiple values and handles NaNs.
+    NaNs in x_samples are ignored, in the sense that they will not be included in the
+    frequency counts, and for NaNs in x_values a corresponding NaN will be present in
+    the output.
 
     Note: not to be confused with `np.quantile()`, which given a quantile level e.g.
     q=0.7 calculates the value x such that P(X <= x) = q). This function is the
-    reverse: given some value x, calculate the quantile level q such that P(X <= x) = q.
-
-    NaNs in either x_samples or x_values are ignored, in the sense that they will
-    not be included in the frequency counts, and a corresponding NaN will be present
-    in the output.
+    inverse of the empirical quantile function: given some value x, it calculates the
+    quantile **level** q such that P(X <= x) = q.
 
     :param x_samples: Samples from the distribution of some variable (X). Must be 1d.
-    :param x_values: The values for which to calculate the quantile levels (x). Must
-    be 1d. If not provided, the quantile levels will be calculated for x_samples.
-    :return: A 1d-array of quantile levels corresponding to each value in x_values.
+    :param x_values: The values (x) at which to evaluate the empirical CDF. Must
+    be 1d. If not provided, the CDF values will be evaluated at x_samples.
+    :return: A 1d-array of CDF values corresponding to each value in x_values.
     """
 
     n_samples, *extra_dims = x_samples.shape
@@ -45,7 +47,7 @@ def quantile_level(
 
     # Compare each value in x_samples to each value in x_values
     # (n_samples, n_values) boolean array: sample i < value j
-    pairwise_comparison = x_samples.reshape(-1, 1) < x_values.reshape(1, -1)
+    pairwise_comparison = x_samples.reshape(-1, 1) <= x_values.reshape(1, -1)
     assert pairwise_comparison.shape == (n_samples, n_values)
 
     # Set comparisons with NaN to NaN (since NaN > x is False for any x)
@@ -61,7 +63,7 @@ def quantile_level(
         sup.filter(RuntimeWarning, "Mean of empty slice")
 
         # Calculate the fraction of samples less than each value.
-        quantile_levels = np.nanmean(pairwise_comparison, axis=0)
+        ecdf_values = np.nanmean(pairwise_comparison, axis=0)
 
-    assert quantile_levels.shape == (n_values,)
-    return quantile_levels
+    assert ecdf_values.shape == (n_values,)
+    return ecdf_values
