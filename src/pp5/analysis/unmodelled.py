@@ -144,6 +144,55 @@ def extract_unmodelled_context(
     return df_unmodelled_ctx
 
 
+def bfactor_ratios(df_prec: DataFrame, context_len: int = 0) -> DataFrame:
+    """
+    Compute B-factor forward and backward ratios for a given structure.
+
+    :param df_prec: A protein record dataframe.
+    :param context_len: If >0, compute the ratios only in a context of this size around
+    unmodelled segments.
+    :return: A dataframe with two columns: 'bfr' and 'bbr', representing the forward
+    and backward ratios of the B-factors, respectively.
+    """
+    df_bfactor = df_prec["bfactor"]
+
+    # Use max bfactr where NaN (in unmodelled segments)
+    nan_mask = df_bfactor.isna()
+    bmax = df_bfactor.max()
+
+    df_bfactor = df_bfactor.fillna(bmax)
+
+    bfactor_forward_ratio = df_bfactor / df_bfactor.shift(-1)  # b[i] / b[i+1]
+    bfactor_backward_ratio = df_bfactor / df_bfactor.shift(1)  # b[i] / b[i-1]
+
+    df_ratios = pd.concat(
+        [bfactor_forward_ratio, bfactor_backward_ratio], axis=1, keys=[BFR_COL, BBR_COL]
+    )
+
+    # Apply context mask
+    nan_mask_bfr = np.full_like(nan_mask, fill_value=False)
+    nan_mask_bbr = np.full_like(nan_mask, fill_value=False)
+    if context_len:
+        nan_mask_bfr[:] = True
+        nan_mask_bbr[:] = True
+        for seg_start_idx, seg_len, seg_type in extract_unmodelled_segments(df_prec):
+            seg_end_idx = seg_start_idx + seg_len
+            pre_seg_context_idx = slice(
+                max(0, seg_start_idx - context_len), seg_start_idx
+            )
+            post_seg_context_idx = slice(
+                seg_end_idx, min(seg_end_idx + context_len, len(df_prec))
+            )
+            nan_mask_bfr[pre_seg_context_idx] = False
+            nan_mask_bbr[post_seg_context_idx] = False
+
+    # Restore NaN values
+    df_ratios[nan_mask] = np.nan
+    df_ratios.loc[nan_mask_bfr, BFR_COL] = np.nan
+    df_ratios.loc[nan_mask_bbr, BBR_COL] = np.nan
+    return df_ratios
+
+
 def extract_unmodelled_bfactor_context(
     df_prec, context_len: int = 5, quantiles: bool = True
 ) -> DataFrame:
