@@ -6,7 +6,7 @@ from pandas import DataFrame
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 
-from pp5.stats.cdf import quantile_level
+from pp5.stats.cdf import empirical_cdf
 
 
 def extract_unmodelled_segments(
@@ -83,7 +83,7 @@ def extract_unmodelled_bfactor_context(
 
     bfactors = np.array(df_prec["bfactor"])
     if quantiles:
-        bfactors = quantile_level(bfactors)
+        bfactors = empirical_cdf(bfactors)
 
     # Create empty array to store the b-factors
     bfactors_ctx = np.full((n_unmodelled, 2 * context_len), np.nan)
@@ -117,6 +117,7 @@ def plot_with_unmodelled(
     df_prec: DataFrame,
     col_name: str,
     col_data: Optional[np.ndarray] = None,
+    skip_unmodelled: bool = False,
     ax: Optional[Axes] = None,
     figsize: Tuple[int, int] = (10, 5),
 ):
@@ -127,6 +128,7 @@ def plot_with_unmodelled(
     :param col_name: The name of the column to plot.
     :param col_data: Data to plot, instead of df_prec[col_name]. If provided, must have
     the same length as df_prec, and col_name will be used as a label.
+    :param skip_unmodelled: If True, unmodelled segments will not be shown.
     :param ax: The axis to plot on. If None, a new figure will be created.
     :param figsize: The size of the figure to create if ax is None.
     """
@@ -140,16 +142,17 @@ def plot_with_unmodelled(
     ax.plot(np.arange(len(col_data)), col_data, label=col_name)
 
     # Plot a rectangle in gray between start, end residues of unmodelled segments
-    unmodelled_segs = extract_unmodelled_segments(df_prec)
-    for i, (seg_start_idx, seg_len, seg_type) in enumerate(unmodelled_segs):
-        seg_end_idx = seg_start_idx + seg_len
-        ax.axvspan(
-            seg_start_idx,
-            seg_end_idx,
-            color="gray",
-            alpha=0.5,
-            label=f"Unmodelled" if i == 0 else None,
-        )
+    if not skip_unmodelled:
+        unmodelled_segs = extract_unmodelled_segments(df_prec)
+        for i, (seg_start_idx, seg_len, seg_type) in enumerate(unmodelled_segs):
+            seg_end_idx = seg_start_idx + seg_len
+            ax.axvspan(
+                seg_start_idx,
+                seg_end_idx - 1,  # because it's inclusive
+                color="gray",
+                alpha=0.5,
+                label=f"Unmodelled" if i == 0 else None,
+            )
     ax.set_xlabel("Residue index")
     ax.set_ylabel(col_name)
     ax.grid()
