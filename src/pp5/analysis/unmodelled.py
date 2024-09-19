@@ -11,6 +11,7 @@ from pp5.stats.cdf import empirical_cdf
 
 BFR_COL = "bfr"
 BBR_COL = "bbr"
+CTX_COL = "ctx"
 
 
 def extract_unmodelled_segments(
@@ -148,15 +149,22 @@ def bfactor_ratios(df_prec: DataFrame, context_len: int = 0) -> DataFrame:
     """
     Compute B-factor forward and backward ratios for a given structure.
 
+    Forward ratio (BFR):  bfr[i] = b[i] / b[i+1]
+    Backward ratio (BBR): bbr[i] = b[i] / b[i-1]
+
     :param df_prec: A protein record dataframe.
     :param context_len: If >0, compute the ratios only in a context of this size around
-    unmodelled segments.
-    :return: A dataframe with two columns: 'bfr' and 'bbr', representing the forward
-    and backward ratios of the B-factors, respectively.
+    unmodelled segments, and an additional column will be added which combines the
+    ratios. If 0, compute the ratios for the entire structure.
+    :return: A dataframe with two or three columns:
+    - 'bfr': the forward ratio of the B-factors.
+    - 'bbr': the backward ratio of the B-factors.
+    - 'ctx': Only exists when context_len>0. Contains BFR before each unmodelled
+             segment, BBR after, NaN inside the segment.
     """
     df_bfactor = df_prec["bfactor"]
 
-    # Use max bfactr where NaN (in unmodelled segments)
+    # Use max bfactor where NaN (in unmodelled segments)
     nan_mask = df_bfactor.isna()
     bmax = df_bfactor.max()
 
@@ -170,11 +178,14 @@ def bfactor_ratios(df_prec: DataFrame, context_len: int = 0) -> DataFrame:
     )
 
     # Apply context mask
-    nan_mask_bfr = np.full_like(nan_mask, fill_value=False)
-    nan_mask_bbr = np.full_like(nan_mask, fill_value=False)
     if context_len:
-        nan_mask_bfr[:] = True
-        nan_mask_bbr[:] = True
+        nan_mask_bfr = np.full_like(nan_mask, fill_value=True)
+        nan_mask_bbr = np.full_like(nan_mask, fill_value=True)
+        nan_mask_unmodelled = np.full_like(nan_mask, fill_value=False)
+
+        # Compute NaN masks for context around unmodelled segments.
+        # - BFR is non-NaN in the context window BEFORE each segment
+        # - BBR is non-NaN in the context window AFTER each segment
         for seg_start_idx, seg_len, seg_type in extract_unmodelled_segments(df_prec):
             seg_end_idx = seg_start_idx + seg_len
             pre_seg_context_idx = slice(
@@ -185,11 +196,24 @@ def bfactor_ratios(df_prec: DataFrame, context_len: int = 0) -> DataFrame:
             )
             nan_mask_bfr[pre_seg_context_idx] = False
             nan_mask_bbr[post_seg_context_idx] = False
+            nan_mask_unmodelled[seg_start_idx:seg_end_idx] = True
 
-    # Restore NaN values
+        # Apply NaN masks
+        df_ratios.loc[nan_mask_bfr, BFR_COL] = np.nan
+        df_ratios.loc[nan_mask_bbr, BBR_COL] = np.nan
+
+        # Add ctx column combining the two ratios: BFR before each segment,
+        # BBR after, NaN inside the segment.
+        # Take BFR if not NaN, otherwise take BBR if not NaN, otherwise NaN
+        df_ratios[CTX_COL] = np.where(
+            ~nan_mask_bfr,
+            df_ratios[BFR_COL],
+            np.where(~nan_mask_bbr, df_ratios[BBR_COL], np.nan),
+        )
+
+    # Restore NaN values within unmodelled segments
     df_ratios[nan_mask] = np.nan
-    df_ratios.loc[nan_mask_bfr, BFR_COL] = np.nan
-    df_ratios.loc[nan_mask_bbr, BBR_COL] = np.nan
+
     return df_ratios
 
 
@@ -217,6 +241,32 @@ def extract_unmodelled_bfactor_context(
 
     return extract_unmodelled_context(
         df_prec, context_len=context_len, col_data=bfactors
+    )
+
+
+def extract_unmodelled_bfactor_ratio_context(
+    df_prec, context_len: int = 5, quantiles: bool = True
+) -> DataFrame:
+    """
+    Extracts bfactors in a context window around unmodelled segments.
+    See `extract_unmodelled_context` for more details.
+
+    :param df_prec: The prec dataframe.
+    :param context_len: The number of residues to include on each side of the unmodelled
+    segment.
+    :param quantiles: If True, the output contain the quantile levels of the bfactors
+    relative to the entire structure. Otherwise, the raw bfactors will be used.
+    :return: A dataframe array of n_segments rows, with 2*context_len columns,
+    where each row represents a different unmodelled segment, and columns represent
+    the bfactors of residues context_len residues before and after the segment.
+    In case there are no residues before/after, the corresponding columns will be NaN.
+    Additional columns will be added for the pdb_id and segment index.
+    """
+
+    df_ratios = bfactor_ratios(df_prec, context_len=context_len)
+    df_ratios_ctx = df_ratios["ctx"]
+    return extract_unmodelled_context(
+        df_prec, context_len=context_len, col_data=df_ratios_ctx
     )
 
 
