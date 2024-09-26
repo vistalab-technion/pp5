@@ -1,10 +1,10 @@
 name: pp5
 channels:
   - conda-forge
-  - defaults
   - schrodinger # pymol
   - sbl         # dssp
   - bioconda    # clustal, muscle, blast
+  - r           # r-fraction
 dependencies:
   # Basic
   - pip
@@ -16,7 +16,7 @@ dependencies:
   - blast
   - clustalo
   - dask
-  - dssp
+  - sbl::dssp
   - filelock
   - ipython
   - jupyter
