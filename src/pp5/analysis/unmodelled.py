@@ -16,26 +16,34 @@ CTX_COL = "ctx"
 
 def extract_unmodelled_segments(
     df_prec: DataFrame,
-) -> Sequence[Tuple[int, int, str]]:
+) -> Sequence[Tuple[int, int, str, str]]:
     """
     :param df_prec: A prec dataframe.
     :return: A sequence of tuples, each representing an unmodelled segment:
-    (start_index, length, type), where type is 'nterm', 'cterm', or 'inter'.
+    - start_index: start index (iloc) of the segment in the dataframe.
+    - length: length of the segment.
+    - type: where type is 'nterm', 'cterm', or 'inter'.
+    - sequence: The amino acid sequence of the segment.
     """
 
+    # Make sure we have a simple integer index
     df_prec = df_prec.reset_index()
 
-    # Ignore ligands for this purpose
-    standard_aa_idx = df_prec["res_hflag"].isna()
-    df_prec = df_prec[standard_aa_idx]
-    last_idx = len(df_prec) - 1
-
+    # Create an index column without ligands
+    non_ligand_idx = df_prec["res_hflag"].isna()
     df_index = df_prec.index
+    df_index_non_ligand = df_index[non_ligand_idx]
+    first_non_ligand_idx = df_index_non_ligand[0]
+    last_non_ligand_idx = df_index_non_ligand[-1]
 
     # True/False if residue is unmodelled.
+    # . . . U U U . . .
+    # F F F T T T F F F
     unmod_indicator = np.array(df_prec["res_icode"].astype(str).str.startswith("U_"))
 
-    # 1 at start of unmodelled segment, -1 at end of unmodelled segment, 0 in between
+    # 1 at start of unmodelled segment, -1 after unmodelled segment, 0 in between
+    # . . . U U U  . . .
+    # 0 0 0 1 0 0 -1 0 0
     unmod_diff = np.diff(unmod_indicator.astype(int), prepend=0, append=0)
     assert len(unmod_indicator) + 1 == len(unmod_diff)
 
@@ -50,14 +58,14 @@ def extract_unmodelled_segments(
 
     return tuple(
         (
-            # Map to index in original dataframe (with ligands)
             df_index[start_idx],
             end_idx - start_idx + 1,
             (
                 "nterm"
-                if start_idx == 0
-                else ("cterm" if end_idx == last_idx else "inter")
+                if start_idx == first_non_ligand_idx
+                else ("cterm" if end_idx == last_non_ligand_idx else "inter")
             ),
+            str.join("", df_prec.loc[start_idx:end_idx, "res_name"]),
         )
         for start_idx, end_idx in zip(start_idxs, end_idxs)
     )
@@ -120,7 +128,7 @@ def extract_unmodelled_context(
     # Create empty array to store the context around unmodelled segments
     unmodelled_ctx = np.full((n_unmodelled, 2 * context_len), np.nan)
 
-    for idx_seg, (seg_start_idx, seg_len, _) in enumerate(unmodelled_segs):
+    for idx_seg, (seg_start_idx, seg_len, *_) in enumerate(unmodelled_segs):
         for j in range(context_len):
             # Pre-segment context
             pre_idx = seg_start_idx - context_len + j
@@ -186,7 +194,7 @@ def bfactor_ratios(df_prec: DataFrame, context_len: int = 0) -> DataFrame:
         # Compute NaN masks for context around unmodelled segments.
         # - BFR is non-NaN in the context window BEFORE each segment
         # - BBR is non-NaN in the context window AFTER each segment
-        for seg_start_idx, seg_len, seg_type in extract_unmodelled_segments(df_prec):
+        for seg_start_idx, seg_len, seg_type, _ in extract_unmodelled_segments(df_prec):
             seg_end_idx = seg_start_idx + seg_len
             pre_seg_context_idx = slice(
                 max(0, seg_start_idx - context_len), seg_start_idx
@@ -253,7 +261,7 @@ def extract_unmodelled_bfactor_context(
 
 
 def extract_unmodelled_bfactor_ratio_context(
-    df_prec, context_len: int = 5, quantiles: bool = True
+    df_prec, context_len: int = 5
 ) -> DataFrame:
     """
     Extracts bfactors in a context window around unmodelled segments.
@@ -262,8 +270,6 @@ def extract_unmodelled_bfactor_ratio_context(
     :param df_prec: The prec dataframe.
     :param context_len: The number of residues to include on each side of the unmodelled
     segment.
-    :param quantiles: If True, the output contain the quantile levels of the bfactors
-    relative to the entire structure. Otherwise, the raw bfactors will be used.
     :return: A dataframe array of n_segments rows, with 2*context_len columns,
     where each row represents a different unmodelled segment, and columns represent
     the bfactors of residues context_len residues before and after the segment.
@@ -306,7 +312,7 @@ def plot_with_unmodelled(
     # Plot a rectangle in gray between start, end residues of unmodelled segments
     if not skip_unmodelled:
         unmodelled_segs = extract_unmodelled_segments(df_prec)
-        for i, (seg_start_idx, seg_len, seg_type) in enumerate(unmodelled_segs):
+        for i, (seg_start_idx, seg_len, seg_type, _) in enumerate(unmodelled_segs):
             seg_end_idx = seg_start_idx + seg_len
             ax.axvspan(
                 seg_start_idx,
