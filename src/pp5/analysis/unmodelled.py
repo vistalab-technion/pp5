@@ -211,6 +211,14 @@ def bfactor_ratios(df_prec: DataFrame, context_len: int = 0) -> DataFrame:
             np.where(~nan_mask_bbr, df_ratios[BBR_COL], np.nan),
         )
 
+        # Where there are overlaps between BFR and BBR (due to two unmodelled
+        # segments closer than the context length), take the minimum to prevent
+        # invalid (>1) values on the boundaries of unmodelled segments.
+        idx_overlap = (~nan_mask_bfr) & (~nan_mask_bbr)
+        df_ratios.loc[idx_overlap, CTX_COL] = np.minimum(
+            df_ratios.loc[idx_overlap, BFR_COL], df_ratios.loc[idx_overlap, BBR_COL]
+        )
+
     # Restore NaN values within unmodelled segments
     df_ratios[nan_mask] = np.nan
 
