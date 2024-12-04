@@ -158,7 +158,10 @@ class CollectedDataset(abc.ABC):
         :return: A tuple (pdb_id, result of apply_fn).
         """
         df_prec = self.load_prec(pdb_id)
-        return pdb_id, apply_fn(df_prec)
+        try:
+            return pdb_id, apply_fn(df_prec)
+        except Exception as e:
+            raise RuntimeError(f"Error processing {pdb_id}") from e
 
 
 class FolderDataset(CollectedDataset):
