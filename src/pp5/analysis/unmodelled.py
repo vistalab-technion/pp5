@@ -1,4 +1,5 @@
 from typing import Tuple, Optional, Sequence
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -7,6 +8,7 @@ from pandas import DataFrame
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 
+from pp5.codons import ACIDS_1TO3
 from pp5.stats.cdf import empirical_cdf
 
 BFR_COL = "bfr"
@@ -126,7 +128,7 @@ def extract_unmodelled_context(
     n_unmodelled = len(unmodelled_segs)
 
     # Create empty array to store the context around unmodelled segments
-    unmodelled_ctx = np.full((n_unmodelled, 2 * context_len), np.nan)
+    unmodelled_ctx = np.full((n_unmodelled, 2 * context_len), np.nan, dtype=object)
 
     for idx_seg, (seg_start_idx, seg_len, *_) in enumerate(unmodelled_segs):
         for j in range(context_len):
@@ -282,6 +284,30 @@ def extract_unmodelled_bfactor_ratio_context(
     return extract_unmodelled_context(
         df_prec, context_len=context_len, col_data=df_ratios_ctx
     )
+
+
+def extract_aa_counts(df_prec: DataFrame) -> dict:
+    """
+    Count the occurrences of each amino acids and their pairs in a prec dataframe.
+    :param df_prec: The prec dataframe.
+    :return: A dictionary with the counts of each amino acid and their pairs.
+    """
+    counts = defaultdict(lambda: 0)
+    prec_aas = df_prec["res_name"]
+
+    # Filter out non-standard amino acids
+    prec_aas_valid = (aa for aa in prec_aas if isinstance(aa, str))
+    prec_aas_upper = (aa.upper() for aa in prec_aas_valid)
+    prec_standard_aas = tuple(aa for aa in prec_aas_upper if aa in ACIDS_1TO3)
+
+    for a1, a2 in zip(prec_standard_aas[:-1], prec_standard_aas[1:]):
+        counts[a1] += 1
+        counts[f"{a1}{a2}"] += 1
+
+    last_aa = prec_standard_aas[-1]
+    counts[last_aa] += 1
+
+    return dict(counts)
 
 
 def plot_with_unmodelled(
