@@ -1,12 +1,15 @@
 import os
 import json
+import pickle
 import logging
 from abc import abstractmethod
 from json import JSONEncoder
-from typing import Any, Dict, Union, Optional
+from typing import Any, Dict, Union, Callable, Optional, Sequence
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 from dataclasses import dataclass
+
+import pandas as pd
 
 import pp5
 from pp5.utils import sort_dict, stable_hash, filelock_context
@@ -187,3 +190,120 @@ class ReprJSONEncoder(JSONEncoder):
             pass
         # Let the base class default method raise the TypeError
         return JSONEncoder.default(self, o)
+
+
+def cached_call(
+    target_fn: Callable[[Any], Any],
+    cache_file_basename: str,
+    target_fn_args: Optional[Dict[str, Any]] = None,
+    hash_ignore_args: Optional[Sequence[str]] = None,
+    cache_dir: Path = None,
+    clear_cache: bool = False,
+    cache_dump_fn: Callable[[Any, Path], None] = None,
+    cache_load_fn: Callable[[Path], Any] = None,
+    out_file_suffix: str = "pkl",
+) -> Any:
+    """
+    Calls a function, caching the result to a file. If the file exists, the result is
+    loaded from it instead of recomputing. If the file does not exist, the result is
+    computed by calling the target function, and then saved to the file.
+
+    :param target_fn: The function to call. Should return a value that can be pickled.
+    :param cache_file_basename: The base name of the cache file, without suffix.
+    The actual file name will be this base name plus a hash of the arguments and the
+    specified suffix.
+    :param target_fn_args: The arguments to pass to the target function.
+    :param hash_ignore_args: A list of argument names to ignore when computing the hash.
+    :param cache_dir: The directory in which to save the cache file.
+    :param clear_cache: Whether to delete the cache file if it exists and force a recompute.
+    :param cache_dump_fn: A function to use to save the cache file. If not provided,
+    the result will be pickled.
+    :param cache_load_fn: A function to use to load the cache file. If not provided,
+    the file will be unpickled.
+    :param out_file_suffix: The suffix to use for the cache file.
+    :return: The result of the target function.
+    """
+    target_fn_args = target_fn_args or {}
+    if (cache_load_fn is None) != (cache_dump_fn is None):
+        raise ValueError(
+            "Both or neither of cache_load_fn and cache_dump_fn must be provided."
+        )
+
+    out_file_path = None
+    if cache_dir:
+        sorted_args = {k: target_fn_args[k] for k in sorted(target_fn_args)}
+
+        for arg_name in hash_ignore_args or []:
+            sorted_args.pop(arg_name, None)
+
+        args_hash = stable_hash(tuple(sorted_args.items()))
+        out_file_path = (
+            cache_dir / f"{cache_file_basename}-{args_hash}.{out_file_suffix}"
+        )
+
+    if clear_cache and out_file_path and out_file_path.is_file():
+        LOGGER.info(f"Removing {out_file_path}")
+        os.unlink(out_file_path)
+
+    if out_file_path and out_file_path.is_file():
+        LOGGER.info(f"Loading from {out_file_path}")
+
+        if cache_load_fn:
+            target_fn_result = cache_load_fn(out_file_path)
+        else:
+            with open(out_file_path, "rb") as f:
+                target_fn_result = pickle.load(f)
+
+    else:
+        LOGGER.info(f"Computing, will save to {out_file_path}")
+
+        target_fn_result = target_fn(**target_fn_args)
+
+        if out_file_path:
+            if cache_dump_fn:
+                cache_dump_fn(target_fn_result, out_file_path)
+            else:
+                with open(out_file_path, "wb") as f:
+                    pickle.dump(target_fn_result, f)
+
+            LOGGER.info(f"Saved to {out_file_path}")
+
+    return target_fn_result
+
+
+def cached_call_csv(
+    target_fn: Callable[[Any], Any],
+    cache_file_basename: str,
+    target_fn_args: Optional[Dict[str, Any]] = None,
+    hash_ignore_args: Optional[Sequence[str]] = None,
+    cache_dir: Path = None,
+    clear_cache: bool = False,
+    to_csv_kwargs: Optional[Dict[str, Any]] = None,
+    read_csv_kwargs: Optional[Dict[str, Any]] = None,
+) -> Any:
+    """
+    Calls a function which returns a pandas dataframe, and caches the result to a CSV
+    file. If the file exists, the result is loaded from the file instead of recomputing.
+
+    All parameters are the same as for `cached_call`, with the following new arguments:
+    :param to_csv_kwargs: Keyword arguments to pass to the `DataFrame.to_csv` method
+    when saving the result to a file.
+    :param read_csv_kwargs: Keyword arguments to pass to the `pd.read_csv` function
+    when loading the result from a file.
+    :return: The result of the target function.
+    """
+
+    to_csv_kwargs = to_csv_kwargs or {}
+    read_csv_kwargs = read_csv_kwargs or {}
+    return cached_call(
+        target_fn=target_fn,
+        cache_file_basename=cache_file_basename,
+        target_fn_args=target_fn_args,
+        hash_ignore_args=hash_ignore_args,
+        cache_dir=cache_dir,
+        clear_cache=clear_cache,
+        # Configure cached_call to save/load the result as a CSV file:
+        out_file_suffix="csv",
+        cache_dump_fn=lambda result, path: result.to_csv(path, **to_csv_kwargs),
+        cache_load_fn=lambda path: pd.read_csv(path, **read_csv_kwargs),
+    )
