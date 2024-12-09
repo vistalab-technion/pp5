@@ -1,5 +1,4 @@
 # %%
-import logging
 from pprint import pprint
 from typing import Dict
 
@@ -9,24 +8,11 @@ from pp5 import OUT_DIR as PP5_OUT_DIR
 from pp5.cache import cached_call_csv
 from pp5.collect import FolderDataset
 from pp5.analysis.unmodelled.utils import extract_unmodelled_segments
-
-logging.basicConfig(level=logging.INFO)
-
-pd.set_option("display.max_columns", None)
-pd.set_option("display.width", 1000)
-pd.set_option("display.max_colwidth", 20)
+from pp5.analysis.unmodelled.consts import DATASET_DIR_PATH
 
 # %%
-
-PREC_COLLECTED_OUT_DIR = PP5_OUT_DIR / "prec-collected"
-DATASET_ZIPFILE_PATH = (
-    PREC_COLLECTED_OUT_DIR / "20240615_185854-floria-unmod-r3.5-rc.zip"
-)
-
-DATASET_DIR_PATH = PREC_COLLECTED_OUT_DIR / "20240615_185854-floria-unmod-r3.5-rc"
 dataset = FolderDataset(DATASET_DIR_PATH)
 
-# %%
 print(f"Loaded dataset: {dataset.name}")
 print(f"Number of structure files in dataset: {len(dataset.pdb_ids)}")
 print(f"Collection metadata: ")
