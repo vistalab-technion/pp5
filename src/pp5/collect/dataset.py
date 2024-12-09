@@ -7,8 +7,8 @@ import itertools as it
 import contextlib
 from typing import Any, Dict, Union, Callable
 from pathlib import Path
+from multiprocessing import get_context
 from concurrent.futures import ProcessPoolExecutor
-from multiprocessing.context import SpawnContext
 
 import pandas as pd
 from pandas import DataFrame
@@ -101,6 +101,7 @@ class CollectedDataset(abc.ABC):
         workers: int = 1,
         chunksize: int = 100,
         limit: int = None,
+        context: str = "spawn",
     ) -> Dict[str, Any]:
         """
         Apply a function to each prec in the dataset in parallel, and collect results.
@@ -112,6 +113,7 @@ class CollectedDataset(abc.ABC):
         are sent to the workers processes.
         :param limit: Limit the number of structures to process. If not None,
         only the first `limit` structures will be processed.
+        :param context: The context to use for multiprocessing. One of ['spawn', 'fork'].
         :return: A dictionary mapping pdb_id to the result of apply_fn.
         """
         pdb_id_to_result = {}
@@ -120,7 +122,7 @@ class CollectedDataset(abc.ABC):
             pdb_ids = pdb_ids[:limit]
 
         with ProcessPoolExecutor(
-            max_workers=workers, mp_context=SpawnContext()
+            max_workers=workers, mp_context=get_context(context)
         ) as pool:
             map_results = pool.map(
                 self._apply_fn_wrapper,
@@ -170,7 +172,7 @@ class FolderDataset(CollectedDataset):
         :param dataset_dir_path: The path to the folder file containing the dataset.
         The folder name is assumed to be the dataset name.
         """
-        self.dataset_dir_path = Path(dataset_dir_path)
+        self.dataset_dir_path = Path(dataset_dir_path).absolute()
 
         if not self.dataset_dir_path.is_dir():
             raise FileNotFoundError(f"File not found: {self.dataset_dir_path}")
@@ -203,6 +205,11 @@ class FolderDataset(CollectedDataset):
         for file_path in self._prec_dir.glob("*.csv"):
             pdb_id = Path(file_path).stem.split("-")[0].replace("_", ":")
             self._prec_paths[pdb_id] = str(file_path)
+
+        # Sort by PDB ID
+        self._prec_paths = {
+            k: self._prec_paths[k] for k in sorted(self._prec_paths.keys())
+        }
 
     @property
     def name(self):
@@ -244,7 +251,7 @@ class ZipDataset(CollectedDataset):
         renamed. This should be the name of the top-level directory inside the zipfile
         which contains the dataset.
         """
-        self.zipfile_path = Path(dataset_zipfile_path)
+        self.zipfile_path = Path(dataset_zipfile_path).absolute()
 
         if not self.zipfile_path.is_file():
             raise FileNotFoundError(f"File not found: {self.zipfile_path}")
@@ -271,6 +278,11 @@ class ZipDataset(CollectedDataset):
                 if file_path.startswith(self._prec_dir) and file_path.endswith(".csv"):
                     pdb_id = Path(file_path).stem.split("-")[0].replace("_", ":")
                     self._prec_paths[pdb_id] = file_path
+
+        # Sort by PDB ID
+        self._prec_paths = {
+            k: self._prec_paths[k] for k in sorted(self._prec_paths.keys())
+        }
 
     @property
     def name(self):
