@@ -202,6 +202,7 @@ def cached_call(
     cache_dump_fn: Callable[[Any, Path], None] = None,
     cache_load_fn: Callable[[Path], Any] = None,
     out_file_suffix: str = "pkl",
+    return_cache_path: bool = False,
 ) -> Any:
     """
     Calls a function, caching the result to a file. If the file exists, the result is
@@ -221,7 +222,9 @@ def cached_call(
     :param cache_load_fn: A function to use to load the cache file. If not provided,
     the file will be unpickled.
     :param out_file_suffix: The suffix to use for the cache file.
-    :return: The result of the target function.
+    :param return_cache_path: Whether to return the path of the cache file.
+    :return: The result of the target function. If return_cache_path is True,
+    a tuple will be returned, containing the result and the path of the cache file.
     """
     target_fn_args = target_fn_args or {}
     if (cache_load_fn is None) != (cache_dump_fn is None):
@@ -268,6 +271,8 @@ def cached_call(
 
             LOGGER.info(f"Saved to {out_file_path}")
 
+    if return_cache_path:
+        return target_fn_result, out_file_path
     return target_fn_result
 
 
@@ -278,6 +283,7 @@ def cached_call_csv(
     hash_ignore_args: Optional[Sequence[str]] = None,
     cache_dir: Path = None,
     clear_cache: bool = False,
+    return_cache_path: bool = False,
     to_csv_kwargs: Optional[Dict[str, Any]] = None,
     read_csv_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Any:
@@ -302,6 +308,7 @@ def cached_call_csv(
         hash_ignore_args=hash_ignore_args,
         cache_dir=cache_dir,
         clear_cache=clear_cache,
+        return_cache_path=return_cache_path,
         # Configure cached_call to save/load the result as a CSV file:
         out_file_suffix="csv",
         cache_dump_fn=lambda result, path: result.to_csv(path, **to_csv_kwargs),
