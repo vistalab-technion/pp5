@@ -200,26 +200,35 @@ df_segs_aa_context.to_csv(
 
 # %%
 
-# Keep only 'inter' segments for analysis
+# Dataset filtering options
+
+# Only 'inter' segments
 idx_inter_seg = df_segs_aa_context["seg_type"] == "inter"
-n_filtered_segments = len(df_segs_aa_context)
-n_non_inter_segments = (~idx_inter_seg).sum()
-print(
-    f"Dropping {n_non_inter_segments} non-'inter' segments ("
-    f"{n_non_inter_segments/n_filtered_segments:.2%})"
-)
-df_segs_aa_context_inter = df_segs_aa_context[idx_inter_seg]
 
-# Also ignore segments with only one AA (TODO: Confirm this is correct)
-idx_single_aa_seg = df_segs_aa_context_inter["seg_len"] == 1
-n_single_aa_segments = (~idx_single_aa_seg).sum()
-print(
-    f"Dropping {n_single_aa_segments} single-AA segments "
-    f"({n_single_aa_segments/n_filtered_segments:.2%})"
-)
-df_segs_aa_context_inter = df_segs_aa_context_inter[~idx_single_aa_seg]
+# Ignore segments with only one AA
+idx_long_seg = df_segs_aa_context["seg_len"] > 1
 
-pprint(df_segs_aa_context_inter)
+label_filtered_aa_context_dfs = {
+    "any": df_segs_aa_context,
+    "any>1": df_segs_aa_context[idx_long_seg],
+    "inter": df_segs_aa_context[idx_inter_seg],
+    "inter>1": df_segs_aa_context[idx_inter_seg & idx_long_seg],
+}
+
+# Show the number of segments and the proportion of segments dropped by each filter
+df_filter_stats = pd.DataFrame(
+    [
+        {
+            "filter_label": filter_label,
+            "n_segments": len(_df),
+            "% dropped": (1 - len(_df) / len(df_segs_aa_context)) * 100,
+        }
+        for filter_label, _df in label_filtered_aa_context_dfs.items()
+    ]
+)
+_out_path = OUT_DIR / f"{context_aas_file_path.stem}-filter_stats.csv"
+df_filter_stats.to_csv(_out_path, **TO_CSV_KWARGS)
+pprint(df_filter_stats)
 
 # %% md
 # ## Propensity of single AAs in unmodelled segments
@@ -272,13 +281,13 @@ def _calc_single_aa_frequencies(
 
 
 # Write
-df_dict_aa_freqs_seg_single = {
-    "all": _calc_single_aa_frequencies(df_segs_aa_context, df_aa_freqs_single),
-    "inter": _calc_single_aa_frequencies(df_segs_aa_context_inter, df_aa_freqs_single),
+label_aa_freqs_seg_single = {
+    filter_label: _calc_single_aa_frequencies(_df, df_aa_freqs_single)
+    for filter_label, _df in label_filtered_aa_context_dfs.items()
 }
-for label, df_aa_freqs_seg_single in df_dict_aa_freqs_seg_single.items():
+for filter_label, df_aa_freqs_seg_single in label_aa_freqs_seg_single.items():
     filepath_aa_freqs_seg_single = OUT_DIR / (
-        f"{filepath_aa_freqs_single.stem}-seg_{label}.csv"
+        f"{filepath_aa_freqs_single.stem}-seg_{filter_label}.csv"
     )
     df_aa_freqs_seg_single.to_csv(filepath_aa_freqs_seg_single, **TO_CSV_KWARGS)
     print(f"Written to {filepath_aa_freqs_seg_single!s}")
@@ -286,7 +295,7 @@ for label, df_aa_freqs_seg_single in df_dict_aa_freqs_seg_single.items():
 
 # %%
 
-for label, df_aa_freqs_seg_single in df_dict_aa_freqs_seg_single.items():
+for filter_label, df_aa_freqs_seg_single in label_aa_freqs_seg_single.items():
     # Plot the single AA propensities
     fig, ax = plt.subplots(1, 1, figsize=(10, 5))
 
@@ -323,11 +332,11 @@ for label, df_aa_freqs_seg_single in df_dict_aa_freqs_seg_single.items():
     ax.grid()
     ax.legend(loc="upper right")
     ax.set_xticks(bar_x + bar_width, df_aa_freqs_seg_single["res_name"])
-    ax.set_title(f"AA propensity in unmodelled segments ({label})")
+    ax.set_title(f"AA propensity in unmodelled segments ({filter_label})")
     ax.set_ylim(0, 3.5)
 
     # Write
-    _out_path = OUT_DIR / f"{filepath_aa_freqs_single.stem}-seg-{label}.png"
+    _out_path = OUT_DIR / f"{filepath_aa_freqs_single.stem}-seg-{filter_label}.png"
     fig.savefig(_out_path, bbox_inches="tight")
     print(f"Wrote {_out_path}")
     plt.show()
@@ -378,98 +387,112 @@ def _calc_aa_counts_pairs_seg(_df_segs_aa_context: pd.DataFrame) -> Dict:
     return _aa_counts_pairs_seg
 
 
-aa_counts_pairs_seg_inter = _calc_aa_counts_pairs_seg(df_segs_aa_context_inter)
+# filter_label -> {offset -> {'pre'/'post' -> {pair -> count} } }
+label_aa_counts_pairs_seg_inter = {
+    filter_label: _calc_aa_counts_pairs_seg(_df)
+    for filter_label, _df in label_filtered_aa_context_dfs.items()
+}
 
 # %%
 
 # Create dataframes from counts:
-# 'pre'/'post'-offset -> dataframe with ['res_name, 'count', 'freq']
-aa_pairs_prepost_seg_dfs = {}
+# filter_label -> 'pre'/'post'-offset -> dataframe with ['res_name, 'count', 'freq']
+label_aa_freqs_pairs_seg_dfs = {}
 
-# NOTE: Only using 'inter' segments for pair analysis
-for offset, pre_post_counts in aa_counts_pairs_seg_inter.items():
-    for pre_post in ["pre", "post"]:
-        _pair_counts_dict = pre_post_counts[pre_post]  # aa pair -> count
-        _df_pair_counts = pd.DataFrame(
-            [
-                {"res_name": aa_pair, "count": count}
-                for aa_pair, count in _pair_counts_dict.items()
-            ]
-        )
+for filter_label, aa_counts_pairs_seg in label_aa_counts_pairs_seg_inter.items():
+    label_aa_freqs_pairs_seg_dfs[filter_label] = {}
 
-        _df_pair_counts["freq"] = (
-            _df_pair_counts["count"] / _df_pair_counts["count"].sum()
-        )
-        assert len(_df_pair_counts) == N_AAS**2
+    for offset, pre_post_counts in aa_counts_pairs_seg.items():
+        for pre_post in ["pre", "post"]:
+            _pair_counts_dict = pre_post_counts[pre_post]  # aa pair -> count
+            _df_pair_counts = pd.DataFrame(
+                [
+                    {"res_name": aa_pair, "count": count}
+                    for aa_pair, count in _pair_counts_dict.items()
+                ]
+            )
 
-        _df_key = f"{pre_post}-o{offset}"
-        aa_pairs_prepost_seg_dfs[_df_key] = _df_pair_counts
+            _df_pair_counts["freq"] = (
+                _df_pair_counts["count"] / _df_pair_counts["count"].sum()
+            )
+            assert len(_df_pair_counts) == N_AAS**2
+
+            _df_key = f"{pre_post}-o{offset}"
+            label_aa_freqs_pairs_seg_dfs[filter_label][_df_key] = _df_pair_counts
 
 # %%
 
 # Merge into single df with key as suffix, and compute freq ratios against baseline
 # frequencies.
-df_aa_freqs_pairs_seg_inter = df_aa_freqs_pairs.rename(  # baseline freqs become 'all'
-    columns={"count": "count_all", "freq": "freq_all"}
-)
-for _df_key, _df in aa_pairs_prepost_seg_dfs.items():
-    df_aa_freqs_pairs_seg_inter = pd.merge(
-        left=df_aa_freqs_pairs_seg_inter,
-        right=_df.rename(
-            columns={"count": f"count_{_df_key}", "freq": f"freq_{_df_key}"}
-        ),
-        on="res_name",
+# filter_label -> dataframe with ['res_name, 'count_all', 'freq_all',
+# 'count_[pre/post]-o[offset]', 'freq_[pre/post]-o[offset]', 'freq_ratio_[pre/post]-o[offset]']
+label_aa_freqs_pairs_seg_merged_dfs = {}
+
+for filter_label, aa_freqs_pairs_seg_dfs in label_aa_freqs_pairs_seg_dfs.items():
+    df_aa_freqs_pairs_seg_merged = df_aa_freqs_pairs.rename(  # 'all' is baseline freqs
+        columns={"count": "count_all", "freq": "freq_all"}
     )
 
-    # Add freq ratio
-    df_aa_freqs_pairs_seg_inter[f"freq_ratio_{_df_key}"] = (
-        df_aa_freqs_pairs_seg_inter[f"freq_{_df_key}"]
-        / df_aa_freqs_pairs_seg_inter[f"freq_all"]
-    )
+    for _df_key, _df in aa_freqs_pairs_seg_dfs.items():
+        df_aa_freqs_pairs_seg_merged = pd.merge(
+            left=df_aa_freqs_pairs_seg_merged,
+            right=_df.rename(
+                columns={"count": f"count_{_df_key}", "freq": f"freq_{_df_key}"}
+            ),
+            on="res_name",
+        )
 
-df_aa_freqs_pairs_seg_inter = df_aa_freqs_pairs_seg_inter.sort_values(
-    "res_name"
-).set_index("res_name")
+        # Add freq ratio
+        df_aa_freqs_pairs_seg_merged[f"freq_ratio_{_df_key}"] = (
+            df_aa_freqs_pairs_seg_merged[f"freq_{_df_key}"]
+            / df_aa_freqs_pairs_seg_merged[f"freq_all"]
+        )
 
-assert len(df_aa_freqs_pairs_seg_inter) == N_AAS**2
+    df_aa_freqs_pairs_seg_merged = df_aa_freqs_pairs_seg_merged.sort_values(
+        "res_name"
+    ).set_index("res_name")
 
-_out_path = OUT_DIR / f"{filepath_aa_freqs_pairs.stem}-seg_inter.csv"
-df_aa_freqs_pairs_seg_inter.to_csv(_out_path, index=True)
-print(f"Wrote {_out_path}")
+    # Make sure we have all pairs
+    assert len(df_aa_freqs_pairs_seg_merged) == N_AAS**2
 
-pprint(df_aa_freqs_pairs_seg_inter)
+    _out_path = OUT_DIR / f"{filepath_aa_freqs_pairs.stem}-seg_{filter_label}.csv"
+    df_aa_freqs_pairs_seg_merged.to_csv(_out_path, index=True)
+    print(f"Wrote {_out_path}")
+    pprint(df_aa_freqs_pairs_seg_merged)
+
+    label_aa_freqs_pairs_seg_merged_dfs[filter_label] = df_aa_freqs_pairs_seg_merged
 
 # %%
 
-
 nrows = len(OFFSETS)
 ncols = 2
-fig, axes = plt.subplots(nrows, ncols, figsize=(5.25 * ncols, 5 * nrows))
 
-freq_ratio_cols = [
-    c for c in df_aa_freqs_pairs_seg_inter.columns if c.startswith("freq_ratio")
-]
-max_freq_ratio = df_aa_freqs_pairs_seg_inter[freq_ratio_cols].values.max()
+for (
+    filter_label,
+    df_aa_freqs_pairs_seg_merged,
+) in label_aa_freqs_pairs_seg_merged_dfs.items():
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5.25 * ncols, 5 * nrows))
 
-# Freq ratio matrices
-for j, (offset, pre_post) in enumerate(product(OFFSETS, ["pre", "post"])):
-    ax = axes[j // ncols, j % ncols]
+    # Freq ratio matrices
+    for j, (offset, pre_post) in enumerate(product(OFFSETS, ["pre", "post"])):
+        ax = axes[j // ncols, j % ncols]
 
-    _freq_ratios = df_aa_freqs_pairs_seg_inter[f"freq_ratio_{pre_post}-o{offset}"]
-    _freq_ratios_mat = np.reshape(_freq_ratios.values, (N_AAS, N_AAS))
+        _freq_ratios = df_aa_freqs_pairs_seg_merged[f"freq_ratio_{pre_post}-o{offset}"]
+        _freq_ratios_mat = np.reshape(_freq_ratios.values, (N_AAS, N_AAS))
 
-    im = ax.matshow(_freq_ratios_mat, vmin=0, vmax=max_freq_ratio)
-    ax.set_xticks(np.arange(N_AAS), sorted(ACIDS_1TO3))
-    ax.set_yticks(np.arange(N_AAS), sorted(ACIDS_1TO3))
-    ax.set_title(f"{pre_post}-seg, offset={offset}")
-    ax.set_ylabel("AA1")
-    ax.set_xlabel("AA2")
+        im = ax.matshow(_freq_ratios_mat, vmin=0, vmax=np.ceil(_freq_ratios_mat.max()))
+        ax.set_xticks(np.arange(N_AAS), sorted(ACIDS_1TO3))
+        ax.set_yticks(np.arange(N_AAS), sorted(ACIDS_1TO3))
+        ax.set_title(f"{pre_post}-seg, offset={offset}")
+        ax.set_ylabel("AA1")
+        ax.set_xlabel("AA2")
+        fig.colorbar(im, ax=ax, location="right", fraction=0.1, shrink=0.9)
 
-fig.colorbar(im, ax=axes.ravel().tolist(), location="right", fraction=0.1, shrink=0.8)
-plt.show()
+    fig.suptitle(f"Propensity ratio in unmodelled segments ({filter_label})")
+    plt.show()
 
-_out_path = OUT_DIR / f"{filepath_aa_freqs_pairs.stem}-seg_inter.png"
-fig.savefig(_out_path, bbox_inches="tight")
-print(f"Wrote {_out_path}")
+    _out_path = OUT_DIR / f"{filepath_aa_freqs_pairs.stem}-seg_{filter_label}.png"
+    fig.savefig(_out_path, bbox_inches="tight")
+    print(f"Wrote {_out_path}")
 
 # %%
