@@ -91,25 +91,29 @@ pprint(df_aa_counts)
 df_aa_counts_single_idx = df_aa_counts["res_name"].str.len() == 1
 
 # Baseline counts
-df_aa_counts_single = df_aa_counts[df_aa_counts_single_idx]
-df_aa_counts_pairs = df_aa_counts[~df_aa_counts_single_idx]
+df_aa_freqs_single = df_aa_counts[df_aa_counts_single_idx]
+df_aa_freqs_pairs = df_aa_counts[~df_aa_counts_single_idx]
 
 # Baseline frequencies
 df: pd.DataFrame
-for df in [df_aa_counts_single, df_aa_counts_pairs]:
+for df in [df_aa_freqs_single, df_aa_freqs_pairs]:
     total_count = df["count"].sum()
     df.loc[:, "freq"] = df["count"] / total_count
 
-print(f"{len(df_aa_counts_single)=}, {len(df_aa_counts_pairs)=}")
-print(f"{df_aa_counts_single['freq'].sum()=}, {df_aa_counts_pairs['freq'].sum()=}")
+print(f"{len(df_aa_freqs_single)=}, {len(df_aa_freqs_pairs)=}")
+print(f"{df_aa_freqs_single['freq'].sum()=}, {df_aa_freqs_pairs['freq'].sum()=}")
 
-df_aa_counts_single.to_csv(
-    OUT_DIR / f"{aa_counts_file_path.stem}-single.csv", **TO_CSV_KWARGS
+filepath_aa_freqs_single = (
+    OUT_DIR / f"{aa_counts_file_path.stem.replace('counts', 'freqs')}-single.csv"
 )
-df_aa_counts_pairs.to_csv(
-    OUT_DIR / f"{aa_counts_file_path.stem}-pairs.csv", **TO_CSV_KWARGS
-)
+df_aa_freqs_single.to_csv(filepath_aa_freqs_single, **TO_CSV_KWARGS)
+print(f"Wrote to {filepath_aa_freqs_single!s}")
 
+filepath_aa_freqs_pairs = (
+    OUT_DIR / f"{aa_counts_file_path.stem.replace('counts', 'freqs')}-pairs.csv"
+)
+df_aa_freqs_pairs.to_csv(filepath_aa_freqs_pairs, **TO_CSV_KWARGS)
+print(f"Wrote to {filepath_aa_freqs_pairs!s}")
 
 # %% md
 # ## AA context around each unmodelled segment
@@ -194,86 +198,128 @@ df_segs_aa_context.to_csv(
     OUT_DIR / f"{context_aas_file_path.stem}-segs-filtered.csv", **TO_CSV_KWARGS
 )
 
+# %%
+
+# Keep only 'inter' segments for analysis
+idx_inter_seg = df_segs_aa_context["seg_type"] == "inter"
+n_filtered_segments = len(df_segs_aa_context)
+n_non_inter_segments = (~idx_inter_seg).sum()
+print(
+    f"Dropping {n_non_inter_segments} non-'inter' segments ("
+    f"{n_non_inter_segments/n_filtered_segments:.2%})"
+)
+df_segs_aa_context_inter = df_segs_aa_context[idx_inter_seg]
+pprint(df_segs_aa_context_inter)
+
 # %% md
 # ## Propensity of single AAs in unmodelled segments
 
-aa_counts_segs = defaultdict(lambda: 0)
-for seq in df_segs_aa_context["seg_seq"]:
-    if not isinstance(seq, str):
-        continue
-    for aa in seq:
-        if aa not in ACIDS_1TO3:
+
+def _calc_single_aa_frequencies(
+    df_segs: pd.DataFrame, df_baseline: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Calculate the propensity (empirical frequency estimate) of single AAs in unmodelled
+    segments.
+
+    :param df_segs: A DataFrame with unmodelled segments.
+    :param df_baseline: A DataFrame with baseline AA counts and frequencies. Should
+    have columns 'res_name', 'count', and 'freq'.
+    :return: A DataFrame with columns 'res_name', 'count_[all,seg]', 'freq_[all,
+    seg]', and  'freq_ratio'.
+    """
+    aa_counts_segs = defaultdict(lambda: 0)
+    for seq in df_segs["seg_seq"]:
+        if not isinstance(seq, str):
             continue
-        aa_counts_segs[aa] += 1
+        for aa in seq:
+            if aa not in ACIDS_1TO3:
+                continue
+            aa_counts_segs[aa] += 1
 
-df_aa_counts_seg_single = pd.DataFrame(
-    [{"res_name": aa, "count": count} for aa, count in aa_counts_segs.items()]
-).sort_values("res_name")
+    df_aa_counts_seg_single = pd.DataFrame(
+        [{"res_name": aa, "count": count} for aa, count in aa_counts_segs.items()]
+    ).sort_values("res_name")
 
-df_aa_counts_seg_single["freq"] = (
-    df_aa_counts_seg_single["count"] / df_aa_counts_seg_single["count"].sum()
-)
+    df_aa_counts_seg_single["freq"] = (
+        df_aa_counts_seg_single["count"] / df_aa_counts_seg_single["count"].sum()
+    )
 
-# Merge with baseline counts and freqs
-df_aa_counts_seg_single = pd.merge(
-    left=df_aa_counts_single,
-    right=df_aa_counts_seg_single,
-    on="res_name",
-    suffixes=("_all", "_seg"),
-)
+    # Merge with baseline counts and freqs
+    df_aa_counts_seg_single = pd.merge(
+        left=df_baseline,
+        right=df_aa_counts_seg_single,
+        on="res_name",
+        suffixes=("_all", "_seg"),
+    ).sort_values("res_name")
 
-# Calculate freq ratio
-df_aa_counts_seg_single["freq_ratio"] = (
-    df_aa_counts_seg_single["freq_seg"] / df_aa_counts_seg_single["freq_all"]
-)
-df_aa_counts_seg_single = df_aa_counts_seg_single.sort_values("freq_ratio")
+    # Calculate freq ratio
+    df_aa_counts_seg_single["freq_ratio"] = (
+        df_aa_counts_seg_single["freq_seg"] / df_aa_counts_seg_single["freq_all"]
+    )
+    df_aa_counts_seg_single = df_aa_counts_seg_single
+    return df_aa_counts_seg_single
+
 
 # Write
-aa_counts_single_seg_filepath = OUT_DIR / f"{aa_counts_file_path.stem}-single-seg.csv"
-df_aa_counts_seg_single.to_csv(aa_counts_single_seg_filepath, **TO_CSV_KWARGS)
-print(f"Written to {aa_counts_single_seg_filepath!s}")
-pprint(df_aa_counts_seg_single.head())
+df_dict_aa_freqs_seg_single = {
+    "all": _calc_single_aa_frequencies(df_segs_aa_context, df_aa_freqs_single),
+    "inter": _calc_single_aa_frequencies(df_segs_aa_context_inter, df_aa_freqs_single),
+}
+for label, df_aa_freqs_seg_single in df_dict_aa_freqs_seg_single.items():
+    filepath_aa_freqs_seg_single = OUT_DIR / (
+        f"{filepath_aa_freqs_single.stem}-seg_{label}.csv"
+    )
+    df_aa_freqs_seg_single.to_csv(filepath_aa_freqs_seg_single, **TO_CSV_KWARGS)
+    print(f"Written to {filepath_aa_freqs_seg_single!s}")
+    pprint(df_aa_freqs_seg_single.head())
 
 # %%
 
-# Plot the single AA propensities
-fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+for label, df_aa_freqs_seg_single in df_dict_aa_freqs_seg_single.items():
+    # Plot the single AA propensities
+    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
 
-bar_x = np.arange(len(df_aa_counts_seg_single))
-bar_width = 0.25
-bar_mult = 0
+    bar_x = np.arange(len(df_aa_freqs_seg_single))
+    bar_width = 0.25
+    bar_mult = 0
 
-labels = {"freq_all": "baseline", "freq_seg": "unmodelled", "freq_ratio": "ratio"}
+    # Sort bars by freq_ratio
+    df_aa_freqs_seg_single = df_aa_freqs_seg_single.sort_values("freq_ratio")
 
-for col in ["freq_all", "freq_seg"]:
+    labels = {"freq_all": "baseline", "freq_seg": "unmodelled", "freq_ratio": "ratio"}
+
+    for col in ["freq_all", "freq_seg"]:
+        bar_offset = bar_width * bar_mult
+        ax.bar(
+            bar_x + bar_offset,
+            df_aa_freqs_seg_single[col],
+            label=labels[col],
+            width=bar_width,
+        )
+        bar_mult += 1
+    ax.legend(loc="upper left")
+
+    ax = ax.twinx()
     bar_offset = bar_width * bar_mult
     ax.bar(
         bar_x + bar_offset,
-        df_aa_counts_seg_single[col],
-        label=labels[col],
+        df_aa_freqs_seg_single["freq_ratio"],
+        label=labels["freq_ratio"],
+        color="C3",
         width=bar_width,
     )
-    bar_mult += 1
-ax.legend(loc="upper left")
+    ax.axhline(y=1.0, linestyle="--", linewidth=3, color="C3")
+    ax.grid()
+    ax.legend(loc="upper right")
+    ax.set_xticks(bar_x + bar_width, df_aa_freqs_seg_single["res_name"])
+    ax.set_title(f"AA propensity in unmodelled segments ({label})")
+    ax.set_ylim(0, 3.5)
 
-ax = ax.twinx()
-bar_offset = bar_width * bar_mult
-ax.bar(
-    bar_x + bar_offset,
-    df_aa_counts_seg_single["freq_ratio"],
-    label=labels["freq_ratio"],
-    color="C3",
-    width=bar_width,
-)
-ax.axhline(y=1.0, linestyle="--", linewidth=3, color="C3")
-ax.grid()
-ax.legend(loc="upper right")
-ax.set_xticks(bar_x + bar_width, df_aa_counts_seg_single["res_name"])
-ax.set_title(f"AA propensity in unmodelled segments")
-ax.set_ylim(0, 3.5)
+    # Write
+    _out_path = OUT_DIR / f"{filepath_aa_freqs_single.stem}-seg-{label}.png"
+    fig.savefig(_out_path, bbox_inches="tight")
+    print(f"Wrote {_out_path}")
+    plt.show()
 
-# Write
-_out_path = OUT_DIR / f"{aa_counts_single_seg_filepath.stem}.png"
-fig.savefig(_out_path, bbox_inches="tight")
-print(f"Wrote {_out_path}")
-plt.show()
+# %%
