@@ -23,9 +23,8 @@ from pp5.analysis.unmodelled.consts import (
 )
 from pp5.analysis.unmodelled.consts import UNMODELLED_OUT_DIR as OUT_DIR
 from pp5.analysis.unmodelled.consts import (
+    UNMODELLED_OUTPUTS,
     OUTPUT_KEY_ALLSEGS_FILTERED,
-    write_outputs,
-    read_output_key,
 )
 
 # %%
@@ -161,7 +160,7 @@ pprint(df_context_aas)
 
 # Load filtered segments and JOIN with context AAs
 df_allsegs_filtered = pd.read_csv(
-    read_output_key(OUTPUT_KEY_ALLSEGS_FILTERED),
+    OUT_DIR / UNMODELLED_OUTPUTS[OUTPUT_KEY_ALLSEGS_FILTERED],
     **READ_CSV_KWARGS,
 )
 

@@ -1,10 +1,10 @@
 import logging
 from pprint import pprint
 
-import yaml
 import pandas as pd
 
 from pp5 import OUT_DIR as PP5_OUT_DIR
+from pp5.utils import YamlDict
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,7 +32,8 @@ PDB_ID_SUBSET = sorted(PDB_ID_SUBSET)
 UNMODELLED_OUT_DIR = PP5_OUT_DIR / "unmodelled"
 UNMODELLED_OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-UNMODELLED_OUTPUTS_FILE = UNMODELLED_OUT_DIR / "outputs.yml"
+UNMODELLED_OUTPUTS_FILE_PATH = UNMODELLED_OUT_DIR / "outputs.yml"
+UNMODELLED_OUTPUTS = YamlDict(UNMODELLED_OUTPUTS_FILE_PATH)
 OUTPUT_KEY_ALLSEGS = "all_segments"
 OUTPUT_KEY_ALLSEGS_FILTERED = "all_segments_filtered"
 
@@ -44,40 +45,3 @@ logging.basicConfig(level=logging.INFO)
 pd.set_option("display.max_columns", None)
 pd.set_option("display.width", 1000)
 pd.set_option("display.max_colwidth", 20)
-
-
-def read_outputs() -> dict:
-    if not UNMODELLED_OUTPUTS_FILE.exists():
-        return {}
-
-    # Read YAML file
-    with open(UNMODELLED_OUTPUTS_FILE, "r") as f:
-        return yaml.safe_load(f)
-
-
-def read_output_key(key: str) -> str:
-    outputs = read_outputs()
-    return outputs.get(key)
-
-
-def write_outputs(outputs: dict, overwrite: bool = False):
-    existing_outputs = {}
-    # Load existing outputs
-    if not overwrite:
-        existing_outputs = read_outputs()
-
-    # Merge new outputs with existing outputs
-    outputs = {**existing_outputs, **outputs}
-
-    # Write to outputs YAML file
-    with open(UNMODELLED_OUTPUTS_FILE, "w") as f:
-        yaml.dump(outputs, f)
-
-    LOGGER.info(f"Wrote outputs to {UNMODELLED_OUTPUTS_FILE!s}:")
-    pprint(outputs)
-
-
-def write_output_key(key: str, val: str):
-    outputs = read_outputs()
-    outputs[key] = val
-    write_outputs(outputs)

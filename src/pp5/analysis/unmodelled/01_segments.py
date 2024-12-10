@@ -4,7 +4,6 @@ from typing import Dict
 
 import pandas as pd
 
-from pp5 import OUT_DIR as PP5_OUT_DIR
 from pp5.cache import cached_call_csv
 from pp5.collect import FolderDataset
 from pp5.analysis.unmodelled.utils import extract_unmodelled_segments
@@ -15,7 +14,10 @@ from pp5.analysis.unmodelled.consts import (
     OUTPUT_KEY_ALLSEGS,
 )
 from pp5.analysis.unmodelled.consts import UNMODELLED_OUT_DIR as OUT_DIR
-from pp5.analysis.unmodelled.consts import OUTPUT_KEY_ALLSEGS_FILTERED, write_outputs
+from pp5.analysis.unmodelled.consts import (
+    UNMODELLED_OUTPUTS,
+    OUTPUT_KEY_ALLSEGS_FILTERED,
+)
 
 # %%
 print(f"{OUT_DIR=}")
@@ -167,9 +169,9 @@ df_segs.to_csv(filtered_segs_file_path, **TO_CSV_KWARGS)
 print(f"Written to {filtered_segs_file_path}")
 
 # %%
-write_outputs(
+UNMODELLED_OUTPUTS.update(
     {
-        OUTPUT_KEY_ALLSEGS: str(allsegs_file_path),
-        OUTPUT_KEY_ALLSEGS_FILTERED: str(filtered_segs_file_path),
+        OUTPUT_KEY_ALLSEGS: allsegs_file_path.name,
+        OUTPUT_KEY_ALLSEGS_FILTERED: filtered_segs_file_path.name,
     }
 )
