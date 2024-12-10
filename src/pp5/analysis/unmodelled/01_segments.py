@@ -8,7 +8,17 @@ from pp5 import OUT_DIR as PP5_OUT_DIR
 from pp5.cache import cached_call_csv
 from pp5.collect import FolderDataset
 from pp5.analysis.unmodelled.utils import extract_unmodelled_segments
-from pp5.analysis.unmodelled.consts import DATASET_DIR_PATH
+from pp5.analysis.unmodelled.consts import (
+    TO_CSV_KWARGS,
+    READ_CSV_KWARGS,
+    DATASET_DIR_PATH,
+    OUTPUT_KEY_ALLSEGS,
+)
+from pp5.analysis.unmodelled.consts import UNMODELLED_OUT_DIR as OUT_DIR
+from pp5.analysis.unmodelled.consts import OUTPUT_KEY_ALLSEGS_FILTERED, write_outputs
+
+# %%
+print(f"{OUT_DIR=}")
 
 # %%
 dataset = FolderDataset(DATASET_DIR_PATH)
@@ -32,25 +42,6 @@ pprint(df_prec[ligand_idx | unmodelled_idx])
 print("Unmodelled segments in 2WUR:A:")
 extract_unmodelled_segments(df_prec)
 
-# %%
-
-PDB_ID_SUBSET = [
-    "2BP5:A",
-    "1914:A",
-    "8A4A:A",
-    "4QN9:A",
-    "3PV2:A",
-    "1UZL:A",
-    "4MSO:A",
-    "7ZKX:A",
-    "2B3P:A",
-    "4M2Q:A",
-]
-PDB_ID_SUBSET = sorted(PDB_ID_SUBSET)
-
-OUT_DIR = PP5_OUT_DIR / "unmodelled"
-OUT_DIR.mkdir(parents=True, exist_ok=True)
-print(f"{OUT_DIR=}")
 
 # %% md
 # ## Load all segments
@@ -101,8 +92,8 @@ df_allsegs, allsegs_file_path = cached_call_csv(
     cache_dir=OUT_DIR,
     clear_cache=False,
     return_cache_path=True,
-    to_csv_kwargs=dict(index=False),
-    read_csv_kwargs=dict(na_filter=True, keep_default_na=False, na_values=["", "NaN"]),
+    to_csv_kwargs=TO_CSV_KWARGS,
+    read_csv_kwargs=READ_CSV_KWARGS,
 )
 
 print(f"{allsegs_file_path=!s}")
@@ -172,5 +163,13 @@ pprint(df_segs)
 filtered_segs_file_path = allsegs_file_path.with_stem(
     f"{allsegs_file_path.stem}-filtered"
 )
-df_segs.to_csv(filtered_segs_file_path, index=False)
+df_segs.to_csv(filtered_segs_file_path, **TO_CSV_KWARGS)
 print(f"Written to {filtered_segs_file_path}")
+
+# %%
+write_outputs(
+    {
+        OUTPUT_KEY_ALLSEGS: str(allsegs_file_path),
+        OUTPUT_KEY_ALLSEGS_FILTERED: str(filtered_segs_file_path),
+    }
+)
