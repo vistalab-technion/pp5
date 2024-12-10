@@ -2,6 +2,7 @@
 from pprint import pprint
 from typing import Dict
 from functools import partial
+from itertools import product
 from collections import defaultdict
 
 import numpy as np
@@ -11,11 +12,7 @@ from matplotlib import pyplot as plt
 from pp5.cache import cached_call_csv
 from pp5.codons import ACIDS_1TO3
 from pp5.collect import FolderDataset
-from pp5.analysis.unmodelled.utils import (
-    extract_aa_counts,
-    extract_unmodelled_context,
-    extract_unmodelled_segments,
-)
+from pp5.analysis.unmodelled.utils import extract_aa_counts, extract_unmodelled_context
 from pp5.analysis.unmodelled.consts import (
     TO_CSV_KWARGS,
     READ_CSV_KWARGS,
@@ -26,6 +23,9 @@ from pp5.analysis.unmodelled.consts import (
     UNMODELLED_OUTPUTS,
     OUTPUT_KEY_ALLSEGS_FILTERED,
 )
+
+# %%
+plt.rcParams["font.family"] = "monospace"
 
 # %%
 print(f"{OUT_DIR.absolute()=!s}")
@@ -209,6 +209,16 @@ print(
     f"{n_non_inter_segments/n_filtered_segments:.2%})"
 )
 df_segs_aa_context_inter = df_segs_aa_context[idx_inter_seg]
+
+# Also ignore segments with only one AA (TODO: Confirm this is correct)
+idx_single_aa_seg = df_segs_aa_context_inter["seg_len"] == 1
+n_single_aa_segments = (~idx_single_aa_seg).sum()
+print(
+    f"Dropping {n_single_aa_segments} single-AA segments "
+    f"({n_single_aa_segments/n_filtered_segments:.2%})"
+)
+df_segs_aa_context_inter = df_segs_aa_context_inter[~idx_single_aa_seg]
+
 pprint(df_segs_aa_context_inter)
 
 # %% md
@@ -321,5 +331,145 @@ for label, df_aa_freqs_seg_single in df_dict_aa_freqs_seg_single.items():
     fig.savefig(_out_path, bbox_inches="tight")
     print(f"Wrote {_out_path}")
     plt.show()
+
+# %% md
+# ## Propensity of AA pairs in unmodelled segments
+
+# %%
+
+OFFSETS = [
+    # Controls where the border is. For example:
+    # Zero means pairs are [-1, -0], and [+0, +1]
+    # One means pairs are [-2, -1], and [+1, +2]
+    0,
+    1,
+]
+
+N_AAS = len(ACIDS_1TO3)
+
+
+def _calc_aa_counts_pairs_seg(_df_segs_aa_context: pd.DataFrame) -> Dict:
+    _aa_counts_pairs_seg = {}  # offset -> 'pre'/'post' -> pair -> count
+
+    for _offset in OFFSETS:
+        _aa_counts_pairs_pre_seg = defaultdict(lambda: 0)
+        _aa_counts_pairs_post_seg = defaultdict(lambda: 0)
+
+        for i, row in _df_segs_aa_context.iterrows():
+            aa_pre_1, aa_pre_2 = (
+                row[f"res_name-{_offset + 1}"],
+                row[f"res_name-{_offset}"],
+            )
+            aa_post_1, aa_post_2 = (
+                row[f"res_name+{_offset}"],
+                row[f"res_name+{_offset + 1}"],
+            )
+
+            if aa_pre_1 in ACIDS_1TO3 and aa_pre_2 in ACIDS_1TO3:
+                _aa_counts_pairs_pre_seg[f"{aa_pre_1}{aa_pre_2}"] += 1
+
+            if aa_post_1 in ACIDS_1TO3 and aa_post_2 in ACIDS_1TO3:
+                _aa_counts_pairs_post_seg[f"{aa_post_1}{aa_post_2}"] += 1
+
+        _aa_counts_pairs_seg[_offset] = {}
+        _aa_counts_pairs_seg[_offset]["pre"] = dict(_aa_counts_pairs_pre_seg)
+        _aa_counts_pairs_seg[_offset]["post"] = dict(_aa_counts_pairs_post_seg)
+
+    return _aa_counts_pairs_seg
+
+
+aa_counts_pairs_seg_inter = _calc_aa_counts_pairs_seg(df_segs_aa_context_inter)
+
+# %%
+
+# Create dataframes from counts:
+# 'pre'/'post'-offset -> dataframe with ['res_name, 'count', 'freq']
+aa_pairs_prepost_seg_dfs = {}
+
+# NOTE: Only using 'inter' segments for pair analysis
+for offset, pre_post_counts in aa_counts_pairs_seg_inter.items():
+    for pre_post in ["pre", "post"]:
+        _pair_counts_dict = pre_post_counts[pre_post]  # aa pair -> count
+        _df_pair_counts = pd.DataFrame(
+            [
+                {"res_name": aa_pair, "count": count}
+                for aa_pair, count in _pair_counts_dict.items()
+            ]
+        )
+
+        _df_pair_counts["freq"] = (
+            _df_pair_counts["count"] / _df_pair_counts["count"].sum()
+        )
+        assert len(_df_pair_counts) == N_AAS**2
+
+        _df_key = f"{pre_post}-o{offset}"
+        aa_pairs_prepost_seg_dfs[_df_key] = _df_pair_counts
+
+# %%
+
+# Merge into single df with key as suffix, and compute freq ratios against baseline
+# frequencies.
+df_aa_freqs_pairs_seg_inter = df_aa_freqs_pairs.rename(  # baseline freqs become 'all'
+    columns={"count": "count_all", "freq": "freq_all"}
+)
+for _df_key, _df in aa_pairs_prepost_seg_dfs.items():
+    df_aa_freqs_pairs_seg_inter = pd.merge(
+        left=df_aa_freqs_pairs_seg_inter,
+        right=_df.rename(
+            columns={"count": f"count_{_df_key}", "freq": f"freq_{_df_key}"}
+        ),
+        on="res_name",
+    )
+
+    # Add freq ratio
+    df_aa_freqs_pairs_seg_inter[f"freq_ratio_{_df_key}"] = (
+        df_aa_freqs_pairs_seg_inter[f"freq_{_df_key}"]
+        / df_aa_freqs_pairs_seg_inter[f"freq_all"]
+    )
+
+df_aa_freqs_pairs_seg_inter = df_aa_freqs_pairs_seg_inter.sort_values(
+    "res_name"
+).set_index("res_name")
+
+assert len(df_aa_freqs_pairs_seg_inter) == N_AAS**2
+
+_out_path = OUT_DIR / f"{filepath_aa_freqs_pairs.stem}-seg_inter.csv"
+df_aa_freqs_pairs_seg_inter.to_csv(_out_path, index=True)
+print(f"Wrote {_out_path}")
+
+pprint(df_aa_freqs_pairs_seg_inter)
+
+# %%
+
+
+nrows = len(OFFSETS)
+ncols = 2
+fig, axes = plt.subplots(nrows, ncols, figsize=(5.25 * ncols, 5 * nrows))
+
+freq_ratio_cols = [
+    c for c in df_aa_freqs_pairs_seg_inter.columns if c.startswith("freq_ratio")
+]
+max_freq_ratio = df_aa_freqs_pairs_seg_inter[freq_ratio_cols].values.max()
+
+# Freq ratio matrices
+for j, (offset, pre_post) in enumerate(product(OFFSETS, ["pre", "post"])):
+    ax = axes[j // ncols, j % ncols]
+
+    _freq_ratios = df_aa_freqs_pairs_seg_inter[f"freq_ratio_{pre_post}-o{offset}"]
+    _freq_ratios_mat = np.reshape(_freq_ratios.values, (N_AAS, N_AAS))
+
+    im = ax.matshow(_freq_ratios_mat, vmin=0, vmax=max_freq_ratio)
+    ax.set_xticks(np.arange(N_AAS), sorted(ACIDS_1TO3))
+    ax.set_yticks(np.arange(N_AAS), sorted(ACIDS_1TO3))
+    ax.set_title(f"{pre_post}-seg, offset={offset}")
+    ax.set_ylabel("AA1")
+    ax.set_xlabel("AA2")
+
+fig.colorbar(im, ax=axes.ravel().tolist(), location="right", fraction=0.1, shrink=0.8)
+plt.show()
+
+_out_path = OUT_DIR / f"{filepath_aa_freqs_pairs.stem}-seg_inter.png"
+fig.savefig(_out_path, bbox_inches="tight")
+print(f"Wrote {_out_path}")
 
 # %%
