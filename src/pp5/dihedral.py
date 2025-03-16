@@ -565,7 +565,6 @@ class DihedralAngleCalculator(object):
         n_next: Optional[AltlocAtom],
         with_altlocs: bool = False,
     ) -> Dict[str, Dihedral]:
-
         # Calculate the dihedral angles using the default altloc conformation
         dihedrals = {NO_ALTLOC: self.process_atoms(n, ca, c, c_prev, ca_prev, n_next)}
 

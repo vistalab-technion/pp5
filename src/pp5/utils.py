@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from collections.abc import Set, Mapping, Sequence
 
+import yaml
 import requests
 from IPython import get_ipython
 from urllib3 import Retry
@@ -334,3 +335,55 @@ def stable_hash(obj: Any, hash_len: int = 8) -> str:
 
 class ProteinInitError(ValueError):
     pass
+
+
+class YamlDict(dict):
+    """
+    A dict subclass that writes itself to a yaml file on any change.
+
+    Notes:
+    1. This implementation assumes that all keys/values are serializable to yaml.
+    2. This implementation is not efficient for large dictionaries,
+       as it reads/writes the entire dictionary on every change.
+    """
+
+    def __init__(self, yaml_path: Union[str, Path], *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.yaml_path = Path(yaml_path)
+        self._load()
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self._save()
+
+    def __delitem__(self, key):
+        super().__delitem__(key)
+        self._save()
+
+    def clear(self):
+        super().clear()
+        self._save()
+
+    def pop(self, key, default=None):
+        value = super().pop(key, default)
+        self._save()
+        return value
+
+    def setdefault(self, key, default=None):
+        value = super().setdefault(key, default)
+        self._save()
+        return value
+
+    def update(self, m, /, **kwargs):
+        super().update(m, **kwargs)
+        self._save()
+
+    def _load(self):
+        if self.yaml_path.exists():
+            with open(self.yaml_path, "r") as f:
+                super().update(yaml.safe_load(f))
+
+    def _save(self):
+        self.yaml_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.yaml_path, "w") as f:
+            yaml.dump(dict(self), f)

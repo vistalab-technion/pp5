@@ -898,7 +898,6 @@ class ProteinRecord(object):
         matching_residues: List[Residue] = []  # residues both in modelled and in meta
         missing_residues: List[Residue] = []  # residues only in meta
         for curr_meta_seq_idx in range(len(pdb_meta_aa_seq)):
-
             if curr_meta_seq_idx in meta_to_struct_idx:
                 # This residue is one of the modelled residues in the structure
                 modelled_seq_idx = meta_to_struct_idx[curr_meta_seq_idx]

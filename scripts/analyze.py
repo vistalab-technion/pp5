@@ -56,7 +56,6 @@ DATASETS = {
 OUT_DIR = Path("out")
 
 for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
-
     tag = f"n_{BS_FIXED}-prev_{PREV_TYPE}"
 
     command_line = [
@@ -75,7 +74,6 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
     out_file_path = OUT_DIR.joinpath(f"analyze-cdist_{dataset_name}-{tag}.log")
 
     with open(out_file_path, "w") as out_file:
-
         # Write to output file and console
         for f in [out_file, sys.stdout]:
             print(f"### EXECUTING COMMAND:\n{str.join(' ', command_line)}", file=f)

@@ -21,7 +21,6 @@ class TestNotebooks:
         "notebook_path", NOTEBOOK_PATHS, ids=[f.stem for f in NOTEBOOK_PATHS]
     )
     def test_notebook(self, notebook_path: Path):
-
         _LOG.info(f"Executing notebook {notebook_path}...")
 
         # Parse notebook

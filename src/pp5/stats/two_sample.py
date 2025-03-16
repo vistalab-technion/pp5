@@ -27,6 +27,7 @@ R_TORUSTEST_SIM_NULL_STAT = "sim.null.stat"
 PY2R_CONVERTER = robjects.default_converter + robjects.numpy2ri.converter
 PY2R_CONVERTER.py2rpy.register(type(None), lambda _: robjects.NULL)
 
+
 # @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
 def _tw2_statistic(D: ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None) -> float:
     """

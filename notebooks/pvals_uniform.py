@@ -76,7 +76,6 @@ def _calc_single_pval(
 
 
 def _calc_all_pvals():
-
     n_observations_vals = [100]
     n_samples_vals = [200]
     early_stop_vals = [False, True]
