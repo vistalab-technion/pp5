@@ -276,6 +276,22 @@ def out_redirected(
                 # buffering and flags such as CLOEXEC may be different
 
 
+@contextlib.contextmanager
+def logger_level_context(logger: str, level: int):
+    """
+    Sets the level of a logger temporarily within a context.
+    :param logger: The name of the logger.
+    :param level: The level to set. Must be one of the levels defined in logging.
+    """
+    logger = logging.getLogger(logger)
+    orig_level = logger.level
+    logger.setLevel(level)
+    try:
+        yield
+    finally:
+        logger.setLevel(orig_level)
+
+
 def elapsed_seconds_to_dhms(elapsed_sec: float):
     """
     Converts elapsed time in seconds to a string containing days, hours,
