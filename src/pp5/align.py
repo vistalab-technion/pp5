@@ -170,6 +170,7 @@ def multiseq_align(
         "force": True,
         "auto": True,
         "outfmt": "clustal",  # 'output-order': 'input-order'
+        "seqtype": "Protein",
     }
     if out_file is not None:
         default_args["outfile"] = out_file
@@ -223,7 +224,9 @@ def multiseq_align(
     with child_proc.stderr as child_err_handle:
         err = child_err_handle.read()
         if err:
-            LOGGER.warning(f"ClustalOmega error: {err}")
+            # Ignore this "error" since we're setting the sequence type
+            if not "Overriding automatically determined seq-type" in err:
+                LOGGER.warning(f"ClustalOmega error: {err}")
 
     return msa_result
 
