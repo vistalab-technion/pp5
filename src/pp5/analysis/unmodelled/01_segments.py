@@ -50,6 +50,12 @@ extract_unmodelled_segments(df_prec)
 
 # %%
 
+# Load the metadata for each chain, so we can add attributes from the metadata to the
+# dataset.
+chain_metadata = pd.read_csv(dataset.metadata_path).set_index("pdb_id")
+
+# %%
+
 
 def load_unmodelled_segments(
     ds: FolderDataset, workers: int = 1, limit: int = None
@@ -65,6 +71,7 @@ def load_unmodelled_segments(
     segment_records = [
         {
             "pdb_id": pdb_id,
+            "unp_id": chain_metadata.loc[pdb_id]["unp_id"],
             "seg_idx": i,
             "seg_start_idx": seg[0],
             "seg_len": seg[1],
@@ -79,7 +86,7 @@ def load_unmodelled_segments(
     return df_segments
 
 
-df_allsegs_temp = load_unmodelled_segments(dataset, workers=1, limit=20)
+df_allsegs_temp = load_unmodelled_segments(dataset, workers=1, limit=200)
 df_allsegs_temp
 
 # %%
