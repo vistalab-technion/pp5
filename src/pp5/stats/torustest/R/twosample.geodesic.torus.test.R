@@ -71,7 +71,7 @@ twosample.geodesic.torus.test<-function(sample_1, sample_2, n_geodesics = 1, NC_
   pvals <- results$pvalue
   stats <- results$stat
 
-  pval <- min(1, n_geodesics*(min(pvals)))
+  pval <- min(1, nrow(samp)*(min(pvals)))
   stat <- mean(stats)
   if(return_stat){
       return(list(pval=pval, stat=stat))
