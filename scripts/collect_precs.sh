@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PROCESSES=84
+PROCESSES=80
 
 EXPR_HUMAN="Homo sapiens"
 EXPR_ECOLI="Escherichia Coli"
@@ -24,7 +24,7 @@ rm -rf out/prec
 # Clear global pp5 cache
 rm -rf /tmp/pp5_data
 
-# Altlocs
+# Ummodelled residues
 RESOLUTION="3.5"
 RFREE="0.33"
 SIMILARITY="1.0"
@@ -42,11 +42,34 @@ pp5 \
   --query-max-chains="$MAX_CHAINS" \
   --seq-similarity-thresh="$SIMILARITY" \
   --pdb-source="$PDB_SOURCE" \
-  --out-tag="altlocs-$TAG" \
-  --with-altlocs \
+  --out-tag="unmod-$TAG" \
   --with-backbone \
   --with-contacts \
   --write-zip
+
+# # Altlocs
+# RESOLUTION="3.5"
+# RFREE="0.33"
+# SIMILARITY="1.0"
+# PDB_SOURCE="rc" # rc, re, af
+# MAX_CHAINS="20"
+# TAG="r${RESOLUTION}-${PDB_SOURCE}"
+# pp5 \
+#   -p="$PROCESSES" collect-prec \
+#   --async-timeout="$ASYNC_TIMEOUT" \
+#   --async-retry-delta="$ASYNC_RETRY_DELTA" \
+#   --expr-sys="$EXPR_ALL" \
+#   --source-taxid="$SRC_ALL" \
+#   --resolution="$RESOLUTION" \
+#   --r-free="$RFREE" \
+#   --query-max-chains="$MAX_CHAINS" \
+#   --seq-similarity-thresh="$SIMILARITY" \
+#   --pdb-source="$PDB_SOURCE" \
+#   --out-tag="altlocs-$TAG" \
+#   --with-altlocs \
+#   --with-backbone \
+#   --with-contacts \
+#   --write-zip
 
 # For amino-domino paper
 # All in EC, pdb-redo, 1.5A, with contacts and backbone
