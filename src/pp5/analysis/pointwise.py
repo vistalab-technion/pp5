@@ -120,15 +120,18 @@ CODON_TUPLE_GROUPINGS = {
 ANY_AAC = "*"
 
 
-TORUS_PROJECTION_TEST_KWARGS: dict[str, Any] = dict(
+# Defaults for torustest
+TORUSTEST_DEFAULT_KWARGS: dict[str, Any] = dict(
     grid_low=-np.pi,
     grid_high=np.pi,
     n_geodesics=2,
-    # geodesics=np.array([[1, 0], [0, 1], [1, 1], [2, 3]]),
+    geodesics=None,
     n_cores=1,
     n_null_simulations=2000,
     n_null_sample_size=30,
 )
+# Fixed geodesics for torustest for use if randomization is disabled
+TORUS_PROJECTION_FIXED_GEODESICS = np.array([[1, 0], [0, 1], [1, 1], [2, 3]])
 
 
 # Helpers to wrap torus_projection_test for the pointwise analysis:
@@ -136,12 +139,12 @@ TORUS_PROJECTION_TEST_KWARGS: dict[str, Any] = dict(
 # unused by this statistic.
 # 2. Append a zero to the output tuple, representing the number of
 # permutations performed
-def _torus_p(X, Y, *a, **k):
-    return *torus_projection_test(X=X, Y=Y, **TORUS_PROJECTION_TEST_KWARGS), 0
+def _torus_p(X: np.ndarray, Y: np.ndarray, torustest_kwargs: dict[str, Any], *a, **k):
+    return *torus_projection_test(X=X, Y=Y, **torustest_kwargs), 0
 
 
 # Wrapper for torus_w2_ub_test
-def _torus_ub(X, Y, *a, **k):
+def _torus_ub(X: np.ndarray, Y: np.ndarray, *a, **k):
     return *torus_w2_ub_test(X=X, Y=Y, grid_low=-np.pi, grid_high=np.pi), 0
 
 
@@ -170,6 +173,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         ddist_k_min: Optional[int] = None,
         ddist_k_th: float = 50.0,
         ddist_kernel_size: float = 1.0,
+        ddist_torus_n_projections: int = 2,
+        ddist_torus_random_projections: bool = True,
         fdr: float = 0.1,
         comparison_types: Sequence[str] = COMP_TYPES,
         ss_group_any: bool = False,
@@ -258,6 +263,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             smallest possible value - terminate.
         :param ddist_kernel_size: Size of kernel used in 'kde_g' and 'mmd' type
             permutation tests. Should be in degrees.
+        :param ddist_torus_n_projections: For 'torus_p' and 'torus_perm': Number of
+            projections to use when computing distances on the torus.
+        :param ddist_torus_random_projections: For 'torus_p' and 'torus_perm': Whether
+            to use random (True) or fixed (False) projections when computing distances on
+            the torus. If fixed, ddist_torus_n_projections must be <= 4.
         :param fdr: False discovery rate for multiple hypothesis testing using
             Benjamini-Hochberg method.
         :param comparison_types: One or more types of entities to compare pointwise.
@@ -364,6 +374,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.ddist_k_min = int(ddist_k_min) if ddist_k_min else 0
         self.ddist_k_th = ddist_k_th
         self.ddist_kernel_size = ddist_kernel_size
+        self.ddist_torus_n_projections = ddist_torus_n_projections
+        self.ddist_torus_random_projections = ddist_torus_random_projections
         self.fdr = fdr
         self.comparison_types = comparison_types
         self.ss_group_any = ss_group_any
@@ -380,6 +392,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             self.ss_group_names = (SS_TYPE_ANY,)
 
         # Setup parameters for statistical tests
+        torustest_kwargs = TORUSTEST_DEFAULT_KWARGS.copy()
+        torustest_kwargs["n_geodesics"] = self.ddist_torus_n_projections
+        if self.ddist_torus_random_projections:
+            torustest_kwargs["geodesics"] = None
+        else:
+            torustest_kwargs["geodesics"] = TORUS_PROJECTION_FIXED_GEODESICS[
+                : self.ddist_torus_n_projections
+            ]
+
         if ddist_statistic == "kde_v":
             self.ddist_statistic_fn = partial(
                 kde2d_test,
@@ -420,19 +441,22 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 tw_test,
                 similarity_fn=flat_torus_distance_sq,
             )
+
         elif ddist_statistic == "torus_ub":
             assert self.ddist_k == 0, "torus test doesn't support permutations"
             self.ddist_statistic_fn = _torus_ub
 
         elif ddist_statistic == "torus_p":
             assert self.ddist_k == 0, "torus test doesn't support permutations"
-            self.ddist_statistic_fn = _torus_p
-
+            self.ddist_statistic_fn = partial(
+                _torus_p, torustest_kwargs=torustest_kwargs
+            )
         elif ddist_statistic == "torus_perm":
             assert self.ddist_k > 0
             self.ddist_statistic_fn = partial(
-                torus_projection_permutation_test, **TORUS_PROJECTION_TEST_KWARGS
+                torus_projection_permutation_test, **torustest_kwargs
             )
+
         else:
             raise ValueError(f"Unexpected {ddist_statistic=}")
 
