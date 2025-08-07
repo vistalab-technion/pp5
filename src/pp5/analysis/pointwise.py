@@ -54,7 +54,10 @@ from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
 from pp5.dihedral import Dihedral, wraparound_mean, flat_torus_distance_sq
 from pp5.parallel import yield_async_results
 from pp5.analysis.base import ParallelAnalyzer
-from pp5.stats.two_sample import torus_projection_test
+from pp5.stats.two_sample import (
+    torus_projection_test,
+    torus_projection_permutation_test,
+)
 from pp5.distributions.kde import bvm_kernel, gaussian_kernel, torus_gaussian_kernel_2d
 from pp5.distributions.vonmises import BvMKernelDensityEstimator
 
@@ -84,7 +87,7 @@ DDIST_COL = "ddist"
 SIGNIFICANT_COL = "significant"
 RESOLUTION_COL = "resolution"
 
-TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g", "torus_ub", "torus_p"}
+TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g", "torus_ub", "torus_p", "torus_perm"}
 
 AGGREGATION_TYPE_CENTROID = "cent"
 AGGREGATION_TYPE_RESOLUTION = "res"
@@ -117,29 +120,29 @@ CODON_TUPLE_GROUPINGS = {
 ANY_AAC = "*"
 
 
-def _torus_ub(X, Y, *a, **k):
-    # Helper to wrap torus_w2_ub_test for the pointwise analysis.
-    # Accept kwargs for params regarding number of permutations, which are
-    # unused by this statistic. Append a zero to the output tuple, representing
-    # the number of permutations performed
-    return *torus_w2_ub_test(X=X, Y=Y, grid_low=-np.pi, grid_high=np.pi), 0
+TORUS_PROJECTION_TEST_KWARGS: dict[str, Any] = dict(
+    grid_low=-np.pi,
+    grid_high=np.pi,
+    n_geodesics=2,
+    # geodesics=np.array([[1, 0], [0, 1], [1, 1], [2, 3]]),
+    n_cores=1,
+    n_null_simulations=2000,
+    n_null_sample_size=30,
+)
 
 
+# Helpers to wrap torus_projection_test for the pointwise analysis:
+# 1. Accept kwargs for params regarding number of permutations, which are
+# unused by this statistic.
+# 2. Append a zero to the output tuple, representing the number of
+# permutations performed
 def _torus_p(X, Y, *a, **k):
-    return (
-        *torus_projection_test(
-            X=X,
-            Y=Y,
-            grid_low=-np.pi,
-            grid_high=np.pi,
-            # n_geodesics=2,
-            geodesics=np.array([[1, 0], [0, 1], [1, 1], [2, 3]]),
-            n_cores=1,
-            n_null_simulations=2000,
-            n_null_sample_size=30,
-        ),
-        0,
-    )
+    return *torus_projection_test(X=X, Y=Y, **TORUS_PROJECTION_TEST_KWARGS), 0
+
+
+# Wrapper for torus_w2_ub_test
+def _torus_ub(X, Y, *a, **k):
+    return *torus_w2_ub_test(X=X, Y=Y, grid_low=-np.pi, grid_high=np.pi), 0
 
 
 class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
@@ -218,14 +221,17 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             the 'kde_v' statistic.
         :param bs_randstate: Random state for bootstrap.
         :param ddist_statistic: Statistical test to use for quantifying significance
-            of  distances between distributions (ddists).
-            Can be one of:
-            'kde_v' (KDE with von Mises kernel);
-            'kde_g' (KDE with Gaussian kernel);
-            'mmd' (MMD with Gaussian kernel);
-            'tw' (Welch t-test);
-            'torus_ub' (Upper bound of based on torus Wasserstein distance).
-            'torus_p' (Based on 1d Wasserstein distance on S1, after projecting torus data).
+            of  distances between distributions (ddists). Can be one of:
+            - 'kde_v': Permutation test with KDE-L1 test statistic and with von Mises kernel
+            - 'kde_g': As above, but with Gaussian kernel on torus
+            - 'mmd': Permutation test with flat-torus distance, MMD test staistic and Gaussian kernel.
+            - 'tw': Permutation test with flat-torus distance, Welch t test-statistic.
+            - 'torus_perm': Permutation test with distance based on S1 Wasserstein
+              distance after projecting torus data to S1.
+            - 'torus_ub': Upper bound of pval based on torus Wasserstein distance.
+              Not a permutation test. ddist_k must be zero.
+            - 'torus_p': Pval based on 1d Wasserstein distance on S1, after projecting.
+              Not a permutation test. ddist_k must be zero.
         :param ddist_bs_niter: Number of bootstrap iterations when resampling data
             for permutation tests.
         :param ddist_n_min: Minimal sample-size to allow when performing statistical
@@ -316,9 +322,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             raise ValueError(f"If {ddist_k=}, then {ddist_bs_niter=} must be 1")
 
         if ddist_statistic not in TEST_STATISTICS:
-            raise ValueError(
-                f"ddist_statistic must be one of {tuple(TEST_STATISTICS.keys())}"
-            )
+            raise ValueError(f"ddist_statistic must be one of {tuple(TEST_STATISTICS)}")
 
         if not 0.0 < fdr < 1.0:
             raise ValueError("FDR should be between 0 and 1, exclusive")
@@ -419,9 +423,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         elif ddist_statistic == "torus_ub":
             assert self.ddist_k == 0, "torus test doesn't support permutations"
             self.ddist_statistic_fn = _torus_ub
+
         elif ddist_statistic == "torus_p":
             assert self.ddist_k == 0, "torus test doesn't support permutations"
             self.ddist_statistic_fn = _torus_p
+
+        elif ddist_statistic == "torus_perm":
+            assert self.ddist_k > 0
+            self.ddist_statistic_fn = partial(
+                torus_projection_permutation_test, **TORUS_PROJECTION_TEST_KWARGS
+            )
         else:
             raise ValueError(f"Unexpected {ddist_statistic=}")
 
@@ -602,7 +613,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         )
 
         df_processed = pd.DataFrame(data=results)
-        LOGGER.info(f"preprocessing done, elapsed={time.time()-start:.2f}s")
+        LOGGER.info(f"preprocessing done, elapsed={time.time() - start:.2f}s")
         LOGGER.info(f"{df_processed}")
 
         # Sort rows using the order of residues in each protein
@@ -740,7 +751,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         )
 
         df_tuples = pd.concat((r for r in results if r is not None), axis=0)
-        LOGGER.info(f"tuples dataset created, elapsed={time.time()-start:.2f}s")
+        LOGGER.info(f"tuples dataset created, elapsed={time.time() - start:.2f}s")
         LOGGER.info(f"{df_tuples}")
 
         self._dump_intermediate("dataset-tuples", df_tuples, debug=True)
@@ -753,7 +764,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_group: pd.DataFrame,
         tuple_len: int,
     ) -> Optional[pd.DataFrame]:
-
         # Sort rows using the order of residues in each protein
         df_group = df_group.sort_values(by=[UNP_ID_COL, UNP_IDX_COL])
 
@@ -793,7 +803,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Function to map rows in the merged dataframe to the final rows we'll use.
         def _row_mapper(row: pd.Series):
-
             aa_codons, sss, group_sizes, group_stds = [], [], [], []
             for i, p in enumerate(prefixes):
                 aa_codons.append(row[f"{p}{CODON_COL}"])
@@ -1043,7 +1052,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             comp_type,
             (subgroup1_col, subgroup2_col, pair_filter_fn, pair_nmax_fn),
         ) in comp_types_to_subgroup_pairs.items():
-
             # Only run the requested comparison types
             if comp_type not in self.comparison_types:
                 LOGGER.info(f"Skipping {comp_type=} in pairwise analysis")
@@ -1135,7 +1143,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         # Group by the conditioning criteria, e.g. SS
         for group_idx, (group, df_group) in enumerate(df_groups):
-
             # Group by subgroup1 (e.g. AA  or codon)
             df_sub1_groups = df_group.groupby(subgroup1_col)
             for i, (sub1, df_sub1) in enumerate(df_sub1_groups):
@@ -1252,7 +1259,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             comp_type,
             (subgroup_col, sub_names_to_idx),
         ) in comp_types_to_subgroup_pairs.items():
-
             # Only run the requested comparison types
             if comp_type not in self.comparison_types:
                 LOGGER.info(f"Skipping {comp_type=} in dihedral distributions")
@@ -1266,11 +1272,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             # Group by the conditioning criteria, e.g. SS
             for group_idx, (group, df_group) in enumerate(df_groups):
-
                 # Group by subgroup (e.g. AA or codon tuple)
                 df_sub_groups = df_group.groupby(subgroup_col)
                 for i, (sub, df_sub) in enumerate(df_sub_groups):
-
                     args = (
                         group_idx,
                         df_sub,
@@ -1285,7 +1289,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             collected_kdes: Dict[str, Dict[str, np.ndarray]] = {
                 g: {} for g in self.ss_group_names
             }
-            for ((group, sub), result) in yield_async_results(async_results):
+            for (group, sub), result in yield_async_results(async_results):
                 i = sub_names_to_idx[sub]
                 _, kde = result
                 collected_kdes[group][sub] = kde
@@ -1336,7 +1340,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         df_data = {}
         async_results = {}
 
-        for (comp_type, i_col, j_col, i_tuples, j_tuples) in comp_types:
+        for comp_type, i_col, j_col, i_tuples, j_tuples in comp_types:
             if comp_type not in self.comparison_types:
                 continue
 
@@ -1407,7 +1411,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         group_pvals: np.ndarray,
         group_ddists: np.ndarray,
     ):
-
         # Get all indices of non-null pvals
         idx_valid = np.argwhere(~np.isnan(group_pvals))
 
@@ -1552,7 +1555,6 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             return sorted(set(aac_globs))
 
         for aa_codon in [COMP_TYPE_AA, COMP_TYPE_CC]:
-
             avg_dkdes: dict = self._load_intermediate(f"{aa_codon}-dihedral-kdes", True)
             if avg_dkdes is None:
                 continue
@@ -1809,7 +1811,7 @@ def _subgroup_permutation_test(
         f"{group_idx}, "
         f"sub1={subgroup1_idx} (n={n1}), "
         f"sub2={subgroup2_idx} (n={n2}), "
-        f"bs_niter={bs_idx+1}/{ddist_bs_niter}, {bs_nsample=}, "
+        f"bs_niter={bs_idx + 1}/{ddist_bs_niter}, {bs_nsample=}, "
         f"k={k_total}/{k_max}: "
         f"(pval, ddist)=({pval:.3f},{ddist:.3f}±{ddist_std:.2f}), "
         f"elapsed={t_elapsed:.2f}s"
@@ -1952,7 +1954,6 @@ def _plot_dkdes(
 
     fig_filenames = []
     for subgroup_glob in split_subgroups_glob:
-
         filtered_dkdes = {
             sub: dkde for sub, dkde in dkdes.items() if fnmatchcase(sub, subgroup_glob)
         }
@@ -2176,9 +2177,7 @@ def _plot_pvals_hist(
     out_files = []
 
     with mpl.style.context(PP5_MPL_STYLE):
-
         for comp_type, group_to_pvals in pvals.items():
-
             hist_fig_filename = out_dir.joinpath(f"pvals_hist-{comp_type}.pdf")
             pvals_fig_filename = out_dir.joinpath(f"pvals-{comp_type}.pdf")
 

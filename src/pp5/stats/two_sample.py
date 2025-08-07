@@ -27,6 +27,7 @@ R_TORUSTEST_SIM_NULL_STAT = "sim.null.stat"
 PY2R_CONVERTER = robjects.default_converter + robjects.numpy2ri.converter
 PY2R_CONVERTER.py2rpy.register(type(None), lambda _: robjects.NULL)
 
+
 # @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
 def _tw2_statistic(D: ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None) -> float:
     """
@@ -201,7 +202,7 @@ def kde2d_test(
             # Disabling reduction is necessary to avoid re-calculating the entire KDE
             # on each permutation.
             reduce=False,
-        )
+        )  # K is (n_bins,n_bins)
 
         # Transpose from (M, M, N) to (N, M, M) where N=nx+ny, so that we can permute
         # over the first dimension.
@@ -223,9 +224,9 @@ def two_sample_kernel_permutation_test(
     X: ndarray,
     Y: ndarray,
     k: int,
-    similarity_fn: Optional[Callable[[ndarray, ndarray], float]],
-    kernel_fn: Callable[[ndarray], ndarray],
     statistic_fn: Callable[[ndarray, int, int], float],
+    similarity_fn: Optional[Callable[[ndarray, ndarray], float]] = None,
+    kernel_fn: Optional[Callable[[ndarray], ndarray]] = None,
     k_min: Optional[int] = None,
     k_th: Optional[float] = float("inf"),
 ) -> Tuple[float, float, int]:
@@ -301,6 +302,7 @@ def two_sample_kernel_permutation_test(
         permute_pairs = False
 
     # inner products
+    kernel_fn = kernel_fn if kernel_fn is not None else lambda x: x
     K = kernel_fn(D)  # in general can be (nx+ny, m')
 
     return _two_sample_kernel_permutation_test_inner(
@@ -421,7 +423,7 @@ def torus_projection_test(
     grid_high: float = np.pi,
     n_cores: int = 2,
     n_geodesics: int = 2,
-    geodesics: Optional[np.array] = None,
+    geodesics: Optional[np.ndarray] = None,
     n_cores_null_simulations: int = 8,
     n_null_simulations: int = 2000,
     n_null_sample_size: int = 30,
@@ -450,7 +452,7 @@ def torus_projection_test(
     :param n_null_simulations: Number of simulations to run for the null distribution.
     :param n_null_sample_size: Number of samples to use for each null simulation.
     :return: Tuple containing:
-    - w2 distance
+    - w2 distance (mean over all projections)
     - pvalue (upper bound)
     """
 
@@ -521,3 +523,80 @@ def torus_projection_test_null_samples(
                 _LOG.info(f"Saved torustest null distribution to {filepath}")
 
         return sim_null_dist
+
+
+def torus_projection_permutation_test(
+    X: ndarray,
+    Y: ndarray,
+    # params for permutations:
+    k: int,
+    k_min: Optional[int] = None,
+    k_th: Optional[float] = float("inf"),
+    # params for single torus projection test:
+    grid_low: float = -np.pi,
+    grid_high: float = np.pi,
+    n_cores: int = 2,
+    n_geodesics: int = 2,
+    geodesics: Optional[np.ndarray] = None,
+    n_cores_null_simulations: int = 8,
+    n_null_simulations: int = 2000,
+    n_null_sample_size: int = 30,
+    #
+) -> Tuple[float, float, int]:
+    """
+    Applies a two-sample permutation test to determine whether the null hypothesis
+    that two distributions are identical can be rejected, using the test statistic from
+    the projected torus test.
+
+    For parameters, see documentation of :obj:`two_sample_kernel_permutation_test`
+    and :obj:`torus_projection_test`.
+    """
+
+    # Helper function to adapt between the input from the permutation test and the torus
+    # projection test
+    def _torus_projection_statistic(
+        K: np.ndarray,
+        nx: int,
+        ny: int,
+        nx_idx: Optional[np.ndarray] = None,
+        ny_idx: Optional[np.ndarray] = None,
+    ) -> float:
+        # K will have shape (Nx+Ny, 2)
+        if nx_idx is not None and ny_idx is not None:
+            X = K[nx_idx, :]
+            Y = K[ny_idx, :]
+        else:
+            X = K[:nx, :]
+            Y = K[nx:, :]
+
+        assert X.shape == (nx, 2)
+        assert Y.shape == (ny, 2)
+
+        stat, _pval = torus_projection_test(
+            X,
+            Y,
+            grid_low,
+            grid_high,
+            n_cores,
+            n_geodesics,
+            geodesics,
+            n_cores_null_simulations,
+            n_null_simulations,
+            n_null_sample_size,
+        )
+
+        # Ignore pval, use test statistic for permutations
+        return stat
+
+    return two_sample_kernel_permutation_test(
+        X,
+        Y,
+        k,
+        statistic_fn=_torus_projection_statistic,
+        # Disable similarity function and kernel, so statistic_fn will just see the
+        # original samples
+        similarity_fn=None,
+        kernel_fn=None,
+        k_min=k_min,
+        k_th=k_th,
+    )
