@@ -57,7 +57,7 @@ twosample.geodesic.torus.test<-function(sample_1, sample_2, n_geodesics = 1, NC_
     n_geodesics <- nrow(samp)
   }
 
-  cl <- parallel::makeCluster(NC_geodesic, type = "PSOCK")
+  cl <- parallel::makeCluster(NC_geodesic, type = "FORK")
   parallel::clusterExport(cl = cl, varlist = c('geodesic.projection', 'twosample.test.s1',
                                            'stat.s1', 'sim.null.stat'))
   parallel::clusterExport(cl = cl, varlist = c('sim_null'), envir = environment())
