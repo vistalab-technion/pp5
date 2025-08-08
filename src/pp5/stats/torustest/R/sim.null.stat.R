@@ -33,12 +33,11 @@ sim.null.stat<- function(NR, NC = 1, n = 30){
 
     }
 
-  clus <- parallel::makeCluster(NC)
-  doParallel::registerDoParallel(clus)
+  clus <- parallel::makeForkCluster(NC)
+  # doParallel::registerDoParallel(clus)
 
   sim <- parallel::parApply(clus, X = as.matrix(1:NR), MARGIN = 1, FUN = stat_rep, m = n)
   parallel::stopCluster(clus)
 
   return(sim)
 }
-

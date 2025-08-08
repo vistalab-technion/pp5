@@ -1,4 +1,5 @@
 import os
+import random
 import logging.config
 from typing import Any
 from pathlib import Path
@@ -182,3 +183,6 @@ def get_resource_path(data_dir: Path, basename: str):
 logging.config.fileConfig(
     PROJECT_DIR.joinpath("logging.ini"), disable_existing_loggers=False
 )
+
+# Try to prevent port collisions by setting a random port for R parallel
+os.environ["R_PARALLEL_PORT"] = str(random.randint(20000, 60000))
