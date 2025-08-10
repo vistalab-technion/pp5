@@ -4,7 +4,7 @@
 
 # Output folders
 out/
-out_paper/
+out_*/
 
 # Ignore everything by default, we'll explicitly add notebooks when needed
 *.ipynb

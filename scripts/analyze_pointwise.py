@@ -6,6 +6,8 @@ import time
 import subprocess
 from pathlib import Path
 
+from pp5.utils import elapsed_seconds_to_dhms
+
 
 def find_repo_root(max_levels=5):
     repo_root = Path(os.getcwd())
@@ -24,37 +26,46 @@ REPO_ROOT = find_repo_root()
 os.chdir(REPO_ROOT)
 
 sys.path.append(REPO_ROOT)
-from pp5.utils import elapsed_seconds_to_dhms
 
-PROCESSES = 8
-
-TUPLE_LEN = 1
-MIN_GROUP = 1
+PROCESSES = 4
 
 # Statistical test type
-DDIST_STATISTIC = "torus_p"  # 'tw', 'mmd', 'kde_g', 'torus_p', 'torus_perm'
+# Statistical test to use for quantifying significance of distances between
+# distributions. Can be one of:
+# - 'kde_v': Permutation test with KDE-L1 test statistic and with von Mises kernel
+# - 'kde_g': As above, but with Gaussian kernel on torus
+# - 'mmd': Permutation test with flat-torus distance, MMD test staistic and Gaussian
+#   kernel.
+# - 'tw': Permutation test with flat-torus distance, Welch t test-statistic.
+# - 'torus_perm': Permutation test with distance based on S1 Wasserstein
+#   distance after projecting torus data to S1.
+# - 'torus_ub': Upper bound of pval based on torus Wasserstein distance.
+#   Not a permutation test. ddist_k must be zero.
+# - 'torus_p': Pval based on 1d Wasserstein distance on S1, after projecting.
+#   Not a permutation test. ddist_k must be zero.
+DDIST_STATISTIC = "kde_g"  # 'torus_p', 'torus_perm'
 
 # Statistical test settings
-DDIST_BS_NITER = 1  # 1 will disable bootstrapping
-DDIST_K = 0  # 5000 # permuations test iters, 0 to disable
+DDIST_BS_NITER = 1  # 1 to disable bootstrapping
+DDIST_K = 5000  # permuations test iterations, 0 to disable
 DDIST_K_MIN = 100  # Min permutations for early stopping
 DDIST_K_TH = 100  # Threshold for early stopping if pval > K_TH * 1/(K+1) after K_MIN
-DDIST_NMAX = 0  # 1000  # 200 # Max (codon) group size, zero means no limit
+DDIST_NMAX = 0  # Max (codon) group size, zero means no limit
 DDIST_NMAX_AA = False  # Limit n_max per AA based on smallest codon
-FDR = 0.05
+FDR = 0.05  # False discovery rate for BH multiple hypothesis correction
 
 # Statistical test control options
-RANDOMIZE_CODONS = "none"  # randomize codons as a control; "aa", "aa_ss" or "none" for no randomization
+RANDOMIZE_CODONS = "none"  # randomize codons as a control; "aa", "aa_ss" control distribution; "none" for no randomization
 SELF_TEST = False  # whether to compare codons to themselves as a control hypothesis
 
-# KDE-based statistical test params
-DDIST_KERNEL_SIZE = 10.0  # 2.0
+# KDE-based statistical test params (for kde_g)
+DDIST_KERNEL_SIZE = 10.0
 
-# Torustest params
-DDIST_TORUS_N_PROJECTIONS = 2
-DDIST_TORUS_RANDOM_PROJECTIONS = False
+# Torustest params (for torus_p and torus_perm)
+DDIST_TORUS_N_PROJECTIONS = 2  # number of geodesics to project onto
+DDIST_TORUS_RANDOM_PROJECTIONS = True  # False to used fixed geodesics
 
-# Plotting KDE Params
+# KDE params for plotting
 KDE_NBINS = 128
 KDE_WIDTH = 200
 
@@ -63,6 +74,8 @@ CODON_GROUPING_TYPE = ""  # "", "any", "last_nucleotide"
 CODON_GROUPING_POSITION = "1"  # 0,1
 
 # Other analysis options
+TUPLE_LEN = 1  # Set to 2 to analyze codon pairs
+MIN_GROUP = 1  # Minimum number of samples from a (unp, unp_idx) location to aggregate
 COMPARISON_TYPES = [
     # "aa", # Compate AA distributions
     "cc",  # Compate codon distributions
@@ -71,9 +84,8 @@ SS_GROUP_ANY = False  # Include group of all SS?
 IGNORE_OMEGA = True
 
 DATASET_PATHS = [
-    # Path("out/prec-collected/20230730_063523-aida-ex_EC-src_EC-re/"),
+    # Should point to a collected dataset, with 'data-precs.csv' and 'meta.json'
     Path("out/prec-collected/20211001_124553-aida-ex_EC-src_EC/")
-    # Path("out/prec-collected/cope_sim_w_ena/")
 ]
 
 DATASETS = {
