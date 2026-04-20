@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
 import os
+import subprocess
 import sys
 import time
-import subprocess
 from pathlib import Path
 
 from pp5.utils import elapsed_seconds_to_dhms
@@ -29,6 +29,12 @@ sys.path.append(REPO_ROOT)
 
 PROCESSES = 4
 
+TAG = None  # None means auto-generate based on settings below
+OUT_DIR = None  # None means default location: dataset_dir/results/analysis_name-tag
+
+# TAG = "TEMP"
+OUT_DIR = "out/pnas-2026"
+
 # Statistical test type
 # Statistical test to use for quantifying significance of distances between
 # distributions. Can be one of:
@@ -43,7 +49,7 @@ PROCESSES = 4
 #   Not a permutation test. ddist_k must be zero.
 # - 'torus_p': Pval based on 1d Wasserstein distance on S1, after projecting.
 #   Not a permutation test. ddist_k must be zero.
-DDIST_STATISTIC = "kde_g"  # 'torus_p', 'torus_perm'
+DDIST_STATISTIC = "kde_g"  # 'kde_g', 'torus_p', 'torus_perm'
 
 # Statistical test settings
 DDIST_BS_NITER = 1  # 1 to disable bootstrapping
@@ -54,16 +60,20 @@ DDIST_NMAX = 0  # Max (codon) group size, zero means no limit
 DDIST_NMAX_AA = False  # Limit n_max per AA based on smallest codon
 FDR = 0.05  # False discovery rate for BH multiple hypothesis correction
 
-# Statistical test control options
-RANDOMIZE_CODONS = "none"  # randomize codons as a control; "aa", "aa_ss" control distribution; "none" for no randomization
-SELF_TEST = False  # whether to compare codons to themselves as a control hypothesis
+# Statistical test control (null) settings
+# codon randomization options are:
+# - 'none': don't randomize codons
+# - 'aa': randomize codons within each amino acid
+# - 'aa_ss': randomize codons within each amino acid and secondary structure group
+RANDOMIZE_CODONS = "none"  # 'none', 'aa', 'aa_ss'
+SELF_TEST = False  # whether to compare codons to themselves as a control
 
 # KDE-based statistical test params (for kde_g)
 DDIST_KERNEL_SIZE = 10.0
 
 # Torustest params (for torus_p and torus_perm)
-DDIST_TORUS_N_PROJECTIONS = 2  # number of geodesics to project onto
-DDIST_TORUS_RANDOM_PROJECTIONS = True  # False to used fixed geodesics
+DDIST_TORUS_N_PROJECTIONS = 4  # number of geodesics to project onto
+DDIST_TORUS_RANDOM_PROJECTIONS = False  # False to used fixed geodesics
 
 # KDE params for plotting
 KDE_NBINS = 128
@@ -94,7 +104,6 @@ DATASETS = {
     for path in DATASET_PATHS
 }
 
-OUT_DIR = Path("out")
 
 for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
     ddist_statistic_tag = f"{DDIST_STATISTIC}"
@@ -115,7 +124,7 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
     if not SELF_TEST:
         self_test_tag = "-noself"
 
-    tag = (
+    tag = TAG or (
         f"t={TUPLE_LEN}-bs={DDIST_BS_NITER}-k={DDIST_K}-nmax={DDIST_NMAX}-"
         f"{ddist_statistic_tag}{codon_grouping_tag}{codon_randomization_tag}{self_test_tag}"
     )
@@ -152,17 +161,20 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
         f"--ss-group-any" if SS_GROUP_ANY else "",
         f"--ignore-omega" if IGNORE_OMEGA else "",
         f"--out-tag={tag}",
+        (f"--out-dir={OUT_DIR!s}" if OUT_DIR else ""),
     ]
 
     command_line = [c for c in command_line if c]
 
-    out_file_path = OUT_DIR.joinpath(f"analyze-pointwise_{dataset_name}-{tag}.log")
+    log_dir = Path(OUT_DIR) if OUT_DIR is not None else Path("out")
+    log_file_path = log_dir.joinpath(f"analyze-pointwise_{dataset_name}-{tag}.log")
+    log_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(out_file_path, "w") as out_file:
-        # Write to output file and console
+    with open(log_file_path, "w") as out_file:
+        # Write to log file and console
         for f in [out_file, sys.stdout]:
             print(f"### EXECUTING COMMAND:\n{str.join(' ', command_line)}", file=f)
-            print(f"### OUTPUT FILE: {out_file_path.absolute()}", file=f, end="\n\n")
+            print(f"### LOG FILE: {log_file_path.absolute()}", file=f, end="\n\n")
             f.flush()  # So that it appears at the top
 
         start_time = time.time()
