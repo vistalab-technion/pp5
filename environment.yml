@@ -3,16 +3,17 @@ channels:
   - conda-forge
   - defaults
   - schrodinger # pymol
-  - bioconda    # clustal, muscle, blast
-  - salilab     # dssp
-  - r           # some R packages
+  - bioconda # clustal, muscle, blast
+  - salilab # dssp
+  - r # some R packages
 dependencies:
   # Basic
   - pip
-  - python=3.9.*
+  # - python=3.9.*
+  - python=3.11.*
   # Development
   # Project Dependencies
-  - biopython
+  - biopython<1.85
   - black
   - blast
   - clustalo
@@ -27,7 +28,7 @@ dependencies:
   - nodejs
   - numba
   - numpy
-  - pandas
+  - pandas<3
   - pre-commit
   - pymol-bundle
   - pytest
@@ -37,8 +38,8 @@ dependencies:
   - pytest-xdist
   - requests
   - rpy2
-  - scikit-learn
-  - scipy
+  - scikit-learn<1.6
+  - scipy<1.15
   - seaborn
   - toml
   - tqdm
@@ -52,8 +53,8 @@ dependencies:
   - r-transport
   # pip dependencies
   - pip:
-    - nbmerge
-    - -e .  # install this package
+      - nbmerge
+      - -e . # install this package
 platforms:
   - linux-64
   - osx-64
