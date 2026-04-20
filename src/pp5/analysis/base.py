@@ -1,10 +1,10 @@
+import logging
 import os
 import pickle
 import shutil
-import logging
 from abc import ABC
-from typing import Dict, Union
 from pathlib import Path
+from typing import Dict, Union
 
 import pandas as pd
 
@@ -50,7 +50,7 @@ class ParallelAnalyzer(ParallelDataCollector, ABC):
             raise ValueError(f"Dataset file {self.input_file} not found")
 
         tag = f"-{self.out_tag}" if self.out_tag else ""
-        out_dir = out_dir or self.dataset_dir.joinpath("results")
+        out_dir = Path(out_dir) if out_dir else self.dataset_dir.joinpath("results")
         super().__init__(
             id=f"{self.analysis_name}{tag}",
             out_dir=out_dir,
