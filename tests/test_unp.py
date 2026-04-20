@@ -1,8 +1,8 @@
 import pytest
 
+import pp5.external_dbs.unp as unp
 import tests
 import tests.utils
-import pp5.external_dbs.unp as unp
 
 NO_INTERNET = not tests.utils.has_internet()
 
@@ -86,6 +86,7 @@ class TestENAXRefs:
 
 @pytest.mark.skipif(NO_INTERNET, reason="Needs internet")
 class TestPDBXRefs:
+    @pytest.fixture(autouse=True)
     def setup(self):
         self.xrefs = unp.find_pdb_xrefs("P00720", method="x-ray")
 

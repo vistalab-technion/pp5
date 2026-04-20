@@ -1,7 +1,7 @@
-import os
-import gzip
-import time
 import filecmp
+import gzip
+import os
+import time
 
 import pytest
 import requests
@@ -25,6 +25,7 @@ class TestRemoteDL:
     def teardown_class(cls):
         cls.httpd.shutdown()
 
+    @pytest.fixture(autouse=True)
     def setup(self):
         pass
 

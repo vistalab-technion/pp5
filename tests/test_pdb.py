@@ -1,5 +1,5 @@
-import os
 import math
+import os
 import random
 import string
 from urllib.request import urlopen
@@ -8,9 +8,9 @@ import pandas as pd
 import pytest
 from pytest import approx
 
+import pp5.external_dbs.pdb as pdb
 import tests
 import tests.utils
-import pp5.external_dbs.pdb as pdb
 
 NO_INTERNET = not tests.utils.has_internet()
 
@@ -48,6 +48,7 @@ def _random_pdb_id(id_type="plain", min_chain_len=1, max_chain_len=3) -> str:
 
 
 class TestSplitID:
+    @pytest.fixture(autouse=True)
     def setup(self):
         self.n = 100
 
@@ -76,6 +77,7 @@ class TestSplitID:
 
 
 class TestSplitIDWithEntity:
+    @pytest.fixture(autouse=True)
     def setup(self):
         self.n = 100
 
