@@ -30,8 +30,10 @@ def kde_2d(
         Cannot be used with reduce=False.
     :param reduce: Whether to reduce and normalize the contribution of each sample.
         If True (the default), the regular 2D KDE of shape (M, M) will be returned.
-        If False, the return value will be of shape (M, M, N), corresponding to the
-        un-normalized contribution of each sample to each point on the estimation grid.
+        If False, the return value will be of shape (M, M, N), where each slab
+        K[:, :, i] is the per-sample-normalized contribution of observation i to the
+        estimation grid (each slab sums to 1 over the grid). The final density is
+        obtained by summing all slabs and dividing by N.
         Cannot be used with batch_size>0.
     :param dtype: Datatype of the result.
     :return: The KDE, as an array of shape (M, M) where M is the number of bins.
