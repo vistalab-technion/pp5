@@ -1,65 +1,65 @@
+import logging
+import multiprocessing as mp
 import os
 import re
 import time
-import logging
-import multiprocessing as mp
-from typing import (
-    Any,
-    Dict,
-    List,
-    Tuple,
-    Union,
-    Callable,
-    Iterable,
-    Iterator,
-    Optional,
-    Sequence,
-)
-from pathlib import Path
 from functools import partial
 from multiprocessing.pool import AsyncResult
+from pathlib import Path
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import matplotlib.style
 import numpy as np
 import pandas as pd
-import matplotlib as mpl
-import matplotlib.style
-import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 
 import pp5.plot
-from pp5.plot import PP5_MPL_STYLE
-from pp5.stats import mht_bh, tw_test, mmd_test, kde2d_test, torus_w2_ub_test
-from pp5.utils import sort_dict
+from pp5.analysis import DSSP_TO_SS_TYPE, SS_TYPE_ANY, SS_TYPE_MIXED
+from pp5.analysis.base import ParallelAnalyzer
 from pp5.codons import (
-    ACIDS,
-    AAC_SEP,
     AA_CODONS,
-    UNKNOWN_AA,
+    AAC_SEP,
     AAC_TUPLE_SEP,
+    ACIDS,
     MISSING_CODON,
+    UNKNOWN_AA,
     UNKNOWN_CODON,
     UNKNOWN_NUCLEOTIDE,
     aac2aa,
     aac_join,
-    aact2aat,
     aac_split,
-    codon2aac,
     aac_tuples,
+    aact2aat,
     aact_str2tuple,
     aact_tuple2str,
+    codon2aac,
     is_synonymous_tuple,
 )
-from pp5.analysis import SS_TYPE_ANY, SS_TYPE_MIXED, DSSP_TO_SS_TYPE
-from pp5.dihedral import Dihedral, wraparound_mean, flat_torus_distance_sq
-from pp5.parallel import yield_async_results
-from pp5.analysis.base import ParallelAnalyzer
-from pp5.stats.two_sample import (
-    torus_projection_test,
-    torus_projection_permutation_test,
-)
+from pp5.dihedral import Dihedral, flat_torus_distance_sq, wraparound_mean
 from pp5.distributions.kde import bvm_kernel, gaussian_kernel, torus_gaussian_kernel_2d
 from pp5.distributions.vonmises import BvMKernelDensityEstimator
+from pp5.parallel import yield_async_results
+from pp5.plot import PP5_MPL_STYLE
+from pp5.stats import kde2d_test, mht_bh, mmd_test, torus_w2_ub_test, tw_test
+from pp5.stats.two_sample import (
+    torus_projection_permutation_test,
+    torus_projection_test,
+)
+from pp5.utils import sort_dict
 
 LOGGER = logging.getLogger(__name__)
 
