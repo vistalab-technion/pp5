@@ -50,12 +50,27 @@ from pp5.codons import (
     is_synonymous_tuple,
 )
 from pp5.dihedral import Dihedral, flat_torus_distance_sq, wraparound_mean
+from pp5.distributions.bandwidth_cv import (
+    BW_COL_CODON,
+    BW_COL_SS,
+    DEFAULT_CV_GRID_MAX_DEG,
+    DEFAULT_CV_GRID_MIN_DEG,
+    DEFAULT_CV_GRID_N,
+    DEFAULT_CV_N_MIN,
+    DEFAULT_CV_SCORE_TOLERANCE,
+    DEFAULT_CV_SEED,
+    bandwidth_table_to_lookup,
+    default_sigma_grid_rad,
+    run_bandwidth_cv,
+    uniform_bandwidth_table,
+)
 from pp5.distributions.kde import bvm_kernel, gaussian_kernel, torus_gaussian_kernel_2d
 from pp5.distributions.vonmises import BvMKernelDensityEstimator
 from pp5.parallel import yield_async_results
 from pp5.plot import PP5_MPL_STYLE
 from pp5.stats import kde2d_test, mht_bh, mmd_test, torus_w2_ub_test, tw_test
 from pp5.stats.two_sample import (
+    kde2d_test_pergroup,
     torus_projection_permutation_test,
     torus_projection_test,
 )
@@ -173,6 +188,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         ddist_k_min: Optional[int] = None,
         ddist_k_th: float = 50.0,
         ddist_kernel_size: float = 1.0,
+        ddist_cv_grid_min_deg: float = DEFAULT_CV_GRID_MIN_DEG,
+        ddist_cv_grid_max_deg: float = DEFAULT_CV_GRID_MAX_DEG,
+        ddist_cv_grid_n: int = DEFAULT_CV_GRID_N,
+        ddist_cv_n_min: int = DEFAULT_CV_N_MIN,
+        ddist_cv_score_tolerance: float = DEFAULT_CV_SCORE_TOLERANCE,
         ddist_torus_n_projections: int = 2,
         ddist_torus_random_projections: bool = True,
         fdr: float = 0.1,
@@ -262,7 +282,25 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             then if after k_min permutations the pvalue is 50 times larger than it's
             smallest possible value - terminate.
         :param ddist_kernel_size: Size of kernel used in 'kde_g' and 'mmd' type
-            permutation tests. Should be in degrees.
+            permutation tests. Should be in degrees. For the 'kde_g' statistic, a
+            non-positive value (e.g. -1) triggers per-(codon, SS) bandwidth
+            selection via LOO cross-validation: a new pipeline stage runs CV
+            before the permutation stage and the KDE-L1 statistic then uses a
+            separate bandwidth for each codon in the pair (the "double-slab
+            trick"; see docs/kernel_bandwidth_cv.md). Has no effect on other
+            statistics.
+        :param ddist_cv_grid_min_deg: Smallest bandwidth in the CV grid (degrees).
+            Only used when ``ddist_kernel_size <= 0`` and ``ddist_statistic == 'kde_g'``.
+        :param ddist_cv_grid_max_deg: Largest bandwidth in the CV grid (degrees).
+        :param ddist_cv_grid_n: Number of log-spaced points in the CV grid.
+        :param ddist_cv_n_min: Minimum observations in a (codon, SS) group required
+            to run CV. Smaller groups receive a fallback bandwidth (median sigma
+            across non-fallback groups sharing the same AA and SS).
+        :param ddist_cv_score_tolerance: Plateau-detection tolerance for bandwidth
+            selection. The selected sigma is the smallest sigma whose CV
+            log-likelihood is within ``tolerance * (max_LL - min_LL)`` of the
+            maximum. Default 0.01 picks the most sensitive bandwidth indistinguishable
+            from the argmax.
         :param ddist_torus_n_projections: For 'torus_p' and 'torus_perm': Number of
             projections to use when computing distances on the torus.
         :param ddist_torus_random_projections: For 'torus_p' and 'torus_perm': Whether
@@ -334,6 +372,17 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if ddist_statistic not in TEST_STATISTICS:
             raise ValueError(f"ddist_statistic must be one of {tuple(TEST_STATISTICS)}")
 
+        # CV bandwidth mode: only supported for kde_g and single-residue analysis.
+        if ddist_kernel_size <= 0 and ddist_statistic != "kde_g":
+            raise ValueError(
+                f"CV bandwidth (ddist_kernel_size={ddist_kernel_size}) is only "
+                f"supported with ddist_statistic='kde_g', got {ddist_statistic!r}"
+            )
+        if ddist_kernel_size <= 0 and tuple_len > 1:
+            raise NotImplementedError(
+                f"CV bandwidth is not implemented for {tuple_len=}>1"
+            )
+
         if not 0.0 < fdr < 1.0:
             raise ValueError("FDR should be between 0 and 1, exclusive")
 
@@ -374,6 +423,11 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.ddist_k_min = int(ddist_k_min) if ddist_k_min else 0
         self.ddist_k_th = ddist_k_th
         self.ddist_kernel_size = ddist_kernel_size
+        self.ddist_cv_grid_min_deg = ddist_cv_grid_min_deg
+        self.ddist_cv_grid_max_deg = ddist_cv_grid_max_deg
+        self.ddist_cv_grid_n = ddist_cv_grid_n
+        self.ddist_cv_n_min = ddist_cv_n_min
+        self.ddist_cv_score_tolerance = ddist_cv_score_tolerance
         self.ddist_torus_n_projections = ddist_torus_n_projections
         self.ddist_torus_random_projections = ddist_torus_random_projections
         self.fdr = fdr
@@ -416,17 +470,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 ),
             )
         elif ddist_statistic == "kde_g":
-            self.ddist_statistic_fn = partial(
-                kde2d_test,
+            # For kde_g, defer binding of sigma: the bandwidth (fixed or CV-derived)
+            # is looked up per codon pair at dispatch time and a per-pair partial
+            # of kde2d_test_pergroup is built then. See _pointwise_dists_dihedral_subgroup_pairs.
+            self._kde_g_test_kwargs = dict(
                 n_bins=self.kde_args["n_bins"],
                 grid_low=-np.pi,
                 grid_high=np.pi,
                 dtype=self.kde_args["dtype"],
-                kernel_fn=partial(
-                    torus_gaussian_kernel_2d,
-                    sigma=np.deg2rad(self.ddist_kernel_size),
-                ),
             )
+            self.ddist_statistic_fn = None
 
         elif ddist_statistic == "mmd":
             self.ddist_statistic_fn = partial(
@@ -492,6 +545,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             "preprocess_dataset": self._preprocess_dataset,
             "tuples_dataset": self._create_tuples_dataset,
             "dataset_stats": self._dataset_stats,
+            "kernel_bandwidths": self._kernel_bandwidths,
             "pointwise_dists_dihedral": self._pointwise_dists_dihedral,
             "kde_groups": self._kde_groups,
             "kde_subgroups": self._kde_subgroups,
@@ -973,6 +1027,102 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
         return {"group_sizes": group_sizes}
 
+    def _kernel_bandwidths(self, pool: mp.pool.Pool) -> dict:
+        """
+        For the 'kde_g' statistic, build a per-(SS, codon) bandwidth table used by
+        the KDE-L1 permutation test. Two modes:
+
+        - ``ddist_kernel_size > 0`` (fixed): assign that sigma to every group and
+          go through the same per-group machinery as the CV path.
+        - ``ddist_kernel_size <= 0`` (CV): run LOO cross-validation per group to
+          select a bandwidth; small groups receive a fallback sigma (AA+SS median).
+
+        Writes ``kernel_bandwidths.csv`` next to the run's output dir, plus two
+        intermediates: ``kernel-bandwidths-df`` (the full DataFrame) and
+        ``kernel-bandwidths-lookup`` (a {(ss, codon): sigma_rad} dict used by the
+        analysis dispatch loop).
+
+        For non-``kde_g`` statistics this stage is a no-op.
+
+        See docs/kernel_bandwidth_cv.md for the statistical motivation (the
+        "double-slab trick" that keeps the permutation test valid with per-group
+        bandwidths).
+        """
+        if self.ddist_statistic_fn_name != "kde_g":
+            return {}
+
+        df_processed: pd.DataFrame = self._load_intermediate("dataset-tuples")
+        group_sizes: dict = self._load_intermediate("group-sizes")
+
+        # Collect (ss, codon) -> n from group_sizes. Skip the SS_TYPE_ANY bucket
+        # and aggregate (AA-only) keys: we only need per-codon entries.
+        per_group_n: Dict[Tuple[str, str], int] = {}
+        for ss, ss_entry in group_sizes.items():
+            if ss == SS_TYPE_ANY:
+                continue
+            for subgroup_key, n in ss_entry[SUBGROUP_COL].items():
+                # Codon keys contain AA and codon separated by AAC_SEP (e.g. 'L-CTC').
+                # AA-only keys (e.g. 'L') are also stored; skip those.
+                if AAC_SEP not in subgroup_key:
+                    continue
+                per_group_n[(ss, subgroup_key)] = n
+
+        if self.ddist_kernel_size > 0:
+            LOGGER.info(
+                f"Using fixed kernel bandwidth {self.ddist_kernel_size:.3f}° "
+                f"for all {len(per_group_n)} (codon, SS) groups."
+            )
+            df_bw = uniform_bandwidth_table(
+                per_group_n, sigma_rad=float(np.deg2rad(self.ddist_kernel_size))
+            )
+        else:
+            LOGGER.info(
+                f"Running bandwidth LOO-CV on {len(per_group_n)} (codon, SS) groups "
+                f"over {self.ddist_cv_grid_n} log-spaced bandwidths "
+                f"[{self.ddist_cv_grid_min_deg:.2f}°, {self.ddist_cv_grid_max_deg:.2f}°]..."
+            )
+
+            # Build (ss, codon) -> (phi_rad, psi_rad) from the processed dataset.
+            group_angles: Dict[Tuple[str, str], Tuple[np.ndarray, np.ndarray]] = {}
+            for (ss, codon), sub_df in df_processed.groupby(
+                [CONDITION_COL, CODON_COL]
+            ):
+                phi_rad = np.deg2rad(sub_df[PHI_COL].values)
+                psi_rad = np.deg2rad(sub_df[PSI_COL].values)
+                group_angles[(ss, codon)] = (phi_rad, psi_rad)
+
+            sigma_grid_rad = default_sigma_grid_rad(
+                grid_min_deg=self.ddist_cv_grid_min_deg,
+                grid_max_deg=self.ddist_cv_grid_max_deg,
+                grid_n=self.ddist_cv_grid_n,
+            )
+
+            df_bw = run_bandwidth_cv(
+                group_angles=group_angles,
+                sigma_grid_rad=sigma_grid_rad,
+                n_bins=self.kde_args["n_bins"],
+                grid_low=-np.pi,
+                grid_high=np.pi,
+                n_min=self.ddist_cv_n_min,
+                pool=pool,
+                seed=self.bs_randstate if self.bs_randstate is not None else DEFAULT_CV_SEED,
+                score_tolerance=self.ddist_cv_score_tolerance,
+                cv_mode="loo",
+            )
+
+        # Human-readable CSV next to the run's root output dir.
+        csv_path = self.out_dir.joinpath("kernel_bandwidths.csv")
+        df_bw.to_csv(csv_path, index=False)
+        LOGGER.info(f"Wrote kernel bandwidths: {csv_path}")
+
+        # Intermediates consumed by the permutation dispatch.
+        self._dump_intermediate("kernel-bandwidths-df", df_bw, debug=True)
+        lookup = bandwidth_table_to_lookup(df_bw)
+        self._dump_intermediate("kernel-bandwidths-lookup", lookup)
+
+        n_fallback = int(df_bw["is_fallback"].sum())
+        return {"n_bw": len(df_bw), "n_fallback": n_fallback}
+
     def _pointwise_dists_dihedral(self, pool: mp.pool.Pool) -> dict:
         """
         Calculate pointwise-distances between pairs of codon-tuples (sub-groups).
@@ -1165,6 +1315,17 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             f"{comp_type}-tuples..."
         )
 
+        # For the 'kde_g' statistic we build a per-pair test function at dispatch
+        # time, using the (codon, SS) bandwidth table produced by the
+        # _kernel_bandwidths stage. Other statistics use the single pre-bound
+        # self.ddist_statistic_fn.
+        using_kde_g = self.ddist_statistic_fn_name == "kde_g"
+        bw_lookup: Optional[Dict[Tuple[str, str], float]] = None
+        if using_kde_g:
+            bw_lookup = self._load_intermediate(
+                "kernel-bandwidths-lookup", raise_if_missing=True
+            )
+
         # Group by the conditioning criteria, e.g. SS
         for group_idx, (group, df_group) in enumerate(df_groups):
             # Group by subgroup1 (e.g. AA  or codon)
@@ -1204,6 +1365,49 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     # Analyze the angles of subgroup1 and subgroup2
                     angles1 = np.deg2rad(df_sub1[[*PHI_PSI_COLS]].values)
                     angles2 = np.deg2rad(df_sub2[[*PHI_PSI_COLS]].values)
+
+                    # Resolve the statistic function. For kde_g, build a
+                    # per-pair partial that binds the (codon-specific) bandwidths
+                    # looked up from the table precomputed in _kernel_bandwidths.
+                    # partial() captures sigma_x/sigma_y by value at construction,
+                    # so each iteration's partial holds its own bandwidths (no
+                    # late-binding-loop-variable gotcha).
+                    if using_kde_g:
+                        pair_is_codon = (
+                            AAC_SEP in sub1 and AAC_SEP in sub2
+                        )
+                        if not pair_is_codon:
+                            # AA-level comparison for kde_g: not supported with
+                            # per-group bandwidths. The Brief Report uses only
+                            # codon-codon comparisons ("cc"), so this is a sanity
+                            # guard rather than a production path.
+                            raise NotImplementedError(
+                                f"kde_g with {comp_type=} (non-codon subgroups "
+                                f"{sub1!r}, {sub2!r}) is not supported under the "
+                                f"per-group bandwidth dispatch. Use "
+                                f"COMPARISON_TYPES=['cc']."
+                            )
+                        sigma_x_rad = bw_lookup.get((group, sub1))
+                        sigma_y_rad = bw_lookup.get((group, sub2))
+                        # Fail loudly if a bandwidth is missing: this would indicate
+                        # that the _kernel_bandwidths stage drifted from
+                        # _dataset_stats.
+                        assert (
+                            isinstance(sigma_x_rad, float)
+                            and isinstance(sigma_y_rad, float)
+                        ), (
+                            f"Missing bandwidth for {(group, sub1)=} or "
+                            f"{(group, sub2)=}: got {sigma_x_rad=}, {sigma_y_rad=}"
+                        )
+                        stat_fn = partial(
+                            kde2d_test_pergroup,
+                            sigma_x_rad=sigma_x_rad,
+                            sigma_y_rad=sigma_y_rad,
+                            **self._kde_g_test_kwargs,
+                        )
+                    else:
+                        stat_fn = self.ddist_statistic_fn
+
                     res = pool.apply_async(
                         _subgroup_permutation_test,
                         kwds=dict(
@@ -1213,7 +1417,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                             subgroup1_data=angles1,
                             subgroup2_data=angles2,
                             randstate=self.bs_randstate,
-                            ddist_statistic_fn=self.ddist_statistic_fn,
+                            ddist_statistic_fn=stat_fn,
                             ddist_statistic_fn_name=self.ddist_statistic_fn_name,
                             ddist_bs_niter=self.ddist_bs_niter,
                             ddist_n_max=ddist_n_max,

@@ -1,6 +1,7 @@
 import pickle
 import logging
-from typing import Tuple, Callable, Optional
+from functools import partial
+from typing import Tuple, Callable, Optional, Union
 
 import numba
 import numpy as np
@@ -11,7 +12,7 @@ from filelock import FileLock
 from scipy.spatial.distance import pdist, squareform, sqeuclidean
 
 import pp5
-from pp5.distributions.kde import kde_2d, gaussian_kernel
+from pp5.distributions.kde import kde_2d, gaussian_kernel, torus_gaussian_kernel_2d
 
 _LOG = logging.getLogger(__name__)
 
@@ -220,6 +221,138 @@ def kde2d_test(
     )
 
 
+# -----------------------------------------------------------------------------
+# Per-group KDE-L1 permutation test (the "double-slab trick").
+#
+# When comparing two codons with different CV-chosen bandwidths (sigma_1, sigma_2),
+# we cannot precompute a single KDE slab per observation because the same observation
+# may be assigned to group X or group Y across permutations. The fix: precompute TWO
+# slabs per observation — one with sigma_1 and one with sigma_2 — and have the
+# permutation loop pick the slab matching the role the observation currently plays.
+#
+# Bandwidth attaches to the group *role*, not to the observation. (sigma_1, sigma_2)
+# are fixed nuisance constants precomputed once from the original labels; every
+# permutation applies the same function T(Z, L; sigma_1, sigma_2). Under H0 the
+# labels are exchangeable, so the permutation null is correctly sampled.
+#
+# See docs/kernel_bandwidth_cv.md for the full derivation.
+# -----------------------------------------------------------------------------
+
+
+def _kde_statistic_pergroup(
+    K: Tuple[np.ndarray, np.ndarray],
+    nx: int,
+    ny: int,
+    nx_idx: Optional[np.ndarray] = None,
+    ny_idx: Optional[np.ndarray] = None,
+) -> float:
+    """KDE-L1 statistic from two slab stacks (one per group bandwidth).
+
+    :param K: Tuple (K_x, K_y). Each has shape (nx+ny, M, M). Observation i
+        contributes its K_x slab when assigned to group X, and its K_y slab when
+        assigned to group Y.
+    :param nx: Number of observations from X.
+    :param ny: Number of observations from Y.
+    :param nx_idx: Indices of observations currently assigned to group X (for a
+        given permutation). If None, the unpermuted split [:nx] is used.
+    :param ny_idx: Indices of observations currently assigned to group Y. If None,
+        the unpermuted split [nx:] is used.
+    :return: L1 distance between the two pooled, normalized KDEs.
+    """
+    K_x, K_y = K
+
+    x_slabs = K_x[nx_idx] if nx_idx is not None else K_x[:nx]
+    y_slabs = K_y[ny_idx] if ny_idx is not None else K_y[nx:]
+
+    kde_X = np.sum(x_slabs, axis=0)
+    kde_X /= np.sum(kde_X)
+
+    kde_Y = np.sum(y_slabs, axis=0)
+    kde_Y /= np.sum(kde_Y)
+
+    return float(np.sum(np.abs(kde_X - kde_Y)).item())
+
+
+def kde2d_test_pergroup(
+    X: ndarray,
+    Y: ndarray,
+    k: int,
+    n_bins: int,
+    grid_low: float,
+    grid_high: float,
+    dtype: np.dtype,
+    sigma_x_rad: float,
+    sigma_y_rad: float,
+    k_min: Optional[int] = None,
+    k_th: Optional[float] = float("inf"),
+) -> Tuple[float, float, int]:
+    """KDE-L1 permutation test on the torus with per-group bandwidths.
+
+    Precomputes two stacks of per-sample kernel slabs on the M x M torus grid — one
+    with ``sigma_x_rad`` (for observations assigned to group X) and one with
+    ``sigma_y_rad`` (for group Y). See the block comment above for the statistical
+    justification of the double-slab approach.
+
+    When ``sigma_x_rad == sigma_y_rad`` this reduces to the fixed-bandwidth KDE-L1
+    test and skips the second slab computation.
+
+    :param X: (nx, 2) phi/psi observations in radians.
+    :param Y: (ny, 2) phi/psi observations in radians.
+    :param k: Number of permutations.
+    :param n_bins: M — grid size per axis.
+    :param grid_low: Grid lower bound (inclusive), radians.
+    :param grid_high: Grid upper bound (exclusive), radians.
+    :param dtype: Slab dtype.
+    :param sigma_x_rad: Bandwidth (radians) for the X group role.
+    :param sigma_y_rad: Bandwidth (radians) for the Y group role.
+    :param k_min: Early termination minimum permutations.
+    :param k_th: Early termination threshold.
+    :return: (ddist, pval, n_permutations).
+    """
+    nx, ny = X.shape[0], Y.shape[0]
+    if nx < 2 or ny < 2:
+        raise ValueError(
+            "Permutation test requires at least two observations in each sample"
+        )
+
+    # Pool the observations. Any permutation is expressed as a split of indices
+    # 0..nx+ny-1 into (nx_idx, ny_idx).
+    Z = np.vstack((X, Y))
+
+    def _compute_slabs(sigma_rad: float) -> np.ndarray:
+        slabs = kde_2d(
+            x1=Z[:, 0],
+            x2=Z[:, 1],
+            kernel_fn=partial(torus_gaussian_kernel_2d, sigma=sigma_rad),
+            n_bins=n_bins,
+            grid_low=grid_low,
+            grid_high=grid_high,
+            dtype=dtype,
+            reduce=False,
+        )
+        # kde_2d returns (M, M, N); permutation indexing needs (N, M, M).
+        return slabs.transpose(2, 0, 1)
+
+    K_x = _compute_slabs(sigma_x_rad)
+    # When the two bandwidths match we only need one slab stack — share it.
+    K_y = K_x if sigma_x_rad == sigma_y_rad else _compute_slabs(sigma_y_rad)
+
+    k_min = k_min if k_min else k
+    assert k > 0
+    assert k_th is None or k_th > 0
+
+    return _two_sample_kernel_permutation_test_inner(
+        (K_x, K_y),
+        nx,
+        ny,
+        k,
+        _kde_statistic_pergroup,
+        permute_pairs=False,
+        k_min=k_min,
+        k_th=k_th if k_th is not None else float("inf"),
+    )
+
+
 def two_sample_kernel_permutation_test(
     X: ndarray,
     Y: ndarray,
@@ -312,11 +445,11 @@ def two_sample_kernel_permutation_test(
 
 # @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
 def _two_sample_kernel_permutation_test_inner(
-    K: ndarray,
+    K: Union[ndarray, Tuple[ndarray, ...]],
     nx: int,
     ny: int,
     k: int,
-    statistic_fn: Callable[[ndarray, int, int], float],
+    statistic_fn: Callable[..., float],
     permute_pairs: bool,
     k_min: int,
     k_th: float,
@@ -327,6 +460,9 @@ def _two_sample_kernel_permutation_test_inner(
     :param K: Observations matrix of of two pooled samples (X and Y) of shape
         (N, M, *) where '*' means any number of additional dims, and N=nx+ny the
         total number of observations in the sample X and sample Y combined.
+        When ``permute_pairs=False``, K may also be an opaque tuple whose elements
+        the statistic function knows how to index; the inner loop passes it
+        through unchanged.
     :param nx: Number of observations from X.
     :param ny: Number of observations from Y.
     :param k: Number of permutations for significance evaluation.

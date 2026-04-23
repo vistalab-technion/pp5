@@ -69,6 +69,7 @@ RANDOMIZE_CODONS = "none"  # 'none', 'aa', 'aa_ss'
 SELF_TEST = False  # whether to compare codons to themselves as a control
 
 # KDE-based statistical test params (for kde_g)
+# With kde_g, use -1 to perform cross-validation for kernel selection (per codon+SS).
 DDIST_KERNEL_SIZE = 10.0
 
 # Torustest params (for torus_p and torus_perm)
@@ -109,6 +110,8 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
     ddist_statistic_tag = f"{DDIST_STATISTIC}"
     if DDIST_STATISTIC.startswith("torus"):
         ddist_statistic_tag = f"{ddist_statistic_tag}_nproj={DDIST_TORUS_N_PROJECTIONS}_randproj={DDIST_TORUS_RANDOM_PROJECTIONS}"
+    elif DDIST_KERNEL_SIZE <= 0:
+        ddist_statistic_tag = f"{ddist_statistic_tag}_bw=cv"
     else:
         ddist_statistic_tag = f"{ddist_statistic_tag}_bw={DDIST_KERNEL_SIZE}"
 
