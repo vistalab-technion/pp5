@@ -27,7 +27,7 @@ os.chdir(REPO_ROOT)
 
 sys.path.append(REPO_ROOT)
 
-PROCESSES = 4
+PROCESSES = 10
 
 TAG = None  # None means auto-generate based on settings below
 OUT_DIR = None  # None means default location: dataset_dir/results/analysis_name-tag
@@ -70,7 +70,7 @@ SELF_TEST = False  # whether to compare codons to themselves as a control
 
 # KDE-based statistical test params (for kde_g)
 # With kde_g, use -1 to perform cross-validation for kernel selection (per codon+SS).
-DDIST_KERNEL_SIZE = 10.0
+DDIST_KERNEL_SIZE = -1
 
 # Torustest params (for torus_p and torus_perm)
 DDIST_TORUS_N_PROJECTIONS = 4  # number of geodesics to project onto
