@@ -1,18 +1,18 @@
-import pickle
 import logging
+import pickle
 from functools import partial
-from typing import Tuple, Callable, Optional, Union
+from typing import Callable, Optional, Tuple, Union
 
 import numba
 import numpy as np
 import rpy2.robjects as robjects
 import rpy2.robjects.numpy2ri
-from numpy import ndarray
 from filelock import FileLock
-from scipy.spatial.distance import pdist, squareform, sqeuclidean
+from numpy import ndarray
+from scipy.spatial.distance import euclidean, pdist, sqeuclidean, squareform
 
 import pp5
-from pp5.distributions.kde import kde_2d, gaussian_kernel, torus_gaussian_kernel_2d
+from pp5.distributions.kde import gaussian_kernel, kde_2d, torus_gaussian_kernel_2d
 
 _LOG = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ def mmd_test(
     X: ndarray,
     Y: ndarray,
     k: int,
-    similarity_fn: Callable[[ndarray, ndarray], float] = sqeuclidean,
+    similarity_fn: Callable[[ndarray, ndarray], float] = euclidean,
     kernel_fn: Callable[[ndarray], ndarray] = gaussian_kernel,
     k_min: Optional[int] = None,
     k_th: Optional[float] = float("inf"),
@@ -372,7 +372,7 @@ def two_sample_kernel_permutation_test(
     function, and k(z) is a scalar univariate kernel to be applied on the similarity
     metric.
     For example,
-        - RBF kernel K(x, y): Set h(x, y) = ||x-y||^2 and k(z) = exp(Ɣ z^2/σ^2).
+        - RBF kernel K(x, y): Set h(x, y) = ||x-y|| and k(z) = exp(Ɣ z^2/σ^2).
         - Polynomial kernel K(x, y): Set h(x, y) = x^T y and k(z) = (Ɣ z + r)^d.
         - Linear kernel K(x, y): Set h(x, y) = x^T y and k(z) = z.
     The observation from X, Y will be pooled into Z = [X; Y], and a Gram matrix K
