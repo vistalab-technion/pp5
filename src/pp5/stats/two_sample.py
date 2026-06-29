@@ -68,6 +68,31 @@ def _mmd_statistic(K: np.ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None) ->
 
 
 # @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
+def _mmd_statistic_unbiased(
+    K: np.ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None
+) -> float:
+    """
+    Calculates the unbiased MMD statistic of a kernel matrix.
+
+    Unlike :obj:`_mmd_statistic`, the within-sample diagonal entries k(x,x) are
+    excluded and the within-sample sums are normalized by n*(n-1). This yields a
+    U-statistic whose expectation equals MMD^2 (and is zero under H0: P_X = P_Y).
+
+    :param K: Matrix of inner products of two pooled samples (X and Y) of
+        shape (nx+ny, nx+ny).
+    :param nx: Number of observations from X.
+    :param ny: Number of observations from Y.
+    :return: The unbiased MMD statistic.
+    """
+    K_X = K[0:nx, 0:nx]
+    K_Y = K[nx:, nx:]
+    sum_X = (np.sum(K_X) - np.trace(K_X)) / nx / (nx - 1)
+    sum_Y = (np.sum(K_Y) - np.trace(K_Y)) / ny / (ny - 1)
+    sum_XY = np.sum(K[nx:, 0:nx]) / nx / ny
+    return float(sum_X + sum_Y - 2.0 * sum_XY)
+
+
+# @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
 def _kde_statistic(
     K: np.ndarray,
     nx: int,
@@ -141,6 +166,7 @@ def mmd_test(
     k: int,
     similarity_fn: Callable[[ndarray, ndarray], float] = euclidean,
     kernel_fn: Callable[[ndarray], ndarray] = gaussian_kernel,
+    unbiased: bool = True,
     k_min: Optional[int] = None,
     k_th: Optional[float] = float("inf"),
 ) -> Tuple[float, float, int]:
@@ -150,6 +176,8 @@ def mmd_test(
 
     For parameters, see documentation of :obj:`two_sample_kernel_permutation_test`.
 
+    :param unbiased: Whether to use the unbiased MMD U-statistic (excludes the
+        within-sample diagonal). If False, the biased V-statistic is used.
     :return: MMD statistic value, p-value (significance).
     """
     return two_sample_kernel_permutation_test(
@@ -158,7 +186,7 @@ def mmd_test(
         k,
         similarity_fn=similarity_fn,
         kernel_fn=kernel_fn,
-        statistic_fn=_mmd_statistic,
+        statistic_fn=_mmd_statistic_unbiased if unbiased else _mmd_statistic,
         k_min=k_min,
         k_th=k_th,
     )
