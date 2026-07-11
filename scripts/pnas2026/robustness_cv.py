@@ -12,6 +12,7 @@ x slab-stack) so a pair runs in seconds.
 Reports baseline p (validate vs published) and, for FDR-significant pairs, the
 adversarial breakdown-k.
 """
+import os
 import sys
 from functools import partial
 import numpy as np
@@ -19,9 +20,15 @@ import pandas as pd
 
 from pp5.distributions.kde import kde_2d, torus_gaussian_kernel_2d
 
-CVTAB = ("/Users/abronste/minflux/pnas-2026/results/"
-         "pointwise_cdist-t=1-bs=1-k=5000-nmax=0-kde_g_bw=cv-cr=none-noself/kernel_bandwidths.csv")
-DS = "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/_intermediate_/dataset.csv"
+# CV-selected per-(codon, SS) kernel bandwidths, produced by the published pipeline
+# (see out/pnas-2026/docs); override via PP5_CVTAB_PATH if using a different table.
+CVTAB = os.environ.get("PP5_CVTAB_PATH", "out/pnas-2026/bandwidth_cv/kernel_bandwidths.csv")
+# Positional arg overrides the default; default is the published/reproduced
+# aggregated dataset (see out/pnas-2026/docs; no dependency on Alex's repro zip).
+DS = sys.argv[1] if len(sys.argv) > 1 else (
+    "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
+    "pointwise_cdist-natcom/_intermediate_/dataset.csv"
+)
 NBINS, GLOW, GHIGH, DT = 128, -np.pi, np.pi, np.float64
 K, SEED = 5000, 12345
 BH = {"HELIX": 0.0005747126436781609, "TURN": 0.0005747126436781609}
@@ -106,6 +113,7 @@ def main():
               f"{PUB[(ss,c1,c2)]:>9.4f}{('yes' if sig else 'no'):>5}{bk_txt:>13}")
         out.append(dict(SS=ss, pair=f"{c1}:{c2}", sigA=sA, sigB=sB, cv_ddist=round(dd,4),
                         cv_p=round(p,5), pub_p=PUB[(ss,c1,c2)], significant=sig, breakdown_k=bk_txt))
+    os.makedirs("out/pnas-2026-repro", exist_ok=True)
     pd.DataFrame(out).to_csv("out/pnas-2026-repro/robustness_cv_summary.csv", index=False)
     print("\nsaved: out/pnas-2026-repro/robustness_cv_summary.csv")
 

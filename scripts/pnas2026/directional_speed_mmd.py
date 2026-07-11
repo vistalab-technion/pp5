@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
-sys.path.insert(0, "scripts")
+sys.path.insert(0, "scripts/pnas2026")
 from mmd_breakdown import kmat, mmd2
 from per_aa_directional import SPD
 

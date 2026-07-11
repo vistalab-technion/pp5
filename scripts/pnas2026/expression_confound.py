@@ -15,7 +15,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "scripts")
+sys.path.insert(0, "scripts/pnas2026")
 from robustness_outliers import slab_rows_for, perm_pval
 
 DS = "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/_intermediate_/dataset.csv"

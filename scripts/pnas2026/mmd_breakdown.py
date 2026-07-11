@@ -11,10 +11,18 @@ common footing; a statistic-specific MMD-BH (all 87 pairs) is a later refinement
 Fast permutation via the row-sum identity (sum only the smaller group's block);
 clean O(1)-update leave-one-out for the influence ranking.
 """
+import os
+import sys
+
 import numpy as np
 import pandas as pd
 
-DS = "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/_intermediate_/dataset.csv"
+# Positional arg overrides the default; default is the published/reproduced
+# aggregated dataset (see out/pnas-2026/docs; no dependency on Alex's repro zip).
+DS = sys.argv[1] if len(sys.argv) > 1 else (
+    "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
+    "pointwise_cdist-natcom/_intermediate_/dataset.csv"
+)
 SIG = np.deg2rad(10.0)
 KP, SEED = 5000, 12345
 THR = {"HELIX": 0.0011494, "TURN": 0.0005747}
@@ -95,6 +103,7 @@ def main():
               f"{str(bku):>6}{pb:>11.4f}{('yes' if sb else 'no'):>5}{str(bkb):>6}", flush=True)
         out.append(dict(SS=ss, pair=f"{c1}:{c2}", mmd2u_p=round(pu,5), mmd2u_sig=su, mmd2u_bk=bku,
                         rbfmmd_p=round(pb,5), rbfmmd_sig=sb, rbfmmd_bk=bkb))
+    os.makedirs("out/pnas-2026-repro", exist_ok=True)
     pd.DataFrame(out).to_csv("out/pnas-2026-repro/mmd_breakdown.csv", index=False)
     print("\nsaved: out/pnas-2026-repro/mmd_breakdown.csv")
 

@@ -6,7 +6,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, "scripts")
+sys.path.insert(0, "scripts/pnas2026")
 from mmd_breakdown import kmat, mmd2, perm_p, THR
 
 DS = "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/_intermediate_/dataset.csv"

@@ -23,7 +23,8 @@ CONS = {"E": "SHEET", "H": "HELIX", "G": "OTHER", "I": "OTHER",
         "T": "TURN", "S": "OTHER", "B": "OTHER", "-": None, "": None}
 
 DS = sys.argv[1] if len(sys.argv) > 1 else (
-    "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/_intermediate_/dataset.csv")
+    "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
+    "pointwise_cdist-natcom/_intermediate_/dataset.csv")
 DP = "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/data-precs.csv"
 OUT_DS = "out/pnas-2026-repro-clean/dataset_clean.csv"
 OUT_RM = "out/pnas-2026-repro-clean/removed_structures.csv"
