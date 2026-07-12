@@ -41,7 +41,7 @@ from robustness_outliers import (
 
 GEODESICS = np.array([[1, 0], [0, 1], [1, 1], [2, 3]], dtype=float)  # 4 fixed
 GLOW, GHIGH = -np.pi, np.pi
-N_NULL_SIMS, N_NULL_SAMPLE = 2000, 30
+N_NULL_SIMS, N_NULL_SAMPLE, NULL_SIM_SEED = 2000, 30, 42
 N_REPLICATES = 30
 SEED = 12345
 GRIDN = 256
@@ -66,7 +66,9 @@ _TEST_FN = None
 def _torus_setup():
     global _SIM_NULL, _TEST_FN
     if _SIM_NULL is None:
-        _SIM_NULL = torus_projection_test_null_samples(N_NULL_SIMS, N_NULL_SAMPLE, n_cores=4)
+        _SIM_NULL = torus_projection_test_null_samples(
+            N_NULL_SIMS, N_NULL_SAMPLE, n_cores=4, seed=NULL_SIM_SEED
+        )
         _TEST_FN = robjects.globalenv[R_TORUSTEST_GEODESIC]
 
 
