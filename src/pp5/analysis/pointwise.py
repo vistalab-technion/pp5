@@ -142,8 +142,9 @@ TORUSTEST_DEFAULT_KWARGS: dict[str, Any] = dict(
     n_geodesics=2,
     geodesics=None,
     n_cores=1,
-    n_null_simulations=2000,
-    n_null_sample_size=30,
+    n_null_sample_size=30,  # Default from R-code: 30
+    n_null_simulations=2000,  # Default from R-code: 2000
+    null_seed=42,  # Set a seed for reproducible null distribution
 )
 # Fixed geodesics for torustest for use if randomization is disabled
 TORUS_PROJECTION_FIXED_GEODESICS = np.array([[1, 0], [0, 1], [1, 1], [2, 3]])
