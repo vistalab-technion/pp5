@@ -39,16 +39,19 @@ import pandas as pd
 
 OUTDIR = os.environ.get("PP5_ROBUST_OUTDIR", "out/pnas-2026-repro")
 
-from pp5.distributions.kde import torus_gaussian_kernel_2d, kde_2d
-from pp5.stats.two_sample import _two_sample_kernel_permutation_test_inner, _mmd_statistic
+from pp5.stats.two_sample import (
+    _mmd_statistic,
+    _two_sample_kernel_permutation_test_inner,
+)
+from pp5.distributions.kde import kde_2d, torus_gaussian_kernel_2d
 
 # ---- settings matching the published kde_g bw=10 run -------------------------
 BW_DEG = 10.0
 SIGMA_RAD = np.deg2rad(BW_DEG)
 NBINS, GLOW, GHIGH, DT = 128, -np.pi, np.pi, np.float64
-K_REAL = 5000        # permutations for real-pair p-values
-K_CTRL = 2000        # permutations for control baselines (resolves the BH thresh)
-N_REPLICATES = 30    # AA+SS control replicates per pair
+K_REAL = 5000  # permutations for real-pair p-values
+K_CTRL = 2000  # permutations for control baselines (resolves the BH thresh)
+N_REPLICATES = 30  # AA+SS control replicates per pair
 SEED = 12345
 
 # Published BH p-value thresholds (kde-l1 bw=10, Real data) per SS class.
@@ -60,13 +63,17 @@ PAIRS = [
     ("HELIX", "L-CTC", "L-CTG"),
     ("HELIX", "L-CTC", "L-CTT"),
     ("HELIX", "R-AGG", "R-CGA"),
-    ("TURN",  "A-GCG", "A-GCT"),
-    ("TURN",  "P-CCC", "P-CCG"),
+    ("TURN", "A-GCG", "A-GCT"),
+    ("TURN", "P-CCC", "P-CCG"),
 ]
 
-DS_PATH = sys.argv[1] if len(sys.argv) > 1 else (
-    "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/"
-    "_intermediate_/dataset.csv"
+DS_PATH = (
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else (
+        "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/"
+        "_intermediate_/dataset.csv"
+    )
 )
 # Raw per-structure file with PDB provenance (pdb_id includes chain; res_id is the
 # PDB residue number). Aggregated dataset positions map (unp_id, unp_idx) -> 1+ rows.
@@ -92,9 +99,14 @@ def angles(df, ss, codon):
 def slab_rows_for(A):
     """(n, P=NBINS*NBINS) per-point KDE slab rows (fixed bandwidth)."""
     s = kde_2d(
-        x1=A[:, 0], x2=A[:, 1],
+        x1=A[:, 0],
+        x2=A[:, 1],
         kernel_fn=partial(torus_gaussian_kernel_2d, sigma=SIGMA_RAD),
-        n_bins=NBINS, grid_low=GLOW, grid_high=GHIGH, dtype=DT, reduce=False,
+        n_bins=NBINS,
+        grid_low=GLOW,
+        grid_high=GHIGH,
+        dtype=DT,
+        reduce=False,
     )
     return s.transpose(2, 0, 1).reshape(s.shape[2], -1)  # (n, P)
 
@@ -117,7 +129,7 @@ def perm_pval(slab_rows, nx, ny, k, seed=SEED, batch=1000):
     T = slab_rows.sum(0)
     ddist = float(_l1(slab_rows[:nx].sum(0), T))
     rng = np.random.default_rng(seed)
-    m = min(nx, ny)          # sum the smaller side
+    m = min(nx, ny)  # sum the smaller side
     use_x = nx <= ny
     count, done = 0, 0
     while done < k:
@@ -125,7 +137,7 @@ def perm_pval(slab_rows, nx, ny, k, seed=SEED, batch=1000):
         B = np.zeros((b, N), dtype=DT)
         for r in range(b):
             B[r, rng.permutation(N)[:m]] = 1.0
-        S = B @ slab_rows                       # (b, P) sum of chosen rows
+        S = B @ slab_rows  # (b, P) sum of chosen rows
         xsum = S if use_x else (T - S)
         count += int((ddist <= _l1(xsum, T)).sum())
         done += b
@@ -146,8 +158,16 @@ def greedy_breakdown(x_slabs, y_slabs, thresh, k_grid, k_perm):
             slab = np.vstack([x_slabs[x_keep], y_slabs[y_keep]])
             ddist, pval = perm_pval(slab, len(x_keep), len(y_keep), k_perm)
             sig = pval <= thresh
-            rows.append(dict(k=k, p=pval, ddist=ddist,
-                             n1=len(x_keep), n2=len(y_keep), significant=sig))
+            rows.append(
+                dict(
+                    k=k,
+                    p=pval,
+                    ddist=ddist,
+                    n1=len(x_keep),
+                    n2=len(y_keep),
+                    significant=sig,
+                )
+            )
             if not sig and breakdown_k is None:
                 breakdown_k = k
         if k == kmax or breakdown_k is not None:
@@ -175,11 +195,17 @@ def mmd_pval(X, Y, k, seed=SEED):
     Z = np.vstack((X, Y))
     diff = np.abs(Z[:, None, :] - Z[None, :, :])
     diff = np.minimum(diff, 2 * np.pi - diff)
-    D2 = np.sum(diff ** 2, axis=2)
-    Kgram = np.exp(-D2 / (2.0 * SIGMA_RAD ** 2))     # standard RBF, bounded [0,1]
+    D2 = np.sum(diff**2, axis=2)
+    Kgram = np.exp(-D2 / (2.0 * SIGMA_RAD**2))  # standard RBF, bounded [0,1]
     stat, pval, _ = _two_sample_kernel_permutation_test_inner(
-        Kgram, len(X), len(Y), k, _mmd_statistic,
-        permute_pairs=True, k_min=k, k_th=float("inf"),
+        Kgram,
+        len(X),
+        len(Y),
+        k,
+        _mmd_statistic,
+        permute_pairs=True,
+        k_min=k,
+        k_th=float("inf"),
     )
     return stat, pval
 
@@ -233,9 +259,13 @@ def run_control(replicate_pairs, thresh, k_perm):
         else:
             bks.append(0)
     p0s = np.array(p0s)
-    return dict(R=len(p0s), frac_sig=float((p0s <= thresh).mean()),
-                bk_median=float(np.median(bks)), bk_max=float(np.max(bks)),
-                min_p0=float(p0s.min()))
+    return dict(
+        R=len(p0s),
+        frac_sig=float((p0s <= thresh).mean()),
+        bk_median=float(np.median(bks)),
+        bk_max=float(np.max(bks)),
+        min_p0=float(p0s.min()),
+    )
 
 
 def k_grid_for(nmin):
@@ -249,10 +279,16 @@ def main():
     df = pd.read_csv(DS_PATH)
     if "AA" not in df.columns:
         df["AA"] = df["codon"].str.split("-").str[0]
-    print(f"# rows={len(df)} bw={BW_DEG} K_real={K_REAL} K_ctrl={K_CTRL} "
-          f"R={N_REPLICATES} seed={SEED}", flush=True)
+    print(
+        f"# rows={len(df)} bw={BW_DEG} K_real={K_REAL} K_ctrl={K_CTRL} "
+        f"R={N_REPLICATES} seed={SEED}",
+        flush=True,
+    )
     prov = load_provenance(DP_PATH)
-    print(f"# provenance: {len(prov)} (unp_id,unp_idx) positions from {DP_PATH}\n", flush=True)
+    print(
+        f"# provenance: {len(prov)} (unp_id,unp_idx) positions from {DP_PATH}\n",
+        flush=True,
+    )
 
     summary, worst_rows = [], []
     for pi, (ss, c1, c2) in enumerate(PAIRS):
@@ -267,55 +303,102 @@ def main():
         xs, ys = slab_rows_for(X), slab_rows_for(Y)
 
         d0, p0 = perm_pval(np.vstack([xs, ys]), n1, n2, K_REAL)
-        print(f"  KDE-L1 baseline: ddist={d0:.4f} p={p0:.5f} "
-              f"(BH thresh={thresh:.5f}, sig={p0 <= thresh})", flush=True)
+        print(
+            f"  KDE-L1 baseline: ddist={d0:.4f} p={p0:.5f} "
+            f"(BH thresh={thresh:.5f}, sig={p0 <= thresh})",
+            flush=True,
+        )
 
         rows, bk, rmlog = greedy_breakdown(xs, ys, thresh, kg, K_REAL)
-        bk_txt = f"{bk}  [{bk/nmin*100:.1f}% of smaller group]" if bk else f">{max(kg)} (never broke)"
+        bk_txt = (
+            f"{bk}  [{bk/nmin*100:.1f}% of smaller group]"
+            if bk
+            else f">{max(kg)} (never broke)"
+        )
         print(f"  adversarial breakdown-k (real) = {bk_txt}", flush=True)
-        print("   p(k): " + "  ".join(
-            f"{r['k']}={r['p']:.4f}{'*' if r['significant'] else ''}" for r in rows), flush=True)
+        print(
+            "   p(k): "
+            + "  ".join(
+                f"{r['k']}={r['p']:.4f}{'*' if r['significant'] else ''}" for r in rows
+            ),
+            flush=True,
+        )
         # The ordered kill-set: the adversarially-worst samples (the minimal set
         # whose removal breaks significance, or top-5 if it never broke).
         n_show = bk if bk else min(5, len(rmlog))
-        print(f"   adversarially-worst samples (codon, unp_id:unp_idx -> pdb_id:chain,res_id):", flush=True)
+        print(
+            f"   adversarially-worst samples (codon, unp_id:unp_idx -> pdb_id:chain,res_id):",
+            flush=True,
+        )
         for rank, (side, i, drop) in enumerate(rmlog[:n_show], 1):
             codon = c1 if side == "X" else c2
             uid, uidx = (idx1 if side == "X" else idx2)[i]
             a = np.rad2deg((X if side == "X" else Y)[i])
             pdbs = prov.get((uid, int(uidx)), ["<no-pdb>"])
-            print(f"     {rank}. {codon}  {uid}:{uidx}  phi={a[0]:.0f} psi={a[1]:.0f} "
-                  f"drop={drop:+.4f}  [{'; '.join(pdbs)}]", flush=True)
-            worst_rows.append(dict(
-                SS=ss, pair=f"{c1}:{c2}", rank=rank, codon=codon,
-                unp_id=uid, unp_idx=int(uidx), phi=round(float(a[0]), 1),
-                psi=round(float(a[1]), 1), influence_drop=round(float(drop), 5),
-                n_pdb=len(pdbs), pdb_provenance="; ".join(pdbs),
-            ))
+            print(
+                f"     {rank}. {codon}  {uid}:{uidx}  phi={a[0]:.0f} psi={a[1]:.0f} "
+                f"drop={drop:+.4f}  [{'; '.join(pdbs)}]",
+                flush=True,
+            )
+            worst_rows.append(
+                dict(
+                    SS=ss,
+                    pair=f"{c1}:{c2}",
+                    rank=rank,
+                    codon=codon,
+                    unp_id=uid,
+                    unp_idx=int(uidx),
+                    phi=round(float(a[0]), 1),
+                    psi=round(float(a[1]), 1),
+                    influence_drop=round(float(drop), 5),
+                    n_pdb=len(pdbs),
+                    pdb_provenance="; ".join(pdbs),
+                )
+            )
 
         ms, mp = mmd_pval(X, Y, K_REAL)
-        print(f"  MMD baseline (RBF, bounded): stat={ms:.3e} p={mp:.5f} "
-              f"(sig={mp <= thresh})", flush=True)
+        print(
+            f"  MMD baseline (RBF, bounded): stat={ms:.3e} p={mp:.5f} "
+            f"(sig={mp <= thresh})",
+            flush=True,
+        )
 
         # ---- controls: AA+SS (primary) and within-pair pooled shuffle (secondary)
         sd = SEED + 7919 * pi
         ca = run_control(gen_aass(df, ss, c1, c2, N_REPLICATES, sd), thresh, K_CTRL)
         cp = run_control(gen_pooled(X, Y, N_REPLICATES, sd + 13), thresh, K_CTRL)
-        print(f"  CONTROL AA+SS    (R={ca['R']}): frac_sig={ca['frac_sig']:.2f} "
-              f"null bk med={ca['bk_median']:.0f} max={ca['bk_max']:.0f} "
-              f"min_p0={ca['min_p0']:.4f}", flush=True)
-        print(f"  CONTROL pooled   (R={cp['R']}): frac_sig={cp['frac_sig']:.2f} "
-              f"null bk med={cp['bk_median']:.0f} max={cp['bk_max']:.0f} "
-              f"min_p0={cp['min_p0']:.4f}", flush=True)
+        print(
+            f"  CONTROL AA+SS    (R={ca['R']}): frac_sig={ca['frac_sig']:.2f} "
+            f"null bk med={ca['bk_median']:.0f} max={ca['bk_max']:.0f} "
+            f"min_p0={ca['min_p0']:.4f}",
+            flush=True,
+        )
+        print(
+            f"  CONTROL pooled   (R={cp['R']}): frac_sig={cp['frac_sig']:.2f} "
+            f"null bk med={cp['bk_median']:.0f} max={cp['bk_max']:.0f} "
+            f"min_p0={cp['min_p0']:.4f}",
+            flush=True,
+        )
         print()
 
-        summary.append(dict(
-            SS=ss, pair=f"{c1}:{c2}", n1=n1, n2=n2,
-            kde_l1_p=round(p0, 6), mmd_p=round(mp, 6),
-            breakdown_k_real=bk, breakdown_pct=(bk / nmin * 100) if bk else None,
-            aass_frac_sig=ca['frac_sig'], aass_bk_max=ca['bk_max'], aass_min_p0=round(ca['min_p0'], 6),
-            pooled_frac_sig=cp['frac_sig'], pooled_bk_max=cp['bk_max'], pooled_min_p0=round(cp['min_p0'], 6),
-        ))
+        summary.append(
+            dict(
+                SS=ss,
+                pair=f"{c1}:{c2}",
+                n1=n1,
+                n2=n2,
+                kde_l1_p=round(p0, 6),
+                mmd_p=round(mp, 6),
+                breakdown_k_real=bk,
+                breakdown_pct=(bk / nmin * 100) if bk else None,
+                aass_frac_sig=ca["frac_sig"],
+                aass_bk_max=ca["bk_max"],
+                aass_min_p0=round(ca["min_p0"], 6),
+                pooled_frac_sig=cp["frac_sig"],
+                pooled_bk_max=cp["bk_max"],
+                pooled_min_p0=round(cp["min_p0"], 6),
+            )
+        )
 
     os.makedirs(OUTDIR, exist_ok=True)
     sdf = pd.DataFrame(summary)

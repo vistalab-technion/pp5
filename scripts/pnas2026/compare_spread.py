@@ -34,15 +34,18 @@ def per_position_cstd(dp):
 def describe(label, s):
     s = np.asarray(s, float)
     q = np.percentile(s, [25, 50, 75, 90]) if len(s) else [np.nan] * 4
-    print(f"{label:<24} n={len(s):>6}  median={q[1]:5.1f}  IQR=[{q[0]:.1f},{q[2]:.1f}]  "
-          f"p90={q[3]:5.1f}  %>{WIDE:.0f}deg={100*np.mean(s > WIDE):4.1f}  "
-          f"max={s.max() if len(s) else float('nan'):.1f}")
+    print(
+        f"{label:<24} n={len(s):>6}  median={q[1]:5.1f}  IQR=[{q[0]:.1f},{q[2]:.1f}]  "
+        f"p90={q[3]:5.1f}  %>{WIDE:.0f}deg={100*np.mean(s > WIDE):4.1f}  "
+        f"max={s.max() if len(s) else float('nan'):.1f}"
+    )
     return q
 
 
 def main():
-    dp = pd.read_csv(DP, usecols=["unp_id", "unp_idx", "codon", "phi", "psi"],
-                     low_memory=False).dropna(subset=["unp_idx", "phi", "psi"])
+    dp = pd.read_csv(
+        DP, usecols=["unp_id", "unp_idx", "codon", "phi", "psi"], low_memory=False
+    ).dropna(subset=["unp_idx", "phi", "psi"])
     dp["unp_idx"] = dp["unp_idx"].astype(int)
     pos = per_position_cstd(dp)
     pos["codon_aac"] = pos["codon"].astype(str)  # raw codon, e.g. 'CTC'
@@ -59,8 +62,10 @@ def main():
     global_rest = multi[~multi["is_ks"]]
 
     print(f"# kill-set codons: {sorted(ks_codons)}")
-    print(f"# multi-structure positions total={len(multi)}, "
-          f"kill-set(multi)={len(sens)}\n")
+    print(
+        f"# multi-structure positions total={len(multi)}, "
+        f"kill-set(multi)={len(sens)}\n"
+    )
     print("Spread metric = max(circular-std phi, circular-std psi), degrees\n")
     describe("SENSITIVE (kill-set)", sens["s_max"])
     describe("rest, codon-matched", codon_rest["s_max"])
@@ -69,26 +74,46 @@ def main():
     # Mann-Whitney: is sensitive spread different from codon-matched rest?
     try:
         from scipy.stats import mannwhitneyu
+
         u, p = mannwhitneyu(sens["s_max"], codon_rest["s_max"], alternative="two-sided")
-        print(f"\nMann-Whitney sensitive vs codon-matched rest: p={p:.3g} "
-              f"(median {sens['s_max'].median():.1f} vs {codon_rest['s_max'].median():.1f})")
+        print(
+            f"\nMann-Whitney sensitive vs codon-matched rest: p={p:.3g} "
+            f"(median {sens['s_max'].median():.1f} vs {codon_rest['s_max'].median():.1f})"
+        )
     except Exception as e:
         print(f"(MWU skipped: {e})")
 
     # per-axis too
     print("\nper-axis medians (deg):")
-    for lab, grp in [("SENSITIVE", sens), ("codon-rest", codon_rest), ("global-rest", global_rest)]:
-        print(f"  {lab:<12} phi_cstd={grp['phi_cstd'].median():.1f}  psi_cstd={grp['psi_cstd'].median():.1f}")
+    for lab, grp in [
+        ("SENSITIVE", sens),
+        ("codon-rest", codon_rest),
+        ("global-rest", global_rest),
+    ]:
+        print(
+            f"  {lab:<12} phi_cstd={grp['phi_cstd'].median():.1f}  psi_cstd={grp['psi_cstd'].median():.1f}"
+        )
 
     out = "out/pnas-2026-repro/spread_comparison.csv"
     rows = []
-    for lab, grp in [("sensitive_killset", sens), ("rest_codon_matched", codon_rest),
-                     ("rest_global", global_rest)]:
+    for lab, grp in [
+        ("sensitive_killset", sens),
+        ("rest_codon_matched", codon_rest),
+        ("rest_global", global_rest),
+    ]:
         s = grp["s_max"]
-        rows.append(dict(group=lab, n=len(s), median=round(s.median(), 1),
-                         q25=round(s.quantile(.25), 1), q75=round(s.quantile(.75), 1),
-                         p90=round(s.quantile(.90), 1), frac_wide=round((s > WIDE).mean(), 3),
-                         max=round(s.max(), 1)))
+        rows.append(
+            dict(
+                group=lab,
+                n=len(s),
+                median=round(s.median(), 1),
+                q25=round(s.quantile(0.25), 1),
+                q75=round(s.quantile(0.75), 1),
+                p90=round(s.quantile(0.90), 1),
+                frac_wide=round((s > WIDE).mean(), 3),
+                max=round(s.max(), 1),
+            )
+        )
     pd.DataFrame(rows).to_csv(out, index=False)
     print(f"\nsaved: {out}")
 
