@@ -4,12 +4,15 @@ import numpy as np
 import pytest
 import matplotlib.pyplot as plt
 
+import pp5
 from pp5.stats import mht_bh
 from pp5.stats.two_sample import (
     _kde_statistic_pergroup,
     kde2d_test,
     kde2d_test_pergroup,
+    torus_projection_permutation_test,
     torus_projection_test,
+    torus_projection_test_null_samples,
     torus_w2_ub_test,
 )
 from pp5.distributions.kde import torus_gaussian_kernel_2d
@@ -161,6 +164,181 @@ class TestTorusW2:
         plt.legend()
         plt.savefig(f"tests/out/pvals-{stat_test_name}-synth_control-{M=}.png", dpi=150)
         # plt.show()
+
+
+class TestTorusNullSeeding:
+    """
+    Tests for reproducible seeding of the torustest analytic null simulation
+    (:func:`torus_projection_test_null_samples`, backed by R's
+    ``sim.null.stat`` + ``parallel::clusterSetRNGStream``).
+
+    All tests isolate ``pp5.TORUSTEST_NULL_DIR`` to a temp directory so they
+    never touch the real ``data/torustest_null/`` cache, and so that a
+    reproducibility check can't trivially "pass" just because it reloaded the
+    same cached pickle twice.
+    """
+
+    N_SIMULATIONS = 100
+    N_SAMPLE = 30
+    # n_cores=2 (not 1) so the fork-parallel path is actually exercised: a
+    # broken clusterSetRNGStream/fork-inherited-RNG-state bug would only show
+    # up with >1 worker.
+    N_CORES = 2
+
+    @pytest.fixture
+    def bvm_dist1(self, request):
+        dist = BvMMixtureDiscreteDistribution(
+            k1=0,
+            k2=0,
+            A=1,
+            mu=[[0.5, 0.5]],
+            gridsize=1024 * 1,
+            two_pi=False,
+        )
+        return dist
+
+    @pytest.fixture
+    def bvm_dist2(self, request):
+        dist = BvMMixtureDiscreteDistribution(
+            k1=1,
+            k2=1,
+            A=2,
+            mu=[[0.1, 0.1]],
+            gridsize=1024,
+            two_pi=False,
+        )
+        return dist
+
+    def test_same_seed_gives_identical_null(self, tmp_path, monkeypatch):
+        dir_a, dir_b = tmp_path / "a", tmp_path / "b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+
+        monkeypatch.setattr(pp5, "TORUSTEST_NULL_DIR", dir_a)
+        null_1 = torus_projection_test_null_samples(
+            n_simulations=self.N_SIMULATIONS,
+            n_sample=self.N_SAMPLE,
+            n_cores=self.N_CORES,
+            seed=42,
+        )
+
+        # Second call points at a fresh, empty cache dir so it cannot hit the
+        # first call's cached pickle -- it must actually recompute the null.
+        monkeypatch.setattr(pp5, "TORUSTEST_NULL_DIR", dir_b)
+        null_2 = torus_projection_test_null_samples(
+            n_simulations=self.N_SIMULATIONS,
+            n_sample=self.N_SAMPLE,
+            n_cores=self.N_CORES,
+            seed=42,
+        )
+
+        assert null_1.shape == (self.N_SIMULATIONS,)
+        assert null_2.shape == (self.N_SIMULATIONS,)
+        # Same seed -> the RNG stream should make this bit-for-bit reproducible.
+        assert np.array_equal(null_1, null_2)
+
+    def test_different_seeds_give_different_null(self, tmp_path, monkeypatch):
+        dir_a, dir_b = tmp_path / "a", tmp_path / "b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+
+        monkeypatch.setattr(pp5, "TORUSTEST_NULL_DIR", dir_a)
+        null_42 = torus_projection_test_null_samples(
+            n_simulations=self.N_SIMULATIONS,
+            n_sample=self.N_SAMPLE,
+            n_cores=self.N_CORES,
+            seed=42,
+        )
+
+        monkeypatch.setattr(pp5, "TORUSTEST_NULL_DIR", dir_b)
+        null_43 = torus_projection_test_null_samples(
+            n_simulations=self.N_SIMULATIONS,
+            n_sample=self.N_SAMPLE,
+            n_cores=self.N_CORES,
+            seed=43,
+        )
+
+        assert not np.allclose(null_42, null_43)
+
+    def test_seed_none_still_works(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pp5, "TORUSTEST_NULL_DIR", tmp_path)
+        null = torus_projection_test_null_samples(
+            n_simulations=self.N_SIMULATIONS,
+            n_sample=self.N_SAMPLE,
+            n_cores=self.N_CORES,
+            seed=None,
+        )
+        assert null.shape == (self.N_SIMULATIONS,)
+
+    def test_torus_projection_test_reproducible_with_null_seed(
+        self, bvm_dist1, bvm_dist2, tmp_path, monkeypatch
+    ):
+        # Fixed samples, reused for both calls -- only the null cache dir
+        # differs, so any difference in (stat, pval) can only come from the
+        # null simulation itself.
+        X = bvm_dist1.sample(30)
+        Y = bvm_dist2.sample(30)
+        geodesics = np.array([[1, 0], [0, 1], [1, 1], [2, 3]])
+
+        dir_a, dir_b = tmp_path / "a", tmp_path / "b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+
+        monkeypatch.setattr(pp5, "TORUSTEST_NULL_DIR", dir_a)
+        stat_1, pval_1 = torus_projection_test(
+            X,
+            Y,
+            geodesics=geodesics,
+            n_cores_null_simulations=self.N_CORES,
+            n_null_simulations=self.N_SIMULATIONS,
+            n_null_sample_size=self.N_SAMPLE,
+            null_seed=42,
+        )
+
+        monkeypatch.setattr(pp5, "TORUSTEST_NULL_DIR", dir_b)
+        stat_2, pval_2 = torus_projection_test(
+            X,
+            Y,
+            geodesics=geodesics,
+            n_cores_null_simulations=self.N_CORES,
+            n_null_simulations=self.N_SIMULATIONS,
+            n_null_sample_size=self.N_SAMPLE,
+            null_seed=42,
+        )
+
+        # The statistic never depends on the null/seed at all.
+        assert stat_1 == stat_2
+        # With a seeded null, the pval is now reproducible too (this is the
+        # actual point of this test).
+        assert pval_1 == pval_2
+
+    def test_torus_projection_permutation_test_accepts_null_seed(
+        self, bvm_dist1, tmp_path, monkeypatch
+    ):
+        # Smoke test only: confirms the signature update to
+        # torus_projection_permutation_test doesn't break its call path when
+        # null_seed is passed (e.g. via TORUSTEST_DEFAULT_KWARGS). Seeding
+        # behavior itself is not under test here -- per torus_projection_test's
+        # note, this function's output never depends on null_seed.
+        monkeypatch.setattr(pp5, "TORUSTEST_NULL_DIR", tmp_path)
+        X = bvm_dist1.sample(20)
+        Y = bvm_dist1.sample(20)
+        geodesics = np.array([[1, 0], [0, 1], [1, 1], [2, 3]])
+
+        stat, pval, k_used = torus_projection_permutation_test(
+            X,
+            Y,
+            k=20,
+            geodesics=geodesics,
+            n_cores_null_simulations=self.N_CORES,
+            n_null_simulations=self.N_SIMULATIONS,
+            n_null_sample_size=self.N_SAMPLE,
+            null_seed=42,
+        )
+
+        assert np.isfinite(stat)
+        assert 0.0 < pval <= 1.0
+        assert k_used > 0
 
 
 class TestKdePergroup:

@@ -591,6 +591,7 @@ def torus_projection_test(
     n_cores_null_simulations: int = 8,
     n_null_simulations: int = 2000,
     n_null_sample_size: int = 30,
+    null_seed: Optional[int] = 42,
 ) -> Tuple[float, float]:
     """
 
@@ -615,6 +616,11 @@ def torus_projection_test(
     :param n_cores_null_simulations: Number of cores to use for null simulations.
     :param n_null_simulations: Number of simulations to run for the null distribution.
     :param n_null_sample_size: Number of samples to use for each null simulation.
+    :param null_seed: Optional seed for reproducible null simulation. If None, the
+        simulation is unseeded (previous behavior) and results will differ across cache
+        misses. If provided, the simulated null (and thus any p-value derived from it)
+        is reproducible across environments and re-runs, for the same seed and
+        parameters. See :obj:`torus_projection_test_null_samples`.
     :return: Tuple containing:
     - w2 distance (mean over all projections)
     - pvalue (upper bound)
@@ -633,6 +639,7 @@ def torus_projection_test(
         n_simulations=n_null_simulations,
         n_sample=n_null_sample_size,
         n_cores=n_cores_null_simulations,
+        seed=null_seed,
     )
 
     if geodesics is not None:
@@ -654,7 +661,10 @@ def torus_projection_test(
 
 
 def torus_projection_test_null_samples(
-    n_simulations: int, n_sample: int, n_cores: int = 8
+    n_simulations: int,
+    n_sample: int,
+    n_cores: int = 8,
+    seed: Optional[int] = 42,
 ) -> np.ndarray:
     """
     Sample from the null distribution of the wasserstein statistic on S^1.
@@ -662,10 +672,16 @@ def torus_projection_test_null_samples(
     :param n_simulations: Number of simulations to perform.
     :param n_sample: Sample size in each simulation.
     :param n_cores: Number of cores to use for running on multiple processes.
+    :param seed: Optional seed for reproducible null simulation. If None,
+        the simulation is unseeded and results will differ across cache misses (new
+        machine, new cache, different n_simulations/ n_sample). If provided, the
+        simulated null (and thus any p-value derived from it) is reproducible across
+        environments and re-runs, for the same seed and parameters.
     :return: An array of simulated wasserstein statistics, of shape (n_simulations,).
     """
 
-    filename = f"torustest_null_{n_simulations:05d}_{n_sample:05d}.pkl"
+    seed_suffix = f"_seed{seed}" if seed is not None else ""
+    filename = f"torustest_null_{n_simulations:05d}_{n_sample:05d}{seed_suffix}.pkl"
     filepath = pp5.TORUSTEST_NULL_DIR / filename
     lock_filepath = str(filepath).replace(".pkl", ".lock")
     sim_null_fn_r = robjects.globalenv[R_TORUSTEST_SIM_NULL_STAT]
@@ -679,9 +695,11 @@ def torus_projection_test_null_samples(
             with robjects.conversion.localconverter(PY2R_CONVERTER) as cv:
                 _LOG.info(
                     f"Calculating torustest null distribution {n_simulations=}, "
-                    f"{n_sample=}..."
+                    f"{n_sample=}, {seed=}..."
                 )
-                sim_null_dist = sim_null_fn_r(NR=n_simulations, NC=n_cores, n=n_sample)
+                sim_null_dist = sim_null_fn_r(
+                    NR=n_simulations, NC=n_cores, n=n_sample, seed=seed
+                )
                 with open(filepath, "wb") as f:
                     pickle.dump(sim_null_dist, f)
                 _LOG.info(f"Saved torustest null distribution to {filepath}")
@@ -705,6 +723,7 @@ def torus_projection_permutation_test(
     n_cores_null_simulations: int = 8,
     n_null_simulations: int = 2000,
     n_null_sample_size: int = 30,
+    null_seed: Optional[int] = None,
     #
 ) -> Tuple[float, float, int]:
     """
@@ -714,6 +733,13 @@ def torus_projection_permutation_test(
 
     For parameters, see documentation of :obj:`two_sample_kernel_permutation_test`
     and :obj:`torus_projection_test`.
+
+    Note: null_seed has no effect on this function's returned statistic/p-value. The
+    inner `torus_projection_test` call's p-value is discarded here (only its test
+    statistic, which does not depend on the null distribution/seed at all, is used for
+    permutations). It is accepted here purely so that this function accepts the same
+    kwargs as :obj:`torus_projection_test` (needed since ``TORUSTEST_DEFAULT_KWARGS`` is
+    splatted into both).
     """
 
     # Helper function to adapt between the input from the permutation test and the torus
@@ -739,14 +765,15 @@ def torus_projection_permutation_test(
         stat, _pval = torus_projection_test(
             X,
             Y,
-            grid_low,
-            grid_high,
-            n_cores,
-            n_geodesics,
-            geodesics,
-            n_cores_null_simulations,
-            n_null_simulations,
-            n_null_sample_size,
+            grid_low=grid_low,
+            grid_high=grid_high,
+            n_cores=n_cores,
+            n_geodesics=n_geodesics,
+            geodesics=geodesics,
+            n_cores_null_simulations=n_cores_null_simulations,
+            n_null_simulations=n_null_simulations,
+            n_null_sample_size=n_null_sample_size,
+            null_seed=null_seed,
         )
 
         # Ignore pval, use test statistic for permutations
