@@ -1085,9 +1085,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
 
             # Build (ss, codon) -> (phi_rad, psi_rad) from the processed dataset.
             group_angles: Dict[Tuple[str, str], Tuple[np.ndarray, np.ndarray]] = {}
-            for (ss, codon), sub_df in df_processed.groupby(
-                [CONDITION_COL, CODON_COL]
-            ):
+            for (ss, codon), sub_df in df_processed.groupby([CONDITION_COL, CODON_COL]):
                 phi_rad = np.deg2rad(sub_df[PHI_COL].values)
                 psi_rad = np.deg2rad(sub_df[PSI_COL].values)
                 group_angles[(ss, codon)] = (phi_rad, psi_rad)
@@ -1106,7 +1104,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 grid_high=np.pi,
                 n_min=self.ddist_cv_n_min,
                 pool=pool,
-                seed=self.bs_randstate if self.bs_randstate is not None else DEFAULT_CV_SEED,
+                seed=self.bs_randstate
+                if self.bs_randstate is not None
+                else DEFAULT_CV_SEED,
                 score_tolerance=self.ddist_cv_score_tolerance,
                 cv_mode="loo",
             )
@@ -1374,9 +1374,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                     # so each iteration's partial holds its own bandwidths (no
                     # late-binding-loop-variable gotcha).
                     if using_kde_g:
-                        pair_is_codon = (
-                            AAC_SEP in sub1 and AAC_SEP in sub2
-                        )
+                        pair_is_codon = AAC_SEP in sub1 and AAC_SEP in sub2
                         if not pair_is_codon:
                             # AA-level comparison for kde_g: not supported with
                             # per-group bandwidths. The Brief Report uses only
@@ -1393,9 +1391,8 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                         # Fail loudly if a bandwidth is missing: this would indicate
                         # that the _kernel_bandwidths stage drifted from
                         # _dataset_stats.
-                        assert (
-                            isinstance(sigma_x_rad, float)
-                            and isinstance(sigma_y_rad, float)
+                        assert isinstance(sigma_x_rad, float) and isinstance(
+                            sigma_y_rad, float
                         ), (
                             f"Missing bandwidth for {(group, sub1)=} or "
                             f"{(group, sub2)=}: got {sigma_x_rad=}, {sigma_y_rad=}"
