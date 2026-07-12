@@ -5,6 +5,8 @@
 #' @param NR Number of replicas to simulate
 #' @param NC Number of cores for parallel computation
 #' @param n Sample size for the simulated samples
+#' @param seed Optional integer seed for reproducible parallel RNG via
+#' clusterSetRNGStream; NULL preserves the previous unseeded behavior.
 #'
 #' @return A sample of size NR simulating the null distribution of the statistic.
 #'
@@ -16,7 +18,7 @@
 #'
 #' @export
 
-sim.null.stat<- function(NR, NC = 1, n = 30){
+sim.null.stat<- function(NR, NC = 1, n = 30, seed = NULL){
 
   stat_rep <- function(i, m){
 
@@ -34,6 +36,9 @@ sim.null.stat<- function(NR, NC = 1, n = 30){
     }
 
   clus <- parallel::makeForkCluster(NC)
+  if(!is.null(seed)){
+    parallel::clusterSetRNGStream(clus, seed)
+  }
   # doParallel::registerDoParallel(clus)
 
   sim <- parallel::parApply(clus, X = as.matrix(1:NR), MARGIN = 1, FUN = stat_rep, m = n)
