@@ -49,7 +49,12 @@ from pp5.codons import (
     codon2aac,
     is_synonymous_tuple,
 )
-from pp5.dihedral import Dihedral, flat_torus_distance_sq, wraparound_mean
+from pp5.dihedral import (
+    Dihedral,
+    flat_torus_distance,
+    flat_torus_distance_sq,
+    wraparound_mean,
+)
 from pp5.distributions.bandwidth_cv import (
     BW_COL_CODON,
     BW_COL_SS,
@@ -64,11 +69,15 @@ from pp5.distributions.bandwidth_cv import (
     run_bandwidth_cv,
     uniform_bandwidth_table,
 )
-from pp5.distributions.kde import bvm_kernel, gaussian_kernel, torus_gaussian_kernel_2d
+from pp5.distributions.kde import (
+    bvm_kernel,
+    gaussian_kernel,
+    torus_gaussian_kernel_2d,
+)
 from pp5.distributions.vonmises import BvMKernelDensityEstimator
 from pp5.parallel import yield_async_results
 from pp5.plot import PP5_MPL_STYLE
-from pp5.stats import kde2d_test, mht_bh, mmd_test, torus_w2_ub_test, tw_test
+from pp5.stats import kde2d_test, mht_bh, mmd_test_fast, torus_w2_ub_test, tw_test
 from pp5.stats.two_sample import (
     kde2d_test_pergroup,
     torus_projection_permutation_test,
@@ -102,7 +111,16 @@ DDIST_COL = "ddist"
 SIGNIFICANT_COL = "significant"
 RESOLUTION_COL = "resolution"
 
-TEST_STATISTICS = {"mmd", "tw", "kde", "kde_g", "torus_ub", "torus_p", "torus_perm"}
+TEST_STATISTICS = {
+    "mmd",
+    "mmd_biased",
+    "tw",
+    "kde",
+    "kde_g",
+    "torus_ub",
+    "torus_p",
+    "torus_perm",
+}
 
 AGGREGATION_TYPE_CENTROID = "cent"
 AGGREGATION_TYPE_RESOLUTION = "res"
@@ -250,7 +268,9 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             of  distances between distributions (ddists). Can be one of:
             - 'kde_v': Permutation test with KDE-L1 test statistic and with von Mises kernel
             - 'kde_g': As above, but with Gaussian kernel on torus
-            - 'mmd': Permutation test with flat-torus distance, MMD test staistic and Gaussian kernel.
+            - 'mmd': Permutation test with flat-torus distance, unbiased MMD^2
+              U-statistic and Gaussian kernel.
+            - 'mmd_biased': As above, but with the biased MMD^2 V-statistic.
             - 'tw': Permutation test with flat-torus distance, Welch t test-statistic.
             - 'torus_perm': Permutation test with distance based on S1 Wasserstein
               distance after projecting torus data to S1.
@@ -482,13 +502,15 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             )
             self.ddist_statistic_fn = None
 
-        elif ddist_statistic == "mmd":
+        elif ddist_statistic in ("mmd", "mmd_biased"):
+            assert self.ddist_k > 0, "mmd test requires permutations"
             self.ddist_statistic_fn = partial(
-                mmd_test,
-                similarity_fn=flat_torus_distance_sq,
+                mmd_test_fast,
+                similarity_fn=flat_torus_distance,
                 kernel_fn=partial(
                     gaussian_kernel, sigma=np.deg2rad(self.ddist_kernel_size)
                 ),
+                unbiased=(ddist_statistic == "mmd"),
             )
         elif ddist_statistic == "tw":
             self.ddist_statistic_fn = partial(
