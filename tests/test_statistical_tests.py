@@ -3,19 +3,25 @@ from functools import partial
 import numpy as np
 import pytest
 import matplotlib.pyplot as plt
+from scipy.spatial.distance import cdist
 
 import pp5
+from pp5.dihedral import flat_torus_distance, flat_torus_distance_sq
 from pp5.stats import mht_bh
 from pp5.stats.two_sample import (
     _kde_statistic_pergroup,
+    _mmd_statistic,
+    _mmd_statistic_unbiased,
     kde2d_test,
     kde2d_test_pergroup,
+    mmd_test,
+    mmd_test_fast,
     torus_projection_permutation_test,
     torus_projection_test,
     torus_projection_test_null_samples,
     torus_w2_ub_test,
 )
-from pp5.distributions.kde import torus_gaussian_kernel_2d
+from pp5.distributions.kde import gaussian_kernel, torus_gaussian_kernel_2d
 from pp5.distributions.vonmises import BvMMixtureDiscreteDistribution
 
 
@@ -79,6 +85,137 @@ class TestMHTBH(object):
     def test_invalid_m(self, m):
         with pytest.raises(ValueError, match="Need at least two"):
             mht_bh(0.1, np.arange(m).astype(float))
+
+
+class TestMMD:
+    """
+    Tests for the MMD^2 two-sample test (mmd_test, mmd_test_fast): the
+    similarity/kernel composition used on the torus, the biased/unbiased statistic
+    formula, and the fast permutation variant's agreement with the naive one.
+    """
+
+    SIGMA_DEG = 10.0
+    SIGMA_RAD = np.deg2rad(SIGMA_DEG)
+
+    def test_flat_torus_distance_matches_sqrt_of_squared(self):
+        rng = np.random.default_rng(0)
+        n = 200
+        A = rng.uniform(-np.pi, np.pi, size=(n, 2))
+        B = rng.uniform(-np.pi, np.pi, size=(n, 2))
+        assert np.allclose(flat_torus_distance(A, B), np.sqrt(flat_torus_distance_sq(A, B)))
+
+    def test_composed_kernel_matches_torus_gaussian_kernel_2d(self):
+        # similarity_fn=flat_torus_distance (non-squared) composed with kernel_fn=
+        # gaussian_kernel (which squares its input) should give the same standard
+        # RBF-on-torus kernel as the dedicated torus_gaussian_kernel_2d.
+        rng = np.random.default_rng(0)
+        n = 200
+        A = rng.uniform(-np.pi, np.pi, size=(n, 2))
+        B = rng.uniform(-np.pi, np.pi, size=(n, 2))
+
+        dist = flat_torus_distance(A, B)
+        k_composed = gaussian_kernel(dist, sigma=self.SIGMA_RAD)
+
+        # torus_gaussian_kernel_2d takes angle *differences* directly (it wraps them
+        # internally via arccos(cos(.))), so feed it the raw per-coordinate diffs.
+        k_ref = torus_gaussian_kernel_2d(
+            A[:, 0] - B[:, 0], A[:, 1] - B[:, 1], sigma=self.SIGMA_RAD
+        )
+        assert np.allclose(k_composed, k_ref)
+
+    @staticmethod
+    def _reference_mmd_squared(Sxx, Syy, Sxy, nx, ny, unbiased):
+        """
+        Textbook block-sum formula for the biased/unbiased MMD^2 statistic, used to
+        cross-check the library's implementation without depending on it.
+        """
+        if not unbiased:
+            return Sxx / nx**2 + Syy / ny**2 - 2 * Sxy / (nx * ny)
+        return (
+            (Sxx - nx) / (nx * (nx - 1))
+            + (Syy - ny) / (ny * (ny - 1))
+            - 2 * Sxy / (nx * ny)
+        )
+
+    @pytest.mark.parametrize("unbiased", [True, False])
+    def test_statistic_matches_reference_formula(self, unbiased):
+        # Generic (non-torus) normalized RBF kernel, decoupled from the torus kernel
+        # tested above: only the block-sums-to-scalar formula is under test here.
+        rng = np.random.default_rng(1)
+        nx, ny = 7, 11
+        X = rng.normal(size=(nx, 3))
+        Y = rng.normal(size=(ny, 3))
+        sigma = 1.3
+
+        Z = np.vstack([X, Y])
+        K = np.exp(-cdist(Z, Z, metric="sqeuclidean") / (2 * sigma**2))
+        assert np.allclose(np.diagonal(K), 1.0)
+
+        Sxx = K[:nx, :nx].sum()
+        Syy = K[nx:, nx:].sum()
+        Sxy = K[:nx, nx:].sum()
+        expected = self._reference_mmd_squared(Sxx, Syy, Sxy, nx, ny, unbiased)
+
+        # Generic per-matrix statistic (used by mmd_test)
+        stat_fn = _mmd_statistic_unbiased if unbiased else _mmd_statistic
+        assert stat_fn(K, nx, ny) == pytest.approx(expected)
+
+        # Fast, block-sum statistic (used by mmd_test_fast); default similarity_fn
+        # (euclidean) + kernel_fn (gaussian_kernel) reproduce the same K as above.
+        stat_val, _, _ = mmd_test_fast(
+            X,
+            Y,
+            k=1,
+            k_min=1,
+            k_th=float("inf"),
+            kernel_fn=partial(gaussian_kernel, sigma=sigma),
+            unbiased=unbiased,
+        )
+        assert stat_val == pytest.approx(expected)
+
+    @pytest.mark.parametrize("unbiased", [True, False])
+    def test_fast_matches_naive_permutation_test(self, unbiased):
+        rng = np.random.default_rng(2)
+        nx, ny = 9, 13
+        X = rng.uniform(-np.pi, np.pi, size=(nx, 2))
+        Y = rng.uniform(-np.pi, np.pi, size=(ny, 2))
+
+        common_kwargs = dict(
+            k=50,
+            k_min=50,
+            k_th=float("inf"),
+            similarity_fn=flat_torus_distance,
+            kernel_fn=partial(gaussian_kernel, sigma=self.SIGMA_RAD),
+            unbiased=unbiased,
+        )
+
+        # Both mmd_test and mmd_test_fast draw permutations via np.random.permutation
+        # on the global numpy random state; resetting the seed identically before
+        # each call means they see the exact same draws, so results should agree
+        # exactly (not just statistically), given the row-sum identity is correct.
+        np.random.seed(1234)
+        stat_naive, pval_naive, k_naive = mmd_test(X, Y, **common_kwargs)
+
+        np.random.seed(1234)
+        stat_fast, pval_fast, k_fast = mmd_test_fast(X, Y, **common_kwargs)
+
+        assert k_naive == k_fast == 50
+        assert stat_naive == pytest.approx(stat_fast)
+        assert pval_naive == pytest.approx(pval_fast)
+
+    def test_fast_unbiased_requires_normalized_kernel(self):
+        rng = np.random.default_rng(3)
+        X = rng.normal(size=(5, 2))
+        Y = rng.normal(size=(5, 2))
+        with pytest.raises(AssertionError):
+            mmd_test_fast(
+                X,
+                Y,
+                k=10,
+                similarity_fn=lambda a, b: np.sum((a - b) ** 2),
+                kernel_fn=lambda d: d,  # k(z,z)=0, not a normalized kernel
+                unbiased=True,
+            )
 
 
 class TestTorusW2:
