@@ -366,6 +366,19 @@ def flat_torus_distance_sq(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
 
 
 @numba.jit(nopython=True)
+def flat_torus_distance(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
+    """
+    Computes the (non-squared) distance between pairs of dihedral angles as if they
+    were on a "flat torus" (also a Ramachandran Plot). Same as
+    :obj:`flat_torus_distance_sq`, but returns the distance rather than its square.
+    :param phi_psi0: (N,2) containing N (phi, psi) pairs in radians within [-pi, pi].
+    :param phi_psi1: Angles corresponding to phi_psi0, must be same shape.
+    :return: An array of shape (N,) containing the flat torus distances.
+    """
+    return np.sqrt(flat_torus_distance_sq(phi_psi0, phi_psi1))
+
+
+@numba.jit(nopython=True)
 def flat_torus_distance2_sq(phi_psi0: np.ndarray, phi_psi1: np.ndarray):
     """
     Another way to calculate the flat-torus distance. Should be equivalent.
