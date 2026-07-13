@@ -3,19 +3,18 @@ from functools import partial
 import numpy as np
 import pytest
 import matplotlib.pyplot as plt
-from scipy.spatial.distance import cdist
+from scipy.spatial.distance import cdist, pdist, squareform
 
 import pp5
 from pp5.dihedral import flat_torus_distance, flat_torus_distance_sq
 from pp5.stats import mht_bh
-from pp5.stats.breakdown import greedy_breakdown_k
+from pp5.stats.breakdown import breakdown_k_kde, breakdown_k_mmd, greedy_breakdown_k
 from pp5.stats.two_sample import (
-    _kde_statistic_pergroup,
-    _mmd_statistic,
-    _mmd_statistic_unbiased,
     kde2d_test,
     kde2d_test_pergroup,
     kde2d_test_pergroup_fast,
+    mmd_statistic,
+    mmd_statistic_unbiased,
     mmd_test,
     mmd_test_fast,
     torus_projection_permutation_test,
@@ -23,6 +22,7 @@ from pp5.stats.two_sample import (
     torus_projection_test_null_samples,
     torus_w2_ub_test,
 )
+from pp5.stats.two_sample.kde import _kde_statistic_pergroup
 from pp5.distributions.kde import gaussian_kernel, torus_gaussian_kernel_2d
 from pp5.distributions.vonmises import BvMMixtureDiscreteDistribution
 
@@ -104,7 +104,9 @@ class TestMMD:
         n = 200
         A = rng.uniform(-np.pi, np.pi, size=(n, 2))
         B = rng.uniform(-np.pi, np.pi, size=(n, 2))
-        assert np.allclose(flat_torus_distance(A, B), np.sqrt(flat_torus_distance_sq(A, B)))
+        assert np.allclose(
+            flat_torus_distance(A, B), np.sqrt(flat_torus_distance_sq(A, B))
+        )
 
     def test_composed_kernel_matches_torus_gaussian_kernel_2d(self):
         # similarity_fn=flat_torus_distance (non-squared) composed with kernel_fn=
@@ -159,7 +161,7 @@ class TestMMD:
         expected = self._reference_mmd_squared(Sxx, Syy, Sxy, nx, ny, unbiased)
 
         # Generic per-matrix statistic (used by mmd_test)
-        stat_fn = _mmd_statistic_unbiased if unbiased else _mmd_statistic
+        stat_fn = mmd_statistic_unbiased if unbiased else mmd_statistic
         assert stat_fn(K, nx, ny) == pytest.approx(expected)
 
         # Fast, block-sum statistic (used by mmd_test_fast); default similarity_fn
@@ -508,18 +510,27 @@ class TestKdePergroup:
 
         np.random.seed(123)
         ddist_a, pval_a, k_a = kde2d_test(
-            X, Y, k=200,
-            n_bins=self.N_BINS, grid_low=self.GRID_LOW, grid_high=self.GRID_HIGH,
+            X,
+            Y,
+            k=200,
+            n_bins=self.N_BINS,
+            grid_low=self.GRID_LOW,
+            grid_high=self.GRID_HIGH,
             dtype=np.float64,
             kernel_fn=partial(torus_gaussian_kernel_2d, sigma=sigma_rad),
         )
 
         np.random.seed(123)
         ddist_b, pval_b, k_b = kde2d_test_pergroup(
-            X, Y, k=200,
-            n_bins=self.N_BINS, grid_low=self.GRID_LOW, grid_high=self.GRID_HIGH,
+            X,
+            Y,
+            k=200,
+            n_bins=self.N_BINS,
+            grid_low=self.GRID_LOW,
+            grid_high=self.GRID_HIGH,
             dtype=np.float64,
-            sigma_x_rad=sigma_rad, sigma_y_rad=sigma_rad,
+            sigma_x_rad=sigma_rad,
+            sigma_y_rad=sigma_rad,
         )
 
         assert k_a == k_b
@@ -543,19 +554,29 @@ class TestKdePergroup:
         Y = self._sample(n=30, seed=4)
         sigma_rad = np.deg2rad(8.0)
         _ = kde2d_test_pergroup(
-            X, Y, k=10,
-            n_bins=self.N_BINS, grid_low=self.GRID_LOW, grid_high=self.GRID_HIGH,
+            X,
+            Y,
+            k=10,
+            n_bins=self.N_BINS,
+            grid_low=self.GRID_LOW,
+            grid_high=self.GRID_HIGH,
             dtype=np.float64,
-            sigma_x_rad=sigma_rad, sigma_y_rad=sigma_rad,
+            sigma_x_rad=sigma_rad,
+            sigma_y_rad=sigma_rad,
         )
         assert call_count["n"] == 1
 
         call_count["n"] = 0
         _ = kde2d_test_pergroup(
-            X, Y, k=10,
-            n_bins=self.N_BINS, grid_low=self.GRID_LOW, grid_high=self.GRID_HIGH,
+            X,
+            Y,
+            k=10,
+            n_bins=self.N_BINS,
+            grid_low=self.GRID_LOW,
+            grid_high=self.GRID_HIGH,
             dtype=np.float64,
-            sigma_x_rad=sigma_rad, sigma_y_rad=sigma_rad * 2,
+            sigma_x_rad=sigma_rad,
+            sigma_y_rad=sigma_rad * 2,
         )
         assert call_count["n"] == 2
 
@@ -563,8 +584,12 @@ class TestKdePergroup:
         X = self._sample(n=60, mu=(0.3, -0.5), seed=5)
         Y = self._sample(n=60, mu=(-0.5, 0.3), seed=6)
         ddist, pval, k = kde2d_test_pergroup(
-            X, Y, k=200,
-            n_bins=self.N_BINS, grid_low=self.GRID_LOW, grid_high=self.GRID_HIGH,
+            X,
+            Y,
+            k=200,
+            n_bins=self.N_BINS,
+            grid_low=self.GRID_LOW,
+            grid_high=self.GRID_HIGH,
             dtype=np.float64,
             sigma_x_rad=np.deg2rad(4.0),
             sigma_y_rad=np.deg2rad(12.0),
@@ -608,8 +633,10 @@ class TestKdePergroup:
         K_x = np.zeros((nx + ny, M, M))
         K_y = np.zeros((nx + ny, M, M))
         # K_x slabs: obs 0,1 put mass at (0,0); obs 2,3 put mass at (1,1).
-        K_x[0, 0, 0] = 1.0; K_x[1, 0, 0] = 1.0
-        K_x[2, 1, 1] = 1.0; K_x[3, 1, 1] = 1.0
+        K_x[0, 0, 0] = 1.0
+        K_x[1, 0, 0] = 1.0
+        K_x[2, 1, 1] = 1.0
+        K_x[3, 1, 1] = 1.0
         # K_y: uniform 1/M^2 for all observations — irrelevant for this test.
         K_y[:, :, :] = 1.0 / (M * M)
 
@@ -619,8 +646,11 @@ class TestKdePergroup:
 
         # Permute so X holds {2, 3} -> all mass at (1, 1); Y still uniform.
         stat_perm = _kde_statistic_pergroup(
-            (K_x, K_y), nx, ny,
-            nx_idx=np.array([2, 3]), ny_idx=np.array([0, 1]),
+            (K_x, K_y),
+            nx,
+            ny,
+            nx_idx=np.array([2, 3]),
+            ny_idx=np.array([0, 1]),
         )
 
         # Both should give the same L1 (delta vs uniform), but the LOCATION of the
@@ -630,8 +660,11 @@ class TestKdePergroup:
 
         # Now pick indices that mix groups, which should still produce a valid number.
         stat_mixed = _kde_statistic_pergroup(
-            (K_x, K_y), nx, ny,
-            nx_idx=np.array([0, 2]), ny_idx=np.array([1, 3]),
+            (K_x, K_y),
+            nx,
+            ny,
+            nx_idx=np.array([0, 2]),
+            ny_idx=np.array([1, 3]),
         )
         assert np.isfinite(stat_mixed)
 
@@ -733,7 +766,7 @@ class TestKdePergroupFast:
 
     def test_shares_slabs_when_sigmas_equal(self, monkeypatch):
         # When sigma_x == sigma_y the implementation should compute slabs only
-        # once (via the shared _kde_2d_slab_stacks helper), same guarantee as
+        # once (via the shared kde_2d_slab_stacks helper), same guarantee as
         # kde2d_test_pergroup.
         import pp5.stats.two_sample.kde as m
 
@@ -917,3 +950,210 @@ class TestGreedyBreakdownK:
 
         assert removed_log[0][:2] == ("X", 0)
 
+
+class TestBreakdownKKde:
+    """
+    Tests for :func:`breakdown_k_kde`: agreement with a direct
+    :func:`kde2d_test_pergroup_fast` call at the k=0 (no removals) checkpoint,
+    and that its O(1) leave-one-out influence ranking picks the same point a
+    brute-force recomputation (dropping each point in turn and re-running the
+    already-validated naive :func:`kde2d_test_pergroup`) would pick.
+    """
+
+    N_BINS = 32
+    GRID_LOW = -np.pi
+    GRID_HIGH = np.pi
+    SEED = 7
+
+    def _sample(self, n, mu=(0.3, -0.5), sigma=0.3, seed=0):
+        rng = np.random.default_rng(seed)
+        phi = rng.normal(mu[0], sigma, n).clip(-np.pi + 1e-6, np.pi - 1e-6)
+        psi = rng.normal(mu[1], sigma, n).clip(-np.pi + 1e-6, np.pi - 1e-6)
+        return np.stack([phi, psi], axis=1)
+
+    @pytest.mark.parametrize("sigma_y_deg", [10.0, 6.0])
+    def test_matches_direct_call_at_k0(self, sigma_y_deg):
+        # At the k=0 checkpoint nothing has been removed, so breakdown_k_kde's
+        # pval_fn must reproduce kde2d_test_pergroup_fast exactly under the
+        # same seed: same slabs, same permutation draws.
+        sigma_x_rad = np.deg2rad(10.0)
+        sigma_y_rad = np.deg2rad(sigma_y_deg)
+        X = self._sample(n=20, seed=1)
+        Y = self._sample(n=25, mu=(0.1, 0.2), seed=2)
+
+        rows, _, _ = breakdown_k_kde(
+            X,
+            Y,
+            n_bins=self.N_BINS,
+            grid_low=self.GRID_LOW,
+            grid_high=self.GRID_HIGH,
+            dtype=np.float64,
+            sigma_x_rad=sigma_x_rad,
+            sigma_y_rad=sigma_y_rad,
+            thresh=0.05,
+            k_grid=[0],
+            k_perm=200,
+            seed=self.SEED,
+        )
+        ddist_direct, pval_direct, _ = kde2d_test_pergroup_fast(
+            X,
+            Y,
+            k=200,
+            k_min=200,
+            k_th=float("inf"),
+            n_bins=self.N_BINS,
+            grid_low=self.GRID_LOW,
+            grid_high=self.GRID_HIGH,
+            dtype=np.float64,
+            sigma_x_rad=sigma_x_rad,
+            sigma_y_rad=sigma_y_rad,
+            rng=np.random.default_rng(self.SEED),
+        )
+
+        assert len(rows) == 1 and rows[0]["k"] == 0
+        np.testing.assert_allclose(rows[0]["ddist"], ddist_direct, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(rows[0]["p"], pval_direct, rtol=0, atol=1e-12)
+
+    def test_influence_ranking_matches_brute_force_leave_one_out(self):
+        # Ground truth: drop each point in turn and recompute ddist from
+        # scratch via the naive, already-validated kde2d_test_pergroup (a
+        # different code path than breakdown_k_kde's O(1) update formula).
+        # The point breakdown_k_kde removes first must be the one whose
+        # brute-force removal drops ddist the most.
+        sigma_rad = np.deg2rad(10.0)
+        X = self._sample(n=10, mu=(0.3, -0.5), seed=1)
+        Y = self._sample(n=10, mu=(0.1, 0.2), seed=2)
+
+        def _ddist(A, B):
+            ddist, _, _ = kde2d_test_pergroup(
+                A,
+                B,
+                k=1,
+                k_min=1,
+                k_th=float("inf"),
+                n_bins=self.N_BINS,
+                grid_low=self.GRID_LOW,
+                grid_high=self.GRID_HIGH,
+                dtype=np.float64,
+                sigma_x_rad=sigma_rad,
+                sigma_y_rad=sigma_rad,
+            )
+            return ddist
+
+        base = _ddist(X, Y)
+        drops = [
+            ("X", i, base - _ddist(np.delete(X, i, axis=0), Y)) for i in range(len(X))
+        ]
+        drops += [
+            ("Y", j, base - _ddist(X, np.delete(Y, j, axis=0))) for j in range(len(Y))
+        ]
+        expected_side, expected_idx, _ = max(drops, key=lambda t: t[2])
+
+        _, _, removed_log = breakdown_k_kde(
+            X,
+            Y,
+            n_bins=self.N_BINS,
+            grid_low=self.GRID_LOW,
+            grid_high=self.GRID_HIGH,
+            dtype=np.float64,
+            sigma_x_rad=sigma_rad,
+            sigma_y_rad=sigma_rad,
+            thresh=0.5,
+            k_grid=[0, 1],
+            k_perm=50,
+            seed=self.SEED,
+        )
+
+        assert removed_log[0][:2] == (expected_side, expected_idx)
+
+
+class TestBreakdownKMmd:
+    """
+    Tests for :func:`breakdown_k_mmd`: agreement with a direct
+    :func:`mmd_test_fast` call at the k=0 (no removals) checkpoint, for both
+    the unbiased and biased statistic, and that its O(1) leave-one-out
+    influence ranking picks the same point a brute-force recomputation (via
+    the already-validated public :func:`mmd_statistic`/:func:`mmd_statistic_unbiased`)
+    would pick.
+    """
+
+    SIGMA_RAD = np.deg2rad(10.0)
+    SEED = 7
+
+    def _sample(self, n, mu=(0.3, -0.5), sigma=0.3, seed=0):
+        rng = np.random.default_rng(seed)
+        phi = rng.normal(mu[0], sigma, n).clip(-np.pi + 1e-6, np.pi - 1e-6)
+        psi = rng.normal(mu[1], sigma, n).clip(-np.pi + 1e-6, np.pi - 1e-6)
+        return np.stack([phi, psi], axis=1)
+
+    @pytest.mark.parametrize("unbiased", [True, False])
+    def test_matches_direct_call_at_k0(self, unbiased):
+        kernel_fn = partial(gaussian_kernel, sigma=self.SIGMA_RAD)
+        X = self._sample(n=15, seed=1)
+        Y = self._sample(n=18, mu=(0.1, 0.2), seed=2)
+
+        rows, _, _ = breakdown_k_mmd(
+            X,
+            Y,
+            similarity_fn=flat_torus_distance,
+            kernel_fn=kernel_fn,
+            unbiased=unbiased,
+            thresh=0.05,
+            k_grid=[0],
+            k_perm=500,
+            seed=self.SEED,
+        )
+        stat_direct, pval_direct, _ = mmd_test_fast(
+            X,
+            Y,
+            k=500,
+            k_min=500,
+            k_th=float("inf"),
+            similarity_fn=flat_torus_distance,
+            kernel_fn=kernel_fn,
+            unbiased=unbiased,
+            rng=np.random.default_rng(self.SEED),
+        )
+
+        assert len(rows) == 1 and rows[0]["k"] == 0
+        np.testing.assert_allclose(rows[0]["ddist"], stat_direct, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(rows[0]["p"], pval_direct, rtol=0, atol=1e-12)
+
+    def test_influence_ranking_matches_brute_force_leave_one_out(self):
+        # Ground truth: drop each point in turn and recompute MMD^2 from
+        # scratch via the already-validated public mmd_statistic_unbiased (a
+        # different code path than breakdown_k_mmd's O(1) block-sum update
+        # formula). The point breakdown_k_mmd removes first must be the one
+        # whose brute-force removal drops the statistic the most.
+        kernel_fn = partial(gaussian_kernel, sigma=self.SIGMA_RAD)
+        X = self._sample(n=10, mu=(0.3, -0.5), seed=1)
+        Y = self._sample(n=10, mu=(0.1, 0.2), seed=2)
+
+        def _mmd2(A, B):
+            Z = np.vstack([A, B])
+            D = squareform(pdist(Z, metric=flat_torus_distance))
+            K = kernel_fn(D)
+            return mmd_statistic_unbiased(K, len(A), len(B))
+
+        base = _mmd2(X, Y)
+        drops = [
+            ("X", i, base - _mmd2(np.delete(X, i, axis=0), Y)) for i in range(len(X))
+        ]
+        drops += [
+            ("Y", j, base - _mmd2(X, np.delete(Y, j, axis=0))) for j in range(len(Y))
+        ]
+        expected_side, expected_idx, _ = max(drops, key=lambda t: t[2])
+
+        _, _, removed_log = breakdown_k_mmd(
+            X,
+            Y,
+            similarity_fn=flat_torus_distance,
+            kernel_fn=kernel_fn,
+            unbiased=True,
+            thresh=0.5,
+            k_grid=[0, 1],
+            k_perm=50,
+            seed=self.SEED,
+        )
+
+        assert removed_log[0][:2] == (expected_side, expected_idx)

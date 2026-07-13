@@ -1,4 +1,5 @@
 """MMD (maximum mean discrepancy) two-sample test."""
+
 from typing import Callable, Optional, Tuple
 
 import numpy as np
@@ -10,7 +11,7 @@ from pp5.stats.two_sample.common import two_sample_kernel_permutation_test
 
 
 # @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def _mmd_statistic(K: np.ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None) -> float:
+def mmd_statistic(K: np.ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None) -> float:
     """
     Calculates MMD statistic of a kernel matrix
 
@@ -27,13 +28,13 @@ def _mmd_statistic(K: np.ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None) ->
 
 
 # @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def _mmd_statistic_unbiased(
+def mmd_statistic_unbiased(
     K: np.ndarray, nx: int, ny: int, nx_idx=None, ny_idx=None
 ) -> float:
     """
     Calculates the unbiased MMD statistic of a kernel matrix.
 
-    Unlike :obj:`_mmd_statistic`, the within-sample diagonal entries k(x,x) are
+    Unlike :obj:`mmd_statistic`, the within-sample diagonal entries k(x,x) are
     excluded and the within-sample sums are normalized by n*(n-1). This yields a
     U-statistic whose expectation equals MMD^2 (and is zero under H0: P_X = P_Y).
 
@@ -77,7 +78,7 @@ def mmd_test(
         k,
         similarity_fn=similarity_fn,
         kernel_fn=kernel_fn,
-        statistic_fn=_mmd_statistic_unbiased if unbiased else _mmd_statistic,
+        statistic_fn=mmd_statistic_unbiased if unbiased else mmd_statistic,
         k_min=k_min,
         k_th=k_th,
     )
@@ -134,12 +135,12 @@ def mmd_test_fast(
     D = squareform(pdist(Z, metric=similarity_fn))
     K = kernel_fn(D)
 
-    return _mmd_permutation_test_from_kernel(
+    return mmd_permutation_test_from_kernel(
         K, nx, ny, k, unbiased=unbiased, k_min=k_min, k_th=k_th, rng=rng
     )
 
 
-def _mmd_permutation_test_from_kernel(
+def mmd_permutation_test_from_kernel(
     K: ndarray,
     nx: int,
     ny: int,

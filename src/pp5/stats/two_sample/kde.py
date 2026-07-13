@@ -1,4 +1,5 @@
 """KDE-L1 two-sample test on the flat torus."""
+
 from functools import partial
 from typing import Callable, Optional, Tuple
 
@@ -7,8 +8,8 @@ from numpy import ndarray
 
 from pp5.distributions.kde import kde_2d, torus_gaussian_kernel_2d
 from pp5.stats.two_sample.common import (
-    _two_sample_kernel_permutation_test_inner,
     two_sample_kernel_permutation_test,
+    two_sample_kernel_permutation_test_inner,
 )
 
 
@@ -159,7 +160,7 @@ def _kde_statistic_pergroup(
     return float(np.sum(np.abs(kde_X - kde_Y)).item())
 
 
-def _kde_2d_slab_stacks(
+def kde_2d_slab_stacks(
     Z: ndarray,
     n_bins: int,
     grid_low: float,
@@ -251,7 +252,7 @@ def kde2d_test_pergroup(
     # Pool the observations. Any permutation is expressed as a split of indices
     # 0..nx+ny-1 into (nx_idx, ny_idx).
     Z = np.vstack((X, Y))
-    K_x, K_y = _kde_2d_slab_stacks(
+    K_x, K_y = kde_2d_slab_stacks(
         Z, n_bins, grid_low, grid_high, dtype, sigma_x_rad, sigma_y_rad
     )
 
@@ -259,7 +260,7 @@ def kde2d_test_pergroup(
     assert k > 0
     assert k_th is None or k_th > 0
 
-    return _two_sample_kernel_permutation_test_inner(
+    return two_sample_kernel_permutation_test_inner(
         (K_x, K_y),
         nx,
         ny,
@@ -326,7 +327,7 @@ def kde2d_test_pergroup_fast(
         )
 
     Z = np.vstack((X, Y))  # (nx+ny, 2)
-    K_x, K_y = _kde_2d_slab_stacks(
+    K_x, K_y = kde_2d_slab_stacks(
         Z, n_bins, grid_low, grid_high, dtype, sigma_x_rad, sigma_y_rad
     )
     N = nx + ny
@@ -339,7 +340,7 @@ def kde2d_test_pergroup_fast(
         else np.ascontiguousarray(K_y.reshape(N, -1), dtype=dtype)
     )
 
-    return _kde_l1_permutation_test_from_slabs(
+    return kde_l1_permutation_test_from_slabs(
         K_x_flat,
         K_y_flat,
         nx,
@@ -352,7 +353,7 @@ def kde2d_test_pergroup_fast(
     )
 
 
-def _kde_l1_permutation_test_from_slabs(
+def kde_l1_permutation_test_from_slabs(
     K_x_flat: ndarray,
     K_y_flat: ndarray,
     nx: int,

@@ -1,4 +1,5 @@
 """Shared permutation-test engine used by all the two-sample test statistics."""
+
 from typing import Callable, Optional, Tuple, Union
 
 import numba
@@ -83,7 +84,7 @@ def two_sample_kernel_permutation_test(
     # pairwise distances
     if similarity_fn is not None:
         # D is (nx+ny, nx+ny)
-        D = squareform(pdist(Z, metric=similarity_fn))  # type:ignore
+        D = squareform(pdist(Z, metric=similarity_fn))  # type: ignore
         permute_pairs = True
     else:
         # D is (nx+ny, m)
@@ -94,13 +95,13 @@ def two_sample_kernel_permutation_test(
     kernel_fn = kernel_fn if kernel_fn is not None else lambda x: x
     K = kernel_fn(D)  # in general can be (nx+ny, m')
 
-    return _two_sample_kernel_permutation_test_inner(
+    return two_sample_kernel_permutation_test_inner(
         K, nx, ny, k, statistic_fn, permute_pairs, k_min, k_th
     )
 
 
 # @numba.jit(nopython=True, parallel=_NUMBA_PARALLEL)
-def _two_sample_kernel_permutation_test_inner(
+def two_sample_kernel_permutation_test_inner(
     K: Union[ndarray, Tuple[ndarray, ...]],
     nx: int,
     ny: int,

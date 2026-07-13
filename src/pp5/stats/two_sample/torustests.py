@@ -1,5 +1,6 @@
 """Two-sample tests on the flat torus (Wasserstein-2 based), via the vendored
 R ``torustest`` package."""
+
 import logging
 import pickle
 from typing import Optional, Tuple

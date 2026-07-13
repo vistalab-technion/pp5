@@ -4,23 +4,24 @@
 Wasserstein tests). Re-exported here so ``pp5.stats.two_sample`` keeps working
 exactly as it did as a single module.
 """
+
 from pp5.stats.two_sample.common import (
-    _two_sample_kernel_permutation_test_inner,
     two_sample_kernel_permutation_test,
+    two_sample_kernel_permutation_test_inner,
 )
 from pp5.stats.two_sample.kde import (
-    _kde_2d_slab_stacks,
-    _kde_l1_permutation_test_from_slabs,
+    kde_2d_slab_stacks,
     _kde_statistic,
     _kde_statistic_pergroup,
     kde2d_test,
     kde2d_test_pergroup,
     kde2d_test_pergroup_fast,
+    kde_l1_permutation_test_from_slabs,
 )
 from pp5.stats.two_sample.mmd import (
-    _mmd_permutation_test_from_kernel,
-    _mmd_statistic,
-    _mmd_statistic_unbiased,
+    mmd_permutation_test_from_kernel,
+    mmd_statistic,
+    mmd_statistic_unbiased,
     mmd_test,
     mmd_test_fast,
 )

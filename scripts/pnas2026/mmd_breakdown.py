@@ -11,14 +11,18 @@ common footing; a statistic-specific MMD-BH (all 87 pairs) is a later refinement
 Fast permutation via the row-sum identity (sum only the smaller group's block);
 clean O(1)-update leave-one-out for the influence ranking.
 """
+
 import os
 import sys
+from functools import partial
 
 import numpy as np
 import pandas as pd
 
-from pp5.stats.breakdown import greedy_breakdown_k
-from pp5.stats.two_sample import _mmd_permutation_test_from_kernel
+from pp5.dihedral import flat_torus_distance
+from pp5.distributions.kde import gaussian_kernel
+from pp5.stats.breakdown import breakdown_k_mmd
+from pp5.stats.two_sample import mmd_permutation_test_from_kernel
 
 sys.path.insert(0, "scripts/pnas2026")
 from _common import PAIRS, SEED
@@ -46,18 +50,8 @@ def kmat(Z):
     return np.exp(-(d**2).sum(2) / (2 * SIG**2))
 
 
-def mmd2(Sxx, Syy, Sxy, nx, ny, est):
-    if est == "b":
-        return Sxx / nx**2 + Syy / ny**2 - 2 * Sxy / (nx * ny)
-    return (
-        (Sxx - nx) / (nx * (nx - 1))
-        + (Syy - ny) / (ny * (ny - 1))
-        - 2 * Sxy / (nx * ny)
-    )
-
-
 def perm_p(K, nx, ny, est, k=KP, seed=SEED):
-    obs, pval, _ = _mmd_permutation_test_from_kernel(
+    obs, pval, _ = mmd_permutation_test_from_kernel(
         K,
         nx,
         ny,
@@ -70,62 +64,25 @@ def perm_p(K, nx, ny, est, k=KP, seed=SEED):
     return obs, pval
 
 
-def _breakdown_closures(X, Y, est):
-    """Builds the (stat_and_influence_fn, pval_fn) closures greedy_breakdown_k
-    needs: the O(1)-per-point leave-one-out MMD^2 formula (row-sum trick) for
-    ranking, and the real permutation p-value (via perm_p) at checkpoints."""
-
-    def stat_and_influence_fn(x_keep, y_keep):
-        Z = np.vstack([X[x_keep], Y[y_keep]])
-        K = kmat(Z)
-        nx, ny = len(x_keep), len(y_keep)
-        Sxx = K[:nx, :nx].sum()
-        Syy = K[nx:, nx:].sum()
-        Sxy = K[:nx, nx:].sum()
-        base = mmd2(Sxx, Syy, Sxy, nx, ny, est)
-        RxIn = K[:nx, :nx].sum(1)
-        RxCr = K[:nx, nx:].sum(1)
-        RyIn = K[nx:, nx:].sum(1)
-        RyCr = K[nx:, :nx].sum(1)
-        infl_x = np.array(
-            [
-                base
-                - mmd2(Sxx - 2 * RxIn[i] + K[i, i], Syy, Sxy - RxCr[i], nx - 1, ny, est)
-                for i in range(nx)
-            ]
-        )
-        infl_y = np.array(
-            [
-                base
-                - mmd2(
-                    Sxx,
-                    Syy - 2 * RyIn[j] + K[nx + j, nx + j],
-                    Sxy - RyCr[j],
-                    nx,
-                    ny - 1,
-                    est,
-                )
-                for j in range(ny)
-            ]
-        )
-        return base, infl_x, infl_y
-
-    def pval_fn(x_keep, y_keep):
-        K = kmat(np.vstack([X[x_keep], Y[y_keep]]))
-        return perm_p(K, len(x_keep), len(y_keep), est)
-
-    return stat_and_influence_fn, pval_fn
-
-
 def breakdown(X, Y, thresh, k_grid, est):
-    stat_and_influence_fn, pval_fn = _breakdown_closures(X, Y, est)
-    rows, bk, _removed_log = greedy_breakdown_k(
-        n1=len(X),
-        n2=len(Y),
-        stat_and_influence_fn=stat_and_influence_fn,
-        pval_fn=pval_fn,
+    """Adversarial breakdown-k via the library's generalized MMD wrapper.
+
+    similarity_fn=flat_torus_distance + kernel_fn=gaussian_kernel(sigma=SIG)
+    reproduces kmat(Z) exactly (validated: max abs diff ~1e-16, see
+    tests/test_statistical_tests.py::TestMMD::test_composed_kernel_matches_torus_gaussian_kernel_2d).
+    """
+    rows, bk, _removed_log = breakdown_k_mmd(
+        X,
+        Y,
+        similarity_fn=flat_torus_distance,
+        kernel_fn=partial(gaussian_kernel, sigma=SIG),
+        unbiased=(est == "u"),
         thresh=thresh,
         k_grid=k_grid,
+        k_perm=KP,
+        k_min=KP,
+        k_th=float("inf"),
+        seed=SEED,
     )
     return rows, bk
 

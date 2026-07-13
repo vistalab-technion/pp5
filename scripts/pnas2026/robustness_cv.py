@@ -12,16 +12,15 @@ x slab-stack) so a pair runs in seconds.
 Reports baseline p (validate vs published) and, for FDR-significant pairs, the
 adversarial breakdown-k.
 """
+
 import os
 import sys
-from functools import partial
 
 import numpy as np
 import pandas as pd
 
-from pp5.stats.breakdown import greedy_breakdown_k
+from pp5.stats.breakdown import breakdown_k_kde
 from pp5.stats.two_sample import kde2d_test_pergroup_fast
-from pp5.distributions.kde import kde_2d, torus_gaussian_kernel_2d
 
 sys.path.insert(0, "scripts/pnas2026")
 from _common import PAIRS, SEED
@@ -54,26 +53,6 @@ PUB = {
 }
 
 
-def slabs(A, sig):
-    s = kde_2d(
-        A[:, 0],
-        A[:, 1],
-        kernel_fn=partial(torus_gaussian_kernel_2d, sigma=sig),
-        n_bins=NBINS,
-        grid_low=GLOW,
-        grid_high=GHIGH,
-        dtype=DT,
-        reduce=False,
-    )
-    return s.transpose(2, 0, 1).reshape(A.shape[0], -1)
-
-
-def _l1(sx, sy):
-    a = sx / sx.sum()
-    b = sy / sy.sum()
-    return float(np.abs(a - b).sum())
-
-
 def perm_pval_cv(Z, nx, ny, sx_rad, sy_rad, k=K, seed=SEED, batch=1000):
     """double-slab vectorized permutation p; Z=[X;Y] radians (X=codon A at sx_rad)."""
     ddist, pval, _ = kde2d_test_pergroup_fast(
@@ -94,36 +73,24 @@ def perm_pval_cv(Z, nx, ny, sx_rad, sy_rad, k=K, seed=SEED, batch=1000):
     return ddist, pval
 
 
-def _breakdown_closures_cv(A, B, sxr, syr):
-    """Builds the (stat_and_influence_fn, pval_fn) closures greedy_breakdown_k
-    needs: the O(1)-per-point leave-one-out KDE-L1 formula (slab-sum trick, per
-    codon's own CV bandwidth) for ranking, and the real permutation p-value
-    (via perm_pval_cv) at checkpoints."""
-    xs, ys = slabs(A, sxr), slabs(B, syr)
-
-    def stat_and_influence_fn(x_keep, y_keep):
-        sx, sy = xs[x_keep].sum(0), ys[y_keep].sum(0)
-        base = _l1(sx, sy)
-        infl_x = np.array([base - _l1(sx - xs[i], sy) for i in x_keep])
-        infl_y = np.array([base - _l1(sx, sy - ys[j]) for j in y_keep])
-        return base, infl_x, infl_y
-
-    def pval_fn(x_keep, y_keep):
-        Z = np.vstack([A[x_keep], B[y_keep]])
-        return perm_pval_cv(Z, len(x_keep), len(y_keep), sxr, syr)
-
-    return stat_and_influence_fn, pval_fn
-
-
 def greedy_cv(A, B, sxr, syr, thresh, k_grid):
-    stat_and_influence_fn, pval_fn = _breakdown_closures_cv(A, B, sxr, syr)
-    rows, bk, _log = greedy_breakdown_k(
-        n1=len(A),
-        n2=len(B),
-        stat_and_influence_fn=stat_and_influence_fn,
-        pval_fn=pval_fn,
+    """Adversarial breakdown-k via the library's generalized KDE-L1 wrapper,
+    per-codon CV bandwidths (sxr for A/"X" role, syr for B/"Y" role)."""
+    rows, bk, _log = breakdown_k_kde(
+        A,
+        B,
+        n_bins=NBINS,
+        grid_low=GLOW,
+        grid_high=GHIGH,
+        dtype=DT,
+        sigma_x_rad=sxr,
+        sigma_y_rad=syr,
         thresh=thresh,
         k_grid=k_grid,
+        k_perm=K,
+        k_min=K,
+        k_th=float("inf"),
+        seed=SEED,
     )
     return rows, bk
 

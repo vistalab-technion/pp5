@@ -30,6 +30,7 @@ KDE-L1 ddist validated to ~1e-9 and permutation p to MC error vs the repo's
 kde2d_test_pergroup; the permutation here is vectorized (selection-matrix x slabs)
 for speed but uses the identical statistic and (count+1)/(k+1) p-value convention.
 """
+
 import os
 import sys
 from functools import partial
@@ -39,11 +40,11 @@ import pandas as pd
 
 OUTDIR = os.environ.get("PP5_ROBUST_OUTDIR", "out/pnas-2026-repro")
 
-from pp5.stats.breakdown import greedy_breakdown_k
+from pp5.stats.breakdown import breakdown_k_kde
 from pp5.stats.two_sample import (
-    _kde_l1_permutation_test_from_slabs,
-    _mmd_statistic,
-    _two_sample_kernel_permutation_test_inner,
+    kde_l1_permutation_test_from_slabs,
+    mmd_statistic,
+    two_sample_kernel_permutation_test_inner,
 )
 from pp5.distributions.kde import kde_2d, torus_gaussian_kernel_2d
 
@@ -122,7 +123,7 @@ def perm_pval(slab_rows, nx, ny, k, seed=SEED, batch=1000):
     with that convention whenever nx > ny).
     """
     slab_rows = np.ascontiguousarray(slab_rows, dtype=DT)
-    ddist, pval, _ = _kde_l1_permutation_test_from_slabs(
+    ddist, pval, _ = kde_l1_permutation_test_from_slabs(
         slab_rows,
         slab_rows,
         nx,
@@ -136,40 +137,27 @@ def perm_pval(slab_rows, nx, ny, k, seed=SEED, batch=1000):
     return ddist, pval
 
 
-def _breakdown_closures(x_slabs, y_slabs, k_perm):
-    """Builds the (stat_and_influence_fn, pval_fn) closures greedy_breakdown_k
-    needs: the O(1)-per-point leave-one-out KDE-L1 formula (slab-sum trick) for
-    ranking, and the real permutation p-value (via perm_pval) at checkpoints."""
-
-    def stat_and_influence_fn(x_keep, y_keep):
-        sx = x_slabs[x_keep].sum(0)
-        sy = y_slabs[y_keep].sum(0)
-        T = sx + sy
-        base = float(_l1(sx, T))
-        infl_x = np.array(
-            [base - float(_l1(sx - x_slabs[i], T - x_slabs[i])) for i in x_keep]
-        )
-        infl_y = np.array([base - float(_l1(sx, T - y_slabs[j])) for j in y_keep])
-        return base, infl_x, infl_y
-
-    def pval_fn(x_keep, y_keep):
-        slab = np.vstack([x_slabs[x_keep], y_slabs[y_keep]])
-        return perm_pval(slab, len(x_keep), len(y_keep), k_perm)
-
-    return stat_and_influence_fn, pval_fn
-
-
-def greedy_breakdown(x_slabs, y_slabs, thresh, k_grid, k_perm):
+def greedy_breakdown(X, Y, thresh, k_grid, k_perm):
     """Adversarially remove most-influential points (re-ranked), recompute p at
-    each k in k_grid. Returns (rows, breakdown_k, removed_log)."""
-    stat_and_influence_fn, pval_fn = _breakdown_closures(x_slabs, y_slabs, k_perm)
-    return greedy_breakdown_k(
-        n1=x_slabs.shape[0],
-        n2=y_slabs.shape[0],
-        stat_and_influence_fn=stat_and_influence_fn,
-        pval_fn=pval_fn,
+    each k in k_grid, via the library's generalized KDE-L1 breakdown wrapper
+    (equal-bandwidth case: sigma_x_rad == sigma_y_rad == SIGMA_RAD reduces to
+    this arm's fixed-bandwidth setup, sharing slabs internally). Returns
+    (rows, breakdown_k, removed_log)."""
+    return breakdown_k_kde(
+        X,
+        Y,
+        n_bins=NBINS,
+        grid_low=GLOW,
+        grid_high=GHIGH,
+        dtype=DT,
+        sigma_x_rad=SIGMA_RAD,
+        sigma_y_rad=SIGMA_RAD,
         thresh=thresh,
         k_grid=k_grid,
+        k_perm=k_perm,
+        k_min=k_perm,
+        k_th=float("inf"),
+        seed=SEED,
     )
 
 
@@ -181,12 +169,12 @@ def mmd_pval(X, Y, k, seed=SEED):
     diff = np.minimum(diff, 2 * np.pi - diff)
     D2 = np.sum(diff**2, axis=2)
     Kgram = np.exp(-D2 / (2.0 * SIGMA_RAD**2))  # standard RBF, bounded [0,1]
-    stat, pval, _ = _two_sample_kernel_permutation_test_inner(
+    stat, pval, _ = two_sample_kernel_permutation_test_inner(
         Kgram,
         len(X),
         len(Y),
         k,
-        _mmd_statistic,
+        mmd_statistic,
         permute_pairs=True,
         k_min=k,
         k_th=float("inf"),
@@ -238,7 +226,7 @@ def run_control(replicate_pairs, thresh, k_perm):
         p0s.append(pr)
         if pr <= thresh:
             g = k_grid_for(min(len(Xr), len(Yr)))
-            _, bkr, _ = greedy_breakdown(xr, yr, thresh, g, k_perm)
+            _, bkr, _ = greedy_breakdown(Xr, Yr, thresh, g, k_perm)
             bks.append(bkr if bkr is not None else g[-1])
         else:
             bks.append(0)
@@ -293,7 +281,7 @@ def main():
             flush=True,
         )
 
-        rows, bk, rmlog = greedy_breakdown(xs, ys, thresh, kg, K_REAL)
+        rows, bk, rmlog = greedy_breakdown(X, Y, thresh, kg, K_REAL)
         bk_txt = (
             f"{bk}  [{bk/nmin*100:.1f}% of smaller group]"
             if bk

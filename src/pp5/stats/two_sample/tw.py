@@ -1,4 +1,5 @@
 """Welch T-squared two-sample test."""
+
 from typing import Callable, Optional, Tuple
 
 import numpy as np
