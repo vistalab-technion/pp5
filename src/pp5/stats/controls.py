@@ -39,6 +39,8 @@ def randomized_codon_column(
 
     for member_idx in groups.values():
         member_idx = np.asarray(member_idx)
+        # Gather this group's own values in permuted order, write back in place:
+        # within-group shuffle only, never mixing values across groups.
         shuffled[member_idx] = shuffled[member_idx[rng.permutation(len(member_idx))]]
     return shuffled
 
@@ -68,6 +70,8 @@ def gen_aa_ss_control_replicates(
     :return: Iterator of `(n1, 2)` / `(n2, 2)` radian phi/psi arrays, one pair per
         replicate.
     """
+    # Precompute group keys, original codon labels, and phi/psi for efficient
+    # per-replicate shuffling and extraction.
     group_keys = list(zip(df["AA"], df["condition_group"]))
     codon_values = df["codon"].to_numpy()
     ss_mask = df["condition_group"].to_numpy() == ss
@@ -75,6 +79,8 @@ def gen_aa_ss_control_replicates(
 
     for r in range(n_replicates):
         shuffled_codon = randomized_codon_column(codon_values, group_keys, base_seed + r)
+        # Extract the two codons' points under their new shuffled labels within
+        # the target SS class.
         X = np.deg2rad(phi_psi_deg[ss_mask & (shuffled_codon == codon1)])
         Y = np.deg2rad(phi_psi_deg[ss_mask & (shuffled_codon == codon2)])
         yield X, Y
