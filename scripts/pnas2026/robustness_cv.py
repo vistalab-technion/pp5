@@ -19,7 +19,12 @@ from functools import partial
 import numpy as np
 import pandas as pd
 
+from pp5.stats.breakdown import greedy_breakdown_k
+from pp5.stats.two_sample import kde2d_test_pergroup_fast
 from pp5.distributions.kde import kde_2d, torus_gaussian_kernel_2d
+
+sys.path.insert(0, "scripts/pnas2026")
+from _common import PAIRS, SEED
 
 # CV-selected per-(codon, SS) kernel bandwidths, produced by the published pipeline
 # (see out/pnas-2026/docs); override via PP5_CVTAB_PATH if using a different table.
@@ -37,16 +42,8 @@ DS = (
     )
 )
 NBINS, GLOW, GHIGH, DT = 128, -np.pi, np.pi, np.float64
-K, SEED = 5000, 12345
+K = 5000
 BH = {"HELIX": 0.0005747126436781609, "TURN": 0.0005747126436781609}
-PAIRS = [
-    ("HELIX", "L-CTC", "L-TTG"),
-    ("HELIX", "L-CTC", "L-CTG"),
-    ("HELIX", "L-CTC", "L-CTT"),
-    ("HELIX", "R-AGG", "R-CGA"),
-    ("TURN", "A-GCG", "A-GCT"),
-    ("TURN", "P-CCC", "P-CCG"),
-]
 PUB = {
     ("HELIX", "L-CTC", "L-TTG"): 0.00039992,
     ("HELIX", "L-CTC", "L-CTG"): 0.38022813,
@@ -79,50 +76,55 @@ def _l1(sx, sy):
 
 def perm_pval_cv(Z, nx, ny, sx_rad, sy_rad, k=K, seed=SEED, batch=1000):
     """double-slab vectorized permutation p; Z=[X;Y] radians (X=codon A at sx_rad)."""
-    N = nx + ny
-    Sx = np.ascontiguousarray(slabs(Z, sx_rad))
-    Sy = Sx if sx_rad == sy_rad else np.ascontiguousarray(slabs(Z, sy_rad))
-    ddist = _l1(Sx[:nx].sum(0), Sy[nx:].sum(0))
-    rng = np.random.default_rng(seed)
-    count = done = 0
-    while done < k:
-        b = min(batch, k - done)
-        Bx = np.zeros((b, N), DT)
-        for r in range(b):
-            Bx[r, rng.permutation(N)[:nx]] = 1.0
-        SX = Bx @ Sx
-        SY = (1.0 - Bx) @ Sy
-        L = np.abs(SX / SX.sum(1, keepdims=True) - SY / SY.sum(1, keepdims=True)).sum(1)
-        count += int((ddist <= L).sum())
-        done += b
-    return ddist, (count + 1) / (k + 1)
+    ddist, pval, _ = kde2d_test_pergroup_fast(
+        Z[:nx],
+        Z[nx:],
+        k,
+        n_bins=NBINS,
+        grid_low=GLOW,
+        grid_high=GHIGH,
+        dtype=DT,
+        sigma_x_rad=sx_rad,
+        sigma_y_rad=sy_rad,
+        k_min=k,
+        k_th=float("inf"),
+        rng=np.random.default_rng(seed),
+        batch_size=batch,
+    )
+    return ddist, pval
+
+
+def _breakdown_closures_cv(A, B, sxr, syr):
+    """Builds the (stat_and_influence_fn, pval_fn) closures greedy_breakdown_k
+    needs: the O(1)-per-point leave-one-out KDE-L1 formula (slab-sum trick, per
+    codon's own CV bandwidth) for ranking, and the real permutation p-value
+    (via perm_pval_cv) at checkpoints."""
+    xs, ys = slabs(A, sxr), slabs(B, syr)
+
+    def stat_and_influence_fn(x_keep, y_keep):
+        sx, sy = xs[x_keep].sum(0), ys[y_keep].sum(0)
+        base = _l1(sx, sy)
+        infl_x = np.array([base - _l1(sx - xs[i], sy) for i in x_keep])
+        infl_y = np.array([base - _l1(sx, sy - ys[j]) for j in y_keep])
+        return base, infl_x, infl_y
+
+    def pval_fn(x_keep, y_keep):
+        Z = np.vstack([A[x_keep], B[y_keep]])
+        return perm_pval_cv(Z, len(x_keep), len(y_keep), sxr, syr)
+
+    return stat_and_influence_fn, pval_fn
 
 
 def greedy_cv(A, B, sxr, syr, thresh, k_grid):
-    xs, ys = slabs(A, sxr), slabs(B, syr)
-    xk, yk = list(range(len(A))), list(range(len(B)))
-    rows, log, bk = [], [], None
-    for k in range(0, max(k_grid) + 1):
-        sx, sy = xs[xk].sum(0), ys[yk].sum(0)
-        if k in k_grid:
-            _, p = perm_pval_cv(np.vstack([A[xk], B[yk]]), len(xk), len(yk), sxr, syr)
-            rows.append((k, p, len(xk), len(yk), p <= thresh))
-            if p > thresh and bk is None:
-                bk = k
-        if k == max(k_grid) or bk is not None:
-            break
-        base = _l1(sx, sy)
-        best, bd, side = None, -1e9, None
-        for i in xk:
-            d = base - _l1(sx - xs[i], sy)
-            if d > bd:
-                bd, best, side = d, i, "X"
-        for j in yk:
-            d = base - _l1(sx, sy - ys[j])
-            if d > bd:
-                bd, best, side = d, j, "Y"
-        (xk if side == "X" else yk).remove(best)
-        log.append((side, best, bd))
+    stat_and_influence_fn, pval_fn = _breakdown_closures_cv(A, B, sxr, syr)
+    rows, bk, _log = greedy_breakdown_k(
+        n1=len(A),
+        n2=len(B),
+        stat_and_influence_fn=stat_and_influence_fn,
+        pval_fn=pval_fn,
+        thresh=thresh,
+        k_grid=k_grid,
+    )
     return rows, bk
 
 

@@ -39,11 +39,16 @@ import pandas as pd
 
 OUTDIR = os.environ.get("PP5_ROBUST_OUTDIR", "out/pnas-2026-repro")
 
+from pp5.stats.breakdown import greedy_breakdown_k
 from pp5.stats.two_sample import (
+    _kde_l1_permutation_test_from_slabs,
     _mmd_statistic,
     _two_sample_kernel_permutation_test_inner,
 )
 from pp5.distributions.kde import kde_2d, torus_gaussian_kernel_2d
+
+sys.path.insert(0, "scripts/pnas2026")
+from _common import PAIRS, SEED
 
 # ---- settings matching the published kde_g bw=10 run -------------------------
 BW_DEG = 10.0
@@ -52,20 +57,9 @@ NBINS, GLOW, GHIGH, DT = 128, -np.pi, np.pi, np.float64
 K_REAL = 5000  # permutations for real-pair p-values
 K_CTRL = 2000  # permutations for control baselines (resolves the BH thresh)
 N_REPLICATES = 30  # AA+SS control replicates per pair
-SEED = 12345
 
 # Published BH p-value thresholds (kde-l1 bw=10, Real data) per SS class.
 BH_THRESH = {"HELIX": 0.0011494252873563218, "TURN": 0.0011494252873563218}
-
-# Union of real-data significant pairs across ALL published runs.
-PAIRS = [
-    ("HELIX", "L-CTC", "L-TTG"),
-    ("HELIX", "L-CTC", "L-CTG"),
-    ("HELIX", "L-CTC", "L-CTT"),
-    ("HELIX", "R-AGG", "R-CGA"),
-    ("TURN", "A-GCG", "A-GCT"),
-    ("TURN", "P-CCC", "P-CCG"),
-]
 
 DS_PATH = (
     sys.argv[1]
@@ -121,72 +115,62 @@ def _l1(xsum, T):
 def perm_pval(slab_rows, nx, ny, k, seed=SEED, batch=1000):
     """Vectorized KDE-L1 permutation p-value (selection-matrix x slab stack).
 
-    Identical statistic and p-value convention as kde2d_test_pergroup; only the
-    permutation summation is batched through BLAS for speed.
+    Identical statistic and p-value convention as kde2d_test_pergroup_fast;
+    delegates to the library's shared implementation, standardized on the
+    X=idx[:nx] permutation convention used throughout pp5.stats.two_sample
+    (not a "sum the smaller group" shortcut, which would silently disagree
+    with that convention whenever nx > ny).
     """
     slab_rows = np.ascontiguousarray(slab_rows, dtype=DT)
-    N = nx + ny
-    T = slab_rows.sum(0)
-    ddist = float(_l1(slab_rows[:nx].sum(0), T))
-    rng = np.random.default_rng(seed)
-    m = min(nx, ny)  # sum the smaller side
-    use_x = nx <= ny
-    count, done = 0, 0
-    while done < k:
-        b = min(batch, k - done)
-        B = np.zeros((b, N), dtype=DT)
-        for r in range(b):
-            B[r, rng.permutation(N)[:m]] = 1.0
-        S = B @ slab_rows  # (b, P) sum of chosen rows
-        xsum = S if use_x else (T - S)
-        count += int((ddist <= _l1(xsum, T)).sum())
-        done += b
-    return ddist, (count + 1) / (k + 1)
+    ddist, pval, _ = _kde_l1_permutation_test_from_slabs(
+        slab_rows,
+        slab_rows,
+        nx,
+        ny,
+        k,
+        k_min=k,
+        k_th=float("inf"),
+        rng=np.random.default_rng(seed),
+        batch_size=batch,
+    )
+    return ddist, pval
+
+
+def _breakdown_closures(x_slabs, y_slabs, k_perm):
+    """Builds the (stat_and_influence_fn, pval_fn) closures greedy_breakdown_k
+    needs: the O(1)-per-point leave-one-out KDE-L1 formula (slab-sum trick) for
+    ranking, and the real permutation p-value (via perm_pval) at checkpoints."""
+
+    def stat_and_influence_fn(x_keep, y_keep):
+        sx = x_slabs[x_keep].sum(0)
+        sy = y_slabs[y_keep].sum(0)
+        T = sx + sy
+        base = float(_l1(sx, T))
+        infl_x = np.array(
+            [base - float(_l1(sx - x_slabs[i], T - x_slabs[i])) for i in x_keep]
+        )
+        infl_y = np.array([base - float(_l1(sx, T - y_slabs[j])) for j in y_keep])
+        return base, infl_x, infl_y
+
+    def pval_fn(x_keep, y_keep):
+        slab = np.vstack([x_slabs[x_keep], y_slabs[y_keep]])
+        return perm_pval(slab, len(x_keep), len(y_keep), k_perm)
+
+    return stat_and_influence_fn, pval_fn
 
 
 def greedy_breakdown(x_slabs, y_slabs, thresh, k_grid, k_perm):
     """Adversarially remove most-influential points (re-ranked), recompute p at
     each k in k_grid. Returns (rows, breakdown_k, removed_log)."""
-    n1, n2 = x_slabs.shape[0], y_slabs.shape[0]
-    x_keep, y_keep = list(range(n1)), list(range(n2))
-    rows, removed_log, breakdown_k = [], [], None
-    kmax = max(k_grid)
-    for k in range(0, kmax + 1):
-        sx = x_slabs[x_keep].sum(0)
-        sy = y_slabs[y_keep].sum(0)
-        if k in k_grid:
-            slab = np.vstack([x_slabs[x_keep], y_slabs[y_keep]])
-            ddist, pval = perm_pval(slab, len(x_keep), len(y_keep), k_perm)
-            sig = pval <= thresh
-            rows.append(
-                dict(
-                    k=k,
-                    p=pval,
-                    ddist=ddist,
-                    n1=len(x_keep),
-                    n2=len(y_keep),
-                    significant=sig,
-                )
-            )
-            if not sig and breakdown_k is None:
-                breakdown_k = k
-        if k == kmax or breakdown_k is not None:
-            break
-        # influence = drop in L1 distance when a point is removed
-        T = sx + sy
-        base = float(_l1(sx, T))
-        best, best_drop, best_side = None, -np.inf, None
-        for i in x_keep:
-            drop = base - float(_l1(sx - x_slabs[i], T - x_slabs[i]))
-            if drop > best_drop:
-                best_drop, best, best_side = drop, i, "X"
-        for j in y_keep:
-            drop = base - float(_l1(sx, T - y_slabs[j]))
-            if drop > best_drop:
-                best_drop, best, best_side = drop, j, "Y"
-        (x_keep if best_side == "X" else y_keep).remove(best)
-        removed_log.append((best_side, best, best_drop))
-    return rows, breakdown_k, removed_log
+    stat_and_influence_fn, pval_fn = _breakdown_closures(x_slabs, y_slabs, k_perm)
+    return greedy_breakdown_k(
+        n1=x_slabs.shape[0],
+        n2=y_slabs.shape[0],
+        stat_and_influence_fn=stat_and_influence_fn,
+        pval_fn=pval_fn,
+        thresh=thresh,
+        k_grid=k_grid,
+    )
 
 
 # ---- bounded-influence MMD cross-check --------------------------------------

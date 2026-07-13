@@ -45,25 +45,18 @@ from pp5.stats.two_sample import (
     R_TORUSTEST_GEODESIC,
     torus_projection_test_null_samples,
 )
+from _common import PAIRS, SEED
 
 GEODESICS = np.array([[1, 0], [0, 1], [1, 1], [2, 3]], dtype=float)  # 4 fixed
 GLOW, GHIGH = -np.pi, np.pi
+# Unrelated to SEED (imported above): this seeds only the R torustest null
+# distribution, not the AA+SS/pooled control replicates.
 N_NULL_SIMS, N_NULL_SAMPLE, NULL_SIM_SEED = 2000, 30, 42
 N_REPLICATES = 30
-SEED = 12345
 GRIDN = 256
 
 # Published BH thresholds for w2torus(4-fixed), Real data, per SS class.
 BH_THRESH = {"HELIX": 0.0022988505747126436, "TURN": 0.0005747126436781609}
-
-PAIRS = [
-    ("HELIX", "L-CTC", "L-TTG"),
-    ("HELIX", "L-CTC", "L-CTG"),
-    ("HELIX", "L-CTC", "L-CTT"),
-    ("HELIX", "R-AGG", "R-CGA"),
-    ("TURN", "A-GCG", "A-GCT"),
-    ("TURN", "P-CCC", "P-CCG"),
-]
 
 # ---- authoritative torus_p via R (cached null) ------------------------------
 _SIM_NULL = None

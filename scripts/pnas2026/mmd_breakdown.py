@@ -17,6 +17,12 @@ import sys
 import numpy as np
 import pandas as pd
 
+from pp5.stats.breakdown import greedy_breakdown_k
+from pp5.stats.two_sample import _mmd_permutation_test_from_kernel
+
+sys.path.insert(0, "scripts/pnas2026")
+from _common import PAIRS, SEED
+
 # Positional arg overrides the default; default is the published/reproduced
 # aggregated dataset (see out/pnas-2026/docs; no dependency on Alex's repro zip).
 DS = (
@@ -28,16 +34,10 @@ DS = (
     )
 )
 SIG = np.deg2rad(10.0)
-KP, SEED = 5000, 12345
+KP = 5000
+# KDE-L1's BH thresholds ("for a common footing"), reused here per Report 2 §2
+# -- MMD's own statistic-specific BH threshold is a later refinement.
 THR = {"HELIX": 0.0011494, "TURN": 0.0005747}
-PAIRS = [
-    ("HELIX", "L-CTC", "L-TTG"),
-    ("HELIX", "L-CTC", "L-CTG"),
-    ("HELIX", "L-CTC", "L-CTT"),
-    ("HELIX", "R-AGG", "R-CGA"),
-    ("TURN", "A-GCG", "A-GCT"),
-    ("TURN", "P-CCC", "P-CCG"),
-]
 
 
 def kmat(Z):
@@ -57,41 +57,28 @@ def mmd2(Sxx, Syy, Sxy, nx, ny, est):
 
 
 def perm_p(K, nx, ny, est, k=KP, seed=SEED):
-    N = nx + ny
-    R = K.sum(1)
-    T = R.sum()
-    Sxx0 = K[:nx, :nx].sum()
-    Sxy0 = K[:nx, nx:].sum()
-    Syy0 = T - 2 * (Sxx0 + Sxy0) + Sxx0
-    Syy0 = K[nx:, nx:].sum()
-    obs = mmd2(Sxx0, Syy0, Sxy0, nx, ny, est)
-    rng = np.random.default_rng(seed)
-    c = 0
-    for _ in range(k):
-        S = rng.permutation(N)[:nx]
-        sxx = K[np.ix_(S, S)].sum()
-        rs = R[S].sum()
-        sxy = rs - sxx
-        syy = T - 2 * rs + sxx
-        if mmd2(sxx, syy, sxy, nx, ny, est) >= obs - 1e-15:
-            c += 1
-    return obs, (c + 1) / (k + 1)
+    obs, pval, _ = _mmd_permutation_test_from_kernel(
+        K,
+        nx,
+        ny,
+        k,
+        unbiased=(est == "u"),
+        k_min=k,
+        k_th=float("inf"),
+        rng=np.random.default_rng(seed),
+    )
+    return obs, pval
 
 
-def breakdown(X, Y, thresh, k_grid, est):
-    xk, yk = list(range(len(X))), list(range(len(Y)))
-    rows, bk = [], None
-    for k in range(0, max(k_grid) + 1):
-        Z = np.vstack([X[xk], Y[yk]])
+def _breakdown_closures(X, Y, est):
+    """Builds the (stat_and_influence_fn, pval_fn) closures greedy_breakdown_k
+    needs: the O(1)-per-point leave-one-out MMD^2 formula (row-sum trick) for
+    ranking, and the real permutation p-value (via perm_p) at checkpoints."""
+
+    def stat_and_influence_fn(x_keep, y_keep):
+        Z = np.vstack([X[x_keep], Y[y_keep]])
         K = kmat(Z)
-        nx, ny = len(xk), len(yk)
-        if k in k_grid:
-            _, p = perm_p(K, nx, ny, est)
-            rows.append((k, p, p <= thresh))
-            if p > thresh and bk is None:
-                bk = k
-        if k == max(k_grid) or bk is not None:
-            break
+        nx, ny = len(x_keep), len(y_keep)
         Sxx = K[:nx, :nx].sum()
         Syy = K[nx:, nx:].sum()
         Sxy = K[:nx, nx:].sum()
@@ -100,17 +87,46 @@ def breakdown(X, Y, thresh, k_grid, est):
         RxCr = K[:nx, nx:].sum(1)
         RyIn = K[nx:, nx:].sum(1)
         RyCr = K[nx:, :nx].sum(1)
-        best, bd, side = None, -1e9, None
-        for i in range(nx):
-            v = mmd2(Sxx - 2 * RxIn[i] + K[i, i], Syy, Sxy - RxCr[i], nx - 1, ny, est)
-            if base - v > bd:
-                bd, best, side = base - v, i, "X"
-        for j in range(ny):
-            jj = nx + j
-            v = mmd2(Sxx, Syy - 2 * RyIn[j] + K[jj, jj], Sxy - RyCr[j], nx, ny - 1, est)
-            if base - v > bd:
-                bd, best, side = base - v, j, "Y"
-        (xk if side == "X" else yk).pop(best)
+        infl_x = np.array(
+            [
+                base
+                - mmd2(Sxx - 2 * RxIn[i] + K[i, i], Syy, Sxy - RxCr[i], nx - 1, ny, est)
+                for i in range(nx)
+            ]
+        )
+        infl_y = np.array(
+            [
+                base
+                - mmd2(
+                    Sxx,
+                    Syy - 2 * RyIn[j] + K[nx + j, nx + j],
+                    Sxy - RyCr[j],
+                    nx,
+                    ny - 1,
+                    est,
+                )
+                for j in range(ny)
+            ]
+        )
+        return base, infl_x, infl_y
+
+    def pval_fn(x_keep, y_keep):
+        K = kmat(np.vstack([X[x_keep], Y[y_keep]]))
+        return perm_p(K, len(x_keep), len(y_keep), est)
+
+    return stat_and_influence_fn, pval_fn
+
+
+def breakdown(X, Y, thresh, k_grid, est):
+    stat_and_influence_fn, pval_fn = _breakdown_closures(X, Y, est)
+    rows, bk, _removed_log = greedy_breakdown_k(
+        n1=len(X),
+        n2=len(Y),
+        stat_and_influence_fn=stat_and_influence_fn,
+        pval_fn=pval_fn,
+        thresh=thresh,
+        k_grid=k_grid,
+    )
     return rows, bk
 
 
