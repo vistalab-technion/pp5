@@ -87,6 +87,10 @@ CODON_GROUPING_POSITION = "1"  # 0,1
 # Other analysis options
 TUPLE_LEN = 1  # Set to 2 to analyze codon pairs
 MIN_GROUP = 1  # Minimum number of samples from a (unp, unp_idx) location to aggregate
+
+# Strict aggregation: remove conformational outliers (>60deg from a robust circular-mean
+# centre) before centroiding, within groups of >=3 structures.
+STRICT_AGGREGATION = False
 COMPARISON_TYPES = [
     # "aa", # Compate AA distributions
     "cc",  # Compate codon distributions
@@ -127,9 +131,12 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
     if not SELF_TEST:
         self_test_tag = "-noself"
 
+    strict_aggregation_tag = "-strict" if STRICT_AGGREGATION else ""
+
     tag = TAG or (
         f"t={TUPLE_LEN}-bs={DDIST_BS_NITER}-k={DDIST_K}-nmax={DDIST_NMAX}-"
-        f"{ddist_statistic_tag}{codon_grouping_tag}{codon_randomization_tag}{self_test_tag}"
+        f"{ddist_statistic_tag}{codon_grouping_tag}{codon_randomization_tag}"
+        f"{self_test_tag}{strict_aggregation_tag}"
     )
 
     command_line = [
@@ -163,6 +170,7 @@ for i, (dataset_name, dataset_path) in enumerate(DATASETS.items()):
         f"--no-self-test" if not SELF_TEST else "",
         f"--ss-group-any" if SS_GROUP_ANY else "",
         f"--ignore-omega" if IGNORE_OMEGA else "",
+        f"--strict-aggregation" if STRICT_AGGREGATION else "",
         f"--out-tag={tag}",
         (f"--out-dir={OUT_DIR!s}" if OUT_DIR else ""),
     ]

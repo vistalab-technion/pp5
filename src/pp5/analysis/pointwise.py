@@ -131,6 +131,11 @@ AGGREGATION_TYPES = {
     AGGREGATION_TYPE_NONE,
 }
 
+# Strict-aggregation (conformational-outlier removal) constants, matching
+STRICT_AGGREGATION_OUTLIER_DEG = 60.0  # flat-torus distance (deg) to call an outlier
+STRICT_AGGREGATION_MIN_GROUP_SIZE = 3  # min structures in a group to attempt removal
+STRICT_AGGREGATION_MIN_KEEP = 2  # never remove outliers if it would drop below this
+
 RANDOMIZE_TYPES_AA = "aa"
 RANDOMIZE_TYPES_AA_SS = "aa_ss"
 RANDOMIZE_TYPES_NONE = "none"
@@ -194,6 +199,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         codon_grouping_position: int = 0,
         aggregation_type: str = AGGREGATION_TYPE_CENTROID,
         aggregation_min_group_size: int = 1,
+        strict_aggregation: bool = False,
         strict_codons: bool = True,
         kde_nbins: int = 128,
         kde_width: float = 30.0,
@@ -257,6 +263,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         :param aggregation_min_group_size: The minimal number of structures in a
             (unp, unx_idx) group in order to aggregated the angles in the group
             for analysis. Smaller groups are discarded.
+        :param strict_aggregation: Whether to remove conformational outliers before
+            centroiding (only valid with aggregation_type='cent'). Within each group
+            of >=3 structures, a structure whose (phi, psi) lies more than 60deg
+            (flat-torus distance) from a robust circular-mean centre is excluded from
+            the centroid, unless doing so would leave fewer than 2 structures. Default
+            False reproduces the existing (non-strict) aggregation exactly.
         :param strict_codons: Enforce only one known codon per residue
             (reject residues where DNA matching was ambiguous).
         :param kde_nbins: Number of angle binds for KDE estimation.
@@ -381,6 +393,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         if aggregation_min_group_size < 1:
             raise ValueError(f"invalid {aggregation_min_group_size=}, must be >= 1")
 
+        if strict_aggregation and aggregation_type != AGGREGATION_TYPE_CENTROID:
+            raise ValueError(
+                f"{strict_aggregation=} is only supported with "
+                f"aggregation_type={AGGREGATION_TYPE_CENTROID!r}, got {aggregation_type=}"
+            )
+
         if ddist_bs_niter < 1:
             raise ValueError(f"invalid {ddist_bs_niter=}, must be >= 1")
 
@@ -428,6 +446,7 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
         self.codon_grouping_position = codon_grouping_position
         self.aggregation_type = aggregation_type
         self.aggregation_min_group_size = aggregation_min_group_size
+        self.strict_aggregation = strict_aggregation
         self.strict_codons = strict_codons
         self.condition_on_prev = None
 
@@ -697,8 +716,16 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
             LOGGER.info(f"Randomized codons conditioned on {randomization_group}")
 
         # Process groups in parallel.
-        # Add additional conditioning on codon just to break it into many more groups
-        # so that it parallelizes better.
+        # Conditioning on CONDITION_COL (secondary structure) here is crucial, not
+        # just a parallelization nicety: it guarantees every df_group below is
+        # already homogeneous in secondary structure, which is what makes the
+        # per-(unp_id, unp_idx, codon) subgrouping in _preprocess_group() correct
+        # -- a residue whose structures span multiple SS classes is split into
+        # separate groups here, one per class, rather than pooled or dropped.
+        # Additionally conditioning on CODON_COL is the actual "nice to have":
+        # it just breaks each SS class into more, smaller groups so they
+        # parallelize better; it adds no further splitting since a residue's
+        # codon does not vary across its structures.
         async_results = []
         for group_idx, df_group in df_pointwise.groupby(by=[CONDITION_COL, CODON_COL]):
             condition_group_id, _ = group_idx
@@ -730,6 +757,13 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
     ):
         """
         Applies pre-processing to a single group (e.g. SS) in the dataset.
+
+        Precondition: df_group is assumed to already be homogeneous in secondary
+        structure (SECONDARY_COL/CONDITION_COL), i.e. the caller (_preprocess_dataset)
+        must partition by CONDITION_COL before invoking this method. Grouping by
+        (unp_id, unp_idx, codon) below relies on this: a residue whose structures span
+        multiple SS classes must already have been split into separate df_group calls,
+        one per class, otherwise this method would silently pool or drop that residue.
         """
         processed_subgroups = []
 
@@ -770,6 +804,12 @@ class PointwiseCodonDistanceAnalyzer(ParallelAnalyzer):
                 continue
 
             if self.aggregation_type == AGGREGATION_TYPE_CENTROID:
+                if self.strict_aggregation:
+                    # Drop conformational outliers before centroiding everything below
+                    # operates on the (possibly trimmed) df_subgroup, so group size/std
+                    # follow automatically.
+                    df_subgroup = df_subgroup[_subgroup_outlier_mask(df_subgroup)]
+
                 # Calculate centroid angle from the structures in the subgroup
                 agg_angle = _subgroup_centroid(df_subgroup, input_degrees=True)
 
@@ -1935,6 +1975,60 @@ def _subgroup_centroid(
     angles = [Dihedral.from_rad(phi, psi) for phi, psi in raw_angles]
     centroid = Dihedral.circular_centroid(*angles)
     return centroid
+
+
+def _subgroup_outlier_mask(df_subgroup: pd.DataFrame) -> np.ndarray:
+    """
+    Computes a boolean keep-mask for strict aggregation.
+
+    Within a group of at least :data:`STRICT_AGGREGATION_MIN_GROUP_SIZE`
+    structures, a structure whose (phi, psi) lies more than
+    :data:`STRICT_AGGREGATION_OUTLIER_DEG` (flat-torus distance) from a robust
+    circular-mean centre is flagged as an outlier. The centre is computed
+    twice: once from all structures (pass 1), then recomputed from only the
+    pass-1 inliers (pass 2), so that a structure provisionally flagged in pass
+    1 can "re-qualify" once genuine outliers no longer skew the centre. If
+    excluding the flagged outliers would leave fewer than
+    :data:`STRICT_AGGREGATION_MIN_KEEP` structures, removal is cancelled for
+    the whole group (all structures are kept).
+
+    Assumes df_subgroup is already homogeneous in secondary structure and
+    codon (guaranteed by the caller's grouping), i.e. it represents a single
+    conformational group.
+
+    :param df_subgroup: Dataframe with PHI_COL/PSI_COL columns, in degrees,
+        one row per contributing structure.
+    :return: Boolean array of shape (len(df_subgroup),), True for structures
+        to keep.
+    """
+    n = len(df_subgroup)
+    if n < STRICT_AGGREGATION_MIN_GROUP_SIZE:
+        return np.ones(n, dtype=bool)
+
+    phi_psi_rad = np.deg2rad(df_subgroup[[*PHI_PSI_COLS]].values)  # (n, 2)
+
+    def _dist_to_centre_deg(points_rad: np.ndarray, centre_rad: np.ndarray):
+        return np.rad2deg(flat_torus_distance(centre_rad.reshape(1, 2), points_rad))
+
+    # Pass 1: circular mean over all members, flag far points.
+    centre1 = np.array(
+        [wraparound_mean(phi_psi_rad[:, 0]), wraparound_mean(phi_psi_rad[:, 1])]
+    )
+    flag1 = _dist_to_centre_deg(phi_psi_rad, centre1) > STRICT_AGGREGATION_OUTLIER_DEG
+
+    # Pass 2: recompute centre using only pass-1 inliers, then re-flag ALL
+    # members against this refined centre (lets a pass-1 outlier re-qualify).
+    inliers_rad = phi_psi_rad[~flag1]
+    centre2 = np.array(
+        [wraparound_mean(inliers_rad[:, 0]), wraparound_mean(inliers_rad[:, 1])]
+    )
+    outlier = _dist_to_centre_deg(phi_psi_rad, centre2) > STRICT_AGGREGATION_OUTLIER_DEG
+
+    # Safety net: never let removal drop the group below the min-keep count.
+    if (n - outlier.sum()) < STRICT_AGGREGATION_MIN_KEEP:
+        return np.ones(n, dtype=bool)
+
+    return ~outlier
 
 
 def _subgroup_permutation_test(
