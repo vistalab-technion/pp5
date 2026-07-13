@@ -1157,3 +1157,111 @@ class TestBreakdownKMmd:
         )
 
         assert removed_log[0][:2] == (expected_side, expected_idx)
+
+
+import pandas as pd
+
+from pp5.stats.controls import (
+    gen_aa_ss_control_replicates,
+    gen_pooled_shuffle_replicates,
+    null_control_summary,
+    randomized_codon_column,
+)
+
+
+class TestRandomizedCodonColumn:
+    def test_preserves_group_composition(self):
+        codon = np.array(["A", "A", "B", "B", "B", "C"])
+        group_keys = [("X", 1), ("X", 1), ("X", 1), ("X", 1), ("X", 1), ("Y", 2)]
+        shuffled = randomized_codon_column(codon, group_keys, seed=0)
+        assert sorted(shuffled[:5]) == sorted(codon[:5])
+        assert shuffled[5] == "C"
+
+    def test_different_seeds_can_reorder(self):
+        codon = np.array(["A", "B", "C", "D"])
+        group_keys = [("g", 0)] * 4
+        outcomes = {
+            tuple(randomized_codon_column(codon, group_keys, seed=seed))
+            for seed in range(20)
+        }
+        assert len(outcomes) > 1
+
+
+class TestGenAaSsControlReplicates:
+    def test_preserves_counts_and_point_cloud(self):
+        df = pd.DataFrame(
+            dict(
+                AA=["L"] * 6,
+                condition_group=["HELIX"] * 6,
+                codon=["L-CTC", "L-CTC", "L-CTC", "L-TTG", "L-TTG", "L-TTG"],
+                phi=[10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+                psi=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            )
+        )
+        replicates = list(
+            gen_aa_ss_control_replicates(df, "HELIX", "L-CTC", "L-TTG", n_replicates=5, base_seed=0)
+        )
+        assert len(replicates) == 5
+        expected_points = sorted(np.deg2rad(df[["phi", "psi"]].to_numpy()).tolist())
+        for X, Y in replicates:
+            assert len(X) + len(Y) == 6
+            assert sorted(np.vstack([X, Y]).tolist()) == expected_points
+
+
+class TestGenPooledShuffleReplicates:
+    def test_preserves_sizes_and_point_cloud(self):
+        X = np.array([[0.1, 0.2], [0.3, 0.4]])
+        Y = np.array([[0.5, 0.6], [0.7, 0.8], [0.9, 1.0]])
+        replicates = list(gen_pooled_shuffle_replicates(X, Y, n_replicates=4, base_seed=0))
+        assert len(replicates) == 4
+        expected = sorted(np.vstack([X, Y]).tolist())
+        for Xr, Yr in replicates:
+            assert len(Xr) == 2
+            assert len(Yr) == 3
+            assert sorted(np.vstack([Xr, Yr]).tolist()) == expected
+
+
+class TestNullControlSummary:
+    def test_all_significant_replicates_get_breakdown_k(self):
+        def pval_fn(X, Y):
+            return 0.0, 0.001
+
+        def breakdown_fn(X, Y, thresh, k_grid):
+            return [], 3, []
+
+        replicate_pairs = [(np.zeros((5, 2)), np.zeros((5, 2))) for _ in range(4)]
+        summary = null_control_summary(
+            replicate_pairs, pval_fn, breakdown_fn, thresh=0.05, k_grid_fn=lambda n: [0, 1, 2, 3]
+        )
+        assert summary == dict(n_replicates=4, frac_sig=1.0, bk_median=3.0, bk_max=3.0, min_p0=0.001)
+
+    def test_non_significant_replicates_get_breakdown_k_zero_without_calling_breakdown_fn(self):
+        def pval_fn(X, Y):
+            return 0.0, 0.9
+
+        def breakdown_fn(X, Y, thresh, k_grid):
+            raise AssertionError("breakdown_fn must not run when the baseline isn't significant")
+
+        replicate_pairs = [(np.zeros((5, 2)), np.zeros((5, 2))) for _ in range(3)]
+        summary = null_control_summary(
+            replicate_pairs, pval_fn, breakdown_fn, thresh=0.05, k_grid_fn=lambda n: [0]
+        )
+        assert summary["frac_sig"] == 0.0
+        assert summary["bk_median"] == 0.0
+        assert summary["bk_max"] == 0.0
+
+    def test_skips_replicates_with_fewer_than_two_points_per_group(self):
+        def pval_fn(X, Y):
+            return 0.0, 0.001
+
+        def breakdown_fn(X, Y, thresh, k_grid):
+            return [], None, []
+
+        replicate_pairs = [
+            (np.zeros((1, 2)), np.zeros((5, 2))),
+            (np.zeros((5, 2)), np.zeros((5, 2))),
+        ]
+        summary = null_control_summary(
+            replicate_pairs, pval_fn, breakdown_fn, thresh=0.05, k_grid_fn=lambda n: [0, 1]
+        )
+        assert summary["n_replicates"] == 1

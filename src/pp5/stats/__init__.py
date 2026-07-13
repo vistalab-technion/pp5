@@ -4,6 +4,12 @@ import rpy2.robjects as robjects
 
 from pp5.stats.mht import mht_bh
 from pp5.stats.breakdown import breakdown_k_kde, breakdown_k_mmd, greedy_breakdown_k
+from pp5.stats.controls import (
+    gen_aa_ss_control_replicates,
+    gen_pooled_shuffle_replicates,
+    null_control_summary,
+    randomized_codon_column,
+)
 from pp5.stats.two_sample import (
     tw_test,
     mmd_test,
