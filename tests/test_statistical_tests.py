@@ -8,12 +8,14 @@ from scipy.spatial.distance import cdist
 import pp5
 from pp5.dihedral import flat_torus_distance, flat_torus_distance_sq
 from pp5.stats import mht_bh
+from pp5.stats.breakdown import greedy_breakdown_k
 from pp5.stats.two_sample import (
     _kde_statistic_pergroup,
     _mmd_statistic,
     _mmd_statistic_unbiased,
     kde2d_test,
     kde2d_test_pergroup,
+    kde2d_test_pergroup_fast,
     mmd_test,
     mmd_test_fast,
     torus_projection_permutation_test,
@@ -626,4 +628,286 @@ class TestKdePergroup:
             nx_idx=np.array([0, 2]), ny_idx=np.array([1, 3]),
         )
         assert np.isfinite(stat_mixed)
+
+
+class TestKdePergroupFast:
+    """
+    Tests for :func:`kde2d_test_pergroup_fast`: agreement with the naive
+    :func:`kde2d_test_pergroup` under an identical seed, for both the
+    equal-bandwidth and double-slab (CV) cases. In particular, the fast function
+    must use the same ``X = idx[:nx]`` permutation convention as the rest of this
+    module regardless of whether nx or ny is larger, not a "sum the smaller
+    group" shortcut that would silently diverge from the naive test whenever
+    nx > ny.
+    """
+
+    N_BINS = 32
+    GRID_LOW = -np.pi
+    GRID_HIGH = np.pi
+
+    def _sample(self, n, mu=(0.3, -0.5), sigma=0.3, seed=0):
+        rng = np.random.default_rng(seed)
+        phi = rng.normal(mu[0], sigma, n).clip(-np.pi + 1e-6, np.pi - 1e-6)
+        psi = rng.normal(mu[1], sigma, n).clip(-np.pi + 1e-6, np.pi - 1e-6)
+        return np.stack([phi, psi], axis=1)
+
+    def _common_kwargs(self, sigma_x_rad, sigma_y_rad):
+        return dict(
+            n_bins=self.N_BINS,
+            grid_low=self.GRID_LOW,
+            grid_high=self.GRID_HIGH,
+            dtype=np.float64,
+            sigma_x_rad=sigma_x_rad,
+            sigma_y_rad=sigma_y_rad,
+        )
+
+    @pytest.mark.parametrize("nx,ny", [(20, 30), (30, 20)])
+    def test_matches_naive_regardless_of_which_side_is_smaller(self, nx, ny):
+        sigma_rad = np.deg2rad(10.0)
+        X = self._sample(n=nx, seed=1)
+        Y = self._sample(n=ny, mu=(0.1, 0.2), seed=2)
+        kwargs = self._common_kwargs(sigma_rad, sigma_rad)
+
+        np.random.seed(123)
+        ddist_naive, pval_naive, k_naive = kde2d_test_pergroup(
+            X, Y, k=200, k_min=200, k_th=float("inf"), **kwargs
+        )
+
+        np.random.seed(123)
+        ddist_fast, pval_fast, k_fast = kde2d_test_pergroup_fast(
+            X, Y, k=200, k_min=200, k_th=float("inf"), **kwargs
+        )
+
+        assert k_naive == k_fast == 200
+        np.testing.assert_allclose(ddist_naive, ddist_fast, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(pval_naive, pval_fast, rtol=0, atol=1e-12)
+
+    def test_matches_naive_with_different_bandwidths(self):
+        sigma_x, sigma_y = np.deg2rad(4.0), np.deg2rad(12.0)
+        X = self._sample(n=25, mu=(0.3, -0.5), seed=5)
+        Y = self._sample(n=18, mu=(-0.5, 0.3), seed=6)
+        kwargs = self._common_kwargs(sigma_x, sigma_y)
+
+        np.random.seed(7)
+        ddist_naive, pval_naive, k_naive = kde2d_test_pergroup(
+            X, Y, k=150, k_min=150, k_th=float("inf"), **kwargs
+        )
+
+        np.random.seed(7)
+        ddist_fast, pval_fast, k_fast = kde2d_test_pergroup_fast(
+            X, Y, k=150, k_min=150, k_th=float("inf"), **kwargs
+        )
+
+        assert k_naive == k_fast == 150
+        np.testing.assert_allclose(ddist_naive, ddist_fast, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(pval_naive, pval_fast, rtol=0, atol=1e-12)
+
+    def test_batch_size_does_not_change_result(self):
+        # Batching only defers compute; the sequence of rng.permutation() draws
+        # is identical regardless of how many permutations are grouped per BLAS
+        # call, so the result must not depend on batch_size.
+        sigma_rad = np.deg2rad(10.0)
+        X = self._sample(n=15, seed=3)
+        Y = self._sample(n=22, mu=(0.2, 0.1), seed=4)
+        kwargs = self._common_kwargs(sigma_rad, sigma_rad)
+
+        np.random.seed(42)
+        ddist_a, pval_a, k_a = kde2d_test_pergroup_fast(
+            X, Y, k=137, k_min=137, k_th=float("inf"), batch_size=1, **kwargs
+        )
+
+        np.random.seed(42)
+        ddist_b, pval_b, k_b = kde2d_test_pergroup_fast(
+            X, Y, k=137, k_min=137, k_th=float("inf"), batch_size=1000, **kwargs
+        )
+
+        assert k_a == k_b == 137
+        np.testing.assert_allclose(ddist_a, ddist_b, rtol=0, atol=1e-12)
+        np.testing.assert_allclose(pval_a, pval_b, rtol=0, atol=1e-12)
+
+    def test_shares_slabs_when_sigmas_equal(self, monkeypatch):
+        # When sigma_x == sigma_y the implementation should compute slabs only
+        # once (via the shared _kde_2d_slab_stacks helper), same guarantee as
+        # kde2d_test_pergroup.
+        import pp5.stats.two_sample as m
+
+        call_count = {"n": 0}
+        real_kde_2d = m.kde_2d
+
+        def counting_kde_2d(*args, **kwargs):
+            call_count["n"] += 1
+            return real_kde_2d(*args, **kwargs)
+
+        monkeypatch.setattr(m, "kde_2d", counting_kde_2d)
+
+        X = self._sample(n=12, seed=3)
+        Y = self._sample(n=12, seed=4)
+        sigma_rad = np.deg2rad(8.0)
+        _ = kde2d_test_pergroup_fast(
+            X, Y, k=10, **self._common_kwargs(sigma_rad, sigma_rad)
+        )
+        assert call_count["n"] == 1
+
+        call_count["n"] = 0
+        _ = kde2d_test_pergroup_fast(
+            X, Y, k=10, **self._common_kwargs(sigma_rad, sigma_rad * 2)
+        )
+        assert call_count["n"] == 2
+
+    def test_early_termination_stops_before_k(self):
+        # Identical X, Y: ddist=0, so every permutation ties the observed
+        # statistic and pval saturates at 1.0 immediately -- an easy case to
+        # trigger early termination well before k.
+        sigma_rad = np.deg2rad(10.0)
+        X = self._sample(n=20, mu=(0.0, 0.0), seed=10)
+        Y = X.copy()
+        _, pval, k_used = kde2d_test_pergroup_fast(
+            X,
+            Y,
+            k=5000,
+            k_min=20,
+            k_th=50.0,
+            **self._common_kwargs(sigma_rad, sigma_rad),
+        )
+        assert k_used < 5000
+        assert pval == pytest.approx(1.0)
+
+
+class TestGreedyBreakdownK:
+    """
+    Tests for :func:`greedy_breakdown_k`: the generic adversarial-breakdown
+    control flow (greedy remove-most-influential, re-rank, recompute the real
+    p-value only at k_grid checkpoints) shared by the MMD/KDE-fix/KDE-CV
+    breakdown-k analyses. Uses synthetic, statistic-agnostic closures; the
+    per-statistic influence/p-value formulas are exercised separately when the
+    scripts that use this function are repointed to it.
+    """
+
+    def _toy_closures(self, x_influence, y_influence, sig_until_removed):
+        """
+        Builds (stat_and_influence_fn, pval_fn) where each original point's
+        influence is a fixed lookup by its original index (independent of what
+        else has been removed, which is enough to exercise the loop's control
+        flow), and the pair is "significant" until sig_until_removed points
+        have been removed in total, then not significant from then on.
+        """
+        n_total = len(x_influence) + len(y_influence)
+
+        def stat_and_influence_fn(x_keep, y_keep):
+            base = 0.0  # unused by these tests
+            infl_x = np.array([x_influence[i] for i in x_keep])
+            infl_y = np.array([y_influence[j] for j in y_keep])
+            return base, infl_x, infl_y
+
+        def pval_fn(x_keep, y_keep):
+            n_removed = n_total - (len(x_keep) + len(y_keep))
+            pval = 0.01 if n_removed < sig_until_removed else 0.5
+            return 0.0, pval
+
+        return stat_and_influence_fn, pval_fn
+
+    def test_removes_most_influential_point_each_step(self):
+        # x_influence[1]=30 is the single largest value overall, so it must be
+        # removed first; y_influence[0]=10 is the largest among what remains.
+        x_influence = {0: 5.0, 1: 30.0, 2: 1.0}
+        y_influence = {0: 10.0, 1: 2.0}
+        stat_and_influence_fn, pval_fn = self._toy_closures(
+            x_influence, y_influence, sig_until_removed=10
+        )
+
+        rows, breakdown_k, removed_log = greedy_breakdown_k(
+            n1=3,
+            n2=2,
+            stat_and_influence_fn=stat_and_influence_fn,
+            pval_fn=pval_fn,
+            thresh=0.05,
+            k_grid=[0, 1, 2, 3],
+        )
+
+        removed_order = [(side, idx) for side, idx, _ in removed_log]
+        assert removed_order == [("X", 1), ("Y", 0), ("X", 0)]
+        assert breakdown_k is None  # sig_until_removed=10 is never reached
+
+    def test_stops_at_correct_breakdown_k(self):
+        x_influence = {0: 5.0, 1: 30.0, 2: 1.0}
+        y_influence = {0: 10.0, 1: 2.0}
+        stat_and_influence_fn, pval_fn = self._toy_closures(
+            x_influence, y_influence, sig_until_removed=2
+        )
+
+        rows, breakdown_k, removed_log = greedy_breakdown_k(
+            n1=3,
+            n2=2,
+            stat_and_influence_fn=stat_and_influence_fn,
+            pval_fn=pval_fn,
+            thresh=0.05,
+            k_grid=[0, 1, 2, 3, 4],
+        )
+
+        assert breakdown_k == 2
+        # the loop must stop as soon as it finds the pair non-significant, not
+        # run through the rest of k_grid.
+        assert [r["k"] for r in rows] == [0, 1, 2]
+        assert [r["significant"] for r in rows] == [True, True, False]
+        assert len(removed_log) == 2
+
+    def test_returns_none_when_never_breaks(self):
+        x_influence = {0: 5.0, 1: 30.0}
+        y_influence = {0: 10.0}
+        stat_and_influence_fn, pval_fn = self._toy_closures(
+            x_influence, y_influence, sig_until_removed=100
+        )
+
+        rows, breakdown_k, removed_log = greedy_breakdown_k(
+            n1=2,
+            n2=1,
+            stat_and_influence_fn=stat_and_influence_fn,
+            pval_fn=pval_fn,
+            thresh=0.05,
+            k_grid=[0, 1, 2],
+        )
+
+        assert breakdown_k is None
+        assert [r["k"] for r in rows] == [0, 1, 2]
+        assert rows[-1]["n1"] + rows[-1]["n2"] == 1  # 2 of 3 points removed by k=2
+
+    def test_removed_log_records_side_original_index_and_drop(self):
+        x_influence = {0: 1.0, 1: 30.0}
+        y_influence = {0: 10.0}
+        stat_and_influence_fn, pval_fn = self._toy_closures(
+            x_influence, y_influence, sig_until_removed=100
+        )
+
+        _, _, removed_log = greedy_breakdown_k(
+            n1=2,
+            n2=1,
+            stat_and_influence_fn=stat_and_influence_fn,
+            pval_fn=pval_fn,
+            thresh=0.05,
+            k_grid=[0, 1],
+        )
+
+        assert removed_log[0] == ("X", 1, 30.0)
+
+    def test_tie_break_prefers_x_then_lower_index(self):
+        # Equal influence across X and Y, and within X: X wins over Y, and the
+        # lower local-index X point wins over the higher one, since the loop
+        # only replaces its running best on a strict ">" comparison (first
+        # encountered wins ties), matching the original scripts' tie-break.
+        x_influence = {0: 5.0, 1: 5.0}
+        y_influence = {0: 5.0}
+        stat_and_influence_fn, pval_fn = self._toy_closures(
+            x_influence, y_influence, sig_until_removed=100
+        )
+
+        _, _, removed_log = greedy_breakdown_k(
+            n1=2,
+            n2=1,
+            stat_and_influence_fn=stat_and_influence_fn,
+            pval_fn=pval_fn,
+            thresh=0.05,
+            k_grid=[0, 1],
+        )
+
+        assert removed_log[0][:2] == ("X", 0)
 
