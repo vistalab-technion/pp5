@@ -528,7 +528,7 @@ class TestKdePergroup:
 
     def test_shares_slabs_when_sigmas_equal(self, monkeypatch):
         # When sigma_x == sigma_y the implementation should compute slabs only once.
-        import pp5.stats.two_sample as m
+        import pp5.stats.two_sample.kde as m
 
         call_count = {"n": 0}
         real_kde_2d = m.kde_2d
@@ -735,7 +735,7 @@ class TestKdePergroupFast:
         # When sigma_x == sigma_y the implementation should compute slabs only
         # once (via the shared _kde_2d_slab_stacks helper), same guarantee as
         # kde2d_test_pergroup.
-        import pp5.stats.two_sample as m
+        import pp5.stats.two_sample.kde as m
 
         call_count = {"n": 0}
         real_kde_2d = m.kde_2d
