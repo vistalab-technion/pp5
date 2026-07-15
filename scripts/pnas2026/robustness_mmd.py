@@ -29,14 +29,7 @@ from _common import PAIRS, SEED
 
 # Positional arg overrides the default; default is the published/reproduced
 # aggregated dataset (see out/pnas-2026/docs; no dependency on Alex's repro zip).
-DS = (
-    sys.argv[1]
-    if len(sys.argv) > 1
-    else (
-        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
-        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
-    )
-)
+DS = sys.argv[1] if len(sys.argv) > 1 else "out/pnas-2026/dataset-processed/dataset.csv"
 SIG = np.deg2rad(10.0)
 KP = 5000
 # KDE-L1's BH thresholds ("for a common footing"), reused here per Report 2 §2
@@ -60,7 +53,11 @@ def mmd2(Sxx, Syy, Sxy, nx, ny, est):
     """
     if est == "b":
         return Sxx / nx**2 + Syy / ny**2 - 2 * Sxy / (nx * ny)
-    return (Sxx - nx) / (nx * (nx - 1)) + (Syy - ny) / (ny * (ny - 1)) - 2 * Sxy / (nx * ny)
+    return (
+        (Sxx - nx) / (nx * (nx - 1))
+        + (Syy - ny) / (ny * (ny - 1))
+        - 2 * Sxy / (nx * ny)
+    )
 
 
 def perm_p(K, nx, ny, est, k=KP, seed=SEED):

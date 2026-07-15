@@ -63,16 +63,11 @@ N_REPLICATES = 30  # AA+SS control replicates per pair
 BH_THRESH = {"HELIX": 0.0011494252873563218, "TURN": 0.0011494252873563218}
 
 DS_PATH = (
-    sys.argv[1]
-    if len(sys.argv) > 1
-    else (
-        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
-        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
-    )
+    sys.argv[1] if len(sys.argv) > 1 else "out/pnas-2026/dataset-processed/dataset.csv"
 )
 # Raw per-structure file with PDB provenance (pdb_id includes chain; res_id is the
 # PDB residue number). Aggregated dataset positions map (unp_id, unp_idx) -> 1+ rows.
-DP_PATH = "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/data-precs.csv"
+DP_PATH = "out/pnas-2026/dataset-raw/data-precs.csv"
 
 
 def load_provenance(path):

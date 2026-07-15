@@ -14,6 +14,7 @@ Outputs:
   removed_structures.csv    : every removed PDB structure, with its angle and the
                               group consensus it disagreed with
 """
+
 import sys
 
 import numpy as np
@@ -32,15 +33,8 @@ CONS = {
     "": None,
 }
 
-DS = (
-    sys.argv[1]
-    if len(sys.argv) > 1
-    else (
-        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
-        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
-    )
-)
-DP = "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/data-precs.csv"
+DS = sys.argv[1] if len(sys.argv) > 1 else "out/pnas-2026/dataset-processed/dataset.csv"
+DP = "out/pnas-2026/dataset-raw/data-precs.csv"
 OUT_DS = "out/pnas-2026-repro-clean/dataset_clean.csv"
 OUT_RM = "out/pnas-2026-repro-clean/removed_structures.csv"
 

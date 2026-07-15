@@ -13,6 +13,7 @@ pseudo-pair's p matches the real pair's. Statistic = unbiased MMD^2.
 If real pairs need MORE adversarial deletions than these matched fakes, breakdown-k
 discriminates real from spurious at equal significance.
 """
+
 import sys
 
 import numpy as np
@@ -26,14 +27,7 @@ from _common import SEED
 # dataset -- the post-preprocessing/aggregation output of `analyze_pointwise.py`'s
 # pipeline (see docs/pnas_2026.md), not the raw data-precs.csv. No dependency on Alex's
 # repro zip.
-DS = (
-    sys.argv[1]
-    if len(sys.argv) > 1
-    else (
-        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
-        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
-    )
-)
+DS = sys.argv[1] if len(sys.argv) > 1 else "out/pnas-2026/dataset-processed/dataset.csv"
 NREP = 10
 # real pairs to calibrate: (SS, AA, n1, n2, target p, real breakdown-k under MMD2u)
 REAL = [("TURN", "A", 350, 203, 0.0002, 8), ("HELIX", "L", 528, 599, 0.0008, 5)]

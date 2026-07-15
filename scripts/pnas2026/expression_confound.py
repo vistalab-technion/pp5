@@ -11,6 +11,7 @@ abundance tertiles. For each robust pair, within each tertile we report:
 Persistence of significance across abundance strata argues the codon-structure
 signal is not an expression artifact.
 """
+
 import sys
 
 import numpy as np
@@ -24,14 +25,7 @@ from _common import PAIRS, SEED
 # dataset -- the post-preprocessing/aggregation output of `analyze_pointwise.py`'s
 # pipeline (see docs/pnas_2026.md), not the raw data-precs.csv. No dependency on Alex's
 # repro zip.
-DS = (
-    sys.argv[1]
-    if len(sys.argv) > 1
-    else (
-        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
-        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
-    )
-)
+DS = sys.argv[1] if len(sys.argv) > 1 else "out/pnas-2026/dataset-processed/dataset.csv"
 PAX = "out/pnas-2026-repro/paxdb_abundance.csv"
 BH = {"HELIX": 0.0011494, "TURN": 0.0011494}  # KDE-L1 bw=10 BH thresholds
 N0, R, KPERM, MINN = 40, 25, 5000, 15

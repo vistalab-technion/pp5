@@ -11,6 +11,7 @@ Per robust pair:
       split positions at the pair's median B_z; torus distance between codon
       circular means + label-permutation p in each stratum.
 """
+
 import sys
 
 import numpy as np
@@ -20,7 +21,7 @@ from scipy.stats import mannwhitneyu
 sys.path.insert(0, "scripts/pnas2026")
 from _common import PAIRS, SEED
 
-DP = "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/data-precs.csv"
+DP = "out/pnas-2026/dataset-raw/data-precs.csv"
 CONS = {
     "E": "SHEET",
     "H": "HELIX",

@@ -32,14 +32,7 @@ CVTAB = os.environ.get(
 )
 # Positional arg overrides the default; default is the published/reproduced
 # aggregated dataset (see out/pnas-2026/docs; no dependency on Alex's repro zip).
-DS = (
-    sys.argv[1]
-    if len(sys.argv) > 1
-    else (
-        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
-        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
-    )
-)
+DS = sys.argv[1] if len(sys.argv) > 1 else "out/pnas-2026/dataset-processed/dataset.csv"
 NBINS, GLOW, GHIGH, DT = 128, -np.pi, np.pi, np.float64
 K = 5000
 BH = {"HELIX": 0.0005747126436781609, "TURN": 0.0005747126436781609}

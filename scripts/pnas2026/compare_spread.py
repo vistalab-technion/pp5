@@ -9,10 +9,11 @@ Background sets (multi-structure positions, n>=2, where spread is defined):
   - global        : all positions in the collected dataset
 Spread metric per position: s_max = max(circ_std_phi, circ_std_psi), degrees.
 """
+
 import numpy as np
 import pandas as pd
 
-DP = "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/data-precs.csv"
+DP = "out/pnas-2026/dataset-raw/data-precs.csv"
 SUMM = "out/pnas-2026-repro/robustness_worst_angles_summary.csv"
 WIDE = 15.0
 

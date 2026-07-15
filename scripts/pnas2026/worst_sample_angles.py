@@ -13,12 +13,13 @@ Outputs:
   robustness_worst_angles_detail.csv   (one row per structure)
   robustness_worst_angles_summary.csv  (one row per breakdown-set entry)
 """
+
 import os
 
 import numpy as np
 import pandas as pd
 
-DP = "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/data-precs.csv"
+DP = "out/pnas-2026/dataset-raw/data-precs.csv"
 WIDE_DEG = 15.0  # flag entries whose circular std exceeds this on either axis
 OUTDIR = os.environ.get("WSA_OUTDIR", "out/pnas-2026-repro")
 LABEL = os.environ.get("WSA_LABEL", "A")  # appendix letter

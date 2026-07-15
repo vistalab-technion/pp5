@@ -16,14 +16,7 @@ from robustness_mmd import kmat, mmd2
 # Positional arg overrides the default; default is the published/reproduced aggregated
 # dataset -- the post-preprocessing/aggregation output of `analyze_pointwise.py`'s
 # pipeline (see docs/pnas_2026.md), not the raw data-precs.csv.
-DS = (
-    sys.argv[1]
-    if len(sys.argv) > 1
-    else (
-        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
-        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
-    )
-)
+DS = sys.argv[1] if len(sys.argv) > 1 else "out/pnas-2026/dataset-processed/dataset.csv"
 MINN, CAP = 40, 800
 ROBUST = {("TURN", "A-GCG", "A-GCT"), ("HELIX", "L-CTC", "L-TTG")}
 

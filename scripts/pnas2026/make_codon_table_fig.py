@@ -2,6 +2,7 @@
 """Render the digitized Chevance Fig.3 per-codon values in the original genetic-code
 table layout (2nd position = columns, 1st = rows, 3rd = within-cell top->bottom),
 for visual comparison against the published figure."""
+
 import matplotlib
 
 matplotlib.use("Agg")
