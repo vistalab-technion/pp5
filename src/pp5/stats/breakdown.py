@@ -27,7 +27,7 @@ def greedy_breakdown_k(
     p-value only at the checkpoints in `k_grid`, until the pair is no longer
     significant at `thresh`.
 
-    breakdown-k is a greedy upper bound on the minimal kill-set: a more
+    breakdown-k is a greedy upper bound on the minimal breakdown-set: a more
     sophisticated "attack" could require fewer points. The removal ranking uses
     `stat_and_influence_fn`'s influence values as a proxy; the significance
     decision at each checkpoint always uses the real `pval_fn` recomputation.
