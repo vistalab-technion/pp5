@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 """
 Compare the conformational spread (per-position circular std of phi, psi across
-the contributing PDB structures) of the adversarial kill-set ("sensitive")
+the contributing PDB structures) of the adversarial breakdown-set ("sensitive")
 residues against the rest of the sample.
 
 Background sets (multi-structure positions, n>=2, where spread is defined):
-  - codon-matched : all positions whose codon is one of the kill-set codons
+  - codon-matched : all positions whose codon is one of the breakdown-set codons
   - global        : all positions in the collected dataset
 Spread metric per position: s_max = max(circ_std_phi, circ_std_psi), degrees.
 """
@@ -51,23 +51,23 @@ def main():
     pos["codon_aac"] = pos["codon"].astype(str)  # raw codon, e.g. 'CTC'
 
     summ = pd.read_csv(SUMM)
-    ks = set(zip(summ["unp_id"], summ["unp_idx"].astype(int)))
-    ks_codons = set(c.split("-")[1] for c in summ["codon"].unique())  # e.g. 'CTC'
+    bs = set(zip(summ["unp_id"], summ["unp_idx"].astype(int)))
+    bs_codons = set(c.split("-")[1] for c in summ["codon"].unique())  # e.g. 'CTC'
 
-    pos["is_ks"] = [(u, i) in ks for u, i in zip(pos["unp_id"], pos["unp_idx"])]
+    pos["is_bs"] = [(u, i) in bs for u, i in zip(pos["unp_id"], pos["unp_idx"])]
     multi = pos[pos["n"] >= 2]
 
-    sens = multi[multi["is_ks"]]
-    codon_rest = multi[(~multi["is_ks"]) & (multi["codon_aac"].isin(ks_codons))]
-    global_rest = multi[~multi["is_ks"]]
+    sens = multi[multi["is_bs"]]
+    codon_rest = multi[(~multi["is_bs"]) & (multi["codon_aac"].isin(bs_codons))]
+    global_rest = multi[~multi["is_bs"]]
 
-    print(f"# kill-set codons: {sorted(ks_codons)}")
+    print(f"# breakdown-set codons: {sorted(bs_codons)}")
     print(
         f"# multi-structure positions total={len(multi)}, "
-        f"kill-set(multi)={len(sens)}\n"
+        f"breakdown-set(multi)={len(sens)}\n"
     )
     print("Spread metric = max(circular-std phi, circular-std psi), degrees\n")
-    describe("SENSITIVE (kill-set)", sens["s_max"])
+    describe("SENSITIVE (breakdown-set)", sens["s_max"])
     describe("rest, codon-matched", codon_rest["s_max"])
     describe("rest, global", global_rest["s_max"])
 
@@ -97,7 +97,7 @@ def main():
     out = "out/pnas-2026-repro/spread_comparison.csv"
     rows = []
     for lab, grp in [
-        ("sensitive_killset", sens),
+        ("sensitive_breakdownset", sens),
         ("rest_codon_matched", codon_rest),
         ("rest_global", global_rest),
     ]:

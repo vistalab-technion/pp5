@@ -14,7 +14,7 @@ that produced the w2torus rejections.
   that pushes the pair above the published BH threshold for its SS class.
   (The proxy is used only for ordering; every significance decision is the real
   torus_p p-value. One-pass ordering is a conservative upper bound on the minimal
-  kill-set, as for the KDE-L1 arm.)
+  breakdown-set, as for the KDE-L1 arm.)
 - Controls: AA+SS randomization (primary) and within-pair pooled shuffle
   (secondary), identical to the KDE-L1 arm.
 """

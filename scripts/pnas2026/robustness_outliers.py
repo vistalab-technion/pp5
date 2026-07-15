@@ -9,7 +9,7 @@ data arbitrarily:
       INFLUENTIAL on the KDE-L1 statistic (re-ranked each step), recomputing the
       permutation p-value, and report the smallest number of removals that pushes
       the pair above the published BH threshold for its SS class. This is a greedy
-      UPPER BOUND on the minimal kill-set: a smarter attacker could need fewer.
+      UPPER BOUND on the minimal breakdown-set: a smarter attacker could need fewer.
       Each removed point's (phi,psi) + source is logged so we can see whether the
       breakdown deletes genuine Ramachandran outliers or ordinary bulk points.
 
@@ -295,7 +295,7 @@ def main():
             ),
             flush=True,
         )
-        # The ordered kill-set: the adversarially-worst samples (the minimal set
+        # The ordered breakdown-set: the adversarially-worst samples (the minimal set
         # whose removal breaks significance, or top-5 if it never broke).
         n_show = bk if bk else min(5, len(rmlog))
         print(
@@ -381,7 +381,7 @@ def main():
     wdf.to_csv(wout, index=False)
     print("=== SUMMARY ===")
     print(sdf.to_string(index=False))
-    print("\n=== ADVERSARIALLY-WORST SAMPLES (kill-sets) ===")
+    print("\n=== ADVERSARIALLY-WORST SAMPLES (breakdown-sets) ===")
     print(wdf.to_string(index=False))
     print(f"\nsaved: {out}\nsaved: {wout}")
 

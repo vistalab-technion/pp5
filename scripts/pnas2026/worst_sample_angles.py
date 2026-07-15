@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Expand each adversarial kill-set sample into its per-PDB-structure angles, with
+Expand each adversarial breakdown-set sample into its per-PDB-structure angles, with
 the aggregated (circular-mean) angle and the circular spread (circular std).
 
 For each (unp_id, unp_idx) in the worst-sample tables we pull every contributing
@@ -11,7 +11,7 @@ structure from the raw data-precs.csv, list its individual (phi, psi), and repor
 
 Outputs:
   robustness_worst_angles_detail.csv   (one row per structure)
-  robustness_worst_angles_summary.csv  (one row per kill-set entry)
+  robustness_worst_angles_summary.csv  (one row per breakdown-set entry)
 """
 import os
 
@@ -154,7 +154,7 @@ def main():
     desc = f" ({DESC})" if DESC else ""
     src = "outlier structures removed" if REMOVED else "matches the pipeline centroid"
     md = [
-        f"## Appendix {LABEL} — kill-set samples: contributing structures and "
+        f"## Appendix {LABEL} — breakdown-set samples: contributing structures and "
         f"aggregated angle{desc}\n",
         f"Aggregated angle = circular mean (φ ± σφ, ψ ± σψ) over the contributing "
         f"structures ({src}); σ is the circular standard deviation (Mardia), in "
@@ -200,7 +200,7 @@ def main():
     wide = ds[ds.wide_spread]
     print(f"=== SPREAD CHECK ({OUTDIR}, circular std > {WIDE_DEG:.0f}° on phi/psi) ===")
     print(
-        f"{len(wide)} of {len(ds)} kill-set entries flagged WIDE "
+        f"{len(wide)} of {len(ds)} breakdown-set entries flagged WIDE "
         f"({(ds.n_pdb > 1).sum()} are multi-structure):"
     )
     if len(wide):
