@@ -40,8 +40,9 @@ OUT_DIR = "out/pnas-2026"
 # distributions. Can be one of:
 # - 'kde_v': Permutation test with KDE-L1 test statistic and with von Mises kernel
 # - 'kde_g': As above, but with Gaussian kernel on torus
-# - 'mmd': Permutation test with flat-torus distance, MMD test staistic and Gaussian
-#   kernel.
+# - 'mmd': Permutation test with flat-torus distance, unbiased MMD^2 U-statistic and
+#   Gaussian kernel.
+# - 'mmd_biased': As above, but with the biased MMD^2 V-statistic.
 # - 'tw': Permutation test with flat-torus distance, Welch t test-statistic.
 # - 'torus_perm': Permutation test with distance based on S1 Wasserstein
 #   distance after projecting torus data to S1.
@@ -49,7 +50,7 @@ OUT_DIR = "out/pnas-2026"
 #   Not a permutation test. ddist_k must be zero.
 # - 'torus_p': Pval based on 1d Wasserstein distance on S1, after projecting.
 #   Not a permutation test. ddist_k must be zero.
-DDIST_STATISTIC = "kde_g"  # 'kde_g', 'torus_p', 'torus_perm'
+DDIST_STATISTIC = "mmd"  # 'kde_g', 'mmd', 'torus_p', 'torus_perm'
 
 # Statistical test settings
 DDIST_BS_NITER = 1  # 1 to disable bootstrapping
@@ -70,7 +71,7 @@ SELF_TEST = False  # whether to compare codons to themselves as a control
 
 # KDE-based statistical test params (for kde_g)
 # With kde_g, use -1 to perform cross-validation for kernel selection (per codon+SS).
-DDIST_KERNEL_SIZE = -1
+DDIST_KERNEL_SIZE = 10  # -1
 
 # Torustest params (for torus_p and torus_perm)
 DDIST_TORUS_N_PROJECTIONS = 4  # number of geodesics to project onto
