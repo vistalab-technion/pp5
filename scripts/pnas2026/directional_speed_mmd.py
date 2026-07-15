@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """#1 directional/speed redone on unbiased MMD^2 (size-unbiased -> no subsampling).
 Correlate |log Chevance speed-ratio| with unbiased MMD^2 across synonymous pairs."""
+
 import sys
 
 import numpy as np
@@ -8,11 +9,22 @@ import pandas as pd
 from scipy.stats import spearmanr
 
 sys.path.insert(0, "scripts/pnas2026")
-from mmd_breakdown import kmat, mmd2
+from _common import SEED
 from per_aa_directional import SPD
+from robustness_mmd import kmat, mmd2
 
-DS = "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/_intermediate_/dataset.csv"
-MINN, CAP, SEED = 40, 800, 12345
+# Positional arg overrides the default; default is the published/reproduced aggregated
+# dataset -- the post-preprocessing/aggregation output of `analyze_pointwise.py`'s
+# pipeline (see docs/pnas_2026.md), not the raw data-precs.csv.
+DS = (
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else (
+        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
+        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
+    )
+)
+MINN, CAP = 40, 800
 ROBUST = {("TURN", "A-GCG", "A-GCT"), ("HELIX", "L-CTC", "L-TTG")}
 
 

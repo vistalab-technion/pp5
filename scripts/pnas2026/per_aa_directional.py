@@ -9,12 +9,28 @@ distances. Secondary structure is controlled by centering each codon mean on its
 Δφ and Δψ across its (codon, SS) entries, with a within-AA speed-label permutation
 p-value. Proline is the a-priori candidate (EF-P stalling; PPII vs α along ψ).
 """
+
+import sys
+
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
-DS = "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/_intermediate_/dataset.csv"
-MINN, KPERM, SEED = 40, 5000, 12345
+sys.path.insert(0, "scripts/pnas2026")
+from _common import SEED
+
+# Positional arg overrides the default; default is the published/reproduced aggregated
+# dataset -- the post-preprocessing/aggregation output of `analyze_pointwise.py`'s
+# pipeline (see docs/pnas_2026.md), not the raw data-precs.csv.
+DS = (
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else (
+        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
+        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
+    )
+)
+MINN, KPERM = 40, 5000
 SPD = {
     "UUU": 2.2,
     "UUC": 2.0,

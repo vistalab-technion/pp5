@@ -66,8 +66,8 @@ DS_PATH = (
     sys.argv[1]
     if len(sys.argv) > 1
     else (
-        "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/"
-        "_intermediate_/dataset.csv"
+        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
+        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
     )
 )
 # Raw per-structure file with PDB provenance (pdb_id includes chain; res_id is the

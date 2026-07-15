@@ -18,19 +18,23 @@ import pandas as pd
 
 sys.path.insert(0, "scripts/pnas2026")
 from robustness_outliers import perm_pval, slab_rows_for
+from _common import PAIRS, SEED
 
-DS = "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/_intermediate_/dataset.csv"
+# Positional arg overrides the default; default is the published/reproduced aggregated
+# dataset -- the post-preprocessing/aggregation output of `analyze_pointwise.py`'s
+# pipeline (see docs/pnas_2026.md), not the raw data-precs.csv. No dependency on Alex's
+# repro zip.
+DS = (
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else (
+        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
+        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
+    )
+)
 PAX = "out/pnas-2026-repro/paxdb_abundance.csv"
-PAIRS = [
-    ("HELIX", "L-CTC", "L-TTG"),
-    ("HELIX", "L-CTC", "L-CTG"),
-    ("HELIX", "L-CTC", "L-CTT"),
-    ("HELIX", "R-AGG", "R-CGA"),
-    ("TURN", "A-GCG", "A-GCT"),
-    ("TURN", "P-CCC", "P-CCG"),
-]
 BH = {"HELIX": 0.0011494, "TURN": 0.0011494}  # KDE-L1 bw=10 BH thresholds
-N0, R, KPERM, SEED, MINN = 40, 25, 5000, 12345, 15
+N0, R, KPERM, MINN = 40, 25, 5000, 15
 
 
 def ddist(sa, sb):

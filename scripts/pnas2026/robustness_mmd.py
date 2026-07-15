@@ -50,6 +50,19 @@ def kmat(Z):
     return np.exp(-(d**2).sum(2) / (2 * SIG**2))
 
 
+def mmd2(Sxx, Syy, Sxy, nx, ny, est):
+    """Biased/unbiased MMD^2 from precomputed Gram-matrix block sums.
+
+    No longer called by this module's own `perm_p`/`breakdown` (both delegate to
+    the library's `mmd_permutation_test_from_kernel`/`breakdown_k_mmd`, which
+    compute the statistic internally) -- kept as a public formula because
+    `directional_speed_mmd.py` and `expression_confound_mmd.py` import it directly.
+    """
+    if est == "b":
+        return Sxx / nx**2 + Syy / ny**2 - 2 * Sxy / (nx * ny)
+    return (Sxx - nx) / (nx * (nx - 1)) + (Syy - ny) / (ny * (ny - 1)) - 2 * Sxy / (nx * ny)
+
+
 def perm_p(K, nx, ny, est, k=KP, seed=SEED):
     obs, pval, _ = mmd_permutation_test_from_kernel(
         K,

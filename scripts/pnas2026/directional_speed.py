@@ -23,9 +23,21 @@ import pandas as pd
 
 sys.path.insert(0, "scripts/pnas2026")
 from robustness_outliers import slab_rows_for  # (n,P) KDE slab rows
+from _common import SEED
 
-DS = "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/_intermediate_/dataset.csv"
-N0, R, SEED, MINN = 40, 25, 12345, 40
+# Positional arg overrides the default; default is the published/reproduced aggregated
+# dataset -- the post-preprocessing/aggregation output of `analyze_pointwise.py`'s
+# pipeline (see docs/pnas_2026.md), not the raw data-precs.csv. No dependency on Alex's
+# repro zip.
+DS = (
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else (
+        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
+        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
+    )
+)
+N0, R, MINN = 40, 25, 40
 ROBUST = {
     ("HELIX", "L-CTC", "L-TTG"),
     ("HELIX", "L-CTC", "L-CTG"),

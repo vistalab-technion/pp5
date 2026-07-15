@@ -19,21 +19,28 @@ Biological-significance probes on the codon-conditioned backbone signal.
      circular means + label-permutation p) is recomputed WITHIN each tertile.
      Persistence within strata argues the signal is not a pure expression artifact.
 """
+
+import sys
+
 import numpy as np
 import pandas as pd
 
-DS = "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/_intermediate_/dataset.csv"
+sys.path.insert(0, "scripts/pnas2026")
+from _common import PAIRS, SEED
+
+# Positional arg overrides the default; default is the published/reproduced aggregated
+# dataset -- the post-preprocessing/aggregation output of `analyze_pointwise.py`'s
+# pipeline (see docs/pnas_2026.md), not the raw data-precs.csv.
+DS = (
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else (
+        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
+        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
+    )
+)
 MINN = 20
 K = 2000
-SEED = 12345
-PAIRS = [
-    ("HELIX", "L-CTC", "L-TTG"),
-    ("HELIX", "L-CTC", "L-CTG"),
-    ("HELIX", "L-CTC", "L-CTT"),
-    ("HELIX", "R-AGG", "R-CGA"),
-    ("TURN", "A-GCG", "A-GCT"),
-    ("TURN", "P-CCC", "P-CCG"),
-]
 
 
 def cmean(deg):
@@ -124,7 +131,7 @@ def main():
         dphi = ((mo[0] - mr[0] + 180) % 360) - 180
         dpsi = ((mo[1] - mr[1] + 180) % 360) - 180
         print(
-            f"{c1+':'+c2.split('-')[1]:<16}{ss:<6}{f1:>6.2f}{f2:>6.2f}  {opt:<8}"
+            f"{c1 + ':' + c2.split('-')[1]:<16}{ss:<6}{f1:>6.2f}{f2:>6.2f}  {opt:<8}"
             f"{dphi:>6.1f}{dpsi:>6.1f}{tdist(mo, mr):>6.1f}"
         )
         db.append(
@@ -170,7 +177,7 @@ def main():
             else:
                 dist, p = float("nan"), float("nan")
             print(
-                f"{c1+':'+c2.split('-')[1]:<16}{ss:<6}{b:<6}{len(A):>5}{len(B):>5}"
+                f"{c1 + ':' + c2.split('-')[1]:<16}{ss:<6}{b:<6}{len(A):>5}{len(B):>5}"
                 f"{dist:>7.1f}{p:>9.4f}"
             )
             s2.append(

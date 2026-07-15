@@ -19,10 +19,22 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, "scripts/pnas2026")
-from mmd_breakdown import THR, kmat, perm_p, breakdown
+from robustness_mmd import THR, kmat, perm_p, breakdown
+from _common import SEED
 
-DS = "out/pnas-2026-repro/pointwise_cdist-SMOKE-kde_g_10-cr_none/_intermediate_/dataset.csv"
-SEED, NREP = 12345, 10
+# Positional arg overrides the default; default is the published/reproduced aggregated
+# dataset -- the post-preprocessing/aggregation output of `analyze_pointwise.py`'s
+# pipeline (see docs/pnas_2026.md), not the raw data-precs.csv. No dependency on Alex's
+# repro zip.
+DS = (
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else (
+        "out/prec-collected/20211001_124553-aida-ex_EC-src_EC/results/"
+        "pointwise_cdist-natcom/_intermediate_/dataset.csv"
+    )
+)
+NREP = 10
 # real pairs to calibrate: (SS, AA, n1, n2, target p, real breakdown-k under MMD2u)
 REAL = [("TURN", "A", 350, 203, 0.0002, 8), ("HELIX", "L", 528, 599, 0.0008, 5)]
 
