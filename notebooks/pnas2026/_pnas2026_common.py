@@ -1,6 +1,6 @@
 """Shared p-value loading and BH-rejection helpers for the PNAS-2026 paper notebooks.
 
-Both `w2torus-analysis.ipynb` and `robustness-figures.ipynb` import this module so they
+Both `main-figures.ipynb` and `robustness-figures.ipynb` import this module so they
 can never disagree about which `cc-pvals.csv` files feed the analysis or what counts as
 significant under a given statistic.
 """
