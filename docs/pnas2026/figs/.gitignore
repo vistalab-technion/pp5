@@ -1,0 +1,4 @@
+*.pdf
+!*.svg
+!fig_s5.pdf
+!pnas-2026-rev3.zip
